@@ -13,8 +13,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build:video": "cd XC-VIDEO && npm install && npm run build",
-    "build": "npm run build:video && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "test:optimizer": "node --experimental-strip-types --test services/agents/prompt-optimizer/*.test.ts services/agents/utils/*.test.ts"
   },
@@ -26,7 +25,6 @@
     "jszip": "^3.10.1",
     "react-router-dom": "^7.13.0",
     "tailwind-merge": "^3.4.0",
-    "jackystudio": "file:XC-VIDEO",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },

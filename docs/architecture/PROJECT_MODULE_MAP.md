@@ -15,7 +15,6 @@ flowchart TD
         Workspace[pages/Workspace.tsx]
         WorkspaceNew[pages/Workspace/WorkspaceNew.tsx]
         Settings[pages/Settings.tsx]
-        VideoWorkspace[pages/VideoWorkspace.tsx]
     end
 
     subgraph WorkspaceUI[Workspace UI]
@@ -53,17 +52,12 @@ flowchart TD
         Errors[utils/provider-error.ts / utils/error-handler.ts]
     end
 
-    subgraph VideoSubApp[视频子应用]
-        VideoApp[jackystudio / XC-VIDEO VideoApp]
-    end
-
     App --> Landing
     App --> Home
     App --> Projects
     App --> Workspace
     App --> WorkspaceNew
     App --> Settings
-    App --> VideoWorkspace
 
     Workspace --> WSComponents
     Workspace --> WSControllers
@@ -95,7 +89,6 @@ flowchart TD
     Workspace --> TopicMemory
     Upload --> Storage
 
-    VideoWorkspace --> VideoApp
 ```
 
 ## 2. Workspace 主链路
@@ -132,14 +125,11 @@ sequenceDiagram
 ### 页面入口
 
 - `App.tsx`
-  负责路由注册与页面懒加载，串起 `Landing / Home / Projects / Workspace / VideoWorkspace / Settings / User`。
+  负责路由注册与页面懒加载，串起 `Landing / Home / Projects / Workspace / Settings / User`。
 - `pages/Workspace.tsx`
   当前主工作区入口，承接画布、聊天、树状节点、经典节点、工作流、历史、持久化和快捷操作。
 - `pages/Workspace/WorkspaceNew.tsx`
   新架构实验入口，使用更明确的 Store + 组件拆分方式组织工作区。
-- `pages/VideoWorkspace.tsx`
-  视频工作区入口，挂载 `jackystudio` 提供的 `VideoApp`。
-
 ### Workspace 内部
 
 - `pages/Workspace/components/*`
@@ -204,13 +194,6 @@ sequenceDiagram
   负责 Topic Memory Key 的构造与解析。
 - `utils/uploader.ts`
   负责上传素材并返回外链或宿主引用。
-
-### 视频子应用
-
-- `pages/VideoWorkspace.tsx`
-  只是容器与返回入口。
-- `jackystudio / XC-VIDEO`
-  真正的视频工作区能力由外部子应用承接，当前仓库主要负责挂载和入口衔接。
 
 ## 4. 开发时最常用的入口
 

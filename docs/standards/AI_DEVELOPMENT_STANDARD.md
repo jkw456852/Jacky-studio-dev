@@ -44,7 +44,6 @@ Current root structure includes:
 - `constants/`
 - `knowledge/`
 - `skills/`
-- `XC-VIDEO/`
 
 Important local realities:
 - This is a React-only project. Do not write Vue-oriented standards into active guidance.

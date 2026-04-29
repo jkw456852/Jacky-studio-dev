@@ -4,7 +4,6 @@ export const ROUTES = {
   projects: '/projects',
   workspace: '/workspace',
   workspaceNew: '/workspace-new',
-  videoWorkspace: '/video-workspace',
   settings: '/settings',
   // 用户管理
   userLogin: '/user/login',

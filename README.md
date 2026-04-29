@@ -102,7 +102,6 @@
 ├─ types/
 ├─ user-management/
 ├─ utils/
-└─ XC-VIDEO/
 ```
 
 ## Local Development
@@ -111,9 +110,6 @@
 
 ```bash
 npm install
-cd XC-VIDEO
-npm install
-cd ..
 ```
 
 ### Run

@@ -1,5 +1,0 @@
-{
-  "name": "XcAISTUDIO",
-  "description": "A node-based video generation agent mimicking professional color grading workflows. Generates images from text, then transforms images into video clips using Gemini Veo.",
-  "requestFramePermissions": []
-}

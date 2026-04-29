@@ -7,7 +7,6 @@ import {
   Folder,
   Plus,
   Settings,
-  Video,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -30,59 +29,51 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
 
   return (
     <>
-      {/* 桌面端侧边栏 */}
       <motion.div
         initial={{ x: -20, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        className="fixed left-6 top-1/2 -translate-y-1/2 hidden lg:flex flex-col gap-4 z-50"
+        className="fixed left-6 top-1/2 z-50 hidden -translate-y-1/2 flex-col gap-4 lg:flex"
       >
         <div>
           <button
             onClick={handleNewProject}
-            className="w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-200 shadow-premium bg-foreground text-background hover:scale-105 active:scale-95"
+            className="h-12 w-12 rounded-lg bg-foreground text-background shadow-premium transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center"
             title="新建项目"
           >
             <Plus size={24} />
           </button>
         </div>
 
-        <div className="w-12 py-6 bg-card/80 backdrop-blur-xl rounded-full shadow-premium flex flex-col items-center gap-6 border border-border/50">
+        <div className="flex w-12 flex-col items-center gap-6 rounded-full border border-border/50 bg-card/80 py-6 shadow-premium backdrop-blur-xl">
           <button
             onClick={() => navigate(ROUTES.dashboard)}
-            className={`p-2 rounded-full transition ${isActive(ROUTES.dashboard)
-              ? "bg-gray-100 text-black shadow-sm"
-              : "text-gray-400 hover:text-black hover:bg-gray-50"
-              }`}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.dashboard)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
             title="首页"
           >
             <HomeIcon size={20} />
           </button>
           <button
             onClick={() => navigate(ROUTES.projects)}
-            className={`p-2 rounded-full transition ${isActive(ROUTES.projects)
-              ? "bg-gray-100 text-black shadow-sm"
-              : "text-gray-400 hover:text-black hover:bg-gray-50"
-              }`}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.projects)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
             title="项目"
           >
             <Folder size={20} />
           </button>
           <button
-            onClick={() => navigate(ROUTES.videoWorkspace)}
-            className={`p-2 rounded-full transition ${isActive(ROUTES.videoWorkspace)
-              ? "bg-gray-100 text-black shadow-sm"
-              : "text-gray-400 hover:text-black hover:bg-gray-50"
-              }`}
-            title="Video Studio"
-          >
-            <Video size={20} />
-          </button>
-          <button
             onClick={() => navigate(ROUTES.settings)}
-            className={`p-2 rounded-full transition ${isActive(ROUTES.settings)
-              ? "bg-gray-100 text-black shadow-sm"
-              : "text-gray-400 hover:text-black hover:bg-gray-50"
-              }`}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.settings)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
             title="设置 / API Key"
           >
             <Settings size={20} />
@@ -90,46 +81,58 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
         </div>
       </motion.div>
 
-      {/* 移动端底部导航 */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-t border-gray-100 flex items-center justify-around px-4 z-50 pb-safe">
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-gray-100 bg-white/80 px-4 pb-safe backdrop-blur-xl lg:hidden">
         <button
           onClick={() => navigate(ROUTES.dashboard)}
-          className={`flex flex-col items-center gap-1 ${isActive(ROUTES.dashboard) ? "text-black" : "text-gray-400"}`}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.dashboard) ? "text-black" : "text-gray-400"
+          }`}
         >
-          <HomeIcon size={20} strokeWidth={isActive(ROUTES.dashboard) ? 2.5 : 2} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">首页</span>
+          <HomeIcon
+            size={20}
+            strokeWidth={isActive(ROUTES.dashboard) ? 2.5 : 2}
+          />
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            首页
+          </span>
         </button>
         <button
           onClick={() => navigate(ROUTES.projects)}
-          className={`flex flex-col items-center gap-1 ${isActive(ROUTES.projects) ? "text-black" : "text-gray-400"}`}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.projects) ? "text-black" : "text-gray-400"
+          }`}
         >
-          <Folder size={20} strokeWidth={isActive(ROUTES.projects) ? 2.5 : 2} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">项目</span>
+          <Folder
+            size={20}
+            strokeWidth={isActive(ROUTES.projects) ? 2.5 : 2}
+          />
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            项目
+          </span>
         </button>
 
-        {/* 中间突出按钮 */}
         <div className="-translate-y-4">
           <button
             onClick={handleNewProject}
-            className="w-14 h-14 rounded-2xl bg-black text-white flex items-center justify-center shadow-2xl shadow-black/20 active:scale-90 transition-all"
+            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white shadow-2xl shadow-black/20 transition-all active:scale-90"
           >
             <Plus size={28} />
           </button>
         </div>
 
         <button
-          onClick={() => navigate(ROUTES.videoWorkspace)}
-          className={`flex flex-col items-center gap-1 ${isActive(ROUTES.videoWorkspace) ? "text-black" : "text-gray-400"}`}
-        >
-          <Video size={20} strokeWidth={isActive(ROUTES.videoWorkspace) ? 2.5 : 2} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">视频</span>
-        </button>
-        <button
           onClick={() => navigate(ROUTES.settings)}
-          className={`flex flex-col items-center gap-1 ${isActive(ROUTES.settings) ? "text-black" : "text-gray-400"}`}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.settings) ? "text-black" : "text-gray-400"
+          }`}
         >
-          <Settings size={20} strokeWidth={isActive(ROUTES.settings) ? 2.5 : 2} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">设置</span>
+          <Settings
+            size={20}
+            strokeWidth={isActive(ROUTES.settings) ? 2.5 : 2}
+          />
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            设置
+          </span>
         </button>
       </div>
     </>

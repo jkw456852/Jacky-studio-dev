@@ -7,7 +7,6 @@ const Workspace = lazy(() => import('./pages/Workspace'));
 const WorkspaceNew = lazy(() => import('./pages/Workspace/WorkspaceNew'));
 const Projects = lazy(() => import('./pages/Projects'));
 const Settings = lazy(() => import('./pages/Settings'));
-const VideoWorkspace = lazy(() => import('./pages/VideoWorkspace'));
 const Landing = lazy(() => import('./pages/Landing'));
 // 用户管理页面
 const UserLogin = lazy(() => import('./pages/User/Login'));
@@ -24,7 +23,6 @@ const App: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             <Route path={ROUTES.dashboard} element={<Home onExit={onExit} />} />
             <Route path={ROUTES.projects} element={<Projects onExit={onExit} />} />
             <Route path={`${ROUTES.workspace}/:id`} element={<Workspace />} />
-            <Route path={ROUTES.videoWorkspace} element={<VideoWorkspace />} />
             {/* 新版Workspace - 使用Store和组件化架构 */}
             <Route path={`${ROUTES.workspaceNew}/:id`} element={<WorkspaceNew />} />
             <Route path={ROUTES.settings} element={<Settings />} />
