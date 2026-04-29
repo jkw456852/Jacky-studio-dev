@@ -7,6 +7,7 @@ import type {
 } from "../../../types";
 import { useProjectStore } from "../../../stores/project.store";
 import {
+  buildTopicAssetUrl,
   mergeUniqueStrings,
   rememberApprovedAsset,
   summarizeReferenceSet,
@@ -34,6 +35,7 @@ type UseWorkspaceElementMutationHelpersOptions = {
   setElementsSynced: (nextElements: CanvasElement[]) => void;
   saveToHistory: (newElements: CanvasElement[], newMarkers: Marker[]) => void;
   getCurrentTopicId: () => string;
+  ensureTopicId: () => string;
   updateDesignSession: (payload: {
     approvedAssetIds?: string[];
     subjectAnchors?: string[];
@@ -95,6 +97,7 @@ export function useWorkspaceElementMutationHelpers(
     setElementsSynced,
     saveToHistory,
     getCurrentTopicId,
+    ensureTopicId,
     updateDesignSession,
   } = options;
 
@@ -206,7 +209,7 @@ export function useWorkspaceElementMutationHelpers(
         );
       }
       const projectState = useProjectStore.getState().designSession;
-      const topicId = getCurrentTopicId();
+      const topicId = getCurrentTopicId() || ensureTopicId();
       const shouldAutoPromoteAnchor =
         shouldAutoPromoteGeneratedResultToAnchor(projectState);
       const decisionText = updatedElement?.genPrompt
@@ -240,16 +243,27 @@ export function useWorkspaceElementMutationHelpers(
       );
 
       if (topicId) {
-        await rememberApprovedAsset(topicId, {
+        const assetRef = await rememberApprovedAsset(topicId, {
           url: resolvedOriginalUrl,
           role: "result",
           summary: summarizeReferenceSet([resolvedOriginalUrl]),
           decision: decisionText,
         });
+        if (assetRef?.assetId) {
+          const persistedOriginalUrl = buildTopicAssetUrl(assetRef.assetId);
+          const patchedElements = elementsRef.current.map((element) =>
+            element.id === elementId
+              ? { ...element, persistedOriginalUrl }
+              : element,
+          );
+          setElementsSynced(patchedElements);
+          saveToHistory(patchedElements, markersRef.current);
+        }
       }
     },
     [
       elementsRef,
+      ensureTopicId,
       getCurrentTopicId,
       markersRef,
       saveToHistory,
@@ -483,7 +497,7 @@ export function useWorkspaceElementMutationHelpers(
       saveToHistory(nextElements, markersRef.current);
 
       const projectState = useProjectStore.getState().designSession;
-      const topicId = getCurrentTopicId();
+      const topicId = getCurrentTopicId() || ensureTopicId();
       const originalUrls = newElements
         .map((element) => element.originalUrl || element.url)
         .filter((url): url is string => Boolean(url));
@@ -516,11 +530,12 @@ export function useWorkspaceElementMutationHelpers(
       );
 
       if (topicId) {
+        const persistedOriginalUrlByElementId = new Map<string, string>();
         await Promise.all(
           newElements.map(async (element) => {
             const originalUrl = element.originalUrl || element.url;
             if (!originalUrl) return;
-            await rememberApprovedAsset(topicId, {
+            const assetRef = await rememberApprovedAsset(topicId, {
               url: originalUrl,
               role: "result",
               summary: summarizeReferenceSet([originalUrl]),
@@ -532,12 +547,30 @@ export function useWorkspaceElementMutationHelpers(
                   ? `Adopted sibling asset ${element.id} as a design anchor`
                   : `Saved sibling asset ${element.id} without replacing the current manual anchor`,
             });
+            if (assetRef?.assetId) {
+              persistedOriginalUrlByElementId.set(
+                element.id,
+                buildTopicAssetUrl(assetRef.assetId),
+              );
+            }
           }),
         );
+        if (persistedOriginalUrlByElementId.size > 0) {
+          const patchedElements = elementsRef.current.map((element) => {
+            const persistedOriginalUrl =
+              persistedOriginalUrlByElementId.get(element.id);
+            return persistedOriginalUrl
+              ? { ...element, persistedOriginalUrl }
+              : element;
+          });
+          setElementsSynced(patchedElements);
+          saveToHistory(patchedElements, markersRef.current);
+        }
       }
     },
     [
       elementsRef,
+      ensureTopicId,
       getCurrentTopicId,
       markersRef,
       saveToHistory,

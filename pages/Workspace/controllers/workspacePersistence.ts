@@ -204,6 +204,7 @@ export const compactCanvasElement = (element: CanvasElement): CanvasElement => {
     ...element,
     url: trimElementUrl(element.url) || element.url,
     originalUrl: trimElementUrl(element.originalUrl),
+    persistedOriginalUrl: trimElementUrl(element.persistedOriginalUrl) || element.persistedOriginalUrl,
     proxyUrl: trimElementUrl(element.proxyUrl),
     genRefImage: trimElementUrl(element.genRefImage),
     genRefImages: (element.genRefImages || [])

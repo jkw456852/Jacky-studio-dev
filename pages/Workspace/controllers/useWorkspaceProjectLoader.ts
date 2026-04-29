@@ -22,6 +22,7 @@ import {
 } from './workspacePersistence';
 import {
   listTopicAssetsByTopicId,
+  resolveStoredTopicAssetUrl,
   resolveTopicAssetRefUrl,
 } from "../../../services/topic-memory";
 import { getMemoryKey } from "../../../services/topicMemory/key";
@@ -723,8 +724,18 @@ const sanitizeLoadedElement = async (
   element: CanvasElement,
 ): Promise<CanvasElement> => {
   const nextElement: CanvasElement = { ...element };
+  nextElement.persistedOriginalUrl =
+    typeof nextElement.persistedOriginalUrl === "string"
+      ? nextElement.persistedOriginalUrl.trim() || undefined
+      : nextElement.persistedOriginalUrl;
+
+  const resolvedStoredOriginalUrl = await resolveStoredTopicAssetUrl(
+    nextElement.originalUrl || nextElement.persistedOriginalUrl,
+  );
   nextElement.url = normalizeLoadedDataUrl(nextElement.url);
-  nextElement.originalUrl = normalizeLoadedDataUrl(nextElement.originalUrl);
+  nextElement.originalUrl = normalizeLoadedDataUrl(
+    resolvedStoredOriginalUrl || nextElement.originalUrl,
+  );
   nextElement.proxyUrl = normalizeLoadedDataUrl(nextElement.proxyUrl);
   nextElement.genRefImage = normalizeLoadedDataUrl(nextElement.genRefImage);
   nextElement.genRefPreviewImage = normalizeLoadedDataUrl(

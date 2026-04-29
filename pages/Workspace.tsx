@@ -4011,6 +4011,7 @@ const Workspace: React.FC = () => {
     setElementsSynced,
     saveToHistory,
     getCurrentTopicId,
+    ensureTopicId,
     updateDesignSession: projectActions.updateDesignSession,
   });
 

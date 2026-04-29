@@ -62,6 +62,7 @@ export interface CanvasElement {
   type: 'image' | 'video' | 'shape' | 'text' | 'gen-image' | 'gen-video' | 'group';
   url?: string;
   originalUrl?: string;
+  persistedOriginalUrl?: string;
   proxyUrl?: string;
   shapeType?: ShapeType;
   // Text specific properties
