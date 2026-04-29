@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-04-01",
+  "policy": {
+    "purpose": "Prevent mojibake-contaminated historical archives from being reused as restore sources.",
+    "default_for_live_files": "allowed_if_clean",
+    "default_for_archives": "manual_review_required"
+  },
+  "live_status": {
+    "services_skills_ts_clean_count": 17,
+    "services_skills_ts_total_count": 17
+  },
+  "entries": [
+    {
+      "path": "services/skills/ecom-oneclick-workflow.skill.ts.bak-20260329-encoding-corrupt",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 497,
+      "clean_base": "services/skills/ecom-oneclick-workflow.skill.ts"
+    },
+    {
+      "path": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts.bak-20260330-corrupt-overlay-pass",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 126,
+      "clean_base": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts"
+    },
+    {
+      "path": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts.bak-20260330-pre-clean-restore",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 120,
+      "clean_base": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts"
+    },
+    {
+      "path": "pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx.bak-20260326-corrupted-before-restore",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 51,
+      "clean_base": "pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx"
+    },
+    {
+      "path": "pages/Workspace/components/workflow/EcommerceOneClickCards.tsx.codex-backup-20260324-ui-decode.bak",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 33,
+      "clean_base": "pages/Workspace/components/workflow/EcommerceOneClickCards.tsx"
+    },
+    {
+      "path": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts.codex-backup-20260324-183702.pre-restore.bak",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 33,
+      "clean_base": "pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts"
+    },
+    {
+      "path": "pages/Workspace.tsx.codex-backup-20260324-103137.pre-mojibake-fix.bak",
+      "classification": "recoverable_archive",
+      "restore_policy": "do_not_restore",
+      "marker_count": 7,
+      "clean_base": "pages/Workspace.tsx"
+    },
+    {
+      "path": "pages/Workspace.tsx.broken-backup",
+      "classification": "not_precisely_recoverable",
+      "restore_policy": "reference_only",
+      "marker_count": 35,
+      "clean_base": "pages/Workspace.tsx"
+    },
+    {
+      "path": "pages/Workspace/controllers/useWorkspaceDesignConsistency.ts.bak-20260401-165026-encoding-fix",
+      "classification": "forensic_only",
+      "restore_policy": "forensic_only",
+      "marker_count": 3,
+      "clean_base": "pages/Workspace/controllers/useWorkspaceDesignConsistency.ts"
+    }
+  ],
+  "deny_name_markers": [
+    "encoding-corrupt",
+    "broken",
+    "pre-mojibake-fix",
+    "ui-decode",
+    "pre-restore"
+  ]
+}

@@ -1,0 +1,72 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# XC-VIDEO build outputs copied into public/
+public/xc-video/assets/
+public/xc-video/*.js
+public/xc-video/*.css
+public/xc-video/*.map
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vercel
+
+# Windows/command redirection accidents
+nul
+
+# Local workspace artifacts
+tmp/
+.tmp/
+.tmp*.patch
+.tmp*.txt
+.claude/worktrees/
+.claude/skills/
+.codebuddy/
+.jk-studio-runtime/
+.roo/
+.roomodes
+.xc-studio-runtime/
+XC-STUDIO.code-workspace
+test-results/
+__codex_patch.*
+zz_test_apply_patch.txt
+.codex-dev-*.log
+.vite-dev-*.log
+
+# Codex local backups and recovery files
+*.bak
+*.bak-*
+*.codex-backup-*
+*.codex-broken-*
+*.broken-backup
+*.broken-backup.*
+*.corrupted-*
+pages/*.codex-backup-*.tsx.bak
+pages/**/*.codex-backup-*.tsx.bak
+pages/*.broken-backup
+pages/**/*.broken-backup
+pages/**/*.broken-backup.*

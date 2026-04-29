@@ -1,0 +1,24 @@
+# <type>: <short summary>
+#
+# Recommended types:
+# feat: new feature
+# fix: bug fix
+# refactor: code cleanup without behavior change
+# perf: performance improvement
+# docs: documentation only
+# chore: tooling / workflow / maintenance
+# style: formatting / non-functional UI polish
+# test: tests only
+#
+# Good examples:
+# feat: add tree prompt child image generation
+# fix: preserve reference images when retrying failed nodes
+# refactor: simplify workspace canvas pointer targeting
+#
+# Optional body:
+# Why:
+# - what problem this change solves
+#
+# Includes:
+# - key user-visible change 1
+# - key user-visible change 2

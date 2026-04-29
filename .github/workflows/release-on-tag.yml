@@ -1,0 +1,137 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build release summary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREVIOUS_TAG="$(git tag --sort=-version:refname | grep -Fxv "${CURRENT_TAG}" | head -n 1 || true)"
+
+          if [ -n "${PREVIOUS_TAG}" ]; then
+            RANGE="${PREVIOUS_TAG}..${CURRENT_TAG}"
+            CHANGELOG_LINE="Full Changelog: https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS_TAG}...${CURRENT_TAG}"
+          else
+            RANGE="${CURRENT_TAG}"
+            CHANGELOG_LINE="Full Changelog: https://github.com/${GITHUB_REPOSITORY}/commits/${CURRENT_TAG}"
+          fi
+
+          export PREVIOUS_TAG
+          export RANGE
+          export CHANGELOG_LINE
+
+          python - <<'PY'
+          import os
+          import subprocess
+
+          current_tag = os.environ["GITHUB_REF_NAME"]
+          previous_tag = os.environ.get("PREVIOUS_TAG", "").strip()
+          repo = os.environ["GITHUB_REPOSITORY"]
+          range_expr = os.environ["RANGE"]
+          changelog_line = os.environ["CHANGELOG_LINE"]
+
+          subjects_raw = subprocess.check_output(
+              ["git", "log", "--format=%s", range_expr],
+              text=True,
+              encoding="utf-8",
+          ).splitlines()
+
+          categories = [
+              ("feat", "新增"),
+              ("fix", "修复"),
+              ("perf", "优化"),
+              ("refactor", "重构"),
+              ("docs", "文档"),
+              ("test", "测试"),
+              ("style", "样式"),
+              ("chore", "工程"),
+          ]
+
+          grouped = {key: [] for key, _ in categories}
+          other = []
+
+          for subject in subjects_raw:
+              normalized = subject.strip()
+              matched = False
+              for key, _label in categories:
+                  prefix = f"{key}:"
+                  if normalized.lower().startswith(prefix):
+                      grouped[key].append(normalized[len(prefix):].strip())
+                      matched = True
+                      break
+              if not matched and normalized:
+                  other.append(normalized)
+
+          lines = [
+              "## 更新摘要",
+              "",
+              f"- 版本：`{current_tag}`",
+          ]
+
+          if previous_tag:
+              lines.append(f"- 基于 `{previous_tag}` 之后的变更")
+
+          lines.extend([
+              "",
+          ])
+
+          has_section = False
+          for key, label in categories:
+              items = grouped[key]
+              if not items:
+                  continue
+              has_section = True
+              lines.append(f"### {label}")
+              lines.append("")
+              for item in items:
+                  lines.append(f"- {item}")
+              lines.append("")
+
+          if other:
+              has_section = True
+              lines.append("### 其他")
+              lines.append("")
+              for item in other:
+                  lines.append(f"- {item}")
+              lines.append("")
+
+          if not has_section:
+              lines.extend([
+                  "### 说明",
+                  "",
+                  "- 本次为内部版本更新。",
+                  "",
+              ])
+
+          lines.append(changelog_line.replace("Full Changelog:", "完整变更："))
+          lines.append("")
+
+          with open("release-notes.md", "w", encoding="utf-8") as fh:
+              fh.write("\n".join(lines))
+          PY
+
+      - name: Create release from tag
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          generate_release_notes: true
+          make_latest: true

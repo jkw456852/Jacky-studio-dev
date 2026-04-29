@@ -1,0 +1,19 @@
+1.每个阶段进入下个阶段的时候如果中途需要等待分析结果建议有过渡页面让用户知道正在分析，而不是一片空白等到有结果才显示内容-示例-分析过程可视化.png
+2.选择生图模型时加入更多参数选择，例如提示词语言偏好，图片分辨率，提示词构建时的思考深度，是否开启联网搜索-示例-选择生图模型、分辨率、提示词语言偏好、思考深度、联网搜索.png
+3.步骤二商品分析页面对商品的分析不够精细没有从多维度分析产品，推荐的生成图片类型不够全面，理由不够贴切，千篇一律，怀疑背后根本没有真的根据产品去分析而是用的通用模板，应该由智能体环绕产品实际情况分析，并且输出系统能识别的格式（通过识别固定格式的推荐结果显示推荐卡片）-示例-商品分析结果&生成图片类型选择.png   必须仔细分析这个背后的实现逻，此步骤应该全程由AI智能体分析和输出内容，网页只负责根据ai输出的特定格式去显示分析结果和推荐卡片给用户选择，禁止显示通用模板等低质量方式，着重研究示例图里的每一个功能每一段文字背后的分析逻辑，编写一个强大而全面的通用分析智能体（补充商品信息页面要求同上，示例-10补充商品信息.png）
+4.工作流页面模块重复了（截图1.png），下面那块没存在的必要
+5.步骤二的推荐输出类型无效空间占用过高，改成双列甚至三列卡片排列的形式展示，选中效果不直观，目前仅在底下的tag栏里有个已选中的标，极其不明显，改成未选中灰框，选中绿框的形式，tag栏的词条颜色还可以再琢磨
+6.工作流整体文字偏小，阅读困难，大量选项文字密集堆在一起，很难阅读，重新做好排版和区分，比如选择题、方案草稿分组（还有更多不再列举），这类大量分组分题堆在一起的很难看出题与题组与组的分界点，分段分割极其不明显
+7.选择题没标单选多选不知道可以选多少，也没有推荐答案或者推荐标不够明显，没有自定义答案输入框
+8.很多示例图里有的细节项目里都没有或者只有个粗糙的模板拙劣的模仿，根本没有去分析人家实现的底层原理
+9.报错：[EcommerceWorkflow] 写入本地缓存失败： QuotaExceededError: Failed to execute 'setItem' on 'Storage': Setting the value of 'xcstudio:ecom-oneclick:new-1774332817667:conv-1774333580651-ckgthk' exceeded the quota.
+    at writeEcommerceLocalCache (Workspace.tsx:253:25)
+    at Workspace.tsx:1077:5
+    at Object.react_stack_bottom_frame (react-dom_client.js?v=a200a185:18567:20)
+    at runWithFiberInDEV (react-dom_client.js?v=a200a185:997:72)
+    at commitHookEffectListMount (react-dom_client.js?v=a200a185:9411:163)
+    at commitHookPassiveMountEffects (react-dom_client.js?v=a200a185:9465:60)
+    at commitPassiveMountOnFiber (react-dom_client.js?v=a200a185:11040:29)
+    at recursivelyTraversePassiveMountEffects (react-dom_client.js?v=a200a185:11010:13)
+    at commitPassiveMountOnFiber (react-dom_client.js?v=a200a185:11201:13)
+    at recursivelyTraversePassiveMountEffects (react-dom_client.js?v=a200a185:11010:13)
