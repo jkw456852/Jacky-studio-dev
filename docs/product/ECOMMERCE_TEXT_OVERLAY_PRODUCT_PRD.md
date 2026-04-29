@@ -458,6 +458,7 @@ export interface TextComposition {
 
 ## 14. 相关文档
 
-1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/XC-STUDIO/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
+1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/Jacky-studio-dev/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
 2. 技术架构版：`docs/architecture/ECOMMERCE_TEXT_OVERLAY_ARCHITECTURE.md`
 3. 开发排期版：`docs/product/ECOMMERCE_TEXT_OVERLAY_DELIVERY_SCHEDULE.md`
+

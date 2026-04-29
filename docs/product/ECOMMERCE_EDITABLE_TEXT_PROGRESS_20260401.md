@@ -1,4 +1,4 @@
-# 电商可编辑上字方案进度总结
+﻿# 电商可编辑上字方案进度总结
 
 更新时间：2026-04-01
 
@@ -30,7 +30,7 @@
 
 相关文件：
 
-- [types/workflow.types.ts](/e:/ai网站/XC-STUDIO/types/workflow.types.ts)
+- [types/workflow.types.ts](/e:/ai网站/Jacky-studio-dev/types/workflow.types.ts)
 
 ### 2. 方案结果会自动带出可编辑上字种子
 
@@ -51,7 +51,7 @@
 
 相关文件：
 
-- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/XC-STUDIO/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
+- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/Jacky-studio-dev/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
 
 ### 3. 已新增“可编辑文字层布局”共享 helper
 
@@ -65,7 +65,7 @@
 
 相关文件：
 
-- [utils/ecommerce-text-layer-plan.ts](/e:/ai网站/XC-STUDIO/utils/ecommerce-text-layer-plan.ts)
+- [utils/ecommerce-text-layer-plan.ts](/e:/ai网站/Jacky-studio-dev/utils/ecommerce-text-layer-plan.ts)
 
 ### 4. 已接入 `replace-generated-text` 擦字预处理链路
 
@@ -84,7 +84,7 @@
 
 相关文件：
 
-- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/XC-STUDIO/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
+- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/Jacky-studio-dev/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
 
 ### 5. “进画布”已升级为底图加可编辑文字层
 
@@ -102,7 +102,7 @@
 
 相关文件：
 
-- [pages/Workspace.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace.tsx)
+- [pages/Workspace.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace.tsx)
 
 ### 6. 缓存恢复已兼容新字段
 
@@ -114,7 +114,7 @@
 
 相关文件：
 
-- [pages/Workspace.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace.tsx)
+- [pages/Workspace.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace.tsx)
 
 ### 7. UI 事件签名已升级
 
@@ -127,10 +127,10 @@
 
 相关文件：
 
-- [pages/Workspace/components/workflow/EcommerceOneClickCards.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace/components/workflow/EcommerceOneClickCards.tsx)
-- [pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx)
-- [pages/Workspace/components/AgentMessage.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace/components/AgentMessage.tsx)
-- [pages/Workspace/components/AssistantSidebar.tsx](/e:/ai网站/XC-STUDIO/pages/Workspace/components/AssistantSidebar.tsx)
+- [pages/Workspace/components/workflow/EcommerceOneClickCards.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace/components/workflow/EcommerceOneClickCards.tsx)
+- [pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace/components/workflow/EcommerceWorkflowDrawer.tsx)
+- [pages/Workspace/components/AgentMessage.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace/components/AgentMessage.tsx)
+- [pages/Workspace/components/AssistantSidebar.tsx](/e:/ai网站/Jacky-studio-dev/pages/Workspace/components/AssistantSidebar.tsx)
 
 ### 8. 编译状态
 
@@ -169,8 +169,8 @@ npx tsc --noEmit --pretty false
 
 相关文件：
 
-- [utils/ecommerce-old-flow-template-library.ts](/e:/ai网站/XC-STUDIO/utils/ecommerce-old-flow-template-library.ts)
-- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/XC-STUDIO/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
+- [utils/ecommerce-old-flow-template-library.ts](/e:/ai网站/Jacky-studio-dev/utils/ecommerce-old-flow-template-library.ts)
+- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/Jacky-studio-dev/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
 
 ### 10. “带字直出 + 原位替换”链路的擦字/替字质量已做一轮提升
 
@@ -275,8 +275,8 @@ npx tsc --noEmit --pretty false
 
 相关文件：
 
-- [utils/ecommerce-text-layer-plan.ts](/e:/ai网站/XC-STUDIO/utils/ecommerce-text-layer-plan.ts)
-- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/XC-STUDIO/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
+- [utils/ecommerce-text-layer-plan.ts](/e:/ai网站/Jacky-studio-dev/utils/ecommerce-text-layer-plan.ts)
+- [pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts](/e:/ai网站/Jacky-studio-dev/pages/Workspace/controllers/useWorkspaceEcommerceWorkflow.ts)
 
 ## 当前实际效果
 
@@ -423,3 +423,4 @@ npx tsc --noEmit --pretty false
 - 排版是不是足够好看
 - 擦字是不是足够自然
 - 原位替换是不是足够像原图自带的字
+

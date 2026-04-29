@@ -1,6 +1,6 @@
 ﻿# Roo Code 项目协作配置
 
-本仓库已经提供项目级 Roo Code 配置，重点服务当前 XC-STUDIO 的真实协作方式：
+本仓库已经提供项目级 Roo Code 配置，重点服务当前 Jacky-studio-dev 的真实协作方式：
 
 - 需求先澄清，再设计，再实现，再调试
 - 电商工作流与 Workspace 链路优先
@@ -29,8 +29,8 @@
 - `XC 电商调试员` (`xc-ecom-debugger`)
   - 专门处理 provider、payload、schema、fallback、controller/store/UI 链路排障
 
-这些模式定义在项目根目录的 [`.roomodes`](/e:/ai网站/XC-STUDIO/.roomodes)。
-通用项目规则在 [`.roo/rules/00-project-context.md`](/e:/ai网站/XC-STUDIO/.roo/rules/00-project-context.md) 和 [`.roo/rules/10-working-agreements.md`](/e:/ai网站/XC-STUDIO/.roo/rules/10-working-agreements.md)。
+这些模式定义在项目根目录的 [`.roomodes`](/e:/ai网站/Jacky-studio-dev/.roomodes)。
+通用项目规则在 [`.roo/rules/00-project-context.md`](/e:/ai网站/Jacky-studio-dev/.roo/rules/00-project-context.md) 和 [`.roo/rules/10-working-agreements.md`](/e:/ai网站/Jacky-studio-dev/.roo/rules/10-working-agreements.md)。
 各模式专属规则位于 `.roo/rules-xc-*` 目录。
 
 ## 推荐使用顺序
@@ -116,13 +116,13 @@
 
 ## 交接模板
 
-已补充固定交接模板，位于 [docs/templates](/e:/ai网站/XC-STUDIO/docs/templates)：
+已补充固定交接模板，位于 [docs/templates](/e:/ai网站/Jacky-studio-dev/docs/templates)：
 
-- [roo-pm-to-architect.md](/e:/ai网站/XC-STUDIO/docs/templates/roo-pm-to-architect.md)
-- [roo-architect-to-coder.md](/e:/ai网站/XC-STUDIO/docs/templates/roo-architect-to-coder.md)
-- [roo-coder-to-debugger.md](/e:/ai网站/XC-STUDIO/docs/templates/roo-coder-to-debugger.md)
-- [roo-debugger-report.md](/e:/ai网站/XC-STUDIO/docs/templates/roo-debugger-report.md)
-- [roo-task-template.md](/e:/ai网站/XC-STUDIO/docs/templates/roo-task-template.md)
+- [roo-pm-to-architect.md](/e:/ai网站/Jacky-studio-dev/docs/templates/roo-pm-to-architect.md)
+- [roo-architect-to-coder.md](/e:/ai网站/Jacky-studio-dev/docs/templates/roo-architect-to-coder.md)
+- [roo-coder-to-debugger.md](/e:/ai网站/Jacky-studio-dev/docs/templates/roo-coder-to-debugger.md)
+- [roo-debugger-report.md](/e:/ai网站/Jacky-studio-dev/docs/templates/roo-debugger-report.md)
+- [roo-task-template.md](/e:/ai网站/Jacky-studio-dev/docs/templates/roo-task-template.md)
 
 推荐做法：
 
@@ -144,7 +144,7 @@
 
 1. 重新加载 VS Code 窗口
 2. 重新打开 Roo Code 面板
-3. 确认当前工作区就是本仓库根目录 `XC-STUDIO`
+3. 确认当前工作区就是本仓库根目录 `Jacky-studio-dev`
 
 ## 后续可继续补的配置
 
@@ -153,3 +153,4 @@
 1. 一个只做代码评审的 `xc-reviewer`
 2. 一个只做文档落盘和项目归档的 `xc-doc-writer`
 3. 按用户管理系统再分一套 `xc-usermgmt-architect` / `xc-usermgmt-debugger`
+

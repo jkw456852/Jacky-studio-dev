@@ -234,8 +234,8 @@ export interface EcommerceGeneratedResult {
 
 复用建议：
 
-1. 复用 [types/common.ts](E:/ai网站/XC-STUDIO/types/common.ts)
-2. 复用 [services/skills/export.skill.ts](E:/ai网站/XC-STUDIO/services/skills/export.skill.ts)
+1. 复用 [types/common.ts](E:/ai网站/Jacky-studio-dev/types/common.ts)
+2. 复用 [services/skills/export.skill.ts](E:/ai网站/Jacky-studio-dev/services/skills/export.skill.ts)
 
 ---
 
@@ -411,6 +411,7 @@ export interface EcommerceGeneratedResult {
 
 ## 9. 相关文档
 
-1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/XC-STUDIO/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
-2. 产品方案版：[docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md](E:/ai网站/XC-STUDIO/docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md)
+1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/Jacky-studio-dev/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
+2. 产品方案版：[docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md](E:/ai网站/Jacky-studio-dev/docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md)
 3. 开发排期版：`docs/product/ECOMMERCE_TEXT_OVERLAY_DELIVERY_SCHEDULE.md`
+

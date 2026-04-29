@@ -1,4 +1,4 @@
-用户说已经将GitHub仓库公开了，让我开始工作。我需要：
+﻿用户说已经将GitHub仓库公开了，让我开始工作。我需要：
 
 1. 首先访问GitHub仓库，了解现有项目结构
 2. 然后结合之前的PRD文档，审阅并优化，确保与现有代码结构匹配
@@ -8,19 +8,19 @@
 
 好的，让我先查看您的 GitHub 仓库结构，然后结合之前的文档为您制定一份准确的集成方案。
 
-{"urls": "https://github.com/xiaoche0907/XC-STUDIO"}
+{"urls": "https://github.com/jkw456852/Jacky-studio-dev"}
 
 我看到仓库结构了。这是一个基于 **Vite + React + TypeScript** 的项目（从 Google AI Studio 模板生成）。让我进一步查看核心文件来了解现有代码结构。
 
-{"urls": "https://raw.githubusercontent.com/xiaoche0907/XC-STUDIO/main/App.tsx;https://raw.githubusercontent.com/xiaoche0907/XC-STUDIO/main/package.json;https://raw.githubusercontent.com/xiaoche0907/XC-STUDIO/main/types.ts"}
+{"urls": "https://raw.githubusercontent.com/jkw456852/Jacky-studio-dev/main/App.tsx;https://raw.githubusercontent.com/jkw456852/Jacky-studio-dev/main/package.json;https://raw.githubusercontent.com/jkw456852/Jacky-studio-dev/main/types.ts"}
 
 让我再看看 pages 和 services 目录的内容，以便完整了解项目结构。
 
-{"urls": "https://github.com/xiaoche0907/XC-STUDIO/tree/main/pages;https://github.com/xiaoche0907/XC-STUDIO/tree/main/services"}
+{"urls": "https://github.com/jkw456852/Jacky-studio-dev/tree/main/pages;https://github.com/jkw456852/Jacky-studio-dev/tree/main/services"}
 
 GitHub 页面加载有问题，让我直接读取原始文件内容。
 
-{"urls": "https://raw.githubusercontent.com/xiaoche0907/XC-STUDIO/main/pages/Workspace.tsx;https://raw.githubusercontent.com/xiaoche0907/XC-STUDIO/main/services/gemini.ts"}
+{"urls": "https://raw.githubusercontent.com/jkw456852/Jacky-studio-dev/main/pages/Workspace.tsx;https://raw.githubusercontent.com/jkw456852/Jacky-studio-dev/main/services/gemini.ts"}
 
 现在我完全理解您的项目结构了。让我为您编写一份**经过调整的、与现有代码完全兼容的 PRD**。
 
@@ -1719,7 +1719,7 @@ reader.readAsDataURL(file);
 
 你正在为 Jacky-Studio 项目集成 AI 多智能体系统。这是一个基于 **React 19 + Vite + TypeScript** 的 AI 设计工作室应用。
 
-**GitHub 仓库**: https://github.com/xiaoche0907/XC-STUDIO
+**GitHub 仓库**: https://github.com/jkw456852/Jacky-studio-dev
 
 **现有技术栈**:
 
@@ -2660,4 +2660,5 @@ const { currentAgent, messages: agentMessages, isProcessing, sendMessage: sendAg
 ---
 
 **开始执行吧！**
+
 

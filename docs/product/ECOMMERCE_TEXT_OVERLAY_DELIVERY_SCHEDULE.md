@@ -487,6 +487,7 @@
 
 ## 8. 相关文档
 
-1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/XC-STUDIO/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
-2. 产品方案版：[docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md](E:/ai网站/XC-STUDIO/docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md)
-3. 技术架构版：[docs/architecture/ECOMMERCE_TEXT_OVERLAY_ARCHITECTURE.md](E:/ai网站/XC-STUDIO/docs/architecture/ECOMMERCE_TEXT_OVERLAY_ARCHITECTURE.md)
+1. 总览方案：[docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md](E:/ai网站/Jacky-studio-dev/docs/product/ECOMMERCE_TEXT_OVERLAY_SYSTEM_PLAN.md)
+2. 产品方案版：[docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md](E:/ai网站/Jacky-studio-dev/docs/product/ECOMMERCE_TEXT_OVERLAY_PRODUCT_PRD.md)
+3. 技术架构版：[docs/architecture/ECOMMERCE_TEXT_OVERLAY_ARCHITECTURE.md](E:/ai网站/Jacky-studio-dev/docs/architecture/ECOMMERCE_TEXT_OVERLAY_ARCHITECTURE.md)
+

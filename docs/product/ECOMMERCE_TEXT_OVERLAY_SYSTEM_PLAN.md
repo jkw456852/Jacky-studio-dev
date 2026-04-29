@@ -518,8 +518,8 @@ export interface EcommerceGeneratedResult {
 
 可复用基础：
 
-1. [types/common.ts](E:/ai网站/XC-STUDIO/types/common.ts)
-2. [services/skills/export.skill.ts](E:/ai网站/XC-STUDIO/services/skills/export.skill.ts)
+1. [types/common.ts](E:/ai网站/Jacky-studio-dev/types/common.ts)
+2. [services/skills/export.skill.ts](E:/ai网站/Jacky-studio-dev/services/skills/export.skill.ts)
 
 ---
 
@@ -2391,3 +2391,4 @@ type EcommerceGenerationMetaExtension = {
 8. `EcommerceOneClickSessionState.overlayPanelOpen`
 
 这 8 个字段就已经足够把“详情页后合成系统”的骨架先搭起来。
+
