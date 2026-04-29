@@ -104,6 +104,50 @@ const buildSingleUnit = (
   totalPages: 1,
 });
 
+const buildRuleFallbackPlannedTask = (args: {
+  input: PlanVisualTaskInput;
+  modelConfig: VisualPlannerModelConfig;
+  reason: string;
+}): PlannedVisualTask => {
+  const aspectRatio =
+    String(args.input.currentAspectRatio || "").trim() || "1:1";
+  const taskPlan: VisualTaskPlan = {
+    mode: "single",
+    userGoal: args.input.prompt,
+    intent: "unknown",
+    reasoningSummary: `Rule fallback planner engaged: ${args.reason}`,
+    toolChain: ["rule-planner", "compose", "generate"],
+    planningBrief: {
+      requestType: "single-image",
+      deliverableForm: `${Math.max(1, args.input.requestedImageCount || 1)} image`,
+      aspectRatioStrategy: aspectRatio,
+      researchFocus: [],
+      researchDecision: {
+        shouldResearch: false,
+        mode: "none",
+        reason: "Planner model unavailable or incomplete; continue with local rule planner.",
+        topics: [],
+        searchQueries: [],
+      },
+      modelFitNotes: [
+        `planner-model=${args.modelConfig.label || args.modelConfig.modelId}`,
+      ],
+      promptDirectives: [
+        "Preserve the user's latest prompt as the main directive.",
+        "Keep all available references in the execution chain.",
+      ],
+      risks: [
+        "Planner model did not return a fully usable task plan, so the workflow continued with a simplified fallback.",
+      ],
+    },
+  };
+
+  return {
+    taskPlan,
+    units: normalizeTaskPlanToUnits(args.input, taskPlan),
+  };
+};
+
 const normalizeTaskPlanToUnits = (
   input: PlanVisualTaskInput,
   taskPlan: VisualTaskPlan,
@@ -134,6 +178,12 @@ export const planVisualTaskWithModel = async (
   modelConfig?: VisualPlannerModelConfig | null,
   options?: {
     onThought?: VisualPlanningThoughtHandler;
+    requestId?: string;
+    onQueueEvent?: (event: {
+      phase: "waiting" | "running";
+      queueKey: string;
+      waitMs: number;
+    }) => void;
   },
 ): Promise<PlannedVisualTask> => {
   if (!modelConfig?.modelId) {
@@ -147,12 +197,16 @@ export const planVisualTaskWithModel = async (
     modelId: modelConfig.modelId,
     providerId: modelConfig.providerId,
     onThought: options?.onThought,
+    requestId: options?.requestId,
+    onQueueEvent: options?.onQueueEvent,
   });
 
   if (!patch) {
-    throw new Error(
-      `Visual task planning failed with model ${modelConfig.label || modelConfig.modelId}. The generation was stopped instead of falling back to a rule planner.`,
-    );
+    return buildRuleFallbackPlannedTask({
+      input,
+      modelConfig,
+      reason: "model patch missing after planner/repair",
+    });
   }
 
   if (!patch.mode || !patch.intent || !patch.reasoningSummary || !patch.toolChain?.length) {
@@ -167,7 +221,11 @@ export const planVisualTaskWithModel = async (
         ? patch.rawResponseText.slice(0, 800)
         : null,
     });
-    throw new Error(`Visual task planner returned an incomplete plan. ${patchPreview}`);
+    return buildRuleFallbackPlannedTask({
+      input,
+      modelConfig,
+      reason: `incomplete plan ${patchPreview}`,
+    });
   }
 
   if (patch.mode === "set" && (!patch.pages || patch.pages.length === 0)) {
@@ -181,7 +239,11 @@ export const planVisualTaskWithModel = async (
         ? patch.rawResponseText.slice(0, 800)
         : null,
     });
-    throw new Error(`Visual task planner selected set mode without pages. ${patchPreview}`);
+    return buildRuleFallbackPlannedTask({
+      input,
+      modelConfig,
+      reason: `set mode without pages ${patchPreview}`,
+    });
   }
 
   const taskPlan: VisualTaskPlan = {

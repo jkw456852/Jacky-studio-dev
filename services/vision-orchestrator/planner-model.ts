@@ -1633,8 +1633,14 @@ export const generateVisualTaskPlanModelPatch = async (args: {
   modelId: string;
   providerId?: string | null;
   onThought?: VisualPlanningThoughtHandler;
+  requestId?: string;
+  onQueueEvent?: (event: {
+    phase: "waiting" | "running";
+    queueKey: string;
+    waitMs: number;
+  }) => void;
 }): Promise<VisualTaskPlanModelPatch | null> => {
-  const { input, modelId, providerId, onThought } = args;
+  const { input, modelId, providerId, onThought, requestId, onQueueEvent } = args;
   const { parts: referenceParts, diagnostics } = await buildReferenceParts(
     input.referenceImages,
   );
@@ -1658,11 +1664,13 @@ export const generateVisualTaskPlanModelPatch = async (args: {
       queueKey: "visualTaskPlan",
       minIntervalMs: 400,
       onReasoningDelta: streamingThoughtBridge.onReasoningDelta,
+      onQueueEvent,
       requestTuning: {
         timeoutMs: 45000,
         retries: 1,
         baseDelayMs: 800,
         maxDelayMs: 3000,
+        requestFingerprint: requestId,
       },
     });
 
@@ -1716,11 +1724,13 @@ export const generateVisualTaskPlanModelPatch = async (args: {
       queueKey: "visualTaskPlan",
       minIntervalMs: 400,
       onReasoningDelta: streamingThoughtBridge.onReasoningDelta,
+      onQueueEvent,
       requestTuning: {
         timeoutMs: 30000,
         retries: 0,
         baseDelayMs: 500,
         maxDelayMs: 1500,
+        requestFingerprint: requestId,
       },
     });
 

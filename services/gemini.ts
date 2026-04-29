@@ -588,6 +588,7 @@ const fetchOpenAIJsonWithFallback = async <T>(
                     maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    requestFingerprint: requestTuning?.requestFingerprint,
                 });
             } catch (error) {
                 const isTimeoutError = isTimeoutException(error);
@@ -613,11 +614,11 @@ const fetchOpenAIJsonWithFallback = async <T>(
                 if (isTimeoutError) {
                     if (keyIndex < apiKeys.length - 1) {
                         console.warn(
-                            `[${contextTag}] Timeout, switching to next api key ${keyIndex + 2}/${apiKeys.length}`,
+                            `[${contextTag}] Timeout, switching to next api key ${keyIndex + 2}/${apiKeys.length}${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
                         );
                     } else {
                         console.warn(
-                            `[${contextTag}] Timeout on final api key for auth=${authMode}, will continue with next auth mode if available`,
+                            `[${contextTag}] Timeout on final api key for auth=${authMode}, will continue with next auth mode if available${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
                         );
                     }
                     continue;
@@ -745,6 +746,7 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
                     maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    requestFingerprint: requestTuning?.requestFingerprint,
                 });
             } catch (error) {
                 const isTimeoutError = isTimeoutException(error);
@@ -870,6 +872,7 @@ const fetchOpenAIFormWithFallback = async <T>(
                     maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    requestFingerprint: requestTuning?.requestFingerprint,
                 });
             } catch (error) {
                 if (isTimeoutException(error)) {
@@ -968,6 +971,11 @@ type UnifiedJsonGenerationOptions = {
     minIntervalMs?: number;
     onTextDelta?: (delta: string) => void;
     onReasoningDelta?: (delta: string) => void;
+    onQueueEvent?: (event: {
+        phase: 'waiting' | 'running';
+        queueKey: string;
+        waitMs: number;
+    }) => void;
     requestTuning?: {
         timeoutMs?: number;
         idleTimeoutMs?: number;
@@ -975,6 +983,7 @@ type UnifiedJsonGenerationOptions = {
         baseDelayMs?: number;
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
+        requestFingerprint?: string;
     };
 };
 
@@ -996,6 +1005,11 @@ const runQueuedOpenAIRequest = async <T>(
     minIntervalMs: number,
     task: () => Promise<T>,
     operationLabel?: string,
+    onQueueEvent?: (event: {
+        phase: 'waiting' | 'running';
+        queueKey: string;
+        waitMs: number;
+    }) => void,
 ): Promise<T> => {
     const previous = openAIRequestQueueTail.get(queueKey) || Promise.resolve();
     let release!: () => void;
@@ -1014,6 +1028,11 @@ const runQueuedOpenAIRequest = async <T>(
             (openAIRequestQueueNextAt.get(queueKey) || 0) - Date.now(),
             getSharedOpenAIQueueNextAt(queueKey) - Date.now(),
         );
+        onQueueEvent?.({
+            phase: 'waiting',
+            queueKey,
+            waitMs,
+        });
         if (operationLabel && isVerboseOpenAIOperation(operationLabel)) {
             console.info(`[${operationLabel}] queue gate`, {
                 queueKey,
@@ -1027,6 +1046,11 @@ const runQueuedOpenAIRequest = async <T>(
         const reservedNextAt = Date.now() + Math.max(0, minIntervalMs);
         openAIRequestQueueNextAt.set(queueKey, reservedNextAt);
         setSharedOpenAIQueueNextAt(queueKey, reservedNextAt);
+        onQueueEvent?.({
+            phase: 'running',
+            queueKey,
+            waitMs,
+        });
         const result = await task();
         return result;
     } finally {
@@ -1112,6 +1136,7 @@ export const generateJsonResponse = async (
         minIntervalMs = 0,
         onTextDelta,
         onReasoningDelta,
+        onQueueEvent,
         requestTuning,
     } = options;
 
@@ -1326,6 +1351,7 @@ export const generateJsonResponse = async (
             return executeOpenAIRequest();
         },
         operation,
+        onQueueEvent,
     );
 
     if (isVerboseOpenAIOperation(operation)) {

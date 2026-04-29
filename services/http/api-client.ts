@@ -9,6 +9,7 @@ type FetchResilienceOptions = RetryOptions & {
   timeoutMs?: number;
   idleTimeoutMs?: number;
   operation?: string;
+  requestFingerprint?: string;
 };
 
 const DEFAULT_RETRYABLE_STATUSES = [408, 409, 425, 429, 500, 502, 503, 504];
@@ -130,6 +131,7 @@ export async function fetchWithResilience(
     maxDelayMs = 5000,
     retryOnStatuses = DEFAULT_RETRYABLE_STATUSES,
     operation = 'http.request',
+    requestFingerprint,
   } = options;
 
   let lastError: unknown;
@@ -213,7 +215,11 @@ export async function fetchWithResilience(
       const isTimeoutStatus = isTimeoutStatusError(response.status);
       const delay = computeBackoff(attempt, baseDelayMs, maxDelayMs, isRateLimit || isTimeoutStatus);
       const statusMsg = isRateLimit ? '(rate limited)' : isTimeoutStatus ? '(upstream timeout)' : '';
-      console.warn(`[${operation}] retrying status=${response.status} ${statusMsg}, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms`);
+      console.warn(
+        `[${operation}] retrying status=${response.status} ${statusMsg}, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms${
+          requestFingerprint ? `, requestId=${requestFingerprint}` : ''
+        }`,
+      );
       await sleep(delay);
     } catch (error) {
       if (totalTimeoutId) clearTimeout(totalTimeoutId);
@@ -243,7 +249,11 @@ export async function fetchWithResilience(
           }
 
           const delay = computeBackoff(attempt, baseDelayMs, maxDelayMs);
-          console.warn(`[${operation}] retrying ${abortSource}, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms`);
+          console.warn(
+            `[${operation}] retrying ${abortSource}, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms${
+              requestFingerprint ? `, requestId=${requestFingerprint}` : ''
+            }`,
+          );
           await sleep(delay);
           continue;
         }
@@ -269,7 +279,11 @@ export async function fetchWithResilience(
       }
 
       const delay = computeBackoff(attempt, baseDelayMs, maxDelayMs);
-      console.warn(`[${operation}] retrying network error, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms`);
+      console.warn(
+        `[${operation}] retrying network error, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms${
+          requestFingerprint ? `, requestId=${requestFingerprint}` : ''
+        }`,
+      );
       await sleep(delay);
     }
   }

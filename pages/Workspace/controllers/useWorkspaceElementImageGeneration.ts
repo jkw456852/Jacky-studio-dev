@@ -945,6 +945,7 @@ export function useWorkspaceElementImageGeneration(
         .slice(2, 8)}`;
       let plannerStartedAt = 0;
       let taskPlannerStartedAt = 0;
+      let taskPlannerRunCount = 0;
       let shouldTrackSourceElementState = false;
       let targetElementIds: string[] = [];
       try {
@@ -1098,8 +1099,12 @@ export function useWorkspaceElementImageGeneration(
         let currentConsistencyContext = getDesignConsistencyContext();
 
         const runTaskPlanner = async () => {
+          taskPlannerRunCount += 1;
+          const taskPlannerRun = taskPlannerRunCount;
           taskPlannerStartedAt = Date.now();
           console.info("[workspace.imggen] task-planner.start", {
+            requestId: traceRequestId,
+            run: taskPlannerRun,
             elementId,
             sourceElementId: sourceElement.id,
             requestedImageCount,
@@ -1132,11 +1137,35 @@ export function useWorkspaceElementImageGeneration(
             },
             plannerModelConfig,
             {
+              requestId: traceRequestId,
               onThought: (event) => {
                 planningLogStreamer.push({
                   phase: "planning",
                   title: event.title || "正在思考",
                   line: event.message,
+                });
+              },
+              onQueueEvent: (event) => {
+                if (event.phase === "waiting") {
+                  console.info("[workspace.imggen] task-planner.queue", {
+                    requestId: traceRequestId,
+                    run: taskPlannerRun,
+                    elementId,
+                    sourceElementId: sourceElement.id,
+                    queueKey: event.queueKey,
+                    waitMs: event.waitMs,
+                    status: event.waitMs > 0 ? "queued" : "ready",
+                  });
+                  return;
+                }
+
+                console.info("[workspace.imggen] task-planner.dispatch", {
+                  requestId: traceRequestId,
+                  run: taskPlannerRun,
+                  elementId,
+                  sourceElementId: sourceElement.id,
+                  queueKey: event.queueKey,
+                  queueWaitMs: event.waitMs,
                 });
               },
             },
@@ -1303,11 +1332,15 @@ export function useWorkspaceElementImageGeneration(
         }
 
         console.info("[workspace.imggen] task-planner.success", {
+          requestId: traceRequestId,
+          run: taskPlannerRunCount,
           elementId,
           sourceElementId: sourceElement.id,
           elapsedMs: Date.now() - taskPlannerStartedAt,
           taskMode: taskPlan.mode,
           taskIntent: taskPlan.intent,
+          plannerSource:
+            taskPlan.toolChain?.[0] === "rule-planner" ? "rule-fallback" : "model",
           taskPageCount: taskUnits.length,
           taskToolChain: taskPlan.toolChain,
           taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
@@ -1369,6 +1402,7 @@ export function useWorkspaceElementImageGeneration(
 
         plannerStartedAt = Date.now();
         console.info("[workspace.imggen] planner.start", {
+          requestId: traceRequestId,
           elementId,
           sourceElementId: sourceElement.id,
           imageCount,
@@ -1454,6 +1488,7 @@ export function useWorkspaceElementImageGeneration(
                 } = plannedGeneration;
 
                 console.info("[workspace.imggen] planner.success", {
+                  requestId: traceRequestId,
                   elementId,
                   sourceElementId: sourceElement.id,
                   elapsedMs: Date.now() - plannerStartedAt,
@@ -1831,6 +1866,7 @@ export function useWorkspaceElementImageGeneration(
           },
         } = plannedGeneration;
         console.info("[workspace.imggen] planner.success", {
+          requestId: traceRequestId,
           elementId,
           sourceElementId: sourceElement.id,
           elapsedMs: Date.now() - plannerStartedAt,
@@ -2326,6 +2362,8 @@ export function useWorkspaceElementImageGeneration(
         const reason = formatGenerationError(error);
         if (taskPlannerStartedAt > 0 && plannerStartedAt === 0) {
           console.error("[workspace.imggen] task-planner.failed", {
+            requestId: traceRequestId,
+            run: taskPlannerRunCount,
             elementId,
             elapsedMs: Date.now() - taskPlannerStartedAt,
             error: reason,
@@ -2333,12 +2371,14 @@ export function useWorkspaceElementImageGeneration(
         }
         if (plannerStartedAt > 0) {
           console.error("[workspace.imggen] planner.failed", {
+            requestId: traceRequestId,
             elementId,
             elapsedMs: Date.now() - plannerStartedAt,
             error: reason,
           });
         }
         console.error("[workspace.imggen] request.failed", {
+          requestId: traceRequestId,
           elementId,
           elapsedMs: Date.now() - requestStartedAt,
           error: reason,
