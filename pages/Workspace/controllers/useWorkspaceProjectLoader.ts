@@ -758,13 +758,9 @@ const sanitizeLoadedElement = async (
         : undefined;
   }
 
-  if (
-    nextElement.originalUrl &&
-    DATA_URL_PREFIX.test(nextElement.originalUrl) &&
-    estimateDataUrlBytes(nextElement.originalUrl) > LOADED_IMAGE_DATA_URL_MAX_BYTES
-  ) {
-    nextElement.originalUrl = undefined;
-  }
+  // Keep the recovered original source even when it is a large data URL.
+  // The render-facing `url/proxyUrl` chain is already shrunk separately; dropping
+  // `originalUrl` here would cause preview/download to fall back to the proxy.
 
   if (nextElement.genRefImage) {
     nextElement.genRefImage =

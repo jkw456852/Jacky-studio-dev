@@ -189,6 +189,11 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const response = await fetch(dataUrl);
+  return response.blob();
+}
+
 async function getSnapshot(memoryKey: string): Promise<TopicSnapshot | null> {
   const db = await openWorkspaceDB();
   return new Promise((resolve, reject) => {
@@ -370,16 +375,27 @@ export async function saveTopicAsset(
   const assetId = makeId("asset");
   const memoryKey = topicId;
   const legacyTopicId = parseMemoryKey(memoryKey)?.conversationId || topicId;
-  const normalizedUrl =
+  let normalizedUrl =
     data.url && !BLOB_URL_PATTERN.test(data.url) ? data.url : undefined;
+  let normalizedBlob = data.blob;
+
+  if (!normalizedBlob && normalizedUrl && /^data:/i.test(normalizedUrl)) {
+    try {
+      normalizedBlob = await dataUrlToBlob(normalizedUrl);
+      normalizedUrl = undefined;
+    } catch {
+      // Fall through and keep the original data URL string if blob conversion fails.
+    }
+  }
   const asset: TopicAsset = {
     assetId,
     memoryKey,
     topicId: legacyTopicId,
     role,
-    mime: data.mime || data.blob?.type || "application/octet-stream",
+    mime:
+      data.mime || normalizedBlob?.type || "application/octet-stream",
     url: normalizedUrl,
-    blob: data.blob,
+    blob: normalizedBlob,
     createdAt: Date.now(),
   };
 
