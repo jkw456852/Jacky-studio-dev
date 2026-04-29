@@ -725,6 +725,30 @@ const buildTaskPlanRepairPrompt = (rawResponseText: string) =>
     rawResponseText,
   ].join("\n");
 
+const buildTaskPlanAgentFallbackPrompt = (args: {
+  rawResponseText: string;
+  partialPatch: VisualTaskPlanModelPatch | null;
+}) =>
+  [
+    "The previous visual task planner result was incomplete.",
+    "Act as the main planning agent and regenerate a complete visual task plan JSON from the original context in this conversation.",
+    "Do not preserve the previous wording if it was weak. Re-think the task and return a complete object.",
+    "",
+    "Rules:",
+    "- Return all required fields: mode, intent, reasoningSummary, toolChain, planningBrief, roleOverlay.",
+    "- planningBrief must include: requestType, deliverableForm, aspectRatioStrategy, researchFocus, researchDecision, modelFitNotes, promptDirectives, risks.",
+    "- roleOverlay must describe a temporary task-specific main-brain setup for this exact task, not a generic fixed team template.",
+    "- roles should only include roles that are truly necessary for this task. If one main-brain role is enough, keep it to one.",
+    "- Infer missing fields intelligently from the original task, references, ratio, model context, and the partial result below.",
+    "- Prefer concise Chinese when the original task is Chinese.",
+    "",
+    "[Previous Raw Response]",
+    args.rawResponseText || "{}",
+    "",
+    "[Partial Parsed Patch]",
+    JSON.stringify(args.partialPatch || {}, null, 2),
+  ].join("\n");
+
 const emitPlanningThought = (
   onThought: VisualPlanningThoughtHandler | undefined,
   title: string,
@@ -905,105 +929,6 @@ const inferResearchDecisionFromInput = (
   };
 };
 
-const buildLocalPlanningBrief = (
-  input: PlanVisualTaskInput,
-  patch: VisualTaskPlanModelPatch,
-  mode: VisualExecutionMode,
-): VisualPlanningBrief => {
-  const prompt = String(input.prompt || "").trim();
-  const ratio = String(input.currentAspectRatio || "").trim() || "1:1";
-  const deliverableForm =
-    mode === "set"
-      ? `${Math.max(2, Number(input.requestedImageCount || 4))} 页成组视觉输出`
-      : "1 张单图视觉输出";
-  return {
-    requestType:
-      patch.intent ||
-      (mode === "set" ? "visual_set_generation" : "single_visual_generation"),
-    deliverableForm,
-    aspectRatioStrategy:
-      mode === "set"
-        ? `优先按页面职责决定比例，当前可先以 ${ratio} 作为默认起点。`
-        : `保持 ${ratio} 作为当前单图输出比例。`,
-    researchFocus:
-      mode === "set"
-        ? ["交付物结构", "页面分工", "比例策略", "模型适配"]
-        : ["主体约束", "参考图分工", "模型适配", "输出真实性"],
-    researchDecision: inferResearchDecisionFromInput(input, mode),
-    modelFitNotes: [
-      input.selectedGenerationModel
-        ? `${input.selectedGenerationModel} 需要避免信息堆叠，优先保证主体关系和画面职责清晰。`
-        : "需要避免信息堆叠，优先保证主体关系和画面职责清晰。",
-    ],
-    promptDirectives:
-      mode === "set"
-        ? ["每张图只承担一个核心页面职责，不要做拼贴总览图。"]
-        : ["直接围绕当前目标输出单张完成图，不额外展开成套版式。"],
-    risks: [
-      mode === "set"
-        ? "页面目标不够分离时，容易退化成重复版式。"
-        : "如果参考职责不清，模型可能把多张参考图混成错误主体。",
-    ],
-  };
-};
-
-const buildLocalRoleOverlay = (
-  input: PlanVisualTaskInput,
-  mode: VisualExecutionMode,
-): VisualRoleOverlay => ({
-  summary:
-    mode === "set"
-      ? "先按视觉策略师拆交付结构，再按页面导演分配每张图职责，最后按 prompt 工程师落到执行。"
-      : "先按修图策略师锁定主体与约束，再按 prompt 工程师把单图目标压实。",
-  mindset:
-    mode === "set"
-      ? "先判断交付物，再判断页面职责，再写 prompt。"
-      : "先锁定主体关系与不可漂移项，再执行单图生成。",
-  planningPolicy:
-    mode === "set"
-      ? [
-          "先判断这是不是页面系统，而不是直接改写关键词。",
-          "每张图只做一个主要沟通任务。",
-          "优先压制拼贴感和重复版式。",
-        ]
-      : [
-          "优先锁定主体、材质、角度和构图约束。",
-          "避免把多个参考职责混成一张不稳定的图。",
-          "生成前先明确什么能改、什么不能改。",
-        ],
-  executionDirectives:
-    mode === "set"
-      ? [
-          "输出页级 prompt，不要把整套内容塞进单张图。",
-          "为后续生图保留干净的主体区和信息层级。",
-        ]
-      : [
-          "直接围绕目标生成单张结果。",
-          "保持参考主体关系稳定，不要过度自由发挥。",
-        ],
-  roles: [
-    {
-      role: mode === "set" ? "Visual Strategist" : "Visual Editor",
-      mission:
-        mode === "set" ? "判断交付结构和页面职责。" : "判断主体约束和单图改动边界。",
-      focus:
-        mode === "set"
-          ? ["交付结构", "页面分工", "比例策略"]
-          : ["主体锁定", "构图约束", "材质一致性"],
-      outputContract:
-        mode === "set"
-          ? ["给出清晰的页面拆分", "避免重复页"]
-          : ["给出稳定的单图执行方向", "避免主体漂移"],
-    },
-    {
-      role: "Prompt Engineer",
-      mission: "把规划结果压缩成更可执行的 prompt 约束。",
-      focus: ["模型适配", "执行约束", "失败风险"],
-      outputContract: ["输出清晰的执行指令", "减少套版和误解"],
-    },
-  ],
-});
-
 const buildLocalSetPages = (
   input: PlanVisualTaskInput,
   count: number,
@@ -1032,6 +957,93 @@ const buildLocalSetPages = (
   }).slice(0, 12);
 };
 
+const buildMainBrainFallbackPlanningBrief = (
+  input: PlanVisualTaskInput,
+  patch: VisualTaskPlanModelPatch,
+  mode: VisualExecutionMode,
+): VisualPlanningBrief => {
+  const ratio = String(input.currentAspectRatio || "").trim() || "1:1";
+  const count = Math.max(
+    1,
+    Number(input.requestedImageCount || (mode === "set" ? 4 : 1)),
+  );
+  return {
+    requestType:
+      patch.intent ||
+      (mode === "set" ? "visual_set_generation" : "single_visual_generation"),
+    deliverableForm:
+      mode === "set" ? `${count} 张成组视觉输出` : "1 张单图视觉输出",
+    aspectRatioStrategy:
+      mode === "set"
+        ? `先按页面职责决定比例，当前可先以 ${ratio} 作为默认起点。`
+        : `保持 ${ratio} 作为当前单图输出比例。`,
+    researchFocus:
+      mode === "set"
+        ? ["交付结构", "页面职责", "比例策略", "模型适配"]
+        : ["主体约束", "编辑边界", "模型适配", "输出真实性"],
+    researchDecision: inferResearchDecisionFromInput(input, mode),
+    modelFitNotes: [
+      input.selectedGenerationModel
+        ? `${input.selectedGenerationModel} 需要优先保证主体关系、画面职责和执行边界清晰。`
+        : "需要优先保证主体关系、画面职责和执行边界清晰。",
+    ],
+    promptDirectives:
+      mode === "set"
+        ? ["每张图只承担当前页面职责，不把整套内容混进单张图。"]
+        : ["只围绕当前目标输出单张结果，不额外展开成套版式。"],
+    risks: [
+      mode === "set"
+        ? "如果页面职责不够分离，容易退化成重复页面。"
+        : "如果主体边界不清，模型容易把多参考图混成错误主体。",
+    ],
+  };
+};
+
+const buildMainBrainFallbackRoleOverlay = (
+  mode: VisualExecutionMode,
+): VisualRoleOverlay => ({
+  summary:
+    mode === "set"
+      ? "主脑 agent 先判断整套交付结构，再按任务需要临时组织角色视角。"
+      : "主脑 agent 先锁定目标、主体和边界，再按任务需要临时组织角色视角。",
+  mindset:
+    mode === "set"
+      ? "先判断交付，再拆页面职责，最后再写执行 prompt。"
+      : "先明确什么不能漂移，再决定怎么生成。",
+  planningPolicy: [
+    "优先围绕真实任务目标组织思考，不把固定模块角色当成默认答案。",
+    "需要角色时由主脑 agent 按当前任务临时定义。",
+    "先明确约束和风险，再进入生成执行。",
+  ],
+  executionDirectives:
+    mode === "set"
+      ? [
+          "输出页级执行结果，不把整套内容硬塞进单张图。",
+          "保留清晰主体区和信息层级。",
+        ]
+      : [
+          "直接围绕当前目标输出单张结果。",
+          "保持主体关系稳定，避免自由发挥造成偏移。",
+        ],
+  roles: [
+    {
+      role: "Main Brain Agent",
+      mission:
+        mode === "set"
+          ? "统筹整套交付目标，并按任务现状临时决定需要哪些角色视角。"
+          : "统筹当前单图目标，并按任务现状临时决定需要哪些角色视角。",
+      focus:
+        mode === "set"
+          ? ["交付结构", "页面职责", "约束边界", "执行顺序"]
+          : ["主体一致性", "编辑边界", "执行约束", "风险控制"],
+      outputContract:
+        mode === "set"
+          ? ["给出稳定的整套执行方向", "只在必要时再展开临时角色分工"]
+          : ["给出稳定的单图执行方向", "只在必要时再展开临时角色分工"],
+    },
+  ],
+});
+
 const repairIncompleteTaskPlanPatchLocally = (args: {
   patch: VisualTaskPlanModelPatch | null;
   input: PlanVisualTaskInput;
@@ -1054,8 +1066,10 @@ const repairIncompleteTaskPlanPatchLocally = (args: {
         ? base.toolChain
         : ["classify", "plan", "compose", "generate"],
     planningBrief:
-      base.planningBrief || buildLocalPlanningBrief(args.input, base, mode),
-    roleOverlay: base.roleOverlay || buildLocalRoleOverlay(args.input, mode),
+      base.planningBrief ||
+      buildMainBrainFallbackPlanningBrief(args.input, base, mode),
+    roleOverlay:
+      base.roleOverlay || buildMainBrainFallbackRoleOverlay(mode),
     sharedStyleGuide:
       mode === "set"
         ? base.sharedStyleGuide || {
@@ -1687,24 +1701,59 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     if (hasCompleteTaskPlanPatch(normalized)) {
       return normalized;
     }
-    const locallyRepaired = repairIncompleteTaskPlanPatchLocally({
-      patch: normalized,
-      input,
+    emitPlanningThought(
+      onThought,
+      "正在智能补全规划",
+      "首轮返回字段不够完整，我会基于原始上下文和部分结果再做一轮智能补全。",
+    );
+    const agentFallbackResponse = await generateJsonResponse({
+      model: modelId,
+      providerId,
+      parts: [
+        ...referenceParts,
+        {
+          text: prompt,
+        },
+        {
+          text: buildTaskPlanAgentFallbackPrompt({
+            rawResponseText: response.text || "{}",
+            partialPatch: normalized,
+          }),
+        },
+      ],
+      temperature: 0.15,
+      responseSchema: VISUAL_TASK_PLAN_RESPONSE_SCHEMA,
+      operation: "visualTaskPlan.agentFallback",
+      queueKey: "visualTaskPlan",
+      minIntervalMs: 400,
+      onReasoningDelta: streamingThoughtBridge.onReasoningDelta,
+      onQueueEvent,
+      requestTuning: {
+        timeoutMs: 35000,
+        retries: 0,
+        baseDelayMs: 500,
+        maxDelayMs: 1800,
+        requestFingerprint: requestId,
+      },
     });
-    if (locallyRepaired) {
-      locallyRepaired.rawResponseText =
-        locallyRepaired.rawResponseText || response.text || "";
-      emitPlanningThought(
-        onThought,
-        "正在补全规划结构",
-        "首轮结果字段不够完整，但主判断已经足够，我已在本地补齐缺失结构并继续执行。",
-      );
-      buildTaskPlannerResultThoughts(locallyRepaired).forEach((line) => {
+
+    streamingThoughtBridge.flush();
+    emitPlanningThought(
+      onThought,
+      "正在校验智能补全结果",
+      "智能补全结果已返回，正在重新校验字段完整性。",
+    );
+    const agentFallbackParsed = JSON.parse(agentFallbackResponse.text || "{}");
+    const agentFallback = normalizeTaskPlanPatch(agentFallbackParsed);
+    if (agentFallback) {
+      agentFallback.rawResponseText = agentFallbackResponse.text || "";
+      buildTaskPlannerResultThoughts(agentFallback).forEach((line) => {
         emitPlanningThought(onThought, "正在展开思路", line);
       });
-      return locallyRepaired;
     }
-
+    if (hasCompleteTaskPlanPatch(agentFallback)) {
+      return agentFallback;
+    }
     emitPlanningThought(
       onThought,
       "正在修复规划结果",
@@ -1715,7 +1764,9 @@ export const generateVisualTaskPlanModelPatch = async (args: {
       providerId,
       parts: [
         {
-          text: buildTaskPlanRepairPrompt(response.text || "{}"),
+          text: buildTaskPlanRepairPrompt(
+            agentFallbackResponse.text || response.text || "{}",
+          ),
         },
       ],
       temperature: 0.1,
@@ -1747,7 +1798,7 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     return (
       repaired ||
       repairIncompleteTaskPlanPatchLocally({
-        patch: normalized,
+        patch: agentFallback || normalized,
         input,
       })
     );

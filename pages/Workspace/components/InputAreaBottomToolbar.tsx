@@ -986,7 +986,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                     />
                   </button>
                   {showAgentRolePicker && (
-                    <div className="absolute bottom-full left-0 z-[80] mb-3 w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.35)]">
+                    <div className="absolute bottom-full right-0 z-[80] mb-3 w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.35)]">
                       <div className="px-3 pb-3 pt-2">
                         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                           角色选择

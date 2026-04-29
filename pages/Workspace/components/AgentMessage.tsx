@@ -23,6 +23,7 @@ import {
     deriveAgentMessageContent,
     deriveAgentMessageImageCards,
     deriveAgentMessageOneClickView,
+    deriveAgentMessagePlanningBlock,
     deriveProposalPrompt,
 } from './AgentMessage.helpers';
 
@@ -149,6 +150,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         onEcommerceInsertToCanvas,
     } = ecommerceActions || {};
     const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
+    const [isPlanningExpanded, setIsPlanningExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
@@ -172,6 +174,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         () => deriveAgentMessageOneClickView(cleanText, message),
         [cleanText, message],
     );
+    const planningBlock = useMemo(
+        () => deriveAgentMessagePlanningBlock(cleanText),
+        [cleanText],
+    );
+    const visibleText = planningBlock?.visibleText || cleanText;
 
     const isWorkflowUi = message.kind === 'workflow_ui' && !!message.workflowUi;
     const workflowType = message.workflowUi?.type || '';
@@ -201,9 +208,53 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 )}
 
                 {/* 1. 引导文字 */}
-                {cleanText && oneClickView.sections.length === 0 && (
+                {visibleText && oneClickView.sections.length === 0 && (
                     <div className={`agent-msg-text px-1 break-words ${message.error ? 'text-red-600 bg-red-50 p-2.5 rounded-xl mt-1 border border-red-100' : ''}`}>
-                        <MarkdownRenderer text={cleanText} className="text-[13px]" />
+                        <MarkdownRenderer text={visibleText} className="text-[13px]" />
+                    </div>
+                )}
+
+                {planningBlock && oneClickView.sections.length === 0 && (
+                    <div className="px-1">
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/90">
+                            <button
+                                type="button"
+                                onClick={() => setIsPlanningExpanded((value) => !value)}
+                                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-100/90"
+                            >
+                                <div className="min-w-0">
+                                    <div className="text-[12px] font-semibold text-slate-700">
+                                        内部编排详情
+                                    </div>
+                                    {planningBlock.previewLines.length > 0 && (
+                                        <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                                            {planningBlock.previewLines.join('  ·  ')}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-0.5 shrink-0 text-slate-500">
+                                    {isPlanningExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </div>
+                            </button>
+                            <AnimatePresence initial={false}>
+                                {isPlanningExpanded && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                                        className="border-t border-slate-200"
+                                    >
+                                        <div className="px-3 py-3">
+                                            <MarkdownRenderer
+                                                text={planningBlock.hiddenText}
+                                                className="text-[12px]"
+                                            />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
                 )}
 

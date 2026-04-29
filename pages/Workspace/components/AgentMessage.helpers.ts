@@ -26,11 +26,44 @@ export type AgentMessageOneClickView = {
   sections: Array<{ title: string; body: string }>;
 };
 
+export type AgentMessagePlanningBlock = {
+  visibleText: string;
+  hiddenText: string;
+  previewLines: string[];
+};
+
 const normalizeEscapedNewlines = (value: string): string =>
   (value || "")
     .replace(/\r\n/g, "\n")
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n");
+
+const VISUAL_ORCHESTRATION_MARKER = "[Visual Orchestration Plan]";
+
+export const deriveAgentMessagePlanningBlock = (
+  cleanText: string,
+): AgentMessagePlanningBlock | null => {
+  const normalized = normalizeEscapedNewlines(cleanText).trim();
+  const markerIndex = normalized.indexOf(VISUAL_ORCHESTRATION_MARKER);
+  if (markerIndex < 0) return null;
+
+  const visibleText = normalized.slice(0, markerIndex).trim();
+  const hiddenText = normalized.slice(markerIndex).trim();
+  if (!hiddenText) return null;
+
+  const previewLines = hiddenText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^\[.*\]$/.test(line))
+    .slice(0, 3);
+
+  return {
+    visibleText,
+    hiddenText,
+    previewLines,
+  };
+};
 
 export const deriveAgentMessageContent = (
   message: ChatMessage,

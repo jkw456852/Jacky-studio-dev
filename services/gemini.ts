@@ -561,9 +561,11 @@ const fetchOpenAIJsonWithFallback = async <T>(
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
             const headers = buildOpenAIHeaders(authMode, apiKey);
             const requestStartedAt = Date.now();
-            console.log(
-                `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
-            );
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.log(
+                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
+                );
+            }
             if (isVerboseOpenAIOperation(contextTag)) {
                 console.info(`[${contextTag}] transport config`, {
                     authMode,
@@ -729,9 +731,11 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
             const headers = buildOpenAIHeaders(authMode, apiKey);
             const requestStartedAt = Date.now();
-            console.log(
-                `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
-            );
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.log(
+                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
+                );
+            }
 
             let res: Response;
             try {
@@ -844,9 +848,11 @@ const fetchOpenAIFormWithFallback = async <T>(
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
             const headers = buildOpenAIFormHeaders(authMode, apiKey);
             const requestStartedAt = Date.now();
-            console.log(
-                `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
-            );
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.log(
+                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
+                );
+            }
             if (isVerboseOpenAIOperation(contextTag)) {
                 console.info(`[${contextTag}] transport config`, {
                     authMode,
@@ -1383,7 +1389,6 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
     if (isMemeFast) {
         try {
             const pricingUrl = `${rootUrl}/api/pricing_new`;
-            console.log(`[fetchAvailableModels] [MemeFast] Fetching pricing metadata: ${pricingUrl}`);
             const res = await fetchWithResilience(pricingUrl, {}, { operation: 'fetchAvailableModels.memeFastPricing', retries: 1 });
             if (res.ok) {
                 const json = await res.json();
@@ -1430,7 +1435,6 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
 
                 let keySucceeded = false;
                 for (const plan of plans) {
-                    console.log(`[fetchAvailableModels] [${provider}] Key #${idx + 1} checking: ${plan.url}`);
                     const res = await fetchWithResilience(plan.url, { headers: plan.headers }, { operation: 'fetchAvailableModels.modelList', retries: 0 });
 
                     if (res.ok) {
@@ -1440,7 +1444,6 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
                             const id = typeof m === 'string' ? m : (m.id || m.name || m.model);
                             if (id) allModels.add(id);
                         });
-                        console.log(`[fetchAvailableModels] [${provider}] Key #${idx + 1} found ${list.length} items.`);
                         keySucceeded = true;
                         break;
                     }
@@ -1461,7 +1464,6 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
     );
 
     const cleaned = Array.from(allModels).filter(Boolean);
-    console.log(`[fetchAvailableModels] [${provider}] Total unique models found: ${cleaned.length}`);
     return cleaned;
 };
 
@@ -3033,49 +3035,53 @@ const requestOpenAICompatibleImage = async (opts: {
                 : 'single-file'
             : 'json';
 
-    console.info(`[${opts.contextTag}] request summary`, {
-        route: effectiveRoute,
-        defaultRoute: route,
-        model: opts.model,
-        requestMode,
-        reverseCompat: requestMode === 'reverse-compat',
-        disableTransportRetries: opts.disableTransportRetries === true,
-        aspectRatio: opts.aspectRatio,
-        imageSize: opts.imageSize || '1K',
-        imageQuality: opts.imageQuality || 'medium',
-        size,
-        providerId: provider.id || opts.providerId || null,
-        requestFingerprint: requestFingerprintMeta.fingerprint,
-        promptHash: requestFingerprintMeta.promptHash,
-        referenceHash: requestFingerprintMeta.referenceHash,
-        promptChars: opts.prompt.length,
-        referenceCount: normalizedReferences.length,
-        imageFieldMode,
-        imageFieldName: editFormMeta?.imageFieldName || null,
-        referenceMimeTypes: editFormMeta?.referenceMimeTypes || [],
-        referenceBytes,
-        totalReferenceBytes,
-        referenceKinds: normalizedReferences.map((item) => item.startsWith('data:') ? 'data' : 'other'),
-        hasMask: !!normalizedMask,
-        maskMimeType: editFormMeta?.maskMimeType || null,
-    });
-
-    if (isEditRequest) {
-        console.info(`[${opts.contextTag}] form payload`, {
+    if (isVerboseOpenAIOperation(opts.contextTag)) {
+        console.info(`[${opts.contextTag}] request summary`, {
+            route: effectiveRoute,
+            defaultRoute: route,
             model: opts.model,
             requestMode,
+            reverseCompat: requestMode === 'reverse-compat',
+            disableTransportRetries: opts.disableTransportRetries === true,
+            aspectRatio: opts.aspectRatio,
+            imageSize: opts.imageSize || '1K',
+            imageQuality: opts.imageQuality || 'medium',
+            size,
             providerId: provider.id || opts.providerId || null,
             requestFingerprint: requestFingerprintMeta.fingerprint,
             promptHash: requestFingerprintMeta.promptHash,
             referenceHash: requestFingerprintMeta.referenceHash,
-            quality: opts.imageQuality || 'medium',
-            imageFieldName: editFormMeta?.imageFieldName || 'image',
-            imagePartCount: normalizedReferences.length,
-            size,
-            aspect_ratio: null,
-            hasMask: !!normalizedMask,
             promptChars: opts.prompt.length,
+            referenceCount: normalizedReferences.length,
+            imageFieldMode,
+            imageFieldName: editFormMeta?.imageFieldName || null,
+            referenceMimeTypes: editFormMeta?.referenceMimeTypes || [],
+            referenceBytes,
+            totalReferenceBytes,
+            referenceKinds: normalizedReferences.map((item) => item.startsWith('data:') ? 'data' : 'other'),
+            hasMask: !!normalizedMask,
+            maskMimeType: editFormMeta?.maskMimeType || null,
         });
+    }
+
+    if (isEditRequest) {
+        if (isVerboseOpenAIOperation(opts.contextTag)) {
+            console.info(`[${opts.contextTag}] form payload`, {
+                model: opts.model,
+                requestMode,
+                providerId: provider.id || opts.providerId || null,
+                requestFingerprint: requestFingerprintMeta.fingerprint,
+                promptHash: requestFingerprintMeta.promptHash,
+                referenceHash: requestFingerprintMeta.referenceHash,
+                quality: opts.imageQuality || 'medium',
+                imageFieldName: editFormMeta?.imageFieldName || 'image',
+                imagePartCount: normalizedReferences.length,
+                size,
+                aspect_ratio: null,
+                hasMask: !!normalizedMask,
+                promptChars: opts.prompt.length,
+            });
+        }
         const payload = await fetchOpenAIFormWithFallback<any>(
             baseUrl,
             effectiveRoute,

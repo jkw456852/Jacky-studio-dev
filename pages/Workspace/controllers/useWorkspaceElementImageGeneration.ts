@@ -579,35 +579,14 @@ const buildPlanningBriefMessage = (args: {
   } = args;
   const lines: string[] = [];
 
-  if (planningBrief?.requestType) {
-    lines.push(
-      formatPlanningBriefLine("\u4efb\u52a1\u5224\u65ad\uff1a", planningBrief.requestType),
-    );
-  }
   if (planningBrief?.deliverableForm) {
     lines.push(
       formatPlanningBriefLine("\u51c6\u5907\u4ea4\u4ed8\uff1a", planningBrief.deliverableForm),
     );
   }
-  if (planningBrief?.aspectRatioStrategy) {
-    lines.push(
-      formatPlanningBriefLine(
-        "\u6bd4\u4f8b\u7b56\u7565\uff1a",
-        planningBrief.aspectRatioStrategy,
-      ),
-    );
-  }
   if (selectedGenerationModel) {
     lines.push(
       formatPlanningBriefLine("当前生图模型：", selectedGenerationModel),
-    );
-  }
-  if (planningBrief?.modelFitNotes?.[0]) {
-    lines.push(
-      formatPlanningBriefLine(
-        "\u6a21\u578b\u63d0\u9192\uff1a",
-        planningBrief.modelFitNotes[0],
-      ),
     );
   }
   if (planningBrief?.researchDecision) {
@@ -630,7 +609,7 @@ const buildPlanningBriefMessage = (args: {
   if (roleOverlay?.summary) {
     lines.push(formatPlanningBriefLine("本次角色脑：", roleOverlay.summary));
   }
-  if (roleOverlay?.roles?.length) {
+  if (false && roleOverlay?.roles?.length) {
     lines.push(
       formatPlanningBriefLine(
         "临时角色：",
@@ -638,7 +617,7 @@ const buildPlanningBriefMessage = (args: {
       ),
     );
   }
-  if (planningBrief?.promptDirectives?.[0]) {
+  if (false && planningBrief?.promptDirectives?.[0]) {
     lines.push(
       formatPlanningBriefLine(
         "\u63d0\u793a\u8bcd\u7b56\u7565\uff1a",
@@ -648,7 +627,7 @@ const buildPlanningBriefMessage = (args: {
   }
   if (isSetTask && taskUnits.length > 0) {
     lines.push("\u9875\u9762\u89c4\u5212\uff1a");
-    taskUnits.slice(0, 6).forEach((unit) => {
+    taskUnits.slice(0, 3).forEach((unit) => {
       const title = buildTaskUnitLabel(unit);
       const goal = String(unit.goal || "").trim();
       const ratio = String(unit.aspectRatio || "").trim() || "?";
@@ -658,16 +637,8 @@ const buildPlanningBriefMessage = (args: {
   if (planningBrief?.risks?.[0]) {
     lines.push(formatPlanningBriefLine("\u98ce\u9669\uff1a", planningBrief.risks[0]));
   }
-  if (!isSetTask) {
-    lines.push(
-      `\u7f16\u6392\u540e\u5173\u952e\u8bcd\uff1a${composedPrompt}`,
-    );
-  } else {
-    lines.push(
-      `\u9996\u5f20\u9875\u9762\u6267\u884c prompt\uff1a${
-        taskUnits[0]?.prompt || composedPrompt
-      }`,
-    );
+  if (isSetTask && taskUnits.length > 3) {
+    lines.push(`\u66f4\u591a\u9875\u9762\uff1a\u5171 ${taskUnits.length} \u5f20\uff0c\u5269\u4f59\u5185\u5bb9\u5c06\u6309\u7f16\u6392\u987a\u5e8f\u6267\u884c\u3002`);
   }
 
   const heading = isSetTask
@@ -676,7 +647,7 @@ const buildPlanningBriefMessage = (args: {
       ? `\u5df2\u5b8c\u6210\u89c6\u89c9\u7f16\u6392\uff0c\u51c6\u5907\u751f\u6210 ${imageCount} \u5f20\u56fe\u3002`
       : "\u5df2\u5b8c\u6210\u89c6\u89c9\u7f16\u6392\uff0c\u51c6\u5907\u5f00\u59cb\u751f\u56fe\u3002";
 
-  return [heading, ...lines.filter(Boolean)].join("\n");
+  return [heading, ...lines.filter(Boolean).slice(0, 5)].join("\n");
 };
 
 const buildGeneratingStatusLines = ({
@@ -1146,7 +1117,7 @@ export function useWorkspaceElementImageGeneration(
                 });
               },
               onQueueEvent: (event) => {
-                if (event.phase === "waiting") {
+                if (event.phase === "waiting" && event.waitMs > 800) {
                   console.info("[workspace.imggen] task-planner.queue", {
                     requestId: traceRequestId,
                     run: taskPlannerRun,
@@ -1154,19 +1125,9 @@ export function useWorkspaceElementImageGeneration(
                     sourceElementId: sourceElement.id,
                     queueKey: event.queueKey,
                     waitMs: event.waitMs,
-                    status: event.waitMs > 0 ? "queued" : "ready",
+                    status: "queued",
                   });
-                  return;
                 }
-
-                console.info("[workspace.imggen] task-planner.dispatch", {
-                  requestId: traceRequestId,
-                  run: taskPlannerRun,
-                  elementId,
-                  sourceElementId: sourceElement.id,
-                  queueKey: event.queueKey,
-                  queueWaitMs: event.waitMs,
-                });
               },
             },
           );
@@ -1205,15 +1166,6 @@ export function useWorkspaceElementImageGeneration(
               decision: researchDecision,
               researchQuery,
             }),
-          });
-
-          console.info("[workspace.imggen] research.start", {
-            requestId: traceRequestId,
-            elementId,
-            sourceElementId: sourceElement.id,
-            query: researchQuery,
-            mode: researchMode,
-            topics: researchDecision.topics || [],
           });
 
           const researchContext = await executeWorkspaceResearchContext(
@@ -1262,17 +1214,6 @@ export function useWorkspaceElementImageGeneration(
             role: "model",
             text: `已完成预研，正在用研究结果重排任务。\n${researchSummary}`,
             timestamp: Date.now(),
-          });
-
-          console.info("[workspace.imggen] research.success", {
-            requestId: traceRequestId,
-            elementId,
-            sourceElementId: sourceElement.id,
-            query: researchQuery,
-            mode: researchMode,
-            webCount: researchContext.researchWebPages.length,
-            imageCount: researchContext.researchReferenceImageUrls.length,
-            mergedReferenceCount: currentReferenceImages.length,
           });
 
           planningLogStreamer.push({
@@ -1401,22 +1342,6 @@ export function useWorkspaceElementImageGeneration(
         });
 
         plannerStartedAt = Date.now();
-        console.info("[workspace.imggen] planner.start", {
-          requestId: traceRequestId,
-          elementId,
-          sourceElementId: sourceElement.id,
-          imageCount,
-          taskMode: taskPlan.mode,
-          taskIntent: taskPlan.intent,
-          model,
-          aspectRatio: currentAspectRatio,
-          imageSize,
-          imageQuality,
-          manualReferenceCount: manualReferenceImages.length,
-          mergedReferenceCount: currentReferenceImages.length,
-          requestedReferenceRoleMode: sourceElement.genReferenceRoleMode || "default",
-          visualOrchestratorModel: plannerModelConfig,
-        });
         appendElementsGenerationLog(
           isTreePromptNode && targetElementIds.length > 0
             ? targetElementIds
@@ -1486,23 +1411,6 @@ export function useWorkspaceElementImageGeneration(
                     referenceRoleMode,
                   },
                 } = plannedGeneration;
-
-                console.info("[workspace.imggen] planner.success", {
-                  requestId: traceRequestId,
-                  elementId,
-                  sourceElementId: sourceElement.id,
-                  elapsedMs: Date.now() - plannerStartedAt,
-                  taskMode: taskPlan.mode,
-                  taskIntent: taskPlan.intent,
-                  planIntent: plan.intent,
-                  planStrategy: plan.strategyId,
-                  referenceRoleMode,
-                  plannerSource: plannerMeta?.source || "model",
-                  plannerNotes: plan.plannerNotes,
-                  taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
-                  taskRoleOverlayRoles:
-                    taskPlan.roleOverlay?.roles.map((item) => item.role) || [],
-                });
 
                 patchWorkspaceGenerationTrace(traceRequestId, {
                   updatedAt: Date.now(),
@@ -1668,18 +1576,7 @@ export function useWorkspaceElementImageGeneration(
                 },
               } = plannedGeneration;
 
-              if (runtimeGenerationContext) {
-                console.info("[workspace.imggen] request.start", runtimeGenerationContext);
-              }
               runtimeVariantStartedAt = Date.now();
-              console.info("[workspace.imggen] variant.start", {
-                ...(runtimeGenerationContext || {}),
-                variant: "1/1",
-                taskUnitId: taskUnit.id,
-                taskUnitTitle: taskUnit.title,
-                attempt: 1,
-                targetElementId: singleTargetElementId,
-              });
               updateWorkspaceGenerationVariantTrace({
                 requestId: traceRequestId,
                 variantLabel: "1/1",
@@ -1789,15 +1686,6 @@ export function useWorkspaceElementImageGeneration(
             runtimeResult.resultUrl,
             true,
           );
-          console.info("[workspace.imggen] variant.success", {
-            ...(runtimeGenerationContext || {}),
-            variant: "1/1",
-            taskUnitId: primaryTaskUnit.id,
-            taskUnitTitle: primaryTaskUnit.title,
-            attempt: 1,
-            elapsedMs: Date.now() - runtimeVariantStartedAt,
-            targetElementId: singleTargetElementId,
-          });
           console.info("[workspace.imggen] request.complete", {
             ...(runtimeGenerationContext || {}),
             successCount: 1,
@@ -1865,23 +1753,6 @@ export function useWorkspaceElementImageGeneration(
             consistencyContext,
           },
         } = plannedGeneration;
-        console.info("[workspace.imggen] planner.success", {
-          requestId: traceRequestId,
-          elementId,
-          sourceElementId: sourceElement.id,
-          elapsedMs: Date.now() - plannerStartedAt,
-          taskMode: taskPlan.mode,
-          taskIntent: taskPlan.intent,
-          planIntent: plan.intent,
-          planStrategy: plan.strategyId,
-          referenceRoleMode,
-          plannerSource: plannerMeta?.source || "model",
-          plannerNotes: plan.plannerNotes,
-          taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
-          taskRoleOverlayRoles:
-            taskPlan.roleOverlay?.roles.map((item) => item.role) || [],
-        });
-
         patchWorkspaceGenerationTrace(traceRequestId, {
           updatedAt: Date.now(),
           status: imageCount > 1 ? "planned" : "generating",
@@ -1982,7 +1853,6 @@ export function useWorkspaceElementImageGeneration(
             String(item || "").startsWith("data:") ? "data" : "url",
           ),
         };
-        console.info("[workspace.imggen] request.start", generationContext);
         if (!isTreePromptNode) {
           targetElementIds =
             imageCount > 1
@@ -2127,15 +1997,6 @@ export function useWorkspaceElementImageGeneration(
                   : `本次意图：${clipLiveLogText(primaryTaskUnit.goal, 88)}`,
               ],
             });
-            console.info("[workspace.imggen] variant.start", {
-              ...generationContext,
-              variant: variantLabel,
-              taskUnitId: taskUnit.id,
-              taskUnitTitle: taskUnit.title,
-              attempt,
-              targetElementId,
-            });
-
             updateWorkspaceGenerationVariantTrace({
               requestId: traceRequestId,
               variantLabel,
@@ -2184,15 +2045,6 @@ export function useWorkspaceElementImageGeneration(
 
               await applyGeneratedImageToElement(targetElementId, finalUrl, true);
               successCount += 1;
-              console.info("[workspace.imggen] variant.success", {
-                ...generationContext,
-                variant: variantLabel,
-                taskUnitId: taskUnit.id,
-                taskUnitTitle: taskUnit.title,
-                attempt,
-                elapsedMs: Date.now() - variantStartedAt,
-                targetElementId,
-              });
               updateWorkspaceGenerationVariantTrace({
                 requestId: traceRequestId,
                 variantLabel,
@@ -2240,15 +2092,17 @@ export function useWorkspaceElementImageGeneration(
                     "不会新建图片节点，直到成功或页面刷新",
                   ],
                 });
-                console.warn("[workspace.imggen] variant.berserk-retrying", {
-                  ...generationContext,
-                  variant: variantLabel,
-                  attempt,
-                  retryDelayMs: 0,
-                  disableTransportRetries: true,
-                  error: reason,
-                  targetElementId,
-                });
+                if (attempt === 1) {
+                  console.warn("[workspace.imggen] variant.berserk-retrying", {
+                    ...generationContext,
+                    variant: variantLabel,
+                    attempt,
+                    retryDelayMs: 0,
+                    disableTransportRetries: true,
+                    error: reason,
+                    targetElementId,
+                  });
+                }
                 updateWorkspaceGenerationVariantTrace({
                   requestId: traceRequestId,
                   variantLabel,
