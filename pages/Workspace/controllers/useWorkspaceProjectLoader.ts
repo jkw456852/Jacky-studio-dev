@@ -660,7 +660,9 @@ const buildInitialHistoryElements = (
 
   return elements.map((element) => ({
     ...element,
-    originalUrl: keepSafeLoadedAssetUrl(element.originalUrl),
+    // Safe-load should keep the original source chain intact for preview/download.
+    // We only trim render-facing proxy/reference payloads here.
+    originalUrl: normalizeLoadedDataUrl(element.originalUrl),
     proxyUrl: keepSafeLoadedAssetUrl(element.proxyUrl, {
       allowSmallDataUrl: true,
     }),
@@ -682,7 +684,9 @@ const buildRuntimeLoadedElements = (
 
   return elements.map((element) => ({
     ...element,
-    originalUrl: keepSafeLoadedAssetUrl(element.originalUrl),
+    // Keep the original asset available after reload so zoom preview and
+    // downloads do not silently fall back to the compressed display proxy.
+    originalUrl: normalizeLoadedDataUrl(element.originalUrl),
     proxyUrl: keepSafeLoadedAssetUrl(element.proxyUrl, {
       allowSmallDataUrl: true,
     }),
