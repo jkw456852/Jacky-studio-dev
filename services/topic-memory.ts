@@ -495,6 +495,63 @@ export async function resolveStoredTopicAssetUrl(
   return null;
 }
 
+export async function listTopicAssetsByTopicId(
+  topicId: string,
+  options?: {
+    role?: TopicAssetRole;
+    limit?: number;
+  },
+): Promise<AssetRef[]> {
+  const normalizedTopicId = String(topicId || "").trim();
+  if (!normalizedTopicId) return [];
+
+  const db = await openWorkspaceDB();
+  const keys = getCandidateKeys(normalizedTopicId);
+  const role = options?.role;
+  const limit = Math.max(1, Number(options?.limit || 64));
+
+  const readByIndex = async (
+    indexName: "memoryKey" | "topicId",
+    value: string,
+  ): Promise<TopicAsset[]> => {
+    if (!value) return [];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(TOPIC_ASSET_STORE, "readonly");
+      const index = tx.objectStore(TOPIC_ASSET_STORE).index(indexName);
+      const req = index.getAll(value);
+      req.onsuccess = () => resolve((req.result as TopicAsset[]) || []);
+      req.onerror = () => reject(req.error);
+    });
+  };
+
+  const collected: TopicAsset[] = [];
+  for (const key of keys) {
+    collected.push(...(await readByIndex("memoryKey", key)));
+    if (key !== normalizedTopicId) {
+      collected.push(...(await readByIndex("topicId", key)));
+    }
+  }
+
+  const deduped = new Map<string, TopicAsset>();
+  for (const asset of collected) {
+    if (!asset?.assetId) continue;
+    if (role && asset.role !== role) continue;
+    if (!deduped.has(asset.assetId)) {
+      deduped.set(asset.assetId, asset);
+    }
+  }
+
+  return [...deduped.values()]
+    .sort((left, right) => left.createdAt - right.createdAt)
+    .slice(-limit)
+    .map((asset) => ({
+      assetId: asset.assetId,
+      role: asset.role,
+      url: asset.url,
+      createdAt: asset.createdAt,
+    }));
+}
+
 export async function syncClothingTopicMemory(
   topicId: string,
   patch: Partial<NonNullable<TopicSnapshot["clothingStudio"]>>,

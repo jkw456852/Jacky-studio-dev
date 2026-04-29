@@ -1,3 +1,5 @@
+import JSZip from "jszip";
+
 const DATA_OR_BLOB_URL_RE = /^(data:|blob:)/i;
 
 const sanitizeFilenamePart = (value: string): string =>
@@ -113,5 +115,108 @@ export const downloadFromUrls = async (
     throw lastError instanceof Error
       ? lastError
       : new Error(String(lastError));
+  }
+};
+
+const fetchBlobFromCandidates = async (
+  candidateUrls: Array<string | null | undefined>,
+): Promise<{ blob: Blob; extension: string }> => {
+  const normalizedCandidates = Array.from(
+    new Set(
+      candidateUrls
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (normalizedCandidates.length === 0) {
+    throw new Error("no download candidates");
+  }
+
+  let lastError: unknown = null;
+
+  for (const candidateUrl of normalizedCandidates) {
+    try {
+      if (DATA_OR_BLOB_URL_RE.test(candidateUrl)) {
+        const response = await fetch(candidateUrl);
+        const blob = await response.blob();
+        return {
+          blob,
+          extension:
+            inferExtensionFromContentType(blob.type) ||
+            inferExtensionFromUrl(candidateUrl) ||
+            "png",
+        };
+      }
+
+      const response = await fetch(candidateUrl, {
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!response.ok) {
+        throw new Error(`download request failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      return {
+        blob,
+        extension:
+          inferExtensionFromContentType(response.headers.get("content-type")) ||
+          inferExtensionFromUrl(candidateUrl) ||
+          "png",
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError || "download failed"));
+};
+
+export const downloadUrlGroupsAsZip = async (
+  entries: Array<{
+    candidateUrls: Array<string | null | undefined>;
+    baseFilename: string;
+  }>,
+  zipBaseFilename: string,
+): Promise<void> => {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const normalizedEntries = entries.filter(
+    (entry) =>
+      Array.isArray(entry.candidateUrls) &&
+      entry.candidateUrls.some((item) => String(item || "").trim()),
+  );
+
+  if (normalizedEntries.length === 0) {
+    return;
+  }
+
+  const zip = new JSZip();
+
+  await Promise.all(
+    normalizedEntries.map(async (entry, index) => {
+      const { blob, extension } = await fetchBlobFromCandidates(entry.candidateUrls);
+      const filename = ensureFilename(
+        entry.baseFilename || `download-${index + 1}`,
+        extension,
+      );
+      zip.file(filename, blob);
+    }),
+  );
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  const zipUrl = URL.createObjectURL(zipBlob);
+  try {
+    triggerAnchorDownload(
+      zipUrl,
+      ensureFilename(zipBaseFilename || "downloads", "zip"),
+    );
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(zipUrl), 1000);
   }
 };

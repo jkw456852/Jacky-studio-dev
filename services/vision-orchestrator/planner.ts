@@ -255,6 +255,28 @@ const buildRuleBasedPlannedGeneration = (
   };
 };
 
+const buildRuleFallbackPlannedGeneration = (args: {
+  input: PlanVisualGenerationInput;
+  modelConfig: VisualPlannerModelConfig;
+  reason: string;
+}): PlannedImageGeneration => {
+  const fallback = buildRuleBasedPlannedGeneration(args.input);
+  const fallbackNote = `Visual orchestration fallback: ${args.reason}`;
+  return {
+    ...fallback,
+    plan: {
+      ...fallback.plan,
+      plannerNotes: Array.from(
+        new Set([
+          ...fallback.plan.plannerNotes,
+          `planner-model=${args.modelConfig.label || args.modelConfig.modelId}`,
+          fallbackNote,
+        ]),
+      ).slice(0, 12),
+    },
+  };
+};
+
 export const planVisualGeneration = (
   input: PlanVisualGenerationInput,
 ): PlannedImageGeneration => buildRuleBasedPlannedGeneration(input);
@@ -276,9 +298,11 @@ export const planVisualGenerationWithModel = async (
   });
 
   if (!patch) {
-    throw new Error(
-      `Visual orchestration planning failed with model ${modelConfig.label || modelConfig.modelId}. The generation was stopped instead of falling back to a rule planner.`,
-    );
+    return buildRuleFallbackPlannedGeneration({
+      input,
+      modelConfig,
+      reason: "model patch missing after planner/repair",
+    });
   }
 
   if (!patch.intent || !patch.strategyId || !patch.referenceRoleMode) {
@@ -294,18 +318,23 @@ export const planVisualGenerationWithModel = async (
         ? patch.rawResponseText.slice(0, 800)
         : null,
     });
-    throw new Error(
-      `Visual orchestration returned an incomplete plan. ${patchPreview}`,
-    );
+    return buildRuleFallbackPlannedGeneration({
+      input,
+      modelConfig,
+      reason: `incomplete core plan ${patchPreview}`,
+    });
   }
 
   if (
     patch.referenceRoleMode === "poster-product" &&
     input.manualReferenceImages.length < 2
   ) {
-    throw new Error(
-      "Visual orchestration selected poster-product mode, but fewer than two manual reference images are available.",
-    );
+    return buildRuleFallbackPlannedGeneration({
+      input,
+      modelConfig,
+      reason:
+        "poster-product mode requires at least two manual references",
+    });
   }
 
   const consistencyContext = normalizeConsistencyContext(input.consistencyContext);
@@ -363,9 +392,11 @@ export const planVisualGenerationWithModel = async (
         ? patch.rawResponseText.slice(0, 800)
         : null,
     });
-    throw new Error(
-      `Visual orchestration returned an incomplete edit constraint set. ${patchPreview}`,
-    );
+    return buildRuleFallbackPlannedGeneration({
+      input,
+      modelConfig,
+      reason: `incomplete edit constraint set ${patchPreview}`,
+    });
   }
 
   return {

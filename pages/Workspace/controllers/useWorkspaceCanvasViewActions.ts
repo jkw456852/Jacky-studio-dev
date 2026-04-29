@@ -1,6 +1,9 @@
 import { useCallback, type MouseEvent, type MutableRefObject } from "react";
 import type { CanvasElement } from "../../../types";
-import { downloadFromUrls } from "../../../utils/download";
+import {
+  downloadFromUrls,
+  downloadUrlGroupsAsZip,
+} from "../../../utils/download";
 import { getCanvasViewportSize } from "../workspaceShared";
 
 type UseWorkspaceCanvasViewActionsOptions = {
@@ -14,6 +17,7 @@ type UseWorkspaceCanvasViewActionsOptions = {
     dims?: { width: number; height: number },
   ) => void;
   selectedElementId: string | null;
+  selectedElementIds: string[];
   setContextMenu: (menu: { x: number; y: number } | null) => void;
   getElementSourceUrl: (element: CanvasElement) => string | undefined;
   suppressNextContextMenuRef: MutableRefObject<boolean>;
@@ -32,6 +36,7 @@ export function useWorkspaceCanvasViewActions(
     setZoom,
     addElement,
     selectedElementId,
+    selectedElementIds,
     setContextMenu,
     getElementSourceUrl,
     suppressNextContextMenuRef,
@@ -125,24 +130,73 @@ export function useWorkspaceCanvasViewActions(
   }, [addElement]);
 
   const handleDownload = useCallback(async () => {
-    if (!selectedElementId) return;
-    const element = elements.find((item) => item.id === selectedElementId);
-    if (!element || !element.url) return;
-
-    const sourceUrl = getElementSourceUrl(element) || element.url;
     try {
+      const selectedMultiElements =
+        selectedElementIds.length > 1
+          ? elements.filter((item) => selectedElementIds.includes(item.id))
+          : [];
+      const downloadableMultiElements = selectedMultiElements.filter(
+        (item) =>
+          (item.type === "image" ||
+            item.type === "gen-image" ||
+            item.type === "video" ||
+            item.type === "gen-video") &&
+          Boolean(
+            getElementSourceUrl(item) ||
+              item.originalUrl ||
+              item.proxyUrl ||
+              item.url,
+          ),
+      );
+
+      if (downloadableMultiElements.length > 1) {
+        await downloadUrlGroupsAsZip(
+          downloadableMultiElements.map((element, index) => ({
+            candidateUrls: [
+              getElementSourceUrl(element),
+              element.originalUrl,
+              element.proxyUrl,
+              element.url,
+            ],
+            baseFilename: `jk-canvas-${String(index + 1).padStart(2, "0")}-${element.type}`,
+          })),
+          `jk-canvas-selection-${Date.now()}`,
+        );
+        return;
+      }
+
+      const effectiveElement =
+        downloadableMultiElements[0] ||
+        (selectedElementId
+          ? elements.find((item) => item.id === selectedElementId)
+          : null);
+      if (!effectiveElement) return;
+
+      const sourceUrl =
+        getElementSourceUrl(effectiveElement) || effectiveElement.url;
+      if (!sourceUrl && !effectiveElement.originalUrl && !effectiveElement.proxyUrl) {
+        return;
+      }
+
       await downloadFromUrls(
-        [sourceUrl, element.originalUrl, element.proxyUrl, element.url],
+        [
+          sourceUrl,
+          effectiveElement.originalUrl,
+          effectiveElement.proxyUrl,
+          effectiveElement.url,
+        ],
         `jk-image-${Date.now()}`,
       );
     } catch (error) {
       console.error("Canvas element download failed", error);
+    } finally {
+      setContextMenu(null);
     }
-    setContextMenu(null);
   }, [
     elements,
     getElementSourceUrl,
     selectedElementId,
+    selectedElementIds,
     setContextMenu,
   ]);
 

@@ -3859,6 +3859,7 @@ const Workspace: React.FC = () => {
       setZoom,
       addElement,
       selectedElementId,
+      selectedElementIds,
       setContextMenu,
       getElementSourceUrl,
       suppressNextContextMenuRef: suppressNextCanvasContextMenuRef,

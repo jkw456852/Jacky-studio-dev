@@ -21,6 +21,11 @@ import {
   type HistoryState,
 } from './workspacePersistence';
 import {
+  listTopicAssetsByTopicId,
+  resolveTopicAssetRefUrl,
+} from "../../../services/topic-memory";
+import { getMemoryKey } from "../../../services/topicMemory/key";
+import {
   createImagePreviewDataUrl,
   estimateDataUrlBytes,
   getElementDisplayUrl,
@@ -86,6 +91,7 @@ const SAFE_LOAD_ACTIVE_MESSAGE_LIMIT = 24;
 const SAFE_LOAD_TEXT_LIMIT = 4000;
 const SAFE_LOAD_SUSPEND_AUTOSAVE_MS = 5000;
 const DATA_URL_PREFIX = /^data:/i;
+const HTTP_URL_PREFIX = /^https?:\/\//i;
 const LOAD_INTERRUPTED_GENERATION_ERROR =
   "生成任务因页面刷新已中断，请重试。";
 
@@ -112,6 +118,281 @@ const normalizeLoadedDataUrl = (value: string | undefined): string | undefined =
   }
 
   return normalized;
+};
+
+const keepSafeLoadedAssetUrl = (
+  value: string | undefined,
+  options?: { allowSmallDataUrl?: boolean; maxDataUrlBytes?: number },
+): string | undefined => {
+  const normalized = normalizeLoadedDataUrl(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (!DATA_URL_PREFIX.test(normalized)) {
+    return normalized;
+  }
+
+  if (!options?.allowSmallDataUrl) {
+    return undefined;
+  }
+
+  const maxBytes = options.maxDataUrlBytes ?? LOADED_IMAGE_DATA_URL_MAX_BYTES;
+  return estimateDataUrlBytes(normalized) <= maxBytes ? normalized : undefined;
+};
+
+const parseElementAspectRatio = (element: CanvasElement): number | null => {
+  const raw = String(element.genAspectRatio || "").trim();
+  if (raw.includes(":")) {
+    const [widthText, heightText] = raw.split(":");
+    const width = Number(widthText);
+    const height = Number(heightText);
+    if (
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0
+    ) {
+      return width / height;
+    }
+  }
+
+  if (element.width > 0 && element.height > 0) {
+    return element.width / element.height;
+  }
+
+  return null;
+};
+
+const isRecoverableGeneratedImageElement = (element: CanvasElement): boolean =>
+  (element.type === "image" || element.type === "gen-image") &&
+  !element.originalUrl &&
+  Boolean(element.url) &&
+  Boolean(
+    element.genPrompt ||
+      element.genModel ||
+      element.genAspectRatio ||
+      element.genResolution ||
+      element.genImageQuality,
+  );
+
+const collectConversationImageUrls = (
+  conversations: ConversationSession[] | undefined,
+): string[] => {
+  if (!Array.isArray(conversations) || conversations.length === 0) {
+    return [];
+  }
+
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const orderedConversations = [...conversations].sort(
+    (left, right) => (left.createdAt || 0) - (right.createdAt || 0),
+  );
+
+  for (const conversation of orderedConversations) {
+    for (const message of conversation.messages || []) {
+      for (const url of message.agentData?.imageUrls || []) {
+        const normalized = String(url || "").trim();
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        urls.push(normalized);
+      }
+    }
+  }
+
+  return urls;
+};
+
+const readImageAspectRatioFromUrl = async (
+  url: string,
+): Promise<number | null> =>
+  new Promise((resolve) => {
+    let settled = false;
+    const finalize = (value: number | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const img = new Image();
+    img.decoding = "async";
+    if (HTTP_URL_PREFIX.test(url)) {
+      img.crossOrigin = "anonymous";
+    }
+    img.onload = () => {
+      const width = img.naturalWidth || img.width || 0;
+      const height = img.naturalHeight || img.height || 0;
+      finalize(width > 0 && height > 0 ? width / height : null);
+    };
+    img.onerror = () => finalize(null);
+    window.setTimeout(() => finalize(null), 5000);
+    img.src = url;
+  });
+
+const collectTopicResultAssetUrls = async (
+  workspaceId: string,
+  conversations: ConversationSession[] | undefined,
+): Promise<string[]> => {
+  const normalizedWorkspaceId = String(workspaceId || "").trim();
+  if (
+    !normalizedWorkspaceId ||
+    !Array.isArray(conversations) ||
+    conversations.length === 0
+  ) {
+    return [];
+  }
+
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const orderedConversations = [...conversations].sort(
+    (left, right) => (left.createdAt || 0) - (right.createdAt || 0),
+  );
+
+  for (const conversation of orderedConversations) {
+    const conversationId = String(conversation.id || "").trim();
+    if (!conversationId) continue;
+
+    const topicId = getMemoryKey(normalizedWorkspaceId, conversationId);
+    if (!topicId) continue;
+
+    const refs = await listTopicAssetsByTopicId(topicId, {
+      role: "result",
+      limit: 48,
+    });
+    for (const ref of refs) {
+      const resolvedUrl =
+        String(ref.url || "").trim() || (await resolveTopicAssetRefUrl(ref)) || "";
+      const normalized = String(resolvedUrl || "").trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      urls.push(normalized);
+    }
+  }
+
+  return urls;
+};
+
+const recoverLoadedElementOriginalUrls = async ({
+  workspaceId,
+  elements,
+  conversations,
+}: {
+  workspaceId: string;
+  elements: CanvasElement[];
+  conversations: ConversationSession[] | undefined;
+}): Promise<CanvasElement[]> => {
+  if (!Array.isArray(elements) || elements.length === 0) {
+    return [];
+  }
+
+  const nextElements = elements.map((element) => ({ ...element }));
+  const occupiedUrls = new Set<string>();
+
+  nextElements.forEach((element) => {
+    [element.originalUrl, element.proxyUrl, element.url].forEach((value) => {
+      const normalized = String(value || "").trim();
+      if (!normalized || DATA_URL_PREFIX.test(normalized)) return;
+      occupiedUrls.add(normalized);
+    });
+  });
+
+  const targetIndexes: number[] = [];
+  nextElements.forEach((element, index) => {
+    if (element.originalUrl) return;
+
+    const normalizedUrl = String(element.url || "").trim();
+    if (normalizedUrl && !DATA_URL_PREFIX.test(normalizedUrl)) {
+      element.originalUrl = normalizedUrl;
+      occupiedUrls.add(normalizedUrl);
+      return;
+    }
+
+    if (isRecoverableGeneratedImageElement(element)) {
+      targetIndexes.push(index);
+    }
+  });
+
+  if (targetIndexes.length === 0) {
+    return nextElements;
+  }
+
+  const messageUrls = collectConversationImageUrls(conversations);
+  const topicAssetUrls = await collectTopicResultAssetUrls(
+    workspaceId,
+    conversations,
+  );
+  const candidateUrls = [...new Set([...messageUrls, ...topicAssetUrls])]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value) => !occupiedUrls.has(value));
+
+  if (candidateUrls.length === 0) {
+    return nextElements;
+  }
+
+  const shouldMeasureAspect =
+    targetIndexes.length > 1 && candidateUrls.length > 1;
+  const candidateRatios = shouldMeasureAspect
+    ? await Promise.all(
+        candidateUrls.map(async (url) => ({
+          url,
+          ratio: await readImageAspectRatioFromUrl(url),
+        })),
+      )
+    : candidateUrls.map((url) => ({ url, ratio: null as number | null }));
+
+  const usedCandidates = new Set<string>();
+
+  for (const targetIndex of targetIndexes) {
+    const element = nextElements[targetIndex];
+    const targetRatio = parseElementAspectRatio(element);
+
+    let selectedCandidate:
+      | {
+          url: string;
+          ratio: number | null;
+        }
+      | undefined;
+
+    if (targetRatio !== null) {
+      selectedCandidate = candidateRatios
+        .filter((candidate) => !usedCandidates.has(candidate.url))
+        .sort((left, right) => {
+          const leftDiff =
+            left.ratio === null
+              ? Number.POSITIVE_INFINITY
+              : Math.abs(left.ratio - targetRatio);
+          const rightDiff =
+            right.ratio === null
+              ? Number.POSITIVE_INFINITY
+              : Math.abs(right.ratio - targetRatio);
+          return leftDiff - rightDiff;
+        })[0];
+    }
+
+    if (!selectedCandidate) {
+      selectedCandidate = candidateRatios.find(
+        (candidate) => !usedCandidates.has(candidate.url),
+      );
+    }
+
+    if (!selectedCandidate) {
+      break;
+    }
+
+    usedCandidates.add(selectedCandidate.url);
+    nextElements[targetIndex] = {
+      ...element,
+      originalUrl: selectedCandidate.url,
+      proxyUrl:
+        element.proxyUrl ||
+        (element.url && element.url !== selectedCandidate.url
+          ? element.url
+          : undefined),
+    };
+  }
+
+  return nextElements;
 };
 
 const trimLoadText = (value: unknown, maxLength: number): string => {
@@ -379,8 +660,10 @@ const buildInitialHistoryElements = (
 
   return elements.map((element) => ({
     ...element,
-    originalUrl: undefined,
-    proxyUrl: undefined,
+    originalUrl: keepSafeLoadedAssetUrl(element.originalUrl),
+    proxyUrl: keepSafeLoadedAssetUrl(element.proxyUrl, {
+      allowSmallDataUrl: true,
+    }),
     genRefImage: undefined,
     genRefImages: undefined,
     genRefPreviewImage: undefined,
@@ -399,8 +682,10 @@ const buildRuntimeLoadedElements = (
 
   return elements.map((element) => ({
     ...element,
-    originalUrl: undefined,
-    proxyUrl: undefined,
+    originalUrl: keepSafeLoadedAssetUrl(element.originalUrl),
+    proxyUrl: keepSafeLoadedAssetUrl(element.proxyUrl, {
+      allowSmallDataUrl: true,
+    }),
     genRefImage: undefined,
     genRefImages: undefined,
     genStartFrame: undefined,
@@ -591,12 +876,17 @@ export const useWorkspaceProjectLoader = ({
               console.warn("[Workspace] Safe load mode enabled for heavy project");
             }
             const sanitizedElements = await sanitizeLoadedElements(project.elements);
+            const recoveredElements = await recoverLoadedElementOriginalUrls({
+              workspaceId: id,
+              elements: sanitizedElements,
+              conversations: project.conversations,
+            });
             if (cancelled) {
               return;
             }
             const runtimeElements = reconcileLoadedElements(
               buildRuntimeLoadedElements(
-                sanitizedElements,
+                recoveredElements,
                 safeLoadMode,
               ),
             );
@@ -628,7 +918,7 @@ export const useWorkspaceProjectLoader = ({
                 elements: buildInitialHistoryElements(
                   runtimeElements.length > 0
                     ? runtimeElements
-                    : compactElementsForHistory(project.elements || []),
+                    : compactElementsForHistory(recoveredElements || []),
                   safeLoadMode,
                 ),
                 markers: [],
