@@ -12,6 +12,7 @@ import {
 } from "../browserAgentHost";
 import { compressImage, createImagePreviewDataUrl } from "../workspaceShared";
 import type { WorkspaceInputFile } from "../../../types";
+import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 
 type UseAssistantSidebarBrowserAgentUiArgs = {
   selectedElementId: string | null;
@@ -73,17 +74,8 @@ const RUNNING_SESSION_STATUSES = new Set<BrowserAgentSessionStatus>([
 const DEFAULT_GOAL_TEMPLATE =
   "先查看当前节点的上下文、可用工具和最近执行痕迹，再直接执行最合适的下一步，并把关键信息回写到对话里。";
 
-const BROWSER_AGENT_CHAT_ENABLED_STORAGE_KEY =
-  "workspace.browser-agent.chat-enabled";
-
 const readInitialBrowserAgentChatEnabled = () => {
-  if (typeof window === "undefined") return true;
-  const raw = window.localStorage.getItem(
-    BROWSER_AGENT_CHAT_ENABLED_STORAGE_KEY,
-  );
-  if (raw === "false") return false;
-  if (raw === "true") return true;
-  return true;
+  return getStudioUserAssetApi().getWorkspacePreferences().browserAgentChatEnabled;
 };
 
 const getSessionStatusLabel = (
@@ -368,12 +360,9 @@ export const useAssistantSidebarBrowserAgentUi = ({
   const chatEnabled = chatEnabledState;
   const setChatEnabled = React.useCallback((value: boolean) => {
     setChatEnabledState(value);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(
-        BROWSER_AGENT_CHAT_ENABLED_STORAGE_KEY,
-        value ? "true" : "false",
-      );
-    }
+    getStudioUserAssetApi().setWorkspacePreferences({
+      browserAgentChatEnabled: value,
+    });
   }, []);
 
   const buildReferenceImagesFromAttachments = React.useCallback(

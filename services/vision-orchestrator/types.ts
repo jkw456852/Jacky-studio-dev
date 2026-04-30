@@ -3,6 +3,7 @@ import type {
   ImageReferenceRoleMode,
   ImageTextPolicy,
   PromptLanguagePolicy,
+  WorkspaceStyleLibrary,
 } from "../../types";
 
 export type VisualTaskIntent =
@@ -50,6 +51,7 @@ export type VisualGenerationPlan = {
   userGoal: string;
   references: VisualReferencePlan[];
   taskRoleOverlay?: VisualRoleOverlay;
+  styleLibrary?: VisualStyleLibrary;
   locks: VisualConstraintLock;
   allowedEdits: string[];
   forbiddenEdits: string[];
@@ -94,6 +96,7 @@ export type PlanVisualGenerationInput = {
   selectedGenerationModel?: string;
   taskRoleOverlay?: VisualRoleOverlay;
   taskPlanningBrief?: VisualPlanningBrief;
+  styleLibrary?: VisualStyleLibrary;
   requestedReferenceRoleMode?: ImageReferenceRoleMode;
   imageQuality?: NonNullable<ImageGenSkillParams["imageQuality"]>;
   translatePromptToEnglish?: boolean;
@@ -181,6 +184,8 @@ export type VisualRoleOverlay = {
   roles: VisualRoleOverlayRole[];
 };
 
+export type VisualStyleLibrary = WorkspaceStyleLibrary;
+
 export type VisualTaskPlan = {
   mode: VisualExecutionMode;
   userGoal: string;
@@ -189,6 +194,7 @@ export type VisualTaskPlan = {
   toolChain: string[];
   planningBrief?: VisualPlanningBrief;
   roleOverlay?: VisualRoleOverlay;
+  styleLibrary?: VisualStyleLibrary;
   sharedStyleGuide?: SharedStyleGuide;
   pages?: VisualPagePlan[];
   single?: VisualGenerationPlan;
@@ -204,6 +210,7 @@ export type PlanVisualTaskInput = {
   imageSize?: string;
   imageQuality?: NonNullable<ImageGenSkillParams["imageQuality"]>;
   requestedReferenceRoleMode?: ImageReferenceRoleMode;
+  currentStyleLibrary?: VisualStyleLibrary;
   translatePromptToEnglish?: boolean;
   enforceChineseTextInImage?: boolean;
   requiredChineseCopy?: string;

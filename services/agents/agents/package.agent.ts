@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { PACKAGE_SYSTEM_PROMPT, PACKAGE_AGENT_INFO } from '../prompts/package.prompt';
+import { PACKAGE_AGENT_INFO } from '../prompts/package.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class PackageAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class PackageAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return PACKAGE_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('package');
   }
 
   get preferredSkills() {

@@ -1,5 +1,6 @@
 import { AgentType, AgentTask, AgentInfo } from '../../types/agent.types';
 import { EnhancedBaseAgent } from './enhanced-base-agent';
+import { getStudioPrimaryAgentIds } from '../runtime-assets/studio-registry';
 import { cocoAgent } from './agents/coco.agent';
 import { vireoAgent } from './agents/vireo.agent';
 import { cameronAgent } from './agents/cameron.agent';
@@ -24,16 +25,7 @@ export const AGENT_REGISTRY: Record<AgentType, EnhancedBaseAgent> = {
   'prompt-optimizer': promptOptimizerAgent,
 };
 
-export const PRIMARY_AGENT_IDS: AgentType[] = [
-  'coco',
-  'vireo',
-  'poster',
-  'cameron',
-  'package',
-  'motion',
-  'campaign',
-  'prompt-optimizer',
-];
+export const PRIMARY_AGENT_IDS: AgentType[] = getStudioPrimaryAgentIds();
 
 export function getAgentInfo(agentId: AgentType): AgentInfo {
   return AGENT_REGISTRY[agentId].agentInfo;

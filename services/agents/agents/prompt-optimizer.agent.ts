@@ -1,8 +1,8 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
 import {
   PROMPT_OPTIMIZER_AGENT_INFO,
-  PROMPT_OPTIMIZER_SYSTEM_PROMPT,
 } from '../prompts/prompt-optimizer.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class PromptOptimizerAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -10,7 +10,7 @@ export class PromptOptimizerAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return PROMPT_OPTIMIZER_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('prompt-optimizer');
   }
 
   get preferredSkills() {

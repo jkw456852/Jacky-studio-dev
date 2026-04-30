@@ -242,6 +242,7 @@ export const runVisualAgentLoop = async (
             selectedGenerationModel: args.selectedGenerationModel,
             taskRoleOverlay: args.taskPlan.roleOverlay,
             taskPlanningBrief: args.taskPlan.planningBrief,
+            styleLibrary: args.taskPlan.styleLibrary,
             requestedReferenceRoleMode: args.requestedReferenceRoleMode,
             imageQuality: args.imageQuality,
             translatePromptToEnglish: args.translatePromptToEnglish,

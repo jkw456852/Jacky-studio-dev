@@ -13,9 +13,12 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "sync:studio-assets": "node scripts/sync-studio-assets.mjs",
+    "build": "npm run sync:studio-assets && vite build",
     "preview": "vite preview",
-    "test:optimizer": "node --experimental-strip-types --test services/agents/prompt-optimizer/*.test.ts services/agents/utils/*.test.ts"
+    "test:optimizer": "node --experimental-strip-types --test services/agents/prompt-optimizer/*.test.ts services/agents/utils/*.test.ts",
+    "test:assets": "node --experimental-strip-types --test services/runtime-assets/*.test.ts",
+    "test": "npm run test:optimizer && npm run test:assets"
   },
   "dependencies": {
     "@google/genai": "^1.44.0",

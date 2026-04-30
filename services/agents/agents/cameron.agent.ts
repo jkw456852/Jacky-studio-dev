@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { CAMERON_SYSTEM_PROMPT, CAMERON_AGENT_INFO } from '../prompts/cameron.prompt';
+import { CAMERON_AGENT_INFO } from '../prompts/cameron.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class CameronAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class CameronAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return CAMERON_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('cameron');
   }
 
   get preferredSkills() {

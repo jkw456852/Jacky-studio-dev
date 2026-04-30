@@ -14,6 +14,7 @@ import {
   type VisualPlanningBrief,
   type VisualRoleOverlay,
 } from "../../../services/vision-orchestrator";
+import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 import {
   appendWorkspaceGenerationTraceDiagnostics,
   patchWorkspaceGenerationTrace,
@@ -344,10 +345,10 @@ const repairPlannedTaskUnits = (args: {
           {
             code: "task_unit_fields_repaired",
             source: "task-planner",
-            severity: "warning",
-            message: `The planner returned incomplete task-unit fields for ${repairedUnitCount} page(s).`,
+            severity: "info",
+            message: `Completed minor task-unit field gaps for ${repairedUnitCount} page(s).`,
             repaired: true,
-            repairSummary: `Auto-filled ${repairedFieldCount} missing field(s) before prompt composition and image generation.`,
+            repairSummary: `Auto-filled ${repairedFieldCount} minor missing field(s) before prompt composition and image generation.`,
             detail: null,
           },
         ]
@@ -360,9 +361,10 @@ const repairPlannedTaskUnits = (args: {
 };
 
 const buildRepairNoticeMessage = (notes: RuntimeRepairNote[]) => {
-  if (!notes.length) return "";
-  const repaired = notes.filter((item) => item.repaired);
-  const unresolved = notes.filter((item) => !item.repaired);
+  const visibleNotes = notes.filter((item) => item.severity !== "info");
+  if (!visibleNotes.length) return "";
+  const repaired = visibleNotes.filter((item) => item.repaired);
+  const unresolved = visibleNotes.filter((item) => !item.repaired);
   const lines = ["检测到执行链异常："];
   repaired.slice(0, 3).forEach((item) => {
     lines.push(`- 已处理：${item.message}${item.repairSummary ? ` ${item.repairSummary}` : ""}`);
@@ -388,6 +390,7 @@ const formatElapsedSeconds = (elapsedMs: number) => {
 
 const buildReferenceRepairLogLines = (notes: RuntimeRepairNote[]) =>
   notes
+    .filter((note) => note.severity !== "info")
     .slice(0, 3)
     .map((note) => {
       const summary = clipLiveLogText(note.repairSummary || note.message, 92);
@@ -460,6 +463,13 @@ const HUMAN_REFERENCE_ROLE_MODE_LABELS: Record<string, string> = {
   "poster-product": "海报参考 + 产品参考",
 };
 
+const HUMAN_REFERENCE_ROLE_MODE_LABELS_V2: Record<string, string> = {
+  none: "无约束",
+  default: "智能分配",
+  "poster-product": "海报参考 + 产品参考",
+  custom: "自定义风格库",
+};
+
 const HUMAN_RESEARCH_MODE_LABELS: Record<string, string> = {
   none: "无需预研",
   images: "先找图像参考",
@@ -497,7 +507,7 @@ const formatPlannerNote = (note: string): string => {
   }
   if (value.startsWith("reference-role-mode=")) {
     const mode = value.slice("reference-role-mode=".length);
-    return `参考图分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS[mode] || mode}`;
+    return `参考图分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS_V2[mode] || mode}`;
   }
   return value;
 };
@@ -519,7 +529,7 @@ const buildPlannedStatusLines = ({
 }) => {
   const lines = [
     `意图：${HUMAN_INTENT_LABELS[intent] || intent}`,
-    `分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS[referenceRoleMode] || referenceRoleMode}`,
+    `分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS_V2[referenceRoleMode] || referenceRoleMode}`,
     `策略：${strategyId}`,
   ];
 
@@ -609,7 +619,7 @@ const buildPlanningBriefMessage = (args: {
   if (roleOverlay?.summary) {
     lines.push(formatPlanningBriefLine("本次角色脑：", roleOverlay.summary));
   }
-  if (false && roleOverlay?.roles?.length) {
+  if (roleOverlay?.roles?.length) {
     lines.push(
       formatPlanningBriefLine(
         "临时角色：",
@@ -700,7 +710,7 @@ const buildExecutionPlanSummaryLines = (args: {
 }) =>
   [
     `编排完成：${clipLiveLogText(args.taskPlan.planningBrief?.deliverableForm || args.plan.strategyId, 96)}`,
-    `参考分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS[args.referenceRoleMode] || args.referenceRoleMode}`,
+    `参考分工：${HUMAN_REFERENCE_ROLE_MODE_LABELS_V2[args.referenceRoleMode] || args.referenceRoleMode}`,
     args.plan.plannerNotes?.[0]
       ? `策略理由：${clipLiveLogText(formatPlannerNote(args.plan.plannerNotes[0]), 96)}`
       : `策略理由：${clipLiveLogText(args.taskPlan.reasoningSummary, 96)}`,
@@ -819,6 +829,10 @@ const buildResearchCompletedLines = (args: {
 type UseWorkspaceElementImageGenerationOptions = {
   elementsRef: MutableRefObject<CanvasElement[]>;
   nodeInteractionMode: WorkspaceNodeInteractionMode;
+  updateElementById: (
+    elementId: string,
+    updates: Partial<CanvasElement>,
+  ) => boolean;
   setElementGeneratingState: (
     elementId: string,
     isGenerating: boolean,
@@ -876,6 +890,7 @@ export function useWorkspaceElementImageGeneration(
   const {
     elementsRef,
     nodeInteractionMode,
+    updateElementById,
     setElementGeneratingState,
     setElementsGenerationStatus,
     appendElementsGenerationLog,
@@ -1006,12 +1021,17 @@ export function useWorkspaceElementImageGeneration(
             traceRequestId,
             toTraceDiagnostics(traceRequestId, repairedReferenceInput.notes),
           );
-          addMessage({
-            id: `gen-repair-${traceRequestId}`,
-            role: "model",
-            text: buildRepairNoticeMessage(repairedReferenceInput.notes),
-            timestamp: Date.now(),
-          });
+          const repairNoticeMessage = buildRepairNoticeMessage(
+            repairedReferenceInput.notes,
+          );
+          if (repairNoticeMessage) {
+            addMessage({
+              id: `gen-repair-${traceRequestId}`,
+              role: "model",
+              text: repairNoticeMessage,
+              timestamp: Date.now(),
+            });
+          }
         }
 
         if (
@@ -1068,6 +1088,44 @@ export function useWorkspaceElementImageGeneration(
 
         let currentReferenceImages = referenceImages;
         let currentConsistencyContext = getDesignConsistencyContext();
+        let currentReferenceRoleMode: NonNullable<
+          CanvasElement["genReferenceRoleMode"]
+        > = sourceElement.genReferenceRoleMode || "default";
+        let currentStyleLibrary =
+          currentReferenceRoleMode === "custom"
+            ? sourceElement.genStyleLibrary
+            : undefined;
+
+        const persistSourceStyleLibrary = (
+          styleLibrary: CanvasElement["genStyleLibrary"] | undefined,
+        ) => {
+          const liveSourceElement =
+            elementsRef.current.find((item) => item.id === sourceElement.id) || null;
+          const sameCustomLibrary =
+            Boolean(styleLibrary) &&
+            liveSourceElement?.genReferenceRoleMode === "custom" &&
+            JSON.stringify(liveSourceElement.genStyleLibrary || null) ===
+              JSON.stringify(styleLibrary);
+          if (sameCustomLibrary) {
+            return;
+          }
+          const nextPatch: Partial<CanvasElement> = {
+            genReferenceRoleMode: styleLibrary ? "custom" : currentReferenceRoleMode,
+          };
+          if (styleLibrary) {
+            const persistedLibrary =
+              getStudioUserAssetApi().saveStyleLibrary(styleLibrary, {
+                preferredId: styleLibrary.id,
+                sourceMode: currentReferenceRoleMode,
+              }) || styleLibrary;
+            nextPatch.genStyleLibrary = persistedLibrary;
+            getStudioUserAssetApi().saveStyleLibrary(persistedLibrary, {
+              preferredId: persistedLibrary.id,
+              sourceMode: currentReferenceRoleMode,
+            });
+          }
+          updateElementById(sourceElement.id, nextPatch);
+        };
 
         const runTaskPlanner = async () => {
           taskPlannerRunCount += 1;
@@ -1086,8 +1144,7 @@ export function useWorkspaceElementImageGeneration(
             manualReferenceCount: manualReferenceImages.length,
             repairedReferenceCount: manualReferenceImages.length,
             mergedReferenceCount: currentReferenceImages.length,
-            requestedReferenceRoleMode:
-              sourceElement.genReferenceRoleMode || "default",
+            requestedReferenceRoleMode: currentReferenceRoleMode,
             visualOrchestratorModel: plannerModelConfig,
           });
           return planVisualTaskWithModel(
@@ -1100,7 +1157,8 @@ export function useWorkspaceElementImageGeneration(
               currentAspectRatio,
               imageSize,
               imageQuality,
-              requestedReferenceRoleMode: sourceElement.genReferenceRoleMode,
+              requestedReferenceRoleMode: currentReferenceRoleMode,
+              currentStyleLibrary,
               translatePromptToEnglish,
               enforceChineseTextInImage,
               requiredChineseCopy,
@@ -1143,6 +1201,11 @@ export function useWorkspaceElementImageGeneration(
           fallbackAspectRatio: currentAspectRatio,
         });
         let taskUnits = repairedTaskUnits.taskUnits;
+        if (taskPlan.styleLibrary) {
+          currentReferenceRoleMode = "custom";
+          currentStyleLibrary = taskPlan.styleLibrary;
+          persistSourceStyleLibrary(taskPlan.styleLibrary);
+        }
 
         const researchDecision = taskPlan.planningBrief?.researchDecision;
         if (researchDecision?.shouldResearch) {
@@ -1229,6 +1292,11 @@ export function useWorkspaceElementImageGeneration(
           plannedTask = await runTaskPlanner();
           await planningLogStreamer.flush();
           taskPlan = plannedTask.taskPlan;
+          if (taskPlan.styleLibrary) {
+            currentReferenceRoleMode = "custom";
+            currentStyleLibrary = taskPlan.styleLibrary;
+            persistSourceStyleLibrary(taskPlan.styleLibrary);
+          }
           if (taskPlan.planningBrief?.researchDecision?.shouldResearch) {
             taskPlan = {
               ...taskPlan,
@@ -1294,16 +1362,21 @@ export function useWorkspaceElementImageGeneration(
             traceRequestId,
             toTraceDiagnostics(traceRequestId, repairedTaskUnits.notes),
           );
-          appendElementsGenerationLog(
+          const visibleRepairLines = buildReferenceRepairLogLines(
+            repairedTaskUnits.notes,
+          );
+          if (visibleRepairLines.length > 0) {
+            appendElementsGenerationLog(
             isTreePromptNode && targetElementIds.length > 0
               ? targetElementIds
               : [elementId],
             {
               phase: "planning",
               title: "正在整理任务结构",
-              lines: buildReferenceRepairLogLines(repairedTaskUnits.notes),
+              lines: visibleRepairLines,
             },
           );
+          }
         }
 
         appendElementsGenerationLog(
@@ -1384,7 +1457,7 @@ export function useWorkspaceElementImageGeneration(
             currentAspectRatio,
             imageSize,
             imageQuality,
-            requestedReferenceRoleMode: sourceElement.genReferenceRoleMode,
+            requestedReferenceRoleMode: currentReferenceRoleMode,
             translatePromptToEnglish,
             enforceChineseTextInImage,
             requiredChineseCopy,
@@ -1724,7 +1797,8 @@ export function useWorkspaceElementImageGeneration(
                 selectedGenerationModel: String(model),
                 taskRoleOverlay: taskPlan.roleOverlay,
                 taskPlanningBrief: taskPlan.planningBrief,
-                requestedReferenceRoleMode: sourceElement.genReferenceRoleMode,
+                styleLibrary: taskPlan.styleLibrary,
+                requestedReferenceRoleMode: currentReferenceRoleMode,
                 imageQuality,
                 translatePromptToEnglish,
                 enforceChineseTextInImage,
@@ -2281,6 +2355,7 @@ export function useWorkspaceElementImageGeneration(
       setElementsGenerationStatus,
       setElementGeneratingState,
       translatePromptToEnglish,
+      updateElementById,
     ],
   );
 }

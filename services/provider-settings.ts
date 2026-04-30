@@ -1,5 +1,6 @@
 ﻿import { fetchAvailableModels } from './gemini';
 import { safeLocalStorageSetItem } from '../utils/safe-storage';
+import { getStudioUserAssetApi } from './runtime-assets/api';
 
 export type ModelCategory = 'script' | 'image' | 'video';
 export type ModelBrand =
@@ -147,6 +148,9 @@ const getLocalStorage = (): Storage | null => {
   return window.localStorage;
 };
 
+const getWorkspacePreferencesAsset = () =>
+  getStudioUserAssetApi().getWorkspacePreferences();
+
 const normalizeImageModelPostPath = (value: unknown): string => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -213,8 +217,7 @@ const parseStoredImageModelPostPaths = (
 };
 
 export const getStoredImageModelPostPaths = (): Record<string, ImageModelPostPathConfig> => {
-  const storage = getLocalStorage();
-  return parseStoredImageModelPostPaths(storage?.getItem(IMAGE_MODEL_POST_PATHS_STORAGE_KEY) || null);
+  return getWorkspacePreferencesAsset().imageModelPostPaths || {};
 };
 
 const getDefaultImageModelPostPaths = (
@@ -461,26 +464,23 @@ const getStoredProviders = (): ApiProviderConfig[] => {
 };
 
 const getStoredMappingEntries = (category: ModelCategory): string[] => {
-  const storage = getLocalStorage();
-  if (!storage) {
-    if (category === 'image') return [DEFAULT_IMAGE_MODEL];
-    if (category === 'video') return [DEFAULT_VIDEO_MODEL];
-    return [DEFAULT_SCRIPT_MODEL];
-  }
+  const workspacePreferences = getWorkspacePreferencesAsset();
 
   if (category === 'image') {
-    const selected = safeJsonArray(storage.getItem('setting_image_models'), [AUTO_IMAGE_OPTION_ID]);
-    if (selected.length === 0) {
-      return [AUTO_IMAGE_OPTION_ID];
-    }
-    return selected;
+    return workspacePreferences.selectedImageModels.length > 0
+      ? workspacePreferences.selectedImageModels
+      : [AUTO_IMAGE_OPTION_ID];
   }
 
   if (category === 'video') {
-    return safeJsonArray(storage.getItem('setting_video_models'), [DEFAULT_VIDEO_MODEL]);
+    return workspacePreferences.selectedVideoModels.length > 0
+      ? workspacePreferences.selectedVideoModels
+      : [DEFAULT_VIDEO_MODEL];
   }
 
-  return safeJsonArray(storage.getItem('setting_script_models'), [DEFAULT_SCRIPT_MODEL]);
+  return workspacePreferences.selectedScriptModels.length > 0
+    ? workspacePreferences.selectedScriptModels
+    : [DEFAULT_SCRIPT_MODEL];
 };
 
 export const getModelDisplayLabel = (modelId: string): string => {
@@ -571,8 +571,9 @@ export const getMappedPrimaryModelLabel = (category: ModelCategory): string => {
 export const getVisualOrchestratorModelConfig = (
   providers?: ApiProviderConfig[],
 ): MappedModelConfig | null => {
-  const storage = getLocalStorage();
-  const raw = storage?.getItem('setting_visual_orchestrator_model') || DEFAULT_VISUAL_ORCHESTRATOR_MODEL;
+  const raw =
+    getWorkspacePreferencesAsset().visualOrchestratorModel ||
+    DEFAULT_VISUAL_ORCHESTRATOR_MODEL;
   if (!raw || raw === DEFAULT_VISUAL_ORCHESTRATOR_MODEL) {
     return getMappedPrimaryModelConfig('script', providers);
   }
@@ -605,8 +606,9 @@ export const getVisualOrchestratorModelLabel = (
 export const getBrowserAgentModelConfig = (
   providers?: ApiProviderConfig[],
 ): MappedModelConfig | null => {
-  const storage = getLocalStorage();
-  const raw = storage?.getItem('setting_browser_agent_model') || DEFAULT_BROWSER_AGENT_MODEL;
+  const raw =
+    getWorkspacePreferencesAsset().browserAgentModel ||
+    DEFAULT_BROWSER_AGENT_MODEL;
   if (!raw || raw === DEFAULT_BROWSER_AGENT_MODEL) {
     return getMappedPrimaryModelConfig('script', providers);
   }
@@ -640,16 +642,16 @@ export const getVisualOrchestratorInputPolicy = (): {
   maxReferenceImages: number;
   maxInlineImageBytesMb: number;
 } => {
-  const storage = getLocalStorage();
+  const workspacePreferences = getWorkspacePreferencesAsset();
   return {
     maxReferenceImages: clampInteger(
-      storage?.getItem('setting_visual_orchestrator_max_reference_images'),
+      workspacePreferences.visualOrchestratorMaxReferenceImages,
       DEFAULT_VISUAL_ORCHESTRATOR_MAX_REFERENCE_IMAGES,
       0,
       64,
     ),
     maxInlineImageBytesMb: clampInteger(
-      storage?.getItem('setting_visual_orchestrator_max_inline_image_bytes_mb'),
+      workspacePreferences.visualOrchestratorMaxInlineImageBytesMb,
       DEFAULT_VISUAL_ORCHESTRATOR_MAX_INLINE_IMAGE_BYTES_MB,
       1,
       64,
@@ -668,12 +670,11 @@ export const getMappedModelDisplaySummary = (category: ModelCategory): string =>
 export const loadProviderSettings = (): LoadedProviderSettings => {
   const storage = getLocalStorage();
   const providers = getStoredProviders();
+  const workspacePreferences = getWorkspacePreferencesAsset();
   const activeProviderId = storage?.getItem('api_provider') || providers.find((provider) => provider.id === 'yunwu')?.id || providers[0]?.id || 'yunwu';
   const selectedVideoModels = normalizeVideoModels(
     getMappedModelIds('video'),
   );
-
-  safeLocalStorageSetItem('setting_video_models', JSON.stringify(getStoredMappingEntries('video')));
 
   return {
     providers,
@@ -685,25 +686,20 @@ export const loadProviderSettings = (): LoadedProviderSettings => {
     selectedScriptModels: getStoredMappingEntries('script'),
     selectedImageModels: getStoredMappingEntries('image'),
     selectedVideoModels: getStoredMappingEntries('video').length > 0 ? getStoredMappingEntries('video') : selectedVideoModels,
-    imageModelPostPaths: getStoredImageModelPostPaths(),
-    visualOrchestratorModel: storage?.getItem('setting_visual_orchestrator_model') || DEFAULT_VISUAL_ORCHESTRATOR_MODEL,
-    browserAgentModel: storage?.getItem('setting_browser_agent_model') || DEFAULT_BROWSER_AGENT_MODEL,
-    visualOrchestratorMaxReferenceImages: clampInteger(
-      storage?.getItem('setting_visual_orchestrator_max_reference_images'),
-      DEFAULT_VISUAL_ORCHESTRATOR_MAX_REFERENCE_IMAGES,
-      0,
-      64,
-    ),
-    visualOrchestratorMaxInlineImageBytesMb: clampInteger(
-      storage?.getItem('setting_visual_orchestrator_max_inline_image_bytes_mb'),
-      DEFAULT_VISUAL_ORCHESTRATOR_MAX_INLINE_IMAGE_BYTES_MB,
-      1,
-      64,
-    ),
-    visualContinuity: storage?.getItem('setting_visual_continuity') !== 'false',
-    systemModeration: storage?.getItem('setting_system_moderation') === 'true',
-    autoSave: storage?.getItem('setting_auto_save') !== 'false',
-    concurrentCount: parseInt(storage?.getItem('setting_concurrent_count') || '1', 10),
+    imageModelPostPaths: workspacePreferences.imageModelPostPaths,
+    visualOrchestratorModel:
+      workspacePreferences.visualOrchestratorModel ||
+      DEFAULT_VISUAL_ORCHESTRATOR_MODEL,
+    browserAgentModel:
+      workspacePreferences.browserAgentModel || DEFAULT_BROWSER_AGENT_MODEL,
+    visualOrchestratorMaxReferenceImages:
+      workspacePreferences.visualOrchestratorMaxReferenceImages,
+    visualOrchestratorMaxInlineImageBytesMb:
+      workspacePreferences.visualOrchestratorMaxInlineImageBytesMb,
+    visualContinuity: workspacePreferences.visualContinuity,
+    systemModeration: workspacePreferences.systemModeration,
+    autoSave: workspacePreferences.autoSave,
+    concurrentCount: workspacePreferences.concurrentCount,
   };
 };
 
@@ -712,37 +708,34 @@ export const saveProviderSettings = (settings: LoadedProviderSettings): void => 
   safeLocalStorageSetItem('api_provider', settings.activeProviderId);
   safeLocalStorageSetItem('replicate_api_key', settings.replicateKey.trim());
   safeLocalStorageSetItem('kling_api_key', settings.klingKey.trim());
-  safeLocalStorageSetItem('setting_script_models', JSON.stringify(settings.selectedScriptModels));
-  safeLocalStorageSetItem('setting_image_models', JSON.stringify(settings.selectedImageModels));
-  safeLocalStorageSetItem('setting_video_models', JSON.stringify(settings.selectedVideoModels));
-  safeLocalStorageSetItem(
-    IMAGE_MODEL_POST_PATHS_STORAGE_KEY,
-    JSON.stringify(sanitizeImageModelPostPathSettings(settings.imageModelPostPaths)),
-  );
-  safeLocalStorageSetItem('setting_visual_orchestrator_model', settings.visualOrchestratorModel || DEFAULT_VISUAL_ORCHESTRATOR_MODEL);
-  safeLocalStorageSetItem('setting_browser_agent_model', settings.browserAgentModel || DEFAULT_BROWSER_AGENT_MODEL);
-  safeLocalStorageSetItem(
-    'setting_visual_orchestrator_max_reference_images',
-    clampInteger(
+  getStudioUserAssetApi().setWorkspacePreferences({
+    selectedScriptModels: settings.selectedScriptModels,
+    selectedImageModels: settings.selectedImageModels,
+    selectedVideoModels: settings.selectedVideoModels,
+    imageModelPostPaths: sanitizeImageModelPostPathSettings(
+      settings.imageModelPostPaths,
+    ),
+    visualOrchestratorModel:
+      settings.visualOrchestratorModel || DEFAULT_VISUAL_ORCHESTRATOR_MODEL,
+    browserAgentModel:
+      settings.browserAgentModel || DEFAULT_BROWSER_AGENT_MODEL,
+    visualOrchestratorMaxReferenceImages: clampInteger(
       settings.visualOrchestratorMaxReferenceImages,
       DEFAULT_VISUAL_ORCHESTRATOR_MAX_REFERENCE_IMAGES,
       0,
       64,
-    ).toString(),
-  );
-  safeLocalStorageSetItem(
-    'setting_visual_orchestrator_max_inline_image_bytes_mb',
-    clampInteger(
+    ),
+    visualOrchestratorMaxInlineImageBytesMb: clampInteger(
       settings.visualOrchestratorMaxInlineImageBytesMb,
       DEFAULT_VISUAL_ORCHESTRATOR_MAX_INLINE_IMAGE_BYTES_MB,
       1,
       64,
-    ).toString(),
-  );
-  safeLocalStorageSetItem('setting_visual_continuity', settings.visualContinuity ? 'true' : 'false');
-  safeLocalStorageSetItem('setting_system_moderation', settings.systemModeration ? 'true' : 'false');
-  safeLocalStorageSetItem('setting_auto_save', settings.autoSave ? 'true' : 'false');
-  safeLocalStorageSetItem('setting_concurrent_count', settings.concurrentCount.toString());
+    ),
+    visualContinuity: settings.visualContinuity,
+    systemModeration: settings.systemModeration,
+    autoSave: settings.autoSave,
+    concurrentCount: clampInteger(settings.concurrentCount, 1, 1, 16),
+  });
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(

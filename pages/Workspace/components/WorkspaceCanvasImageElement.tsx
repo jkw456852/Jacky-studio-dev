@@ -14,10 +14,12 @@ import { WorkspaceGenerationStatusCard } from "./WorkspaceGenerationStatusCard";
 import { WorkspaceTreePromptNode } from "./WorkspaceTreePromptNode";
 import { WorkspaceTreeImageNode } from "./WorkspaceTreeImageNode";
 import {
+  getAllNodeParentIds,
   getWorkspaceImageNodeHeight,
   resolveWorkspaceTreeNodeKind,
   WORKSPACE_IMAGE_NODE_WIDTH,
 } from "../workspaceTreeNode";
+import { getElementSourceUrl } from "../workspaceShared";
 import {
   WORKSPACE_NODE_FRESH_GENERATED_GLOW_SHADOW,
   WORKSPACE_NODE_EDGE_HANDLE_CLASS,
@@ -528,8 +530,30 @@ const WorkspaceCanvasImageElementImpl: React.FC<
   const previewRefUrls =
     element.genRefPreviewImages ||
     (element.genRefPreviewImage ? [element.genRefPreviewImage] : []);
+  const connectedImageParents = getAllNodeParentIds(element)
+    .map((parentId) => elements.find((item) => item.id === parentId) || null)
+    .filter(
+      (item): item is CanvasElement =>
+        resolveWorkspaceTreeNodeKind(item, nodeInteractionMode) === "image",
+    );
+  const parentDerivedSourceRefs = connectedImageParents
+    .map((item) => String(getElementSourceUrl(item) || "").trim())
+    .filter(Boolean);
+  const parentDerivedPreviewRefs = connectedImageParents
+    .map(
+      (item) =>
+        String(getElementDisplayUrl(item) || getElementSourceUrl(item) || "").trim(),
+    )
+    .filter(Boolean);
+  const effectiveSourceRefUrls =
+    connectedImageParents.length > 0 ? parentDerivedSourceRefs : sourceRefUrls;
+  const effectivePreviewRefUrls =
+    connectedImageParents.length > 0 ? parentDerivedPreviewRefs : previewRefUrls;
   const refThumbs =
-    (previewRefUrls.length > 0 ? previewRefUrls : sourceRefUrls).slice(0, 6);
+    effectivePreviewRefUrls.length > 0
+      ? effectivePreviewRefUrls
+      : effectiveSourceRefUrls;
+  const connectedParentCount = connectedImageParents.length;
   const promptValue = element.genPrompt || "";
   const refUploadInputId = `tree-node-ref-upload-${element.id}`;
   const timestampLabel = formatRelativeTime(element.id);
@@ -558,7 +582,8 @@ const WorkspaceCanvasImageElementImpl: React.FC<
             hasUrl={hasUrl}
             displayUrl={displayUrl}
             thumbUrls={refThumbs}
-            sourceRefUrls={sourceRefUrls}
+            sourceRefUrls={effectiveSourceRefUrls}
+            connectedParentCount={connectedParentCount}
             promptValue={promptValue}
             setElementsSynced={setElementsSynced}
             setPreviewUrl={setPreviewUrl}

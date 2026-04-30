@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { AgentTask, AgentType } from '../types/agent.types';
+import { AgentRoleDraft, AgentTask, AgentType } from '../types/agent.types';
 import { CanvasElement, ChatMessage, InputBlock, ImageModel, VideoModel, WorkspaceInputFile } from '../types';
 
 type VideoGenDuration = NonNullable<CanvasElement['genDuration']>;
@@ -159,6 +159,13 @@ interface AgentState {
   webEnabled: boolean;
   agentSelectionMode: 'auto' | 'manual';
   pinnedAgentId: AgentType;
+  currentAutoRoleSession: {
+    targetAgent: AgentType;
+    roleStrategy: 'reuse' | 'augment' | 'create';
+    roleStrategyReason: string;
+    roleDraft: AgentRoleDraft | null;
+    updatedAt: number;
+  } | null;
   imageModelEnabled: boolean;
   translatePromptToEnglish: boolean;
   enforceChineseTextInImage: boolean;
@@ -211,6 +218,9 @@ interface AgentState {
     setWebEnabled: (enabled: boolean) => void;
     setAgentSelectionMode: (mode: 'auto' | 'manual') => void;
     setPinnedAgentId: (agentId: AgentType) => void;
+    setCurrentAutoRoleSession: (
+      session: AgentState['currentAutoRoleSession'],
+    ) => void;
     setImageModelEnabled: (enabled: boolean) => void;
     setTranslatePromptToEnglish: (enabled: boolean) => void;
     setEnforceChineseTextInImage: (enabled: boolean) => void;
@@ -265,6 +275,7 @@ const initialState: Omit<AgentState, 'actions'> = {
   webEnabled: false,
   agentSelectionMode: 'auto' as const,
   pinnedAgentId: 'coco' as AgentType,
+  currentAutoRoleSession: null,
   imageModelEnabled: false,
   translatePromptToEnglish: false,
   enforceChineseTextInImage: true,
@@ -517,6 +528,7 @@ export const useAgentStore = create<AgentState>()(
         setWebEnabled: (enabled) => set({ webEnabled: enabled }),
         setAgentSelectionMode: (mode) => set({ agentSelectionMode: mode }),
         setPinnedAgentId: (agentId) => set({ pinnedAgentId: agentId }),
+        setCurrentAutoRoleSession: (session) => set({ currentAutoRoleSession: session }),
         setImageModelEnabled: (enabled) => set({ imageModelEnabled: enabled }),
         setTranslatePromptToEnglish: (enabled) => set({ translatePromptToEnglish: enabled }),
         setEnforceChineseTextInImage: (enabled) => set({ enforceChineseTextInImage: enabled }),

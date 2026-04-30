@@ -8,6 +8,7 @@ export const WORKSPACE_IMAGE_NODE_WIDTH = 380;
 export const TREE_NODE_CARD_WIDTH = WORKSPACE_IMAGE_NODE_WIDTH;
 export const TREE_NODE_IMAGE_MIN_HEIGHT = 220;
 export const TREE_NODE_IMAGE_MAX_HEIGHT = 520;
+export const TREE_PROMPT_PARENT_REFERENCE_LIMIT = 24;
 
 export const getAllNodeParentIds = (
   element: CanvasElement | null | undefined,

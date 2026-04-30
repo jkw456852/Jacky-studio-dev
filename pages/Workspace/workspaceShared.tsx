@@ -510,9 +510,40 @@ export const getElementDisplayUrl = (
   element: CanvasElement,
 ): string | undefined => element.proxyUrl || element.url;
 
+export const isLikelyGeneratedImageElement = (
+  element: CanvasElement,
+): boolean =>
+  Boolean(
+    element.genPrompt ||
+      element.genModel ||
+      element.genProviderId ||
+      element.genResolution ||
+      element.genImageQuality ||
+      element.generatingType ||
+      element.hasFreshGeneratedGlow,
+  );
+
 export const getElementSourceUrl = (
   element: CanvasElement,
-): string | undefined => element.originalUrl || element.url;
+): string | undefined => {
+  const originalUrl = String(element.originalUrl || "").trim();
+  const proxyUrl = String(element.proxyUrl || "").trim();
+  const displayUrl = String(element.url || "").trim();
+
+  if (!originalUrl) {
+    return displayUrl || proxyUrl || undefined;
+  }
+
+  if (isLikelyGeneratedImageElement(element)) {
+    return originalUrl;
+  }
+
+  if (DATA_URL_PREFIX.test(originalUrl) || originalUrl === displayUrl || originalUrl === proxyUrl) {
+    return originalUrl;
+  }
+
+  return displayUrl || proxyUrl || originalUrl || undefined;
+};
 
 export const getUpscaleFactor = (res: "2K" | "4K" | "8K") =>
   res === "2K" ? 2 : res === "4K" ? 4 : 8;

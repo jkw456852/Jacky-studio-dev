@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { COCO_SYSTEM_PROMPT, COCO_AGENT_INFO } from '../prompts/coco.prompt';
+import { COCO_AGENT_INFO } from '../prompts/coco.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class CocoAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class CocoAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return COCO_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('coco');
   }
 
   get preferredSkills() {

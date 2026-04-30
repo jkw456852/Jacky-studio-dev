@@ -25,6 +25,7 @@ const buildSetPagePrompt = (
   const forbiddenDrift = sharedStyleGuide?.forbiddenDrift || [];
   const planningBrief = taskPlan.planningBrief;
   const roleOverlay = taskPlan.roleOverlay;
+  const styleLibrary = taskPlan.styleLibrary;
 
   const formatLines = (title: string, values?: string[]) => {
     if (!values || values.length === 0) return "";
@@ -47,9 +48,19 @@ const buildSetPagePrompt = (
       : "",
     roleOverlay?.summary ? `- Task role overlay: ${roleOverlay.summary}.` : "",
     roleOverlay?.mindset ? `- Overlay mindset: ${roleOverlay.mindset}.` : "",
+    styleLibrary?.title ? `- Active style library: ${styleLibrary.title}.` : "",
+    styleLibrary?.summary ? `- Style library summary: ${styleLibrary.summary}.` : "",
     formatLines(
       "Overlay Planning Policy",
       roleOverlay?.planningPolicy,
+    ),
+    formatLines(
+      "Style Library Planning Directives",
+      styleLibrary?.planningDirectives,
+    ),
+    formatLines(
+      "Style Library Prompt Directives",
+      styleLibrary?.promptDirectives,
     ),
     formatLines(
       "Overlay Execution Directives",
@@ -140,6 +151,7 @@ const buildRuleFallbackPlannedTask = (args: {
         "Planner model did not return a fully usable task plan, so the workflow continued with a simplified fallback.",
       ],
     },
+    styleLibrary: args.input.currentStyleLibrary,
   };
 
   return {
@@ -254,6 +266,7 @@ export const planVisualTaskWithModel = async (
     toolChain: patch.toolChain,
     planningBrief: patch.planningBrief,
     roleOverlay: patch.roleOverlay,
+    styleLibrary: patch.styleLibrary || input.currentStyleLibrary,
     sharedStyleGuide: patch.sharedStyleGuide,
     pages: patch.pages,
   };

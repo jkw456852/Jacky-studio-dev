@@ -15,7 +15,26 @@ import type {
   CnDetailTextMode,
 } from '../../../types';
 
+type QuickSkillEntry = {
+  id: string;
+  pluginId: string;
+  label: string;
+  iconName: string;
+  kind:
+    | 'amazon'
+    | 'cn-detail'
+    | 'social'
+    | 'brochure'
+    | 'storyboard'
+    | 'clothing'
+    | 'ecommerce'
+    | 'oneclick';
+};
+
 type AssistantSidebarQuickSkillsProps = {
+  quickSkillPluginEnabled: boolean;
+  quickSkillPluginPinned: boolean;
+  quickSkillEntries: QuickSkillEntry[];
   isCnDetailActive: boolean;
   cnDetailPromptVersion: CnDetailPromptVersion;
   cnDetailTextMode: CnDetailTextMode;
@@ -34,6 +53,9 @@ type AssistantSidebarQuickSkillsProps = {
 };
 
 export const AssistantSidebarQuickSkills: React.FC<AssistantSidebarQuickSkillsProps> = ({
+  quickSkillPluginEnabled,
+  quickSkillPluginPinned,
+  quickSkillEntries,
   isCnDetailActive,
   cnDetailPromptVersion,
   cnDetailTextMode,
@@ -50,6 +72,78 @@ export const AssistantSidebarQuickSkills: React.FC<AssistantSidebarQuickSkillsPr
   onSendEcommerceOneClick,
   onSendOneClick,
 }) => {
+  if (!quickSkillPluginEnabled) {
+    return null;
+  }
+
+  const orderedEntries = [...quickSkillEntries].sort((left, right) => {
+    if (!quickSkillPluginPinned) return 0;
+    const leftPinned = left.kind === 'amazon' || left.kind === 'cn-detail';
+    const rightPinned = right.kind === 'amazon' || right.kind === 'cn-detail';
+    if (leftPinned === rightPinned) return 0;
+    return leftPinned ? -1 : 1;
+  });
+
+  const renderSkillButton = (entry: QuickSkillEntry) => {
+    const iconMap = {
+      amazon: Store,
+      'cn-detail': Store,
+      social: Globe,
+      brochure: FileText,
+      storyboard: Video,
+      clothing: ImageIcon,
+      ecommerce: Package2,
+      oneclick: Compass,
+    } as const;
+    const Icon = iconMap[entry.kind];
+
+    const onClickMap = {
+      amazon: onSendAmazonListing,
+      'cn-detail': onSendCnDetail,
+      social: onSendSocialMedia,
+      brochure: onSendBrochure,
+      storyboard: onSendStoryboard,
+      clothing: onSendClothing,
+      ecommerce: onSendEcommerceOneClick,
+      oneclick: onSendOneClick,
+    } as const;
+
+    if (entry.kind === 'cn-detail') {
+      return (
+        <button
+          key={entry.id}
+          onClick={onClickMap[entry.kind]}
+          className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all ${
+            isCnDetailActive
+              ? 'border border-gray-900 bg-gray-900 text-white shadow-sm'
+              : 'border border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:text-gray-900 hover:shadow-sm'
+          }`}
+        >
+          <Icon size={15} strokeWidth={1.8} />
+          <span>{entry.label}</span>
+        </button>
+      );
+    }
+
+    return (
+      <button
+        key={entry.id}
+        onClick={onClickMap[entry.kind]}
+        className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
+      >
+        <Icon size={15} strokeWidth={1.8} />
+        <span>{entry.label}</span>
+      </button>
+    );
+  };
+
+  const primaryEntries = orderedEntries.filter(
+    (entry) => entry.kind === 'amazon' || entry.kind === 'cn-detail',
+  );
+  const secondaryEntries = orderedEntries.filter(
+    (entry) => entry.kind !== 'amazon' && entry.kind !== 'cn-detail',
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -69,25 +163,7 @@ export const AssistantSidebarQuickSkills: React.FC<AssistantSidebarQuickSkillsPr
       </p>
 
       <div className="flex flex-wrap gap-2.5">
-        <button
-          onClick={onSendAmazonListing}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <Store size={15} strokeWidth={1.8} />
-          <span>亚马逊产品套图</span>
-        </button>
-
-        <button
-          onClick={onSendCnDetail}
-          className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all ${
-            isCnDetailActive
-              ? 'border border-gray-900 bg-gray-900 text-white shadow-sm'
-              : 'border border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:text-gray-900 hover:shadow-sm'
-          }`}
-        >
-          <Store size={15} strokeWidth={1.8} />
-          <span>中文详情页套图</span>
-        </button>
+        {primaryEntries.map(renderSkillButton)}
 
         <div className="inline-flex items-center rounded-full border border-gray-200 bg-white p-0.5">
           <button
@@ -139,54 +215,7 @@ export const AssistantSidebarQuickSkills: React.FC<AssistantSidebarQuickSkillsPr
             固定 3:4
           </button>
         </div>
-
-        <button
-          onClick={onSendSocialMedia}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <Globe size={15} strokeWidth={1.8} />
-          <span>社交媒体</span>
-        </button>
-
-        <button
-          onClick={onSendBrochure}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <FileText size={15} strokeWidth={1.8} />
-          <span>营销宣传册</span>
-        </button>
-
-        <button
-          onClick={onSendStoryboard}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <Video size={15} strokeWidth={1.8} />
-          <span>分镜故事板</span>
-        </button>
-
-        <button
-          onClick={onSendClothing}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <ImageIcon size={15} strokeWidth={1.8} />
-          <span>服装棚拍组图</span>
-        </button>
-
-        <button
-          onClick={onSendEcommerceOneClick}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <Package2 size={15} strokeWidth={1.8} />
-          <span>电商一键工作流</span>
-        </button>
-
-        <button
-          onClick={onSendOneClick}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
-        >
-          <Compass size={15} strokeWidth={1.8} />
-          <span>SKYSPER视觉</span>
-        </button>
+        {secondaryEntries.map(renderSkillButton)}
       </div>
     </motion.div>
   );

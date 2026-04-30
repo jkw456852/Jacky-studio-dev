@@ -2076,6 +2076,12 @@ const buildStyleLibraryControlOptions = (
         : "Requires at least two reference images.",
       disabled: !canUsePosterProductMode,
     },
+    {
+      value: "custom",
+      label: "Custom",
+      description:
+        "Use the current task-specific custom style library if one exists, or seed one from the active preset.",
+    },
   ];
 };
 

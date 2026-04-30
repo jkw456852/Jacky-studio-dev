@@ -294,12 +294,11 @@ export function useWorkspaceCanvasElementCreation(
       });
       const refImages = (options?.genRefImages || [])
         .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 6);
+        .filter(Boolean);
       const refPreviewImages = (options?.genRefPreviewImages || [])
         .map((item) => item.trim())
         .filter(Boolean)
-        .slice(0, refImages.length || 6);
+        .slice(0, refImages.length || undefined);
       const nextNodeInteractionMode =
         options?.nodeInteractionMode || nodeInteractionMode;
       const width =

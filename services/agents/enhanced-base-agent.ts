@@ -16,6 +16,7 @@ import { errorHandler, ErrorType, AppError } from "../../utils/error-handler";
 import { buildEcommerceProposals } from "./shared/ecommerce-variants";
 import { useAgentStore } from "../../stores/agent.store";
 import { collectReferenceCandidates } from "./utils/reference-images";
+import { buildRuntimeRolePrompt } from "./runtime-role";
 
 // 带指数退避的重试工具（用于 analyzeAndPlan 等内部调用）
 const retryAsync = async <T>(
@@ -1465,7 +1466,7 @@ ${truncateText(metadata.topicPinnedContext, MAX_TOPIC_CONTEXT_CHARS)}
 `
         : "";
 
-      const fullPrompt = `${this.systemPrompt}
+      const fullPrompt = `${buildRuntimeRolePrompt(this.systemPrompt, metadata)}
 
 【语言要求】你必须用中文回复所有内容（analysis、message、title、description 等字段全部用中文）。${promptLanguageRule}
 

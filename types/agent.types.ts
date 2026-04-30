@@ -22,6 +22,12 @@ export interface AgentInfo {
   color: string;
 }
 
+export interface AgentRoleDraft {
+  title: string;
+  summary: string;
+  instructions: string[];
+}
+
 export interface AgentResearchCitation {
   title: string;
   url: string;
@@ -57,6 +63,11 @@ export interface AgentTaskMetadata {
   enableWebSearch?: boolean;
   agentSelectionMode?: 'auto' | 'manual';
   pinnedAgentId?: AgentType;
+  roleStrategy?: 'reuse' | 'augment' | 'create';
+  roleStrategyReason?: string;
+  roleDraft?: AgentRoleDraft;
+  rolePromptAddon?: string;
+  rolePromptLabel?: string;
   internalCall?: boolean;
   requestId?: string;
   timeoutMs?: number;
@@ -73,6 +84,7 @@ export interface AgentTaskMetadata {
   selectedSkillCalls?: SkillCall[];
   skillData?: {
     id?: string;
+    pluginId?: string;
     name?: string;
     iconName?: string;
     config?: Record<string, unknown>;
@@ -87,6 +99,9 @@ export interface AgentRoutingDecision {
   complexity: 'simple' | 'complex';
   handoffMessage: string;
   confidence: number;
+  roleStrategy?: 'reuse' | 'augment' | 'create';
+  roleStrategyReason?: string;
+  roleDraft?: AgentRoleDraft;
   message?: string;
   questions?: string[];
   suggestions?: string[];

@@ -1,4 +1,4 @@
-import {
+﻿import {
   useEffect,
   type Dispatch,
   type MutableRefObject,
@@ -35,6 +35,7 @@ import {
 import {
   getAllNodeParentIds,
   resolveWorkspaceTreeNodeKind,
+  TREE_PROMPT_PARENT_REFERENCE_LIMIT,
 } from "../workspaceTreeNode";
 
 type WorkspaceBootstrapLocationState = {
@@ -64,6 +65,8 @@ type UseWorkspaceProjectLoaderArgs = {
   setSelectedElementId: Dispatch<SetStateAction<string | null>>;
   setSelectedElementIds: Dispatch<SetStateAction<string[]>>;
   setActiveConversationId: Dispatch<SetStateAction<string>>;
+  setZoom: Dispatch<SetStateAction<number>>;
+  setPan: Dispatch<SetStateAction<{ x: number; y: number }>>;
   setInputBlocks: (
     blocks: Array<{
       id: string;
@@ -172,7 +175,7 @@ const isRecoverableGeneratedImageElement = (element: CanvasElement): boolean =>
   Boolean(
     element.genPrompt ||
       element.genModel ||
-      element.genAspectRatio ||
+      element.genProviderId ||
       element.genResolution ||
       element.genImageQuality,
   );
@@ -460,7 +463,6 @@ const resolveLoadedTreePromptReferenceState = (
 } => {
   const sourceRefs: string[] = [];
   const previewRefs: string[] = [];
-  const seenSourceRefs = new Set<string>();
   let hasImageParents = false;
 
   for (const currentParentId of parentIds) {
@@ -474,18 +476,17 @@ const resolveLoadedTreePromptReferenceState = (
     hasImageParents = true;
 
     const sourceRef = (getElementSourceUrl(currentParent) || "").trim();
-    if (!sourceRef || seenSourceRefs.has(sourceRef)) {
+    if (!sourceRef) {
       continue;
     }
 
-    seenSourceRefs.add(sourceRef);
     sourceRefs.push(sourceRef);
 
     const previewRef =
       (getElementDisplayUrl(currentParent) || sourceRef).trim() || sourceRef;
     previewRefs.push(previewRef);
 
-    if (sourceRefs.length >= 6) {
+    if (sourceRefs.length >= TREE_PROMPT_PARENT_REFERENCE_LIMIT) {
       break;
     }
   }
@@ -846,6 +847,8 @@ export const useWorkspaceProjectLoader = ({
   setSelectedElementId,
   setSelectedElementIds,
   setActiveConversationId,
+  setZoom,
+  setPan,
   setInputBlocks,
   setModelMode,
   setWebEnabled,
@@ -866,12 +869,14 @@ export const useWorkspaceProjectLoader = ({
         setElementsSynced([]);
         setMarkersSynced([]);
         setConversations([]);
-        setProjectTitle("未命名");
+        setProjectTitle("Untitled");
         setHistory([{ elements: [], markers: [] }]);
         setHistoryStep(0);
         setSelectedElementId(null);
         setSelectedElementIds([]);
         setActiveConversationId("");
+        setZoom(100);
+        setPan({ x: 0, y: 0 });
 
         useAgentStore.getState().actions.reset();
 
@@ -938,9 +943,11 @@ export const useWorkspaceProjectLoader = ({
             setHistoryStep(0);
           } else {
             console.log("[Workspace] New project, saving initial record");
+            setZoom(100);
+            setPan({ x: 0, y: 0 });
             await saveProject({
               id,
-              title: "未命名",
+              title: "Untitled",
               updatedAt: formatDate(Date.now()),
               elements: [],
               markers: [],
@@ -1068,3 +1075,4 @@ export const useWorkspaceProjectLoader = ({
     };
   }, [id]);
 };
+

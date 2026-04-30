@@ -232,6 +232,7 @@ const buildRuleBasedPlannedGeneration = (
     userGoal: input.prompt,
     references: analysis.references,
     taskRoleOverlay: input.taskRoleOverlay,
+    styleLibrary: input.styleLibrary,
     locks,
     allowedEdits: buildAllowedEdits(intent),
     forbiddenEdits: buildForbiddenEdits(locks),
@@ -356,6 +357,7 @@ export const planVisualGenerationWithModel = async (
     userGoal: input.prompt,
     references: analysis.references,
     taskRoleOverlay: input.taskRoleOverlay,
+    styleLibrary: input.styleLibrary,
     locks: {
       brandIdentity: Boolean(patch.locks?.brandIdentity),
       subjectShape: Boolean(patch.locks?.subjectShape),

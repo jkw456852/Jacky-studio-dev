@@ -3,6 +3,7 @@ import type {
   VisualGenerationPlan,
   VisualReferencePlan,
   VisualRoleOverlay,
+  VisualStyleLibrary,
   VisualTaskIntent,
 } from "./types";
 
@@ -137,6 +138,29 @@ const buildRoleOverlayLines = (overlay?: VisualRoleOverlay) => {
   return lines;
 };
 
+const buildStyleLibraryLines = (styleLibrary?: VisualStyleLibrary) => {
+  if (!styleLibrary) return [];
+  const lines: string[] = [];
+  if (styleLibrary.title) {
+    lines.push(`- Active style library: ${styleLibrary.title}`);
+  }
+  if (styleLibrary.summary) {
+    lines.push(`- Library summary: ${styleLibrary.summary}`);
+  }
+  if (styleLibrary.referenceInterpretation) {
+    lines.push(
+      `- Reference interpretation: ${styleLibrary.referenceInterpretation}`,
+    );
+  }
+  styleLibrary.planningDirectives.forEach((item) => {
+    lines.push(`- Planning directive: ${item}`);
+  });
+  styleLibrary.promptDirectives.forEach((item) => {
+    lines.push(`- Prompt directive: ${item}`);
+  });
+  return lines;
+};
+
 export const composeVisualGenerationPrompt = (
   plan: VisualGenerationPlan,
   userPrompt: string,
@@ -148,6 +172,7 @@ export const composeVisualGenerationPrompt = (
   const forbiddenLines = (plan.forbiddenEdits || []).map((item) => `- ${item}`);
   const noteLines = (plan.plannerNotes || []).map((item) => `- ${item}`);
   const roleOverlayLines = buildRoleOverlayLines(plan.taskRoleOverlay);
+  const styleLibraryLines = buildStyleLibraryLines(plan.styleLibrary);
   const planningPolicyLines = (plan.taskRoleOverlay?.planningPolicy || []).map(
     (item) => `- ${item}`,
   );
@@ -161,6 +186,7 @@ export const composeVisualGenerationPrompt = (
     `- Strategy: ${plan.strategyId}.`,
     `- Reference role mode: ${plan.effectiveReferenceRoleMode}.`,
     buildOptionalSection("Task Role Overlay", roleOverlayLines),
+    buildOptionalSection("Active Style Library", styleLibraryLines),
     buildOptionalSection("Task Planning Policy", planningPolicyLines),
     buildOptionalSection("Task Execution Directives", executionDirectiveLines),
     buildOptionalSection("Intent Instructions", intentLines),

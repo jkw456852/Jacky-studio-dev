@@ -1,5 +1,97 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { CanvasElement, Marker } from "../../../types";
+import {
+  getAllNodeParentIds,
+  resolveWorkspaceTreeNodeKind,
+  TREE_PROMPT_PARENT_REFERENCE_LIMIT,
+} from "../workspaceTreeNode";
+import {
+  getElementDisplayUrl,
+  getElementSourceUrl,
+} from "../workspaceShared";
+
+const resolveTreePromptReferenceState = (
+  elements: CanvasElement[],
+  parentIds: string[],
+): Pick<
+  CanvasElement,
+  "genRefImages" | "genRefImage" | "genRefPreviewImages" | "genRefPreviewImage"
+> => {
+  const sourceRefs: string[] = [];
+  const previewRefs: string[] = [];
+
+  for (const parentId of parentIds) {
+    const parent = elements.find((element) => element.id === parentId) || null;
+    if (resolveWorkspaceTreeNodeKind(parent) !== "image") {
+      continue;
+    }
+
+    const sourceRef = String(getElementSourceUrl(parent) || "").trim();
+    if (!sourceRef) {
+      continue;
+    }
+
+    sourceRefs.push(sourceRef);
+    previewRefs.push(
+      String(getElementDisplayUrl(parent) || sourceRef).trim() || sourceRef,
+    );
+
+    if (sourceRefs.length >= TREE_PROMPT_PARENT_REFERENCE_LIMIT) {
+      break;
+    }
+  }
+
+  return {
+    genRefImages: sourceRefs.length > 0 ? sourceRefs : undefined,
+    genRefImage: sourceRefs[0],
+    genRefPreviewImages: previewRefs.length > 0 ? previewRefs : undefined,
+    genRefPreviewImage: previewRefs[0],
+  };
+};
+
+const reconcileDeletedTreeNodeRelations = (
+  elements: CanvasElement[],
+  deletedIds: Set<string>,
+): CanvasElement[] =>
+  elements.map((element) => {
+    const parentIds = getAllNodeParentIds(element);
+    if (parentIds.length === 0) {
+      return element;
+    }
+
+    const remainingParentIds = parentIds.filter((id) => !deletedIds.has(id));
+    const parentIdsChanged = remainingParentIds.length !== parentIds.length;
+    const isTreePromptNode = resolveWorkspaceTreeNodeKind(element) === "prompt";
+
+    if (!parentIdsChanged && !isTreePromptNode) {
+      return element;
+    }
+
+    const nextElement: CanvasElement = {
+      ...element,
+      nodeParentId: remainingParentIds[0],
+      nodeParentIds:
+        remainingParentIds.length > 0 ? remainingParentIds : undefined,
+      nodeLinkKind:
+        remainingParentIds.length > 0 ? element.nodeLinkKind : undefined,
+    };
+
+    if (!isTreePromptNode) {
+      return nextElement;
+    }
+
+    const nextReferenceState = resolveTreePromptReferenceState(
+      elements,
+      remainingParentIds,
+    );
+
+    nextElement.genRefImages = nextReferenceState.genRefImages;
+    nextElement.genRefImage = nextReferenceState.genRefImage;
+    nextElement.genRefPreviewImages = nextReferenceState.genRefPreviewImages;
+    nextElement.genRefPreviewImage = nextReferenceState.genRefPreviewImage;
+
+    return nextElement;
+  });
 
 type UseWorkspaceElementStateActionsOptions = {
   selectedElementId: string | null;
@@ -126,8 +218,13 @@ export function useWorkspaceElementStateActions(
       return;
     }
 
-    const nextElements = elementsRef.current.filter(
+    const deletedIdSet = new Set(idsToDelete);
+    const filteredElements = elementsRef.current.filter(
       (element) => !idsToDelete.includes(element.id),
+    );
+    const nextElements = reconcileDeletedTreeNodeRelations(
+      filteredElements,
+      deletedIdSet,
     );
     const nextMarkers = markersRef.current.filter(
       (marker) => !idsToDelete.includes(marker.elementId),

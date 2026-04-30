@@ -135,6 +135,10 @@ export const resolveReferenceRoleMode = (
       return "none";
     }
 
+    if (requestedMode === "custom") {
+      return totalReferenceCount > 0 ? "custom" : "default";
+    }
+
     return totalReferenceCount > 0 ? "default" : requestedMode || "default";
   }
 
@@ -147,6 +151,10 @@ export const resolveReferenceRoleMode = (
 
   if (requestedMode === "none") {
     return "none";
+  }
+
+  if (requestedMode === "custom") {
+    return totalReferenceCount > 0 ? "custom" : "default";
   }
 
   return totalReferenceCount > 0 ? "default" : requestedMode || "default";

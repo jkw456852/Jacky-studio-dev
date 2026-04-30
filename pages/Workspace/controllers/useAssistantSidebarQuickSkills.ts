@@ -8,8 +8,33 @@ import type {
   CnDetailTextMode,
   ConversationSession,
 } from "../../../types";
+import {
+  getActiveQuickSkillPreference,
+  getPluginPreferenceRecord,
+  recordPluginActivation,
+  setActiveQuickSkillPreference,
+} from "../../../services/runtime-assets/preferences";
+import { getStudioPluginAsset } from "../../../services/runtime-assets/studio-registry";
 
 type AssistantSkillData = NonNullable<ChatMessage["skillData"]>;
+
+type QuickSkillKind =
+  | "amazon"
+  | "cn-detail"
+  | "social"
+  | "brochure"
+  | "storyboard"
+  | "clothing"
+  | "ecommerce"
+  | "oneclick";
+
+type QuickSkillEntry = {
+  id: string;
+  pluginId: string;
+  label: string;
+  iconName: string;
+  kind: QuickSkillKind;
+};
 
 const normalizeSkillSignature = (
   skill: ChatMessage["skillData"] | null | undefined,
@@ -25,12 +50,14 @@ const normalizeSkillSignature = (
 
 const STORYBOARD_SKILL: AssistantSkillData = {
   id: "cameron",
+  pluginId: "quick-skills",
   name: "分镜故事板",
   iconName: "Film",
 };
 
 const AMAZON_LISTING_SKILL: AssistantSkillData = {
   id: "amazon-listing",
+  pluginId: "quick-skills",
   name: "亚马逊产品套图",
   iconName: "Store",
   config: {
@@ -46,6 +73,7 @@ const AMAZON_LISTING_SKILL: AssistantSkillData = {
 
 const SOCIAL_MEDIA_SKILL: AssistantSkillData = {
   id: "social-media",
+  pluginId: "quick-skills",
   name: "社交媒体",
   iconName: "Globe",
   config: { twoStep: true },
@@ -53,6 +81,7 @@ const SOCIAL_MEDIA_SKILL: AssistantSkillData = {
 
 const BROCHURE_SKILL: AssistantSkillData = {
   id: "brochure",
+  pluginId: "quick-skills",
   name: "营销宣传册",
   iconName: "FileText",
   config: { twoStep: true },
@@ -60,6 +89,7 @@ const BROCHURE_SKILL: AssistantSkillData = {
 
 const CLOTHING_SKILL: AssistantSkillData = {
   id: "clothing-studio-workflow",
+  pluginId: "quick-skills",
   name: "服装棚拍组图",
   iconName: "Shirt",
   config: {
@@ -74,6 +104,7 @@ const CLOTHING_SKILL: AssistantSkillData = {
 
 const ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL: AssistantSkillData = {
   id: "ecom-oneclick-workflow",
+  pluginId: "quick-skills",
   name: "电商一键工作流",
   iconName: "Package",
   config: {
@@ -83,6 +114,7 @@ const ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL: AssistantSkillData = {
 
 const ONE_CLICK_SKILL: AssistantSkillData = {
   id: "xcai-oneclick",
+  pluginId: "quick-skills",
   name: "SKYSPER视觉",
   iconName: "Compass",
   config: {
@@ -136,7 +168,7 @@ export const useAssistantSidebarQuickSkills = ({
 
   const [activeQuickSkill, setActiveQuickSkill] = useState<
     ChatMessage["skillData"] | null
-  >(null);
+  >(() => getActiveQuickSkillPreference());
   const [cnDetailPromptVersion, setCnDetailPromptVersion] =
     useState<CnDetailPromptVersion>("new");
   const [cnDetailTextMode, setCnDetailTextMode] =
@@ -228,6 +260,7 @@ export const useAssistantSidebarQuickSkills = ({
     skill: ChatMessage["skillData"] | null,
   ) => {
     setActiveQuickSkill(skill);
+    setActiveQuickSkillPreference(skill);
     if (activeConversationId) {
       setConversationQuickSkill(activeConversationId, skill);
     }
@@ -239,6 +272,7 @@ export const useAssistantSidebarQuickSkills = ({
     ratioMode: CnDetailRatioMode = cnDetailRatioMode,
   ): AssistantSkillData => ({
     id: "cn-detail-page",
+    pluginId: "quick-skills",
     name: "中文详情页套图",
     iconName: "Store",
     config: {
@@ -296,6 +330,9 @@ export const useAssistantSidebarQuickSkills = ({
       enrichPrompt?: boolean;
     },
   ) => {
+    if (skillData.pluginId) {
+      recordPluginActivation(skillData.pluginId);
+    }
     if (options?.persistAsActive) {
       setActiveQuickSkillSynced(skillData);
     }
@@ -317,6 +354,78 @@ export const useAssistantSidebarQuickSkills = ({
     );
   };
 
+  const quickSkillPluginId = "quick-skills";
+  const quickSkillPluginAsset = getStudioPluginAsset(quickSkillPluginId);
+  const quickSkillPluginPreference =
+    getPluginPreferenceRecord(quickSkillPluginId);
+  const quickSkillPluginEnabled =
+    quickSkillPluginPreference?.enabled ??
+    quickSkillPluginAsset?.defaultEnabled ??
+    true;
+  const quickSkillPluginPinned =
+    quickSkillPluginPreference?.pinned ??
+    quickSkillPluginAsset?.defaultPinned ??
+    false;
+
+  const quickSkillEntries: QuickSkillEntry[] = [
+    {
+      id: AMAZON_LISTING_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: AMAZON_LISTING_SKILL.name,
+      iconName: AMAZON_LISTING_SKILL.iconName,
+      kind: "amazon",
+    },
+    {
+      id: "cn-detail-page",
+      pluginId: quickSkillPluginId,
+      label: "中文详情页套图",
+      iconName: "Store",
+      kind: "cn-detail",
+    },
+    {
+      id: SOCIAL_MEDIA_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: SOCIAL_MEDIA_SKILL.name,
+      iconName: SOCIAL_MEDIA_SKILL.iconName,
+      kind: "social",
+    },
+    {
+      id: BROCHURE_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: BROCHURE_SKILL.name,
+      iconName: BROCHURE_SKILL.iconName,
+      kind: "brochure",
+    },
+    {
+      id: STORYBOARD_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: STORYBOARD_SKILL.name,
+      iconName: STORYBOARD_SKILL.iconName,
+      kind: "storyboard",
+    },
+    {
+      id: CLOTHING_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: CLOTHING_SKILL.name,
+      iconName: CLOTHING_SKILL.iconName,
+      kind: "clothing",
+    },
+    {
+      id: ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL.name,
+      iconName: ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL.iconName,
+      kind: "ecommerce",
+    },
+    {
+      id: ONE_CLICK_SKILL.id,
+      pluginId: quickSkillPluginId,
+      label: ONE_CLICK_SKILL.name,
+      iconName: ONE_CLICK_SKILL.iconName,
+      kind: "oneclick",
+    },
+  ];
+
   return {
     activeQuickSkill,
     cnDetailPromptVersion,
@@ -325,6 +434,9 @@ export const useAssistantSidebarQuickSkills = ({
     handleSendWithQuickSkill,
     clearActiveQuickSkill: () => setActiveQuickSkillSynced(null),
     quickSkillsProps: {
+      quickSkillPluginEnabled,
+      quickSkillPluginPinned,
+      quickSkillEntries,
       isCnDetailActive: activeQuickSkill?.id === "cn-detail-page",
       cnDetailPromptVersion,
       cnDetailTextMode,

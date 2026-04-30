@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { VIREO_SYSTEM_PROMPT, VIREO_AGENT_INFO } from '../prompts/vireo.prompt';
+import { VIREO_AGENT_INFO } from '../prompts/vireo.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class VireoAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class VireoAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return VIREO_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('vireo');
   }
 
   get preferredSkills() {

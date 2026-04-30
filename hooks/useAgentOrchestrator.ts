@@ -18,6 +18,8 @@ import {
 import { optimizeUserText } from '../services/agents/prompt-optimizer/service';
 import { useProjectStore } from '../stores/project.store';
 import { rememberApprovedAsset } from '../services/topic-memory';
+import type { EnhancedRoutingDecision } from '../services/agents/enhanced-orchestrator';
+import { saveLatestAgentRoleDraft } from '../services/agents/role-draft-store';
 
 const viteEnv =
   ((import.meta as unknown as {
@@ -37,6 +39,77 @@ const inferTaskModeFromRequest = (message: string, metadata?: AgentTaskMetadata)
 const MAX_ORCHESTRATOR_HISTORY_MESSAGES = 6;
 const AGENT_EXECUTION_TIMEOUT_MS = 600_000; // 与 EnhancedBaseAgent 默认超时保持一致（10 分钟）
 const PIPELINE_EXECUTION_TIMEOUT_MS = 180_000;
+
+const buildRolePromptAddonFromDecision = (
+  decision: Pick<
+    EnhancedRoutingDecision,
+    'roleStrategy' | 'roleStrategyReason' | 'handoffMessage' | 'targetAgent'
+  >,
+  messageForExecution: string,
+): { rolePromptLabel?: string; rolePromptAddon?: string } => {
+  const strategy = String(decision.roleStrategy || '').trim();
+  const reason = String(decision.roleStrategyReason || '').trim();
+  const handoffMessage = String(decision.handoffMessage || '').trim();
+  const draftTitle = String(decision.roleDraft?.title || '').trim();
+  const draftSummary = String(decision.roleDraft?.summary || '').trim();
+  const draftInstructions = Array.isArray(decision.roleDraft?.instructions)
+    ? decision.roleDraft.instructions
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    : [];
+  const draftBlock =
+    draftTitle || draftSummary || draftInstructions.length > 0
+      ? [
+          draftTitle ? `Temporary role draft title: ${draftTitle}` : '',
+          draftSummary ? `Temporary role draft summary: ${draftSummary}` : '',
+          draftInstructions.length > 0
+            ? `Temporary role draft instructions:\n${draftInstructions
+                .map((item) => `- ${item}`)
+                .join('\n')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : '';
+
+  if (!strategy || strategy === 'reuse') {
+    return {};
+  }
+
+  if (strategy === 'augment') {
+    return {
+      rolePromptLabel: `augment:${decision.targetAgent}`,
+      rolePromptAddon: [
+        'Reuse your existing specialist identity as the base role.',
+        reason ? `Task-specific augmentation reason: ${reason}` : '',
+        draftBlock,
+        handoffMessage ? `Task handoff context: ${handoffMessage}` : '',
+        `Current user request: ${messageForExecution}`,
+        'Add only the missing task-specific constraints. Do not discard your existing specialist strengths.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    };
+  }
+
+  if (strategy === 'create') {
+    return {
+      rolePromptLabel: `create:${decision.targetAgent}`,
+      rolePromptAddon: [
+        'Treat your built-in role as an execution shell, but switch to a temporary task brain for this request.',
+        reason ? `Why a temporary task brain is needed: ${reason}` : '',
+        draftBlock,
+        handoffMessage ? `Temporary brain brief: ${handoffMessage}` : '',
+        `Current user request: ${messageForExecution}`,
+        'Compose the missing role logic dynamically, but keep tool discipline and output quality strict.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    };
+  }
+
+  return {};
+};
 
 interface CanvasState {
   elements: CanvasElement[];
@@ -65,7 +138,8 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
   // Read from store instead of local state
   const currentTask = useAgentStore(s => s.currentTask);
   const isAgentMode = useAgentStore(s => s.isAgentMode);
-  const { setCurrentTask, setIsAgentMode } = useAgentStore(s => s.actions);
+  const currentAutoRoleSession = useAgentStore(s => s.currentAutoRoleSession);
+  const { setCurrentTask, setIsAgentMode, setCurrentAutoRoleSession } = useAgentStore(s => s.actions);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
@@ -402,6 +476,11 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
               ? `用户请求(已优化): ${messageForExecution}`
               : `用户请求: ${messageForExecution}`,
           confidence: 0.9,
+          roleStrategy: 'reuse' as const,
+          roleStrategyReason:
+            metadata?.agentSelectionMode === 'manual'
+              ? 'User manually pinned this role.'
+              : 'Pinned role reused after optimization flow.',
         };
       } else if (localAgent) {
         console.log('[useAgentOrchestrator] Local pre-route hit:', localAgent);
@@ -411,7 +490,9 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
           taskType: 'local-routed',
           complexity: 'simple' as const,
           handoffMessage: `用户请求: ${messageForExecution}`,
-          confidence: 0.75
+          confidence: 0.75,
+          roleStrategy: 'reuse' as const,
+          roleStrategyReason: 'Local keyword routing matched an existing specialist.',
         };
       } else {
         console.log('[useAgentOrchestrator] 发起路由请求...');
@@ -431,11 +512,50 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
           taskType: 'fallback',
           complexity: 'simple' as const,
           handoffMessage: `用户请求: ${messageForExecution}`,
-          confidence: 0.4
+          confidence: 0.4,
+          roleStrategy: 'reuse' as const,
+          roleStrategyReason: 'Fallback used the safest default specialist path.',
         };
       }
 
       console.log('[useAgentOrchestrator] Routed to:', decision.targetAgent);
+
+      if (metadata?.agentSelectionMode === 'auto') {
+        setCurrentAutoRoleSession({
+          targetAgent: decision.targetAgent,
+          roleStrategy:
+            decision.roleStrategy === 'augment' || decision.roleStrategy === 'create'
+              ? decision.roleStrategy
+              : 'reuse',
+          roleStrategyReason: String(decision.roleStrategyReason || '').trim(),
+          roleDraft: decision.roleDraft
+            ? {
+                title: String(decision.roleDraft.title || '').trim(),
+                summary: String(decision.roleDraft.summary || '').trim(),
+                instructions: Array.isArray(decision.roleDraft.instructions)
+                  ? decision.roleDraft.instructions
+                      .map((item) => String(item || '').trim())
+                      .filter(Boolean)
+                  : [],
+              }
+            : null,
+          updatedAt: Date.now(),
+        });
+      } else {
+        setCurrentAutoRoleSession(null);
+      }
+
+      if (decision.roleDraft) {
+        saveLatestAgentRoleDraft(decision.targetAgent, decision.roleDraft, {
+          roleStrategy: decision.roleStrategy,
+          roleStrategyReason: decision.roleStrategyReason,
+        });
+      }
+
+      const rolePromptLayer = buildRolePromptAddonFromDecision(
+        decision,
+        messageForExecution,
+      );
 
       if (decision.action === 'respond' || decision.action === 'clarify') {
         const guidance = [
@@ -507,6 +627,11 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         ...(metadata || {}),
         imageHostProvider: hostProvider,
         topicId,
+        roleStrategy: decision.roleStrategy,
+        roleStrategyReason: decision.roleStrategyReason,
+        roleDraft: decision.roleDraft,
+        rolePromptLabel: rolePromptLayer.rolePromptLabel,
+        rolePromptAddon: rolePromptLayer.rolePromptAddon,
         topicPinnedContext,
         taskMode: inferredTaskMode,
         originalMessage: message,
@@ -727,7 +852,7 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         });
       }
     }
-  }, [projectContext, addAssetsToCanvas]);
+  }, [projectContext, addAssetsToCanvas, setCurrentAutoRoleSession]);
 
   const executeProposal = useCallback(async (proposalId: string): Promise<void> => {
     const curTask = useAgentStore.getState().currentTask;
@@ -840,11 +965,13 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
 
   const resetAgent = useCallback(() => {
     setCurrentTask(null);
+    setCurrentAutoRoleSession(null);
     useAgentStore.getState().actions.clearMessages();
-  }, []);
+  }, [setCurrentAutoRoleSession]);
 
   return {
     currentTask,
+    currentAutoRoleSession,
     isAgentMode,
     isProcessing,
     isUploadingAttachments,

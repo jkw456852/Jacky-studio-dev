@@ -6,6 +6,7 @@ import {
   parseMappedModelStorageEntry,
 } from "../../../services/provider-settings";
 import { safeLocalStorageSetItem } from "../../../utils/safe-storage";
+import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 
 type WorkspaceModelMode = "thinking" | "fast";
 type WorkspaceModelPreferenceTab = "image" | "video" | "3d";
@@ -27,6 +28,9 @@ const LOCAL_STORAGE_KEYS = {
   preferred3DModel: "workspace_preferred_3d_model",
 } as const;
 
+const getWorkspacePreferencesAsset = () =>
+  getStudioUserAssetApi().getWorkspacePreferences();
+
 const STORAGE_ID_TO_PREFERRED_IMAGE_MODEL: Record<string, ImageModel> = {
   "gemini-3-pro-image-preview": "Nano Banana Pro",
   "Nano Banana Pro": "Nano Banana Pro",
@@ -42,24 +46,36 @@ const STORAGE_ID_TO_PREFERRED_IMAGE_MODEL: Record<string, ImageModel> = {
 };
 
 const readStoredBoolean = (key: string, fallback: boolean): boolean => {
-  if (typeof window === "undefined") return fallback;
-  const raw = window.localStorage.getItem(key);
-  if (raw === "true") return true;
-  if (raw === "false") return false;
+  const preferences = getWorkspacePreferencesAsset();
+  if (key === LOCAL_STORAGE_KEYS.autoModelSelect) {
+    return preferences.autoModelSelect;
+  }
   return fallback;
 };
 
 const readStoredString = (key: string, fallback: string): string => {
-  if (typeof window === "undefined") return fallback;
-  const raw = window.localStorage.getItem(key);
-  return raw?.trim() || fallback;
+  const preferences = getWorkspacePreferencesAsset();
+  if (key === LOCAL_STORAGE_KEYS.preferredImageModel) {
+    return preferences.preferredImageModel || fallback;
+  }
+  if (key === LOCAL_STORAGE_KEYS.preferredVideoModel) {
+    return preferences.preferredVideoModel || fallback;
+  }
+  if (key === LOCAL_STORAGE_KEYS.preferred3DModel) {
+    return preferences.preferred3DModel || fallback;
+  }
+  return fallback;
 };
 
 const readStoredOptionalString = (key: string): string | null => {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(key);
-  const normalized = String(raw || "").trim();
-  return normalized || null;
+  const preferences = getWorkspacePreferencesAsset();
+  if (key === LOCAL_STORAGE_KEYS.preferredImageProviderId) {
+    return preferences.preferredImageProviderId || null;
+  }
+  if (key === LOCAL_STORAGE_KEYS.preferredVideoProviderId) {
+    return preferences.preferredVideoProviderId || null;
+  }
+  return null;
 };
 
 const getMappedPrimaryImageRuntimeModel = (): ImageModel => {
@@ -192,6 +208,9 @@ export const useWorkspaceModelPreferences = ({
     : preferredVideoProviderId;
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      autoModelSelect,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.autoModelSelect,
       autoModelSelect ? "true" : "false",
@@ -199,6 +218,9 @@ export const useWorkspaceModelPreferences = ({
   }, [autoModelSelect]);
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      preferredImageModel,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.preferredImageModel,
       preferredImageModel,
@@ -206,6 +228,9 @@ export const useWorkspaceModelPreferences = ({
   }, [preferredImageModel]);
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      preferredImageProviderId,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.preferredImageProviderId,
       preferredImageProviderId || "",
@@ -213,6 +238,9 @@ export const useWorkspaceModelPreferences = ({
   }, [preferredImageProviderId]);
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      preferredVideoModel,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.preferredVideoModel,
       preferredVideoModel,
@@ -220,6 +248,9 @@ export const useWorkspaceModelPreferences = ({
   }, [preferredVideoModel]);
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      preferredVideoProviderId,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.preferredVideoProviderId,
       preferredVideoProviderId || "",
@@ -227,6 +258,9 @@ export const useWorkspaceModelPreferences = ({
   }, [preferredVideoProviderId]);
 
   useEffect(() => {
+    getStudioUserAssetApi().setWorkspacePreferences({
+      preferred3DModel,
+    });
     safeLocalStorageSetItem(
       LOCAL_STORAGE_KEYS.preferred3DModel,
       preferred3DModel,

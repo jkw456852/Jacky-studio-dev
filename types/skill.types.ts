@@ -6,7 +6,11 @@ export interface ImageTextPolicy {
 }
 
 export type PromptLanguagePolicy = 'original-zh' | 'translate-en';
-export type ImageReferenceRoleMode = 'none' | 'default' | 'poster-product';
+export type ImageReferenceRoleMode =
+  | 'none'
+  | 'default'
+  | 'poster-product'
+  | 'custom';
 
 export interface ImageGenSkillParams {
   prompt: string;

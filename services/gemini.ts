@@ -9,6 +9,7 @@ import {
     normalizeReferenceToModelInputDataUrl,
 } from './image-reference-resolver';
 import { parseMappedModelStorageEntry, resolveImageModelPostPath } from './provider-settings';
+import { getStudioUserAssetApi } from './runtime-assets/api';
 
 const isNetworkFetchError = (error: unknown): boolean => {
     const msg = ((error as any)?.message || '').toLowerCase();
@@ -1475,8 +1476,8 @@ const getApiUrl = (providerId?: string | null) => {
 
 const getSelectedScriptModelSelection = (): BestModelSelection | null => {
     try {
-        const raw = localStorage.getItem('setting_script_models');
-        const selected = JSON.parse(raw || '[]');
+        const selected =
+            getStudioUserAssetApi().getWorkspacePreferences().selectedScriptModels;
         if (!Array.isArray(selected)) return null;
         const first = selected.find((m: unknown) => typeof m === 'string' && m.trim() && m !== 'Auto');
         if (typeof first !== 'string') return null;
@@ -1508,8 +1509,8 @@ export const getBestModelSelection = (
     };
 
     if (type === 'image') {
-        const s = localStorage.getItem('setting_image_models');
-        const selected = JSON.parse(s || '[]');
+        const selected =
+            getStudioUserAssetApi().getWorkspacePreferences().selectedImageModels;
         // 用户指定：自动选择模式下默认首选 Nano Banana Pro (gemini-3-pro-image-preview)
         if (selected.length === 0 || selected.includes('Auto')) {
             return { modelId: IMAGE_PRO_MODEL, providerId: null };
@@ -1533,8 +1534,8 @@ export const getBestModelSelection = (
     }
 
     if (type === 'video') {
-        const s = localStorage.getItem('setting_video_models');
-        const selected = JSON.parse(s || '[]');
+        const selected =
+            getStudioUserAssetApi().getWorkspacePreferences().selectedVideoModels;
         // 用户要求视频首选 veo3.1fast
         if (selected.length === 0 || selected.includes('Auto')) {
             return { modelId: VEO_FAST_MODEL, providerId: null };
@@ -1652,32 +1653,15 @@ const isSora2VideoModel = (modelId: string): boolean => {
 };
 
 const getNormalizedSelectedVideoModels = (): string[] => {
-    const key = 'setting_video_models';
-    const raw = localStorage.getItem(key);
-
-    let parsed: string[] = [];
-    try {
-        const data = JSON.parse(raw || '[]');
-        parsed = Array.isArray(data) ? data.filter(v => typeof v === 'string') : [];
-    } catch {
-        parsed = [];
-    }
+    const parsed =
+        getStudioUserAssetApi().getWorkspacePreferences().selectedVideoModels;
 
     const source = parsed.length > 0 ? parsed : [VEO_FAST_MODEL];
     const normalized = source.map(normalizeVideoModelId).filter(Boolean);
     const deduped = Array.from(new Set(normalized));
 
     if (deduped.length === 0) {
-        const fallback = [VEO_FAST_MODEL];
-        safeLocalStorageSetItem(key, JSON.stringify(fallback));
-        return fallback;
-    }
-
-    const originalSerialized = JSON.stringify(source);
-    const normalizedSerialized = JSON.stringify(deduped);
-    if (originalSerialized !== normalizedSerialized) {
-        safeLocalStorageSetItem(key, normalizedSerialized);
-        console.log('[generateVideo] Migrated legacy video model ids to canonical ids');
+        return [VEO_FAST_MODEL];
     }
 
     return deduped;
@@ -2274,7 +2258,7 @@ export interface ImageGenerationConfig {
     referenceStrength?: number;
     referencePriority?: 'first' | 'all';
     referenceMode?: 'style' | 'product';
-    referenceRoleMode?: 'none' | 'default' | 'poster-product';
+      referenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
     promptLanguagePolicy?: 'original-zh' | 'translate-en';
     textPolicy?: {
         enforceChinese?: boolean;
@@ -2312,7 +2296,7 @@ const buildConstrainedPrompt = (
     opts: {
         strength: number;
         mode: 'style' | 'product';
-        referenceRoleMode?: 'none' | 'default' | 'poster-product';
+        referenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
         referenceCount?: number;
         priority?: 'first' | 'all';
         forbiddenChanges?: string[];

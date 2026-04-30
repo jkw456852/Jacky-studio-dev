@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { POSTER_SYSTEM_PROMPT, POSTER_AGENT_INFO } from '../prompts/poster.prompt';
+import { POSTER_AGENT_INFO } from '../prompts/poster.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class PosterAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class PosterAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return POSTER_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('poster');
   }
 
   get preferredSkills() {

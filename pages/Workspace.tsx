@@ -222,6 +222,7 @@ import {
   getAllNodeParentIds,
   isWorkspaceTreeNode,
   resolveWorkspaceTreeNodeKind,
+  TREE_PROMPT_PARENT_REFERENCE_LIMIT,
 } from "./Workspace/workspaceTreeNode";
 
 const ECOMMERCE_LOCAL_CACHE_PREFIX = "jkstudio:ecom-oneclick:";
@@ -1303,9 +1304,9 @@ const Workspace: React.FC = () => {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
 
-  const [zoom, setZoom] = useState(30);
+  const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const zoomRef = useRef(30);
+  const zoomRef = useRef(100);
   const panRef = useRef({ x: 0, y: 0 });
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -3079,7 +3080,7 @@ const Workspace: React.FC = () => {
         .map((item) => item.trim())
         .filter(Boolean)
         .filter((item, index, array) => array.indexOf(item) === index)
-        .slice(0, 6),
+        .slice(0, TREE_PROMPT_PARENT_REFERENCE_LIMIT),
     [],
   );
 
@@ -3087,7 +3088,6 @@ const Workspace: React.FC = () => {
     (baseElements: CanvasElement[], parentIds: string[]) => {
       const sourceRefs: string[] = [];
       const previewRefs: string[] = [];
-      const seenSourceRefs = new Set<string>();
 
       for (const currentParentId of parentIds) {
         const currentParent =
@@ -3102,18 +3102,17 @@ const Workspace: React.FC = () => {
         }
 
         const sourceRef = (getElementSourceUrl(currentParent) || "").trim();
-        if (!sourceRef || seenSourceRefs.has(sourceRef)) {
+        if (!sourceRef) {
           continue;
         }
 
-        seenSourceRefs.add(sourceRef);
         sourceRefs.push(sourceRef);
 
         const previewRef =
           (getElementDisplayUrl(currentParent) || sourceRef).trim() || sourceRef;
         previewRefs.push(previewRef);
 
-        if (sourceRefs.length >= 6) {
+        if (sourceRefs.length >= TREE_PROMPT_PARENT_REFERENCE_LIMIT) {
           break;
         }
       }
@@ -4249,6 +4248,8 @@ const Workspace: React.FC = () => {
     setSelectedElementId,
     setSelectedElementIds,
     setActiveConversationId,
+    setZoom,
+    setPan,
     setInputBlocks,
     setModelMode,
     setWebEnabled,
@@ -4572,6 +4573,7 @@ const Workspace: React.FC = () => {
   const handleGenImage = useWorkspaceElementImageGeneration({
     elementsRef,
     nodeInteractionMode,
+    updateElementById,
     setElementGeneratingState,
     setElementsGenerationStatus,
     appendElementsGenerationLog,

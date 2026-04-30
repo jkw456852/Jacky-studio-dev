@@ -26,7 +26,6 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
   dragOffsetsRef,
   zoom,
   connectionDraft,
-  onDisconnectEdge,
 }) => {
   const [dragFrameVersion, setDragFrameVersion] = React.useState(0);
 
@@ -156,7 +155,7 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
         top: minY,
         width: maxX - minX,
         height: maxY - minY,
-        pointerEvents: isDraggingElement ? "none" : undefined,
+        pointerEvents: "none",
       }}
       viewBox={`0 0 ${maxX - minX} ${maxY - minY}`}
       fill="none"
@@ -219,36 +218,6 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
             strokeWidth={isBerserkEdge ? 3.4 : 3}
             strokeLinecap="round"
             pointerEvents="none"
-          />
-        );
-      })}
-      {graph?.edges.map(({ child, parent, points }) => {
-        if (!onDisconnectEdge) return null;
-        const shouldDisableHitArea = Boolean(child.isGenerating);
-
-        const d = `M ${points.startX - minX} ${points.startY - minY} C ${
-          points.control1X - minX
-        } ${points.control1Y - minY}, ${points.control2X - minX} ${
-          points.control2Y - minY
-        }, ${points.endX - minX} ${points.endY - minY}`;
-
-        return (
-          <path
-            key={`hit-${parent.id}-${child.id}-${points.startX}-${points.endX}-${zoom}`}
-            data-node-graph-hit="true"
-            d={d}
-            stroke="rgba(0,0,0,0.001)"
-            strokeWidth={18}
-            strokeLinecap="round"
-            fill="none"
-            pointerEvents={
-              isDraggingElement || shouldDisableHitArea ? "none" : "stroke"
-            }
-            onDoubleClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onDisconnectEdge(parent.id, child.id);
-            }}
           />
         );
       })}

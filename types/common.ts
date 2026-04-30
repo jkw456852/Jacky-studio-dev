@@ -46,6 +46,21 @@ export interface DesignSessionState {
   referenceWebPages?: Array<{ title: string; url: string }>;
 }
 
+export type WorkspaceStyleLibraryAuthor = 'system' | 'main-brain' | 'user';
+
+export interface WorkspaceStyleLibrary {
+  id?: string;
+  slug?: string;
+  title: string;
+  summary: string;
+  referenceInterpretation: string;
+  planningDirectives: string[];
+  promptDirectives: string[];
+  createdBy?: WorkspaceStyleLibraryAuthor;
+  updatedAt?: number;
+  sourceMode?: 'default' | 'poster-product' | 'custom';
+}
+
 export type ShapeType = 'square' | 'circle' | 'triangle' | 'star' | 'bubble' | 'arrow-left' | 'arrow-right';
 export type WorkspaceNodeInteractionMode = 'classic' | 'branch';
 export type WorkspaceNodeLinkKind = 'generation' | 'branch';
@@ -94,7 +109,8 @@ export interface CanvasElement {
   genImageCount?: 1 | 2 | 3 | 4;
   genInfiniteRetry?: boolean;
   genRequirePlanApproval?: boolean;
-  genReferenceRoleMode?: 'none' | 'default' | 'poster-product';
+  genReferenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
+  genStyleLibrary?: WorkspaceStyleLibrary;
   detectedTexts?: { original: string, edited?: string }[];
 
   // Image Gen Reference
@@ -272,6 +288,7 @@ export interface ChatMessage {
   // User skill invocation structured data
   skillData?: {
     id: string;
+    pluginId?: string;
     name: string;
     iconName: string;
     config?: (Record<string, any> & {

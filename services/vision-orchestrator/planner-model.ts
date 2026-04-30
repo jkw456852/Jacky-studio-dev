@@ -2,6 +2,7 @@ import { Type } from "@google/genai";
 import { generateJsonResponse } from "../gemini";
 import { normalizeReferenceToModelInputDataUrl } from "../image-reference-resolver";
 import { getVisualOrchestratorInputPolicy } from "../provider-settings";
+import { getMainBrainPreferenceLines } from "../runtime-assets/main-brain";
 import {
   buildPromptListSection,
   buildVisualPlaybookSections,
@@ -13,6 +14,11 @@ import {
   getVisualPlanningPolicyLines,
   inferVisualTaskPlaybooks,
 } from "../agents/shared/planning-policies";
+import {
+  buildBuiltInStyleLibrarySummary,
+  buildUserStyleLibrarySummary,
+  normalizeWorkspaceStyleLibrary,
+} from "./style-library";
 import type {
   PlanVisualTaskInput,
   PlannerConsistencyContext,
@@ -26,6 +32,7 @@ import type {
   VisualResearchDecision,
   VisualResearchMode,
   VisualRoleOverlay,
+  VisualStyleLibrary,
   VisualTaskPlan,
   VisualTaskIntent,
 } from "./types";
@@ -42,7 +49,12 @@ const VALID_INTENTS = new Set<VisualTaskIntent>([
   "unknown",
 ]);
 
-const VALID_REFERENCE_ROLE_MODES = new Set(["none", "default", "poster-product"]);
+const VALID_REFERENCE_ROLE_MODES = new Set([
+  "none",
+  "default",
+  "poster-product",
+  "custom",
+]);
 const VALID_EXECUTION_MODES = new Set<VisualExecutionMode>([
   "single",
   "set",
@@ -67,7 +79,7 @@ const VALID_PAGE_ROLES = new Set<VisualPageRole>([
 type VisualPlanModelPatch = {
   intent?: VisualTaskIntent;
   strategyId?: string;
-  referenceRoleMode?: "none" | "default" | "poster-product";
+  referenceRoleMode?: "none" | "default" | "poster-product" | "custom";
   locks?: Partial<VisualConstraintLock>;
   allowedEdits?: string[];
   forbiddenEdits?: string[];
@@ -82,6 +94,7 @@ type VisualTaskPlanModelPatch = {
   toolChain?: string[];
   planningBrief?: VisualPlanningBrief;
   roleOverlay?: VisualRoleOverlay;
+  styleLibrary?: VisualStyleLibrary;
   sharedStyleGuide?: VisualTaskPlan["sharedStyleGuide"];
   pages?: VisualPagePlan[];
   rawResponseText?: string;
@@ -114,6 +127,25 @@ const hasCompleteTaskPlanPatch = (
   }
   return true;
 };
+
+const hasUsableTaskPlanSkeleton = (
+  patch: VisualTaskPlanModelPatch | null,
+) => {
+  if (!patch) return false;
+  return Boolean(
+    patch.intent ||
+      patch.reasoningSummary ||
+      (patch.toolChain && patch.toolChain.length > 0) ||
+      patch.planningBrief ||
+      patch.roleOverlay ||
+      patch.styleLibrary ||
+      (patch.pages && patch.pages.length > 0),
+  );
+};
+
+const shouldAnnounceTaskPlanRetry = (
+  patch: VisualTaskPlanModelPatch | null,
+) => !hasUsableTaskPlanSkeleton(patch);
 
 const VISUAL_PLAN_RESPONSE_SCHEMA = {
   type: Type.OBJECT,
@@ -298,6 +330,30 @@ const VISUAL_TASK_PLAN_RESPONSE_SCHEMA = {
         "roles",
       ],
     },
+    styleLibrary: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        summary: { type: Type.STRING },
+        referenceInterpretation: { type: Type.STRING },
+        planningDirectives: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        promptDirectives: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        createdBy: { type: Type.STRING },
+      },
+      required: [
+        "title",
+        "summary",
+        "referenceInterpretation",
+        "planningDirectives",
+        "promptDirectives",
+      ],
+    },
     pages: {
       type: Type.ARRAY,
       items: {
@@ -382,7 +438,8 @@ const normalizeModelPatch = (raw: unknown): VisualPlanModelPatch | null => {
     next.referenceRoleMode = data.referenceRoleMode as
       | "none"
       | "default"
-      | "poster-product";
+      | "poster-product"
+      | "custom";
   }
 
   const locks = normalizeLocks(data.locks);
@@ -572,6 +629,11 @@ const normalizeRoleOverlay = (
   };
 };
 
+const normalizeStyleLibrary = (
+  value: unknown,
+): VisualTaskPlan["styleLibrary"] | undefined =>
+  normalizeWorkspaceStyleLibrary(value);
+
 const normalizePagePlan = (value: unknown, fallbackIndex: number): VisualPagePlan | null => {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
@@ -647,6 +709,11 @@ const normalizeTaskPlanPatch = (raw: unknown): VisualTaskPlanModelPatch | null =
     next.roleOverlay = roleOverlay;
   }
 
+  const styleLibrary = normalizeStyleLibrary(data.styleLibrary);
+  if (styleLibrary) {
+    next.styleLibrary = styleLibrary;
+  }
+
   const sharedStyleGuide = normalizeSharedStyleGuide(data.sharedStyleGuide);
   if (sharedStyleGuide) {
     next.sharedStyleGuide = sharedStyleGuide;
@@ -707,6 +774,7 @@ const buildTaskPlanRepairPrompt = (rawResponseText: string) =>
     "- toolChain",
     "- planningBrief",
     "- roleOverlay",
+    "- styleLibrary",
     "- sharedStyleGuide",
     "- pages",
     "",
@@ -717,6 +785,7 @@ const buildTaskPlanRepairPrompt = (rawResponseText: string) =>
     "- planningBrief must include: requestType, deliverableForm, aspectRatioStrategy, researchFocus, researchDecision, modelFitNotes, promptDirectives, risks.",
     "- planningBrief.researchDecision must include: shouldResearch, mode, reason, topics, searchQueries.",
     "- roleOverlay must include: summary, mindset, planningPolicy, executionDirectives, roles.",
+    "- If styleLibrary is present, it must include: title, summary, referenceInterpretation, planningDirectives, promptDirectives.",
     "- If mode=set, pages must be a non-empty array.",
     "- Each page must include: id, title, goal, pageRole, aspectRatio, mustShow, forbiddenEdits, and should include executionPrompt when page-specific prompting matters.",
     "- Keep the original meaning; only repair the structure.",
@@ -736,6 +805,7 @@ const buildTaskPlanAgentFallbackPrompt = (args: {
     "",
     "Rules:",
     "- Return all required fields: mode, intent, reasoningSummary, toolChain, planningBrief, roleOverlay.",
+    "- When needed, you may also return styleLibrary with title, summary, referenceInterpretation, planningDirectives, promptDirectives.",
     "- planningBrief must include: requestType, deliverableForm, aspectRatioStrategy, researchFocus, researchDecision, modelFitNotes, promptDirectives, risks.",
     "- roleOverlay must describe a temporary task-specific main-brain setup for this exact task, not a generic fixed team template.",
     "- roles should only include roles that are truly necessary for this task. If one main-brain role is enough, keep it to one.",
@@ -850,6 +920,95 @@ const buildTaskPlannerResultThoughts = (
         .map((item) => item.role)
         .join(" / ")} 这几种角色视角一起推进。`,
     );
+  }
+
+  if (planningBrief?.modelFitNotes?.[0]) {
+    lines.push(`模型注意点：${clipThoughtText(planningBrief.modelFitNotes[0], 96)}。`);
+  }
+
+  if (patch.toolChain?.length) {
+    lines.push(`后续执行链路会是：${patch.toolChain.join(" -> ")}。`);
+  }
+
+  if (patch.mode === "set" && pageCount > 0) {
+    const pagePreview = (patch.pages || [])
+      .slice(0, 4)
+      .map((page) => `${page.title}(${page.aspectRatio})`)
+      .join(" / ");
+    lines.push(`这次不会做成普通变体，而是拆成 ${pageCount} 个职责不同的页面：${pagePreview}。`);
+  }
+
+  if (planningBrief?.promptDirectives?.[0]) {
+    lines.push(`写 prompt 时会优先遵守：${clipThoughtText(planningBrief.promptDirectives[0], 100)}。`);
+  }
+
+  if (planningBrief?.risks?.[0]) {
+    lines.push(`当前最需要防的风险是：${clipThoughtText(planningBrief.risks[0], 96)}。`);
+  }
+
+  return lines.slice(0, 10);
+};
+
+const buildTaskPlannerResultThoughtsClean = (
+  patch: VisualTaskPlanModelPatch,
+): string[] => {
+  const lines: string[] = [];
+  const planningBrief = patch.planningBrief;
+  const roleOverlay = patch.roleOverlay;
+  const styleLibrary = patch.styleLibrary;
+  const pageCount = patch.pages?.length || 0;
+
+  if (planningBrief?.requestType) {
+    lines.push(`任务归类：${planningBrief.requestType}。`);
+  } else if (patch.intent) {
+    lines.push(`任务意图：${patch.intent}。`);
+  }
+
+  if (planningBrief?.deliverableForm) {
+    lines.push(`我理解最终交付会是：${clipThoughtText(planningBrief.deliverableForm)}。`);
+  }
+
+  if (patch.reasoningSummary) {
+    lines.push(`这样判断的核心原因是：${clipThoughtText(patch.reasoningSummary)}。`);
+  }
+
+  if (planningBrief?.aspectRatioStrategy) {
+    lines.push(`比例策略：${clipThoughtText(planningBrief.aspectRatioStrategy, 96)}。`);
+  }
+
+  if (planningBrief?.researchDecision) {
+    const decision = planningBrief.researchDecision;
+    if (decision.shouldResearch) {
+      lines.push(
+        `会先做 ${decision.mode} 预研，因为 ${clipThoughtText(decision.reason, 96)}。`,
+      );
+      if (decision.searchQueries[0]) {
+        lines.push(`预研会先查：${clipThoughtText(decision.searchQueries[0], 96)}。`);
+      }
+    } else {
+      lines.push(`这次先不额外预研，因为 ${clipThoughtText(decision.reason, 96)}。`);
+    }
+  }
+
+  if (roleOverlay?.summary) {
+    lines.push(`这次会临时切到这样的工作脑子：${clipThoughtText(roleOverlay.summary, 110)}。`);
+  }
+
+  if (roleOverlay?.roles?.length) {
+    lines.push(
+      `我会同时按 ${roleOverlay.roles
+        .slice(0, 4)
+        .map((item) => item.role)
+        .join(" / ")} 这些视角一起推进。`,
+    );
+  }
+
+  if (styleLibrary?.title) {
+    lines.push(`会同步启用一个临时风格库：${clipThoughtText(styleLibrary.title, 84)}。`);
+  }
+
+  if (styleLibrary?.summary) {
+    lines.push(`这个风格库的作用是：${clipThoughtText(styleLibrary.summary, 100)}。`);
   }
 
   if (planningBrief?.modelFitNotes?.[0]) {
@@ -1070,6 +1229,7 @@ const repairIncompleteTaskPlanPatchLocally = (args: {
       buildMainBrainFallbackPlanningBrief(args.input, base, mode),
     roleOverlay:
       base.roleOverlay || buildMainBrainFallbackRoleOverlay(mode),
+    styleLibrary: base.styleLibrary || args.input.currentStyleLibrary,
     sharedStyleGuide:
       mode === "set"
         ? base.sharedStyleGuide || {
@@ -1099,6 +1259,16 @@ const repairIncompleteTaskPlanPatchLocally = (args: {
   return hasCompleteTaskPlanPatch(repaired) ? repaired : null;
 };
 
+const tryCompleteTaskPlanPatchLocally = (args: {
+  patch: VisualTaskPlanModelPatch | null;
+  input: PlanVisualTaskInput;
+}) => {
+  if (!hasUsableTaskPlanSkeleton(args.patch)) {
+    return null;
+  }
+  return repairIncompleteTaskPlanPatchLocally(args);
+};
+
 const summarizeConsistencyContext = (context?: PlannerConsistencyContext) => ({
   subjectAnchorCount: context?.subjectAnchors?.length || 0,
   hasReferenceSummary: Boolean(context?.referenceSummary),
@@ -1125,12 +1295,14 @@ const buildPlannerPrompt = (
   const selectedModelPlanningLines =
     getSelectedGenerationModelPlanningLines(selectedGenerationModel);
   const taskRoleOverlay = input.taskRoleOverlay;
+  const styleLibrary = input.styleLibrary;
   const playbookSections = buildVisualPlaybookSections(
     inferVisualTaskPlaybooks({
       prompt: input.prompt,
       referenceCount: referenceImageCount,
     }),
   );
+  const mainBrainPreferenceLines = getMainBrainPreferenceLines();
 
   return [
     "You are a visual generation planner for an image-generation workspace.",
@@ -1174,6 +1346,11 @@ const buildPlannerPrompt = (
         )
       : "",
     taskRoleOverlay ? "" : "",
+    styleLibrary
+      ? "[Task Style Library]\n" +
+        JSON.stringify(styleLibrary, null, 2)
+      : "",
+    styleLibrary ? "" : "",
     input.taskPlanningBrief
       ? "[Task Planning Brief]\n" +
         JSON.stringify(input.taskPlanningBrief, null, 2)
@@ -1203,6 +1380,15 @@ const buildPlannerPrompt = (
       "Visual Planning Constitution",
       getVisualPlanningPolicyLines(),
     ),
+    mainBrainPreferenceLines.length > 0
+      ? ""
+      : "",
+    mainBrainPreferenceLines.length > 0
+      ? buildPromptListSection(
+          "User Main Brain Preferences",
+          mainBrainPreferenceLines,
+        )
+      : "",
     "",
     buildPromptListSection(
       "Selected Generation Model Fit Guide",
@@ -1215,6 +1401,7 @@ const buildPlannerPrompt = (
     "- If the user mainly wants background changes while keeping subject stable, use intent=background_replace.",
     "- If the user references multiple images with mixed duties, use intent=multi_reference_fusion unless poster_rebuild is clearly better.",
     "- Only output referenceRoleMode=poster-product when there are at least two manual reference images and the user intent clearly assigns different jobs to them.",
+    "- Only output referenceRoleMode=custom when Task Style Library is present and should remain the active upstream constraint.",
     "- Preserve brand identity, product silhouette, packaging structure, and text layout when the user clearly implies they should stay stable.",
     "- strategyId must be present and should usually match the intent unless a clearer strategy id is necessary.",
     "- locks must include all six boolean fields even if some are false.",
@@ -1223,6 +1410,9 @@ const buildPlannerPrompt = (
     "- Use the Selected Generation Model Fit Guide actively. If the model is prone to collage drift, weak typography, or over-packed compositions, counteract that in strategy, locks, and notes.",
     "- Treat Task Role Overlay as an active temporary system overlay for this task. Let it influence strategy choice, lock strictness, allowed edits, and planner notes.",
     "- If Task Role Overlay says the agent should think through page architecture, model fit, copy load, detail-page logic, or deliverable structure, you must reflect that in the returned plan.",
+    "- If requestedReferenceRoleMode=custom and Task Style Library is present, treat that style library as an active upstream constraint.",
+    "- For custom style libraries, keep the same reference-role assignment discipline as default mode unless the task clearly requires poster-product behavior.",
+    "- Use Task Style Library to clarify how references should be interpreted and what the final prompt must keep constrained.",
     ...(playbookSections.length > 0 ? ["", ...playbookSections] : []),
   ].join("\n");
 };
@@ -1242,12 +1432,16 @@ const buildTaskPlannerPrompt = (
     String(input.selectedGenerationModel || "").trim() || "unspecified";
   const selectedModelPlanningLines =
     getSelectedGenerationModelPlanningLines(selectedGenerationModel);
+  const currentStyleLibrary = input.currentStyleLibrary;
+  const builtInStyleLibrarySummary = buildBuiltInStyleLibrarySummary();
+  const userStyleLibrarySummary = buildUserStyleLibrarySummary();
   const playbooks = inferVisualTaskPlaybooks({
     prompt: input.prompt,
     requestedImageCount: input.requestedImageCount,
     referenceCount: input.referenceImages.length,
   });
   const playbookSections = buildVisualPlaybookSections(playbooks);
+  const mainBrainPreferenceLines = getMainBrainPreferenceLines();
 
   return [
     "You are a visual task planner for an image-generation workspace.",
@@ -1257,6 +1451,7 @@ const buildTaskPlannerPrompt = (
     "Do not include explanatory prose outside the JSON fields.",
     "You must return: mode, intent, reasoningSummary, toolChain, planningBrief.",
     "You must also return roleOverlay for this exact task.",
+    "When the built-in style-library modes are not enough, you may also return styleLibrary.",
     "If mode=set, also return sharedStyleGuide and pages.",
     "",
     "[User Prompt]",
@@ -1277,6 +1472,17 @@ const buildTaskPlannerPrompt = (
     "",
     "[Consistency Context]",
     JSON.stringify(consistencySummary),
+    "",
+    currentStyleLibrary
+      ? "[Current Style Library]\n" +
+        JSON.stringify(currentStyleLibrary, null, 2)
+      : "",
+    currentStyleLibrary ? "" : "",
+    "[Built-in Style Libraries]",
+    builtInStyleLibrarySummary || "No built-in style libraries available.",
+    "",
+    "[User Saved Style Libraries]",
+    userStyleLibrarySummary || "No saved user style libraries are currently available.",
     "",
     buildPromptListSection(
       "Shared Agent Constitution",
@@ -1302,6 +1508,15 @@ const buildTaskPlannerPrompt = (
       "Visual Planning Constitution",
       getVisualPlanningPolicyLines(),
     ),
+    mainBrainPreferenceLines.length > 0
+      ? ""
+      : "",
+    mainBrainPreferenceLines.length > 0
+      ? buildPromptListSection(
+          "User Main Brain Preferences",
+          mainBrainPreferenceLines,
+        )
+      : "",
     "",
     buildPromptListSection(
       "Selected Generation Model Fit Guide",
@@ -1342,6 +1557,14 @@ const buildTaskPlannerPrompt = (
     "- roleOverlay.planningPolicy should list how this temporary role set should reason through the task.",
     "- roleOverlay.executionDirectives should list what the downstream visual planner and prompt composer must keep doing.",
     "- roleOverlay.roles should list distinct temporary roles with mission, focus, and outputContract.",
+    "- Built-in style libraries are preferred when they are sufficient. Do not invent a custom style library just to rename an existing default behavior.",
+    "- First decide whether an existing built-in style library already fits. Reuse should be the default when the existing library is already sufficient.",
+    "- If a saved user style library already matches the task, prefer reusing it or lightly refining it instead of inventing a brand-new temporary library.",
+    "- Prefer refining the Current Style Library when it already carries the right upstream reference-interpretation logic and only needs small adjustments.",
+    "- Only return styleLibrary when the built-in style-library modes are not enough and the task clearly needs a task-specific upstream reference-interpretation policy.",
+    "- If you return styleLibrary, it must describe how to interpret the references and what prompt/planning constraints must stay active downstream.",
+    "- If Current Style Library is already present and still fits the task, you may keep or refine it instead of discarding it.",
+    "- Create a brand-new temporary styleLibrary only when neither the built-in libraries, nor the current library, nor the saved user libraries can responsibly cover the task.",
     "",
     "[Page Planning Guidance]",
     "- Prefer concise Chinese-friendly titles if the prompt is in Chinese.",
@@ -1694,18 +1917,28 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     const normalized = normalizeTaskPlanPatch(parsed);
     if (normalized) {
       normalized.rawResponseText = response.text || "";
-      buildTaskPlannerResultThoughts(normalized).forEach((line) => {
+      buildTaskPlannerResultThoughtsClean(normalized).forEach((line) => {
         emitPlanningThought(onThought, "正在展开思路", line);
       });
     }
     if (hasCompleteTaskPlanPatch(normalized)) {
       return normalized;
     }
-    emitPlanningThought(
+    const localCompletion = tryCompleteTaskPlanPatchLocally({
+      patch: normalized,
+      input,
+    });
+    if (localCompletion) {
+      return localCompletion;
+    }
+    const announcedTaskPlanRetry = shouldAnnounceTaskPlanRetry(normalized);
+    if (announcedTaskPlanRetry) {
+      emitPlanningThought(
       onThought,
       "正在智能补全规划",
       "首轮返回字段不够完整，我会基于原始上下文和部分结果再做一轮智能补全。",
     );
+    }
     const agentFallbackResponse = await generateJsonResponse({
       model: modelId,
       providerId,
@@ -1738,21 +1971,30 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     });
 
     streamingThoughtBridge.flush();
-    emitPlanningThought(
+    if (announcedTaskPlanRetry) {
+      emitPlanningThought(
       onThought,
       "正在校验智能补全结果",
       "智能补全结果已返回，正在重新校验字段完整性。",
     );
+    }
     const agentFallbackParsed = JSON.parse(agentFallbackResponse.text || "{}");
     const agentFallback = normalizeTaskPlanPatch(agentFallbackParsed);
     if (agentFallback) {
       agentFallback.rawResponseText = agentFallbackResponse.text || "";
-      buildTaskPlannerResultThoughts(agentFallback).forEach((line) => {
+      buildTaskPlannerResultThoughtsClean(agentFallback).forEach((line) => {
         emitPlanningThought(onThought, "正在展开思路", line);
       });
     }
     if (hasCompleteTaskPlanPatch(agentFallback)) {
       return agentFallback;
+    }
+    const localCompletionAfterFallback = tryCompleteTaskPlanPatchLocally({
+      patch: agentFallback,
+      input,
+    });
+    if (localCompletionAfterFallback) {
+      return localCompletionAfterFallback;
     }
     emitPlanningThought(
       onThought,
@@ -1791,7 +2033,7 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     const repaired = normalizeTaskPlanPatch(repairedParsed);
     if (repaired) {
       repaired.rawResponseText = repairResponse.text || "";
-      buildTaskPlannerResultThoughts(repaired).forEach((line) => {
+      buildTaskPlannerResultThoughtsClean(repaired).forEach((line) => {
         emitPlanningThought(onThought, "正在展开思路", line);
       });
     }

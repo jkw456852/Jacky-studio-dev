@@ -3,6 +3,8 @@ import { getAllNodeParentIds } from "./workspaceTreeNode";
 
 const GENERATION_VERTICAL_GAP = 160;
 const GENERATION_HORIZONTAL_GAP = 36;
+const TREE_GENERATION_MAX_COLUMNS = 4;
+const TREE_GENERATION_ROW_GAP = 36;
 const BRANCH_HORIZONTAL_GAP = 140;
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -161,30 +163,66 @@ export const reflowGenerationRowForParent = (
     return elements;
   }
 
-  const rowY = round(
+  const offsetById = new Map<string, { dx: number; dy: number }>();
+
+  const firstRowY = round(
     generationChildren.reduce(
       (minY, child) => Math.min(minY, child.y),
       parentElement.y + parentElement.height + GENERATION_VERTICAL_GAP,
     ),
   );
-  const latestChild = generationChildren[generationChildren.length - 1];
-  const latestChildAnchorX = round(
-    parentElement.x + (parentElement.width - latestChild.width) / 2,
-  );
-  const widthToLeft =
-    generationChildren
-      .slice(0, -1)
-      .reduce((sum, child) => sum + child.width, 0) +
-    GENERATION_HORIZONTAL_GAP * Math.max(0, generationChildren.length - 1);
-  let cursorX = round(latestChildAnchorX - widthToLeft);
-  const offsetById = new Map<string, { dx: number; dy: number }>();
+  const shouldWrapTreeRows = parentElement.treeNodeKind === "prompt";
 
-  for (const child of generationChildren) {
-    offsetById.set(child.id, {
-      dx: round(cursorX - child.x),
-      dy: round(rowY - child.y),
-    });
-    cursorX = round(cursorX + child.width + GENERATION_HORIZONTAL_GAP);
+  if (shouldWrapTreeRows) {
+    for (let rowStart = 0; rowStart < generationChildren.length; rowStart += TREE_GENERATION_MAX_COLUMNS) {
+      const rowChildren = generationChildren.slice(
+        rowStart,
+        rowStart + TREE_GENERATION_MAX_COLUMNS,
+      );
+      if (rowChildren.length === 0) continue;
+
+      const rowWidth =
+        rowChildren.reduce((sum, child) => sum + child.width, 0) +
+        GENERATION_HORIZONTAL_GAP * Math.max(0, rowChildren.length - 1);
+      let cursorX = round(
+        parentElement.x + (parentElement.width - rowWidth) / 2,
+      );
+      const rowY =
+        rowStart === 0
+          ? firstRowY
+          : round(
+              firstRowY +
+                (Math.floor(rowStart / TREE_GENERATION_MAX_COLUMNS) *
+                  (rowChildren[0].height + TREE_GENERATION_ROW_GAP)),
+            );
+
+      for (const child of rowChildren) {
+        offsetById.set(child.id, {
+          dx: round(cursorX - child.x),
+          dy: round(rowY - child.y),
+        });
+        cursorX = round(cursorX + child.width + GENERATION_HORIZONTAL_GAP);
+      }
+    }
+  } else {
+    const latestChild = generationChildren[generationChildren.length - 1];
+    const latestChildAnchorX = round(
+      parentElement.x + (parentElement.width - latestChild.width) / 2,
+    );
+    const widthToLeft =
+      generationChildren
+        .slice(0, -1)
+        .reduce((sum, child) => sum + child.width, 0) +
+      GENERATION_HORIZONTAL_GAP * Math.max(0, generationChildren.length - 1);
+    let cursorX = round(latestChildAnchorX - widthToLeft);
+
+    for (const child of generationChildren) {
+      offsetById.set(child.id, {
+        dx: round(cursorX - child.x),
+        dy: round(firstRowY - child.y),
+      });
+      cursorX = round(cursorX + child.width + GENERATION_HORIZONTAL_GAP);
+    }
   }
 
   if (

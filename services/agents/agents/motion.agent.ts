@@ -1,5 +1,6 @@
 import { EnhancedBaseAgent } from '../enhanced-base-agent';
-import { MOTION_SYSTEM_PROMPT, MOTION_AGENT_INFO } from '../prompts/motion.prompt';
+import { MOTION_AGENT_INFO } from '../prompts/motion.prompt';
+import { getEffectiveAgentPrompt } from '../role-config';
 
 export class MotionAgent extends EnhancedBaseAgent {
   get agentInfo() {
@@ -7,7 +8,7 @@ export class MotionAgent extends EnhancedBaseAgent {
   }
 
   get systemPrompt() {
-    return MOTION_SYSTEM_PROMPT;
+    return getEffectiveAgentPrompt('motion');
   }
 
   get preferredSkills() {

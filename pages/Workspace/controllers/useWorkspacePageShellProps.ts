@@ -24,6 +24,8 @@ import { WorkspaceSidebarLayer } from "../components/WorkspaceSidebarLayer";
 import { WorkspaceTopToolbar } from "../components/WorkspaceTopToolbar";
 import { WorkspaceTouchEditIndicator } from "../components/WorkspaceTouchEditIndicator";
 import { WorkspaceTouchEditPopup } from "../components/WorkspaceTouchEditPopup";
+import { getElementSourceUrl } from "../workspaceShared";
+import { createStyleLibraryDraftFromMode } from "../../../services/vision-orchestrator/style-library";
 
 type Point = {
   x: number;
@@ -220,7 +222,7 @@ export const useWorkspacePageShellProps = ({
     (element: CanvasElement | null): string | null => {
       if (!element) return null;
       return (
-        element.originalUrl ||
+        getElementSourceUrl(element) ||
         element.proxyUrl ||
         element.url ||
         element.genRefPreviewImage ||
@@ -479,7 +481,7 @@ export const useWorkspacePageShellProps = ({
           }
           case "genReferenceRoleMode": {
             const nextMode = String(rawValue ?? "").trim();
-            if (!["none", "default", "poster-product"].includes(nextMode)) {
+            if (!["none", "default", "poster-product", "custom"].includes(nextMode)) {
               return { accepted: false, reason: `Invalid style library mode: ${nextMode}` };
             }
             if (nextMode === "poster-product") {
@@ -493,10 +495,17 @@ export const useWorkspacePageShellProps = ({
                 };
               }
             }
-            const accepted = updateElementById(targetId, {
+            const nextPatch: Partial<CanvasElement> = {
               genReferenceRoleMode:
                 nextMode as NonNullable<CanvasElement["genReferenceRoleMode"]>,
-            });
+            };
+            if (nextMode === "custom" && !targetElement.genStyleLibrary) {
+              nextPatch.genStyleLibrary = createStyleLibraryDraftFromMode(
+                targetElement.genReferenceRoleMode,
+                "user",
+              );
+            }
+            const accepted = updateElementById(targetId, nextPatch);
             return {
               accepted,
               reason: accepted ? null : "Style library update was not applied.",
