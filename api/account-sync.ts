@@ -30,6 +30,7 @@ const createEmptyState = (): StudioUserAssetState => ({
   userProfile: {
     schemaVersion: 1,
     updatedAt: Date.now(),
+    avatarUrl: '',
     preferenceNotes: [],
     commonTasks: [],
     aestheticPreferences: [],

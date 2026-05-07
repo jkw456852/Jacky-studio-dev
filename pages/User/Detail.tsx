@@ -1,16 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   BadgeCheck,
+  Camera,
   Cloud,
   LogOut,
   Mail,
   ShieldCheck,
+  Trash2,
   User as UserIcon,
 } from 'lucide-react';
 import { useAuthSession } from '../../hooks/useAuthSession';
 import { syncLocalStudioUserAssetsToAccount } from '../../services/runtime-assets/account-sync';
+import { getStudioUserAssetApi } from '../../services/runtime-assets/api';
+import { useImageHostStore } from '../../stores/imageHost.store';
+import { uploadImage } from '../../utils/uploader';
 import { ROUTES } from '../../utils/routes';
 
 const formatDateTime = (value?: string) => {
@@ -38,10 +43,17 @@ const formatDateTime = (value?: string) => {
 const UserDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, session, status, signOutAndClear } = useAuthSession();
+  const userAssetApi = useMemo(() => getStudioUserAssetApi(), []);
+  const imageHostProvider = useImageHostStore((state) => state.selectedProvider);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarMessage, setAvatarMessage] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(() => userAssetApi.getUserProfile().avatarUrl);
 
   const profile = useMemo(() => {
     const email = user?.email || '未绑定邮箱';
@@ -61,6 +73,69 @@ const UserDetailPage: React.FC = () => {
         : '—',
     };
   }, [session?.expires_at, status, user]);
+
+  const isAvatarUploadAvailable = imageHostProvider !== 'none';
+  const avatarStatusText = avatarError
+    || avatarMessage
+    || (isAvatarUploadAvailable
+      ? '头像会先保存到当前设备的账号资料层，点击下方“同步账号资产”后再同步到账号端。'
+      : '当前未开启图床配置，头像上传入口已禁用，避免保存为不可同步的临时地址。');
+  const avatarStatusClassName = avatarError
+    ? 'border-red-100 bg-red-50 text-red-600'
+    : avatarMessage
+      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+      : isAvatarUploadAvailable
+        ? 'border-slate-200 bg-slate-50 text-slate-600'
+        : 'border-amber-100 bg-amber-50 text-amber-700';
+
+  const handleAvatarFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (!isAvatarUploadAvailable) {
+      setAvatarMessage('');
+      setAvatarError('请先在设置中开启图床并配置可用密钥，再上传可同步头像。');
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarError('');
+    setAvatarMessage('');
+
+    try {
+      const uploadedAvatarUrl = await uploadImage(file);
+
+      if (!/^https?:\/\//i.test(uploadedAvatarUrl)) {
+        throw new Error('头像上传未返回可持久化公网地址，请检查图床配置后重试。');
+      }
+
+      userAssetApi.setUserProfile({
+        avatarUrl: uploadedAvatarUrl,
+      });
+      setAvatarUrl(uploadedAvatarUrl);
+      setAvatarMessage('头像已保存到本地账号资料，可通过“同步账号资产”同步到账号端。');
+    } catch (uploadError) {
+      console.error('Failed to upload avatar', uploadError);
+      setAvatarError(uploadError instanceof Error ? uploadError.message : '头像上传失败，请稍后重试');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    userAssetApi.setUserProfile({
+      avatarUrl: '',
+    });
+    setAvatarUrl('');
+    setAvatarError('');
+    setAvatarMessage('头像已移除，当前显示默认占位头像。');
+  };
 
   const handleSyncAssets = async () => {
     const accessToken = String(session?.access_token || '').trim();
@@ -126,21 +201,66 @@ const UserDetailPage: React.FC = () => {
 
         <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-100 px-6 py-6 sm:px-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
-                  <UserIcon className="h-6 w-6" />
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={`${profile.displayName} 的头像`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <UserIcon className="h-7 w-7" />
+                  )}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-xl font-semibold text-gray-900">
                     {profile.displayName}
                   </div>
                   <div className="mt-1 break-all text-sm leading-6 text-gray-500">
                     {profile.email}
                   </div>
+                  <div className="mt-2 text-sm leading-6 text-gray-500">
+                    头像作为账号资料字段保存；需要跨设备生效时，请在下方点击“同步账号资产”。
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarFileChange}
+                  />
+                  <div className="mt-4 flex flex-col gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={avatarUploading || !isAvatarUploadAvailable}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Camera className="h-4 w-4" />
+                        {avatarUploading ? '上传中...' : avatarUrl ? '更换头像' : '上传头像'}
+                      </button>
+                      {avatarUrl && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveAvatar}
+                          disabled={avatarUploading}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          移除头像
+                        </button>
+                      )}
+                    </div>
+                    <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${avatarStatusClassName}`}>
+                      {avatarStatusText}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+              <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                 <BadgeCheck className="h-4 w-4" />
                 {profile.sessionStatus}
               </div>
@@ -211,13 +331,13 @@ const UserDetailPage: React.FC = () => {
             )}
 
             <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm leading-6 text-blue-800">
-              当前“账号同步”第一批只同步用户资产层：模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好等；
-              项目内容、图片资源、图床密钥暂不进入这一步。
+              当前“账号同步”第一批会同步用户资产层：模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好，以及头像这类用户资料字段；
+              项目内容、项目图片资源、图床密钥暂不进入这一步。
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-gray-500">
-                当前页面已经接入统一认证状态层，并补了第一批账号资产手动同步入口，后续配置同步和图床同步都会继续叠加在这个壳层上。
+                当前页面已经接入统一认证状态层，并补了头像资料保存与第一批账号资产手动同步入口；头像上传后，仍需点击“同步账号资产”才能同步到账号端。
               </p>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button

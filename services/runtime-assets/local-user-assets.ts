@@ -303,9 +303,11 @@ const normalizeUserProfile = (raw: unknown): StudioUserProfileAsset => {
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const updatedAt = Number(value.updatedAt || Date.now());
+  const rawAvatarUrl = String(value.avatarUrl || "").trim();
   return {
     schemaVersion: USER_PROFILE_VERSION,
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    avatarUrl: /^https?:\/\//i.test(rawAvatarUrl) ? rawAvatarUrl : "",
     preferenceNotes: normalizeStringArray(value.preferenceNotes, 24, 180),
     commonTasks: normalizeStringArray(value.commonTasks, 24, 120),
     aestheticPreferences: normalizeStringArray(
@@ -638,6 +640,7 @@ const createEmptyState = (): StudioUserAssetState => ({
   userProfile: {
     schemaVersion: USER_PROFILE_VERSION,
     updatedAt: Date.now(),
+    avatarUrl: "",
     preferenceNotes: [],
     commonTasks: [],
     aestheticPreferences: [],

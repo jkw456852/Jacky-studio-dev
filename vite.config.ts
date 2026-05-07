@@ -2,6 +2,8 @@ import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
+import accountSyncHandler from "./api/account-sync";
+import accountSecretsHandler from "./api/account-secrets";
 import {
   clearPersonalBrowserAuthSession,
   finalizePersonalBrowserAuthSession,
@@ -292,6 +294,90 @@ function apiRehostImagePlugin(): Plugin {
         } catch (error: any) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: error?.message || "rehost_failed" }));
+        }
+      });
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/account-sync 本地代理：复用 Vercel Serverless handler
+// 解决本地 Vite dev server 被统一 /api -> localhost:3000 代理吞掉的问题
+// ─────────────────────────────────────────────────────────────────────────────
+function createAdaptedApiResponse(res: any) {
+  const adaptedRes = res as any;
+  adaptedRes.status = (code: number) => {
+    adaptedRes.statusCode = code;
+    return adaptedRes;
+  };
+  adaptedRes.json = (payload: unknown) => {
+    if (!adaptedRes.headersSent) {
+      adaptedRes.setHeader("Content-Type", "application/json; charset=utf-8");
+    }
+    adaptedRes.end(JSON.stringify(payload));
+    return adaptedRes;
+  };
+  adaptedRes.send = (payload: unknown) => {
+    if (typeof payload === "object" && payload !== null) {
+      return adaptedRes.json(payload);
+    }
+    adaptedRes.end(String(payload ?? ""));
+    return adaptedRes;
+  };
+  return adaptedRes;
+}
+
+function apiAccountSyncPlugin(): Plugin {
+  return {
+    name: "vite-plugin-api-account-sync",
+    configureServer(server) {
+      server.middlewares.use("/api/account-sync", async (req, res) => {
+        if (req.method === "PUT") {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          (req as any).body = Buffer.concat(chunks).toString("utf-8");
+        }
+
+        const adaptedRes = createAdaptedApiResponse(res);
+
+        try {
+          await accountSyncHandler(req as any, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_account_sync_failed",
+            });
+          }
+        }
+      });
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/account-secrets 本地代理：同步加密后的供应商/图床密钥
+// ─────────────────────────────────────────────────────────────────────────────
+function apiAccountSecretsPlugin(): Plugin {
+  return {
+    name: "vite-plugin-api-account-secrets",
+    configureServer(server) {
+      server.middlewares.use("/api/account-secrets", async (req, res) => {
+        if (req.method === "PUT") {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          (req as any).body = Buffer.concat(chunks).toString("utf-8");
+        }
+
+        const adaptedRes = createAdaptedApiResponse(res);
+
+        try {
+          await accountSecretsHandler(req as any, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_account_secrets_failed",
+            });
+          }
         }
       });
     },
@@ -1207,7 +1293,8 @@ function apiCompetitorBrowserAuthPlugin(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, ".", "VITE_");
+  const env = loadEnv(mode, ".", "");
+  Object.assign(process.env, env);
   const geminiKey = env.VITE_GEMINI_API_KEY || "";
   return {
     base: "/", // 确保基础路径正确
@@ -1232,6 +1319,8 @@ export default defineConfig(({ mode }) => {
       apiFetchImagePlugin(),
       apiSearchPlugin(),
       apiRehostImagePlugin(),
+      apiAccountSyncPlugin(),
+      apiAccountSecretsPlugin(),
       apiExtractPlugin(),
       apiExtractCompetitorDeckPlugin(),
       apiCompetitorBrowserAuthPlugin(),

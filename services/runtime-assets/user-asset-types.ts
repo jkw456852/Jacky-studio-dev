@@ -53,6 +53,7 @@ export interface StudioMainBrainPreferencesAsset {
 export interface StudioUserProfileAsset {
   schemaVersion: StudioAssetVersion;
   updatedAt: number;
+  avatarUrl: string;
   preferenceNotes: string[];
   commonTasks: string[];
   aestheticPreferences: string[];

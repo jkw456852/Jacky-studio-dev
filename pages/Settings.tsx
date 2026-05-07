@@ -1,16 +1,21 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Key, X, Check, Eye, EyeOff, Loader2,
-  Shield, Sliders, Info, Globe, Banana, Zap, 
+  Shield, Sliders, Info, Globe, Banana, Zap,
   Bot, Search, RefreshCw, ChevronDown, ChevronUp, GripVertical,
-  FileText, Image as ImageIcon, Video, Plus, Box, ArrowLeft 
+  FileText, Image as ImageIcon, Video, Plus, Box, ArrowLeft
 } from 'lucide-react';
 import { SettingsCard } from '../components/Settings/SettingsCard';
 import { SettingsControl, SettingsToggle, SettingsInput, SettingsSelect } from '../components/Settings/SettingsControl';
+import { useAuthSession } from '../hooks/useAuthSession';
 import { useImageHostStore } from '../stores/imageHost.store';
 import Sidebar from '../components/Sidebar';
+import {
+    restoreLocalAccountSecretsFromAccount,
+    syncLocalAccountSecretsToAccount,
+} from '../services/account-secrets';
 import {
     ApiProviderConfig,
     ImageModelPostPathConfig,
@@ -136,6 +141,8 @@ const SettingsPage: React.FC = () => {
     const [manualProviderId, setManualProviderId] = useState('yunwu');
     const [showImgBBKeys, setShowImgBBKeys] = useState(false);
     const [showCustomHostKeys, setShowCustomHostKeys] = useState(false);
+    const [accountSecretsStatus, setAccountSecretsStatus] = useState<'idle' | 'syncing' | 'restoring' | 'success' | 'error'>('idle');
+    const [accountSecretsMessage, setAccountSecretsMessage] = useState('');
 
     const [expandedCategory, setExpandedCategory] = useState<string | null>('image');
     const [visibleCount, setVisibleCount] = useState(60);
@@ -172,9 +179,10 @@ const SettingsPage: React.FC = () => {
 
     // Image Host Store (Reactive Hook)
     const imageHost = useImageHostStore();
+    const { session, isAuthenticated } = useAuthSession();
+    const accountSecretsBusy = accountSecretsStatus === 'syncing' || accountSecretsStatus === 'restoring';
 
-    useEffect(() => {
-        const loaded = loadProviderSettings();
+    const applyLoadedSettings = (loaded: ReturnType<typeof loadProviderSettings>) => {
         setProviders(loaded.providers);
         setActiveProviderId(loaded.activeProviderId);
         setReplicateKey(loaded.replicateKey);
@@ -192,7 +200,10 @@ const SettingsPage: React.FC = () => {
         setSystemModeration(loaded.systemModeration);
         setAutoSave(loaded.autoSave);
         setConcurrentCount(loaded.concurrentCount);
+    };
 
+    useEffect(() => {
+        applyLoadedSettings(loadProviderSettings());
         setSaveStatus('idle');
     }, []);
 
@@ -312,6 +323,55 @@ const SettingsPage: React.FC = () => {
             setSaveStatus('success');
             setTimeout(() => setSaveStatus('idle'), 2000);
         }, 600);
+    };
+
+    const handleSyncAccountSecrets = async () => {
+        const accessToken = String(session?.access_token || '').trim();
+        if (!accessToken) {
+            setAccountSecretsStatus('error');
+            setAccountSecretsMessage('请先登录账号，再同步供应商密钥、三方集成密钥与图床配置。');
+            return;
+        }
+
+        setAccountSecretsStatus('syncing');
+        setAccountSecretsMessage('');
+
+        try {
+            const remoteSnapshot = await syncLocalAccountSecretsToAccount({
+                accessToken,
+            });
+            setAccountSecretsStatus('success');
+            setAccountSecretsMessage(`已同步 ${remoteSnapshot.providers.length} 个供应商配置，以及图床与三方密钥。`);
+        } catch (error) {
+            setAccountSecretsStatus('error');
+            setAccountSecretsMessage(error instanceof Error ? error.message : '敏感配置同步失败，请稍后重试');
+        }
+    };
+
+    const handleRestoreAccountSecrets = async () => {
+        const accessToken = String(session?.access_token || '').trim();
+        if (!accessToken) {
+            setAccountSecretsStatus('error');
+            setAccountSecretsMessage('请先登录账号，再从账号恢复敏感配置。');
+            return;
+        }
+
+        setAccountSecretsStatus('restoring');
+        setAccountSecretsMessage('');
+
+        try {
+            const restoredSnapshot = await restoreLocalAccountSecretsFromAccount({
+                accessToken,
+            });
+            applyLoadedSettings(loadProviderSettings());
+            setShowImgBBKeys(false);
+            setShowCustomHostKeys(false);
+            setAccountSecretsStatus('success');
+            setAccountSecretsMessage(`已从账号恢复 ${restoredSnapshot.providers.length} 个供应商配置与图床密钥。`);
+        } catch (error) {
+            setAccountSecretsStatus('error');
+            setAccountSecretsMessage(error instanceof Error ? error.message : '敏感配置恢复失败，请稍后重试');
+        }
     };
 
     const deleteProvider = (id: string) => {
@@ -626,6 +686,46 @@ const SettingsPage: React.FC = () => {
                                         添加节点
                                     </button>
                                 </div>
+
+                                <SettingsCard
+                                    title="账号敏感配置"
+                                    icon={<Shield size={18} />}
+                                    description="单独同步供应商 API Key、三方集成密钥与图床配置，不会混入普通工作台偏好快照。"
+                                >
+                                    <div className="space-y-4 pt-4">
+                                        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm leading-6 text-gray-600">
+                                            {isAuthenticated
+                                                ? '当前已登录，可把本机的供应商密钥、Replicate / Kling Key 与图床配置加密同步到账号，换设备后再单独恢复。'
+                                                : '当前未登录，敏感配置同步入口已准备好；登录后即可加密同步到账号。'}
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                            <button
+                                                onClick={() => void handleSyncAccountSecrets()}
+                                                disabled={accountSecretsBusy}
+                                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {accountSecretsStatus === 'syncing' ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
+                                                同步敏感配置
+                                            </button>
+                                            <button
+                                                onClick={() => void handleRestoreAccountSecrets()}
+                                                disabled={accountSecretsBusy}
+                                                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-bold text-gray-700 transition-all hover:border-gray-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {accountSecretsStatus === 'restoring' ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                                                从账号恢复
+                                            </button>
+                                        </div>
+                                        {accountSecretsMessage && (
+                                            <div className={`rounded-2xl border px-4 py-3 text-sm leading-6 ${accountSecretsStatus === 'error'
+                                                ? 'border-red-200 bg-red-50 text-red-700'
+                                                : 'border-green-200 bg-green-50 text-green-700'
+                                                }`}>
+                                                {accountSecretsMessage}
+                                            </div>
+                                        )}
+                                    </div>
+                                </SettingsCard>
 
                                 <div className="grid grid-cols-1 gap-4">
                                     {providers.map(p => (
