@@ -151,7 +151,7 @@ const readRemoteSnapshot = async (
 
   const row = (data || null) as AccountSecretsRow | null;
   if (!row?.encrypted_payload) {
-    return createEmptyAccountSecretsSnapshot();
+    return createEmptyAccountSecretsSnapshot(0);
   }
 
   return decryptSnapshot(row.encrypted_payload);
@@ -161,7 +161,38 @@ const writeRemoteSnapshot = async (
   supabase: any,
   userId: string,
   snapshot: StudioAccountSecretsSnapshot,
+  baseUpdatedAt?: number,
 ): Promise<StudioAccountSecretsSnapshot> => {
+  const { data: existingData, error: existingError } = await supabase
+    .from(TABLE_NAME)
+    .select('encrypted_payload, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  const existingRow = (existingData || null) as AccountSecretsRow | null;
+  const existingSnapshot = existingRow?.encrypted_payload
+    ? decryptSnapshot(existingRow.encrypted_payload)
+    : createEmptyAccountSecretsSnapshot(0);
+  const normalizedBaseUpdatedAt = Number(baseUpdatedAt || 0);
+
+  if (
+    Number.isFinite(normalizedBaseUpdatedAt)
+    && normalizedBaseUpdatedAt > 0
+    && existingSnapshot.updatedAt > normalizedBaseUpdatedAt
+  ) {
+    const conflictError = new Error('account_secrets_conflict') as Error & {
+      code?: string;
+      conflictSnapshot?: StudioAccountSecretsSnapshot;
+    };
+    conflictError.code = 'ACCOUNT_SECRETS_CONFLICT';
+    conflictError.conflictSnapshot = existingSnapshot;
+    throw conflictError;
+  }
+
   const payload: AccountSecretsRow = {
     user_id: userId,
     encrypted_payload: encryptSnapshot(snapshot),
@@ -213,9 +244,21 @@ export default async function handler(req: any, res: any) {
 
     const body = readBody(req);
     const snapshot = normalizeAccountSecretsSnapshot(body?.snapshot);
-    const storedSnapshot = await writeRemoteSnapshot(supabase, user.id, snapshot);
+    const baseUpdatedAt = Number(body?.baseUpdatedAt || 0);
+    const storedSnapshot = await writeRemoteSnapshot(
+      supabase,
+      user.id,
+      snapshot,
+      Number.isFinite(baseUpdatedAt) && baseUpdatedAt > 0 ? baseUpdatedAt : undefined,
+    );
     return res.status(200).json({ snapshot: storedSnapshot });
   } catch (error: any) {
+    if (error?.code === 'ACCOUNT_SECRETS_CONFLICT') {
+      return res.status(409).json({
+        error: '账号上的敏感配置已在其他设备更新，请先恢复最新配置后再保存。',
+        snapshot: error?.conflictSnapshot || createEmptyAccountSecretsSnapshot(0),
+      });
+    }
     console.error('[account-secrets] request failed', error);
     return res.status(500).json({ error: error?.message || 'account_secrets_failed' });
   }

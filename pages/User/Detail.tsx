@@ -14,6 +14,11 @@ import {
 import { useAuthSession } from '../../hooks/useAuthSession';
 import { syncLocalStudioUserAssetsToAccount } from '../../services/runtime-assets/account-sync';
 import { getStudioUserAssetApi } from '../../services/runtime-assets/api';
+import {
+  getProjects,
+  scanProjectLocalAssetRisk,
+  type ProjectLocalRiskItem,
+} from '../../services/storage';
 import { useImageHostStore } from '../../stores/imageHost.store';
 import { uploadImage } from '../../utils/uploader';
 import { ROUTES } from '../../utils/routes';
@@ -38,6 +43,56 @@ const formatDateTime = (value?: string) => {
     second: '2-digit',
     hour12: false,
   });
+};
+
+const formatProjectRiskSummary = (risk: ProjectLocalRiskItem): string => {
+  const title = String(risk.projectTitle || '未命名项目').trim() || '未命名项目';
+  const updatedAt = formatDateTime(risk.updatedAt);
+  const sampleRef = risk.sampleRefs[0] ? `，示例资源：${risk.sampleRefs[0]}` : '';
+  return `${title}（${risk.localAssetCount} 个本地资源，最近更新 ${updatedAt}${sampleRef}）`;
+};
+
+const buildSignOutConfirmationMessage = (args: {
+  localProjectCount: number;
+  riskyProjects: ProjectLocalRiskItem[];
+  autoSyncError: string;
+  hasAccessToken: boolean;
+}): string => {
+  const {
+    localProjectCount,
+    riskyProjects,
+    autoSyncError,
+    hasAccessToken,
+  } = args;
+  const riskyAssetCount = riskyProjects.reduce(
+    (total, item) => total + item.localAssetCount,
+    0,
+  );
+  const lines = [
+    '退出后会清除当前设备上的账号敏感配置、账号资料、本地项目缓存与项目资源。',
+  ];
+
+  if (!hasAccessToken) {
+    lines.push('当前会话缺少 access token，无法在退出前自动同步账号资产。');
+  }
+
+  if (autoSyncError) {
+    lines.push(`退出前自动同步账号资产失败：${autoSyncError}`);
+  }
+
+  if (riskyProjects.length > 0) {
+    lines.push(
+      `检测到 ${riskyProjects.length} 个项目仍包含 ${riskyAssetCount} 个仅存于本地的资源引用，退出后将无法恢复：\n- ${riskyProjects
+        .slice(0, 2)
+        .map((item) => formatProjectRiskSummary(item))
+        .join('\n- ')}${riskyProjects.length > 2 ? '\n- 其余项目请在退出前自行检查。' : ''}`,
+    );
+  } else if (localProjectCount > 0) {
+    lines.push(`当前设备还有 ${localProjectCount} 个本地项目缓存，退出后会一并清除。`);
+  }
+
+  lines.push('是否继续退出并清除本地数据？');
+  return lines.join('\n\n');
 };
 
 const UserDetailPage: React.FC = () => {
@@ -166,17 +221,65 @@ const UserDetailPage: React.FC = () => {
   };
 
   const handleSignOut = async () => {
+    const accessToken = String(session?.access_token || '').trim();
     setLoading(true);
     setError('');
+    setSyncMessage('');
+
+    let autoSyncError = '';
+    let autoSyncMessage = '';
 
     try {
-      await signOutAndClear();
+      if (accessToken) {
+        setSyncing(true);
+        try {
+          const result = await syncLocalStudioUserAssetsToAccount({
+            accessToken,
+          });
+          autoSyncMessage = `退出前已自动同步账号资产：远端审计记录 ${result.remoteAuditCount} 条，合并决策 ${result.decisions.length} 项。`;
+        } catch (syncError) {
+          console.error('Failed to auto sync account assets before sign out', syncError);
+          autoSyncError = syncError instanceof Error
+            ? syncError.message
+            : '退出前自动同步账号资产失败，请稍后重试';
+        } finally {
+          setSyncing(false);
+        }
+      }
+
+      const projects = await getProjects();
+      const riskyProjects = projects
+        .map((project) => scanProjectLocalAssetRisk(project))
+        .filter((item): item is ProjectLocalRiskItem => Boolean(item));
+      const needsConfirmation = projects.length > 0 || riskyProjects.length > 0 || !!autoSyncError || !accessToken;
+
+      if (needsConfirmation) {
+        const confirmed = window.confirm(buildSignOutConfirmationMessage({
+          localProjectCount: projects.length,
+          riskyProjects,
+          autoSyncError,
+          hasAccessToken: Boolean(accessToken),
+        }));
+
+        if (!confirmed) {
+          if (autoSyncMessage) {
+            setSyncMessage(autoSyncMessage);
+          }
+          if (autoSyncError) {
+            setError(autoSyncError);
+          }
+          return;
+        }
+      }
+
+      await signOutAndClear({ clearWorkspaceData: true });
       navigate(ROUTES.userLogin, { replace: true });
     } catch (signOutError) {
       console.error('Failed to sign out', signOutError);
       setError(signOutError instanceof Error ? signOutError.message : '退出登录失败，请稍后重试');
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -332,17 +435,17 @@ const UserDetailPage: React.FC = () => {
 
             <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm leading-6 text-blue-800">
               当前“账号同步”第一批会同步用户资产层：模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好，以及头像这类用户资料字段；
-              项目内容、项目图片资源、图床密钥暂不进入这一步。
+              项目内容与项目图片资源仍保留在当前设备。退出登录时会先尝试自动同步账号资产，再提示确认是否清除本地项目缓存与仅本地资源。
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-gray-500">
-                当前页面已经接入统一认证状态层，并补了头像资料保存与第一批账号资产手动同步入口；头像上传后，仍需点击“同步账号资产”才能同步到账号端。
+                当前页面已经接入统一认证状态层，并补了头像资料保存与第一批账号资产手动同步入口；退出登录时会自动检查本地项目是否仍含仅本地资源，并在确认后清理当前设备数据。
               </p>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={handleSyncAssets}
-                  disabled={syncing}
+                  disabled={syncing || loading}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Cloud className="h-4 w-4" />
@@ -350,7 +453,7 @@ const UserDetailPage: React.FC = () => {
                 </button>
                 <button
                   onClick={handleSignOut}
-                  disabled={loading}
+                  disabled={loading || avatarUploading}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <LogOut className="h-4 w-4" />

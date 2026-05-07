@@ -7,8 +7,12 @@ import React, {
   useState,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { clearLocalAccountSecretsStorage } from '../services/account-secrets';
+import { clearLocalStudioUserAssetStorage } from '../services/runtime-assets/local-user-assets';
+import { clearWorkspaceLocalProjectData } from '../services/storage';
 import { getCurrentSession, signOut } from '../services/supabase/auth';
 import { supabase } from '../services/supabase/client';
+import { useProjectStore } from '../stores/project.store';
 
 type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
 
@@ -18,7 +22,7 @@ interface AuthSessionContextValue {
   user: User | null;
   isAuthenticated: boolean;
   refreshSession: () => Promise<void>;
-  signOutAndClear: () => Promise<void>;
+  signOutAndClear: (options?: { clearWorkspaceData?: boolean }) => Promise<void>;
 }
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null);
@@ -52,13 +56,20 @@ export const AuthSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
     applySession(data.session);
   }, [applySession]);
 
-  const signOutAndClear = useCallback(async () => {
+  const signOutAndClear = useCallback(async (options?: { clearWorkspaceData?: boolean }) => {
     const { error } = await signOut();
 
     if (error) {
       throw error;
     }
 
+    if (options?.clearWorkspaceData) {
+      await clearWorkspaceLocalProjectData();
+      useProjectStore.getState().actions.reset();
+    }
+
+    clearLocalAccountSecretsStorage();
+    clearLocalStudioUserAssetStorage();
     applySession(null);
   }, [applySession]);
 

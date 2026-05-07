@@ -1,4 +1,8 @@
-import { safeLocalStorageSetItem } from '../utils/safe-storage';
+import {
+  safeLocalStorageRemoveItem,
+  safeLocalStorageSetItem,
+  safeLocalStorageStateStorage,
+} from '../utils/safe-storage';
 import {
   getDefaultProviders,
   loadProviderSettings,
@@ -37,6 +41,7 @@ export interface PushAccountSecretsToAccountOptions {
   accessToken: string;
   snapshot: StudioAccountSecretsSnapshot;
   endpoint?: string;
+  baseUpdatedAt?: number;
 }
 
 export interface PullAccountSecretsFromAccountOptions {
@@ -48,6 +53,10 @@ const PROVIDERS_STORAGE_KEY = 'api_providers';
 const ACTIVE_PROVIDER_STORAGE_KEY = 'api_provider';
 const REPLICATE_KEY_STORAGE_KEY = 'replicate_api_key';
 const KLING_KEY_STORAGE_KEY = 'kling_api_key';
+const LEGACY_GEMINI_KEY_STORAGE_KEY = 'gemini_api_key';
+const LEGACY_YUNWU_KEY_STORAGE_KEY = 'yunwu_api_key';
+const ACCOUNT_SECRETS_REMOTE_VERSION_STORAGE_KEY = 'account_secrets_remote_version_v1';
+const IMAGE_HOST_STORAGE_KEY = 'image-host-storage';
 const DEFAULT_ACTIVE_PROVIDER_ID = 'yunwu';
 
 const DEFAULT_CUSTOM_IMAGE_HOST_CONFIG: AccountSecretsCustomImageHostConfig = {
@@ -137,9 +146,46 @@ const normalizeImageHostProvider = (value: unknown): ImageHostProvider => {
   return 'none';
 };
 
-export const createEmptyAccountSecretsSnapshot = (): StudioAccountSecretsSnapshot => ({
+const readStoredRemoteVersion = (): number => {
+  const raw = safeLocalStorageStateStorage.getItem(ACCOUNT_SECRETS_REMOTE_VERSION_STORAGE_KEY);
+  const value = Number(raw || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+const writeStoredRemoteVersion = (updatedAt: number): void => {
+  const safeUpdatedAt = Number.isFinite(updatedAt) && updatedAt > 0 ? Math.floor(updatedAt) : 0;
+  if (safeUpdatedAt > 0) {
+    safeLocalStorageSetItem(ACCOUNT_SECRETS_REMOTE_VERSION_STORAGE_KEY, String(safeUpdatedAt));
+  } else {
+    safeLocalStorageRemoveItem(ACCOUNT_SECRETS_REMOTE_VERSION_STORAGE_KEY);
+  }
+};
+
+const clearStoredRemoteVersion = (): void => {
+  safeLocalStorageRemoveItem(ACCOUNT_SECRETS_REMOTE_VERSION_STORAGE_KEY);
+};
+
+export const clearLocalAccountSecretsStorage = (): void => {
+  safeLocalStorageRemoveItem(PROVIDERS_STORAGE_KEY);
+  safeLocalStorageRemoveItem(ACTIVE_PROVIDER_STORAGE_KEY);
+  safeLocalStorageRemoveItem(REPLICATE_KEY_STORAGE_KEY);
+  safeLocalStorageRemoveItem(KLING_KEY_STORAGE_KEY);
+  safeLocalStorageRemoveItem(LEGACY_GEMINI_KEY_STORAGE_KEY);
+  safeLocalStorageRemoveItem(LEGACY_YUNWU_KEY_STORAGE_KEY);
+  clearStoredRemoteVersion();
+  safeLocalStorageRemoveItem(IMAGE_HOST_STORAGE_KEY);
+  useImageHostStore.setState({
+    selectedProvider: 'none',
+    imgbbKey: '',
+    customConfig: clone(DEFAULT_CUSTOM_IMAGE_HOST_CONFIG),
+  });
+};
+
+export const createEmptyAccountSecretsSnapshot = (
+  updatedAt = 0,
+): StudioAccountSecretsSnapshot => ({
   version: 1,
-  updatedAt: Date.now(),
+  updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? Math.floor(updatedAt) : 0,
   providers: clone(getDefaultProviders()),
   activeProviderId: DEFAULT_ACTIVE_PROVIDER_ID,
   replicateKey: '',
@@ -154,7 +200,10 @@ export const normalizeAccountSecretsSnapshot = (
     ? (value as Record<string, unknown>)
     : {};
   const providers = normalizeProviders(raw.providers);
-  const updatedAt = Number(raw.updatedAt || Date.now());
+  const updatedAtSource = raw.updatedAt;
+  const updatedAt = updatedAtSource === undefined || updatedAtSource === null || updatedAtSource === ''
+    ? Date.now()
+    : Number(updatedAtSource);
   const requestedActiveProviderId = normalizeString(raw.activeProviderId);
   const activeProviderId = providers.some((provider) => provider.id === requestedActiveProviderId)
     ? requestedActiveProviderId
@@ -167,7 +216,7 @@ export const normalizeAccountSecretsSnapshot = (
 
   return {
     version: 1,
-    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) ? Math.max(0, updatedAt) : Date.now(),
     providers,
     activeProviderId,
     replicateKey: normalizeString(raw.replicateKey),
@@ -220,6 +269,7 @@ export const applyLocalAccountSecretsSnapshot = (
     KLING_KEY_STORAGE_KEY,
     normalized.klingKey,
   );
+  writeStoredRemoteVersion(normalized.updatedAt);
 
   useImageHostStore.setState({
     selectedProvider: normalized.imageHost.selectedProvider,
@@ -248,15 +298,21 @@ const readSnapshotResponse = async (
   response: Response,
   actionLabel: string,
 ): Promise<StudioAccountSecretsSnapshot> => {
-  if (!response.ok) {
-    throw new Error(
-      `${actionLabel} failed: ${response.status} ${response.statusText}`,
-    );
-  }
-
   const payload = await response.json().catch(() => null) as {
     snapshot?: StudioAccountSecretsSnapshot;
+    error?: string;
   } | null;
+
+  if (!response.ok) {
+    const error = new Error(
+      payload?.error || `${actionLabel} failed: ${response.status} ${response.statusText}`,
+    ) as Error & { conflictSnapshot?: StudioAccountSecretsSnapshot };
+    if (response.status === 409 && payload?.snapshot) {
+      error.name = 'AccountSecretsConflictError';
+      error.conflictSnapshot = normalizeAccountSecretsSnapshot(payload.snapshot);
+    }
+    throw error;
+  }
 
   return normalizeAccountSecretsSnapshot(payload?.snapshot);
 };
@@ -265,6 +321,7 @@ export const pushAccountSecretsToAccount = async ({
   accessToken,
   snapshot,
   endpoint = '/api/account-secrets',
+  baseUpdatedAt,
 }: PushAccountSecretsToAccountOptions): Promise<StudioAccountSecretsSnapshot> => {
   const normalizedToken = normalizeString(accessToken);
   if (!normalizedToken) {
@@ -279,6 +336,7 @@ export const pushAccountSecretsToAccount = async ({
     },
     body: JSON.stringify({
       snapshot: normalizeAccountSecretsSnapshot(snapshot),
+      baseUpdatedAt: Number.isFinite(Number(baseUpdatedAt)) ? Number(baseUpdatedAt) : undefined,
     }),
   });
 
@@ -305,15 +363,36 @@ export const pullAccountSecretsFromAccount = async ({
 export const syncLocalAccountSecretsToAccount = async (
   options: Omit<PushAccountSecretsToAccountOptions, 'snapshot'>,
 ): Promise<StudioAccountSecretsSnapshot> => {
-  return pushAccountSecretsToAccount({
+  const localSnapshot = collectLocalAccountSecretsSnapshot();
+  const remoteSnapshot = await pullAccountSecretsFromAccount(options);
+  const lastKnownRemoteVersion = readStoredRemoteVersion();
+
+  if (
+    lastKnownRemoteVersion > 0
+    && remoteSnapshot.updatedAt > lastKnownRemoteVersion
+  ) {
+    const conflictError = new Error(
+      '账号上的敏感配置已在其他设备更新，请先从账号恢复后再保存，或确认后重新保存。',
+    ) as Error & { conflictSnapshot?: StudioAccountSecretsSnapshot };
+    conflictError.name = 'AccountSecretsConflictError';
+    conflictError.conflictSnapshot = remoteSnapshot;
+    throw conflictError;
+  }
+
+  const storedSnapshot = await pushAccountSecretsToAccount({
     ...options,
-    snapshot: collectLocalAccountSecretsSnapshot(),
+    snapshot: localSnapshot,
+    baseUpdatedAt: remoteSnapshot.updatedAt,
   });
+  writeStoredRemoteVersion(storedSnapshot.updatedAt);
+  return storedSnapshot;
 };
 
 export const restoreLocalAccountSecretsFromAccount = async (
   options: PullAccountSecretsFromAccountOptions,
 ): Promise<StudioAccountSecretsSnapshot> => {
   const snapshot = await pullAccountSecretsFromAccount(options);
-  return applyLocalAccountSecretsSnapshot(snapshot);
+  const applied = applyLocalAccountSecretsSnapshot(snapshot);
+  writeStoredRemoteVersion(applied.updatedAt);
+  return applied;
 };

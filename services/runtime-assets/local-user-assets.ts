@@ -1058,6 +1058,15 @@ const clearLegacyWorkspacePreferenceKeys = (): void => {
   ].forEach((key) => safeLocalStorageRemoveItem(key));
 };
 
+export const clearLocalStudioUserAssetStorage = (): void => {
+  safeLocalStorageRemoveItem(USER_ASSET_STORAGE_KEY);
+  safeLocalStorageRemoveItem(USER_ASSET_AUDIT_STORAGE_KEY);
+  safeLocalStorageRemoveItem(LEGACY_AGENT_PROMPT_ADDON_STORAGE_KEY);
+  safeLocalStorageRemoveItem(LEGACY_ROLE_DRAFT_STORAGE_KEY);
+  clearLegacyWorkspacePreferenceKeys();
+  safeLocalStorageRemoveItem(LEGACY_ACTIVE_QUICK_SKILL_STORAGE_KEY);
+};
+
 const mirrorWorkspacePreferencesToLegacyKeys = (
   workspacePreferences: StudioWorkspacePreferencesAsset,
 ): void => {
