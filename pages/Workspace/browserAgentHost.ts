@@ -7,6 +7,7 @@ import type {
 import { registerBrowserTool, unregisterBrowserTool } from "../../services/browser-agent";
 import {
   listRecentWorkspaceGenerationTraces,
+  readPendingWorkspaceGenerationRequestByElementId,
   readWorkspaceGenerationTraceByElementId,
   readWorkspaceGenerationTraceByRequestId,
 } from "./browserAgentGenerationTrace";
@@ -24,14 +25,17 @@ export type WorkspaceBrowserAgentActions = {
   fitToScreen: () => void;
   clearSelection: () => void;
   selectElementById: (elementId: string) => boolean;
-  triggerImageGeneration: (elementId: string) =>
+  triggerImageGeneration: (
+    elementId: string,
+  ) => Promise<
     | boolean
     | {
         accepted: boolean;
         elementId: string;
         requestId?: string | null;
         traceStatus?: string | null;
-      };
+      }
+  >;
   updateElementControl: (
     elementId: string,
     controlId: string,
@@ -137,6 +141,8 @@ export type WorkspaceToolExecutionResult<TPayload = unknown> = {
 
 export type WorkspaceGenerationObservationPayload = {
   targetElementId: string | null;
+  resultElementId: string | null;
+  resultElementIds: string[];
   targetElementType: string | null;
   targetTreeNodeKind: string | null;
   panelKind: string | null;
@@ -174,6 +180,8 @@ export type WorkspaceGenerationObservationPayload = {
 export type WorkspaceAwaitGenerationPayload = {
   elementId: string | null;
   requestId: string | null;
+  resultElementId: string | null;
+  resultElementIds: string[];
   status: string | null;
   terminal: boolean;
   timedOut: boolean;
@@ -392,7 +400,7 @@ type WorkspaceGenerationActivity = {
   context: Record<string, unknown> | null;
 };
 
-export const invokeWorkspaceBrowserAgentAction = ({
+export const invokeWorkspaceBrowserAgentAction = async ({
   actionId,
   input,
   snapshot,
@@ -449,7 +457,7 @@ export const invokeWorkspaceBrowserAgentAction = ({
       if (!elementId) {
         throw new Error("workspace.generate_image requires an elementId or a selection.");
       }
-      const accepted = actions.triggerImageGeneration(elementId);
+      const accepted = await actions.triggerImageGeneration(elementId);
       const payload =
         typeof accepted === "object" && accepted
           ? accepted
@@ -766,6 +774,10 @@ export const registerWorkspaceBrowserAgentTools = ({
         snapshotRef.current.selection.selectedElementId ||
         "";
       const requestedRequestId = String(input?.requestId || "").trim();
+      const anchoredRequestId =
+        requestedRequestId ||
+        readPendingWorkspaceGenerationRequestByElementId(requestedElementId) ||
+        "";
       const timeoutMs = Math.max(500, Math.min(120_000, Number(input?.timeoutMs || 45_000)));
       const pollIntervalMs = Math.max(
         200,
@@ -784,6 +796,8 @@ export const registerWorkspaceBrowserAgentTools = ({
             payload: {
               elementId: null,
               requestId: null,
+              resultElementId: null,
+              resultElementIds: [],
               status: null,
               terminal: false,
               timedOut: false,
@@ -798,13 +812,13 @@ export const registerWorkspaceBrowserAgentTools = ({
       }
 
       const startedAt = Date.now();
-      let trace = requestedRequestId
-        ? readWorkspaceGenerationTraceByRequestId(requestedRequestId)
+      let trace = anchoredRequestId
+        ? readWorkspaceGenerationTraceByRequestId(anchoredRequestId)
         : readWorkspaceGenerationTraceByElementId(requestedElementId);
 
       while (Date.now() - startedAt < timeoutMs) {
-        trace = requestedRequestId
-          ? readWorkspaceGenerationTraceByRequestId(requestedRequestId)
+        trace = anchoredRequestId
+          ? readWorkspaceGenerationTraceByRequestId(anchoredRequestId)
           : readWorkspaceGenerationTraceByElementId(requestedElementId);
         const status = String(trace?.status || "").trim();
         if (status === "completed" || status === "failed") {
@@ -813,8 +827,8 @@ export const registerWorkspaceBrowserAgentTools = ({
         await sleep(pollIntervalMs);
       }
 
-      trace = requestedRequestId
-        ? readWorkspaceGenerationTraceByRequestId(requestedRequestId)
+      trace = anchoredRequestId
+        ? readWorkspaceGenerationTraceByRequestId(anchoredRequestId)
         : readWorkspaceGenerationTraceByElementId(requestedElementId);
       const elapsedMs = Date.now() - startedAt;
       const status = String(trace?.status || "").trim() || null;
@@ -824,7 +838,7 @@ export const registerWorkspaceBrowserAgentTools = ({
         .map(toWorkspaceGenerationActivity)
         .filter((activity): activity is WorkspaceGenerationActivity => Boolean(activity))
         .filter((activity) => {
-          if (requestedRequestId && activity.requestId === requestedRequestId) {
+          if (anchoredRequestId && activity.requestId === anchoredRequestId) {
             return true;
           }
           return (
@@ -834,6 +848,10 @@ export const registerWorkspaceBrowserAgentTools = ({
         })
         .slice(-activityLimit);
       const variantSummary = summarizeGenerationVariants(trace?.variantResults || []);
+      const resultElementIds = resolveTraceResultElementIds(
+        trace,
+        requestedElementId,
+      );
       const lastError = String(trace?.lastError || "").trim() || null;
 
       if (!trace) {
@@ -848,7 +866,9 @@ export const registerWorkspaceBrowserAgentTools = ({
             retryable: true,
             payload: {
               elementId: requestedElementId,
-              requestId: requestedRequestId || null,
+              requestId: anchoredRequestId || null,
+              resultElementId: resultElementIds[0] || null,
+              resultElementIds,
               status: null,
               terminal: false,
               timedOut: true,
@@ -888,7 +908,9 @@ export const registerWorkspaceBrowserAgentTools = ({
           retryable: timedOut || status === "failed",
           payload: {
             elementId: requestedElementId,
-            requestId: trace.requestId || requestedRequestId || null,
+            requestId: trace.requestId || anchoredRequestId || null,
+            resultElementId: resultElementIds[0] || null,
+            resultElementIds,
             status,
             terminal,
             timedOut,
@@ -1243,6 +1265,8 @@ const buildWorkspaceGenerationObservationResult = ({
       retryable: true,
       payload: {
         targetElementId: capabilities.targetElementId,
+        resultElementId: null,
+        resultElementIds: [],
         targetElementType: capabilities.targetElementType,
         targetTreeNodeKind: capabilities.targetTreeNodeKind,
         panelKind: controls.panelKind,
@@ -1276,6 +1300,10 @@ const buildWorkspaceGenerationObservationResult = ({
   }
 
   const variantSummary = summarizeGenerationVariants(trace?.variantResults || []);
+  const resultElementIds = resolveTraceResultElementIds(
+    trace,
+    capabilities.targetElementId,
+  );
   const enabledActionIds = capabilities.actions
     .filter((item) => item.enabled)
     .map((item) => item.id);
@@ -1357,6 +1385,8 @@ const buildWorkspaceGenerationObservationResult = ({
     retryable: Boolean(canGenerate || capabilities.isGenerating),
     payload: {
       targetElementId: capabilities.targetElementId,
+      resultElementId: resultElementIds[0] || null,
+      resultElementIds,
       targetElementType: capabilities.targetElementType,
       targetTreeNodeKind: capabilities.targetTreeNodeKind,
       panelKind: controls.panelKind,
@@ -1630,6 +1660,22 @@ const summarizeGenerationVariants = (
   retrying: variants.filter((item) => item.status === "retrying").length,
   generating: variants.filter((item) => item.status === "generating").length,
 });
+
+const resolveTraceResultElementIds = (
+  trace: ReturnType<typeof readWorkspaceGenerationTraceByElementId> | null | undefined,
+  fallbackElementId?: string | null,
+) => {
+  const targetIds = Array.isArray(trace?.targetElementIds)
+    ? trace.targetElementIds
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    : [];
+  if (targetIds.length > 0) {
+    return Array.from(new Set(targetIds));
+  }
+  const fallback = String(fallbackElementId || "").trim();
+  return fallback ? [fallback] : [];
+};
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {

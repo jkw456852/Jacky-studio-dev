@@ -1,5 +1,5 @@
-import { getClient } from '../gemini';
-import { AgentRegistry, XcaiPackName } from '../agents/registry';
+﻿import { getClient } from '../gemini';
+import { AgentRegistry, JkaiPackName } from '../agents/registry';
 
 type OneclickOutputsConfig = {
   startup_pack?: boolean;
@@ -17,7 +17,7 @@ type OneclickConfig = {
   outputs?: OneclickOutputsConfig;
 };
 
-export interface XcaiOneclickParams {
+export interface JkaiOneclickParams {
   input: {
     message: string;
     referenceImages?: string[];
@@ -26,7 +26,7 @@ export interface XcaiOneclickParams {
   config?: OneclickConfig;
 }
 
-export interface XcaiOneclickResult {
+export interface JkaiOneclickResult {
   startup?: string;
   p0?: string;
   p1?: string;
@@ -83,8 +83,8 @@ const renderStage = (title: string, value?: string): string => {
   return `## ${title}\n${value.trim()}\n`;
 };
 
-async function runStage(packName: XcaiPackName, stageName: string, stageInput: Record<string, unknown>): Promise<string> {
-  const skillDef = AgentRegistry['xcai-oneclick'];
+async function runStage(packName: JkaiPackName, stageName: string, stageInput: Record<string, unknown>): Promise<string> {
+  const skillDef = AgentRegistry['jkai-oneclick'];
   const prompt = buildStagePrompt(skillDef.core, skillDef.packs[packName], stageName, stageInput);
 
   const client = getClient() as any;
@@ -106,7 +106,7 @@ async function runStage(packName: XcaiPackName, stageName: string, stageInput: R
   return text;
 }
 
-export async function runXcAiOneclick(params: XcaiOneclickParams): Promise<XcaiOneclickResult> {
+export async function runJkAiOneclick(params: JkaiOneclickParams): Promise<JkaiOneclickResult> {
   const outputs = { ...DEFAULT_OUTPUTS, ...(params.config?.outputs || {}) };
   const baseInput = {
     userRequest: params.input.message,
@@ -114,7 +114,7 @@ export async function runXcAiOneclick(params: XcaiOneclickParams): Promise<XcaiO
     mode: params.config?.mode || 'standard',
   };
 
-  const result: XcaiOneclickResult = {};
+  const result: JkaiOneclickResult = {};
 
   if (outputs.startup_pack) {
     result.startup = await runStage('STARTUP_PACK', 'Startup', baseInput);
@@ -170,9 +170,9 @@ export async function runXcAiOneclick(params: XcaiOneclickParams): Promise<XcaiO
   return result;
 }
 
-export function formatXcaiOneclickResult(result: XcaiOneclickResult): string {
+export function formatJkaiOneclickResult(result: JkaiOneclickResult): string {
   return [
-    '# SKYSPER One-Click 结果',
+    '# JKAI One-Click 结果',
     renderStage('Startup 启动包', result.startup),
     renderStage('P0 策略', result.p0),
     renderStage('P1 视觉', result.p1),
@@ -184,3 +184,9 @@ export function formatXcaiOneclickResult(result: XcaiOneclickResult): string {
     .filter(Boolean)
     .join('\n');
 }
+
+export type XcaiOneclickParams = JkaiOneclickParams;
+export type XcaiOneclickResult = JkaiOneclickResult;
+export const runXcAiOneclick = runJkAiOneclick;
+export const formatXcaiOneclickResult = formatJkaiOneclickResult;
+

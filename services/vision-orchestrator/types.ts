@@ -45,11 +45,18 @@ export type VisualReferencePlan = {
   notes?: string;
 };
 
+export type VisualReferenceReasoning = {
+  shouldReconcile: boolean;
+  lockedAttributeDomains: string[];
+  roleSummary: string[];
+};
+
 export type VisualGenerationPlan = {
   intent: VisualTaskIntent;
   strategyId: string;
   userGoal: string;
   references: VisualReferencePlan[];
+  referenceReasoning?: VisualReferenceReasoning;
   taskRoleOverlay?: VisualRoleOverlay;
   styleLibrary?: VisualStyleLibrary;
   locks: VisualConstraintLock;

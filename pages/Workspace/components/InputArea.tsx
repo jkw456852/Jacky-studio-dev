@@ -97,6 +97,7 @@ interface InputAreaProps {
   onSaveMarkerLabel?: (markerId: string, label: string) => void;
   activeQuickSkill?: ChatMessage['skillData'] | null;
   onClearQuickSkill?: () => void;
+  persistQuickSkillOnSend?: boolean;
 }
 
 export const InputArea: React.FC<InputAreaProps> = ({
@@ -144,6 +145,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
   onSaveMarkerLabel,
   activeQuickSkill,
   onClearQuickSkill,
+  persistQuickSkillOnSend = true,
 }) => {
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editingMarkerLabel, setEditingMarkerLabel] = useState('');
@@ -202,7 +204,10 @@ export const InputArea: React.FC<InputAreaProps> = ({
     setImageGenCount,
   } = useAgentStore((state) => state.actions);
 
-  const sendSkill = creationMode === 'agent' ? activeQuickSkill || undefined : undefined;
+  const sendSkill =
+    creationMode === 'agent' && persistQuickSkillOnSend
+      ? activeQuickSkill || undefined
+      : undefined;
   const isSoraVideoModel = isSora2Model(videoGenModel);
   const agentTargetLabel = browserAgent?.selectedElementLabel || '当前节点';
   const shouldShowAgentStatus =

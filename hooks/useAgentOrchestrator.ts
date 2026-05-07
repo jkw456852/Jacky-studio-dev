@@ -1,115 +1,50 @@
-import { useState, useCallback, useRef } from 'react';
-import { AgentType, AgentTask, ProjectContext, GeneratedAsset, AgentTaskMetadata } from '../types/agent.types';
-import { routeToAgent, executeAgentTask, getAgentInfo, detectPipeline, executePipeline, PIPELINES } from '../services/agents';
-import { ChatMessage, CanvasElement } from '../types';
-import { assetsToCanvasElementsAtCenter } from '../utils/canvas-helpers';
+﻿import { useState, useCallback, useRef } from 'react';
+import { AgentTask, ProjectContext, GeneratedAsset, AgentTaskMetadata } from '../types/agent.types';
+import { executeAgentTask } from '../services/agents';
+import { CanvasElement } from '../types';
+import { getTaskOutputProposals } from '../services/agents/agent-task-output';
 import { useAgentStore } from '../stores/agent.store';
-import { uploadImage } from '../utils/uploader';
 import { useImageHostStore } from '../stores/imageHost.store';
-import { localPreRoute } from '../services/agents/local-router';
-import { addTopicMemoryItem, buildTopicPinnedContext, extractConstraintHints, mergeUniqueStrings, upsertTopicSnapshot } from '../services/topic-memory';
-import { summarizeReferenceSet } from '../services/topic-memory';
-import { getMemoryKey } from '../services/topicMemory/key';
-import {
-  detectExplicitAgentPin,
-  detectOptimizeThenExecuteIntent,
-  stripOptimizePipelineCommand,
-} from '../services/agents/prompt-optimizer/intent';
-import { optimizeUserText } from '../services/agents/prompt-optimizer/service';
 import { useProjectStore } from '../stores/project.store';
-import { rememberApprovedAsset } from '../services/topic-memory';
-import type { EnhancedRoutingDecision } from '../services/agents/enhanced-orchestrator';
 import { saveLatestAgentRoleDraft } from '../services/agents/role-draft-store';
+import {
+  shouldPreferAutonomousChatFallback as shouldPreferAutonomousChatFallbackModule,
+} from '../services/agents/orchestrator-routing';
+import {
+  getReferenceResolutionPolicy,
+} from '../services/agents/orchestrator-multimodal';
+import {
+  buildAutoRoleSessionState,
+  buildImmediateResponseTask,
+  buildRolePromptAddonFromDecision,
+} from '../services/agents/orchestrator-task-assembly';
+import {
+  maybeResolvePipeline,
+  resolveRoutingDecision,
+} from '../services/agents/orchestrator-routing-execution';
+import { prepareAgentExecutionTask, prepareOrchestratorContext } from '../services/agents/orchestrator-preparation';
+import {
+  executeProposalTaskFlow,
+} from '../services/agents/orchestrator-proposal-execution';
+import {
+  buildProcessMessageErrorTask,
+  buildProposalExecutionErrorTask,
+  finalizeExecutionSuccess,
+} from '../services/agents/orchestrator-result-handlers';
+import {
+  dequeueNextOrchestratorMessage,
+  enqueueOrchestratorMessage,
+} from '../services/agents/orchestrator-queue';
+import { withTimeout } from '../services/agents/timeout-utils';
 
 const viteEnv =
   ((import.meta as unknown as {
     env?: Record<string, string | boolean | undefined>;
   }).env || {});
 
-const inferTaskModeFromRequest = (message: string, metadata?: AgentTaskMetadata) => {
-  const lower = String(message || '').toLowerCase();
-  if (metadata?.enableWebSearch || metadata?.multimodalContext?.research) return 'research' as const;
-  if (metadata?.skillData?.name?.toLowerCase?.().includes('text') || /文字|文案|改字|text/i.test(lower)) return 'text-edit' as const;
-  if (/排版|版式|layout/i.test(lower)) return 'layout-edit' as const;
-  if (/局部|圈选|区域|点选|touch/i.test(lower)) return 'touch-edit' as const;
-  if (/修改|替换|编辑|改成|换成|edit|replace|remove/i.test(lower)) return 'edit' as const;
-  return 'generate' as const;
-};
-
 const MAX_ORCHESTRATOR_HISTORY_MESSAGES = 6;
 const AGENT_EXECUTION_TIMEOUT_MS = 600_000; // 与 EnhancedBaseAgent 默认超时保持一致（10 分钟）
 const PIPELINE_EXECUTION_TIMEOUT_MS = 180_000;
-
-const buildRolePromptAddonFromDecision = (
-  decision: Pick<
-    EnhancedRoutingDecision,
-    'roleStrategy' | 'roleStrategyReason' | 'handoffMessage' | 'targetAgent'
-  >,
-  messageForExecution: string,
-): { rolePromptLabel?: string; rolePromptAddon?: string } => {
-  const strategy = String(decision.roleStrategy || '').trim();
-  const reason = String(decision.roleStrategyReason || '').trim();
-  const handoffMessage = String(decision.handoffMessage || '').trim();
-  const draftTitle = String(decision.roleDraft?.title || '').trim();
-  const draftSummary = String(decision.roleDraft?.summary || '').trim();
-  const draftInstructions = Array.isArray(decision.roleDraft?.instructions)
-    ? decision.roleDraft.instructions
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    : [];
-  const draftBlock =
-    draftTitle || draftSummary || draftInstructions.length > 0
-      ? [
-          draftTitle ? `Temporary role draft title: ${draftTitle}` : '',
-          draftSummary ? `Temporary role draft summary: ${draftSummary}` : '',
-          draftInstructions.length > 0
-            ? `Temporary role draft instructions:\n${draftInstructions
-                .map((item) => `- ${item}`)
-                .join('\n')}`
-            : '',
-        ]
-          .filter(Boolean)
-          .join('\n')
-      : '';
-
-  if (!strategy || strategy === 'reuse') {
-    return {};
-  }
-
-  if (strategy === 'augment') {
-    return {
-      rolePromptLabel: `augment:${decision.targetAgent}`,
-      rolePromptAddon: [
-        'Reuse your existing specialist identity as the base role.',
-        reason ? `Task-specific augmentation reason: ${reason}` : '',
-        draftBlock,
-        handoffMessage ? `Task handoff context: ${handoffMessage}` : '',
-        `Current user request: ${messageForExecution}`,
-        'Add only the missing task-specific constraints. Do not discard your existing specialist strengths.',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    };
-  }
-
-  if (strategy === 'create') {
-    return {
-      rolePromptLabel: `create:${decision.targetAgent}`,
-      rolePromptAddon: [
-        'Treat your built-in role as an execution shell, but switch to a temporary task brain for this request.',
-        reason ? `Why a temporary task brain is needed: ${reason}` : '',
-        draftBlock,
-        handoffMessage ? `Temporary brain brief: ${handoffMessage}` : '',
-        `Current user request: ${messageForExecution}`,
-        'Compose the missing role logic dynamically, but keep tool discipline and output quality strict.',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    };
-  }
-
-  return {};
-};
 
 interface CanvasState {
   elements: CanvasElement[];
@@ -124,6 +59,7 @@ interface UseAgentOrchestratorOptions {
   onElementsUpdate?: (elements: CanvasElement[]) => void;
   onHistorySave?: (elements: CanvasElement[], markers: any[]) => void;
   autoAddToCanvas?: boolean;
+  onAssetsGenerated?: (assets: GeneratedAsset[]) => Promise<void> | void;
 }
 
 export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
@@ -132,18 +68,20 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     canvasState,
     onElementsUpdate,
     onHistorySave,
-    autoAddToCanvas = true
+    autoAddToCanvas = true,
+    onAssetsGenerated,
   } = options;
 
   // Read from store instead of local state
   const currentTask = useAgentStore(s => s.currentTask);
   const isAgentMode = useAgentStore(s => s.isAgentMode);
   const currentAutoRoleSession = useAgentStore(s => s.currentAutoRoleSession);
-  const { setCurrentTask, setIsAgentMode, setCurrentAutoRoleSession } = useAgentStore(s => s.actions);
+  const { setCurrentTask, setCurrentAutoRoleSession } = useAgentStore(s => s.actions);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const isProcessingRef = useRef(false);
+  const writtenAssetKeysRef = useRef<Set<string>>(new Set());
   const messageQueue = useRef<Array<{
     message: string;
     attachments?: File[];
@@ -151,57 +89,56 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     userMessageId?: string;
   }>>([]);
 
-  const withTimeout = useCallback(async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs))
-    ]);
-  }, []);
-
   const addAssetsToCanvas = useCallback(async (assets: GeneratedAsset[]) => {
-    if (!canvasState || !onElementsUpdate || !autoAddToCanvas) {
+    if (!autoAddToCanvas || assets.length === 0) {
       console.log('[useAgentOrchestrator] Canvas integration disabled or not configured');
       return;
     }
 
     try {
-      const containerW = window.innerWidth - (canvasState.showAssistant ? 400 : 0);
-      const containerH = window.innerHeight;
+      const pendingAssets = assets.filter((asset) => {
+        const url = typeof asset?.url === 'string' ? asset.url.trim() : '';
+        if (!url) return false;
+        const key = `${asset.type}:${url}`;
+        return !writtenAssetKeysRef.current.has(key);
+      });
 
-      console.log('[useAgentOrchestrator] Processing', assets.length, 'assets for canvas');
+      if (pendingAssets.length === 0) {
+        console.log('[useAgentOrchestrator] Skipping canvas writeback; all assets already inserted');
+        return;
+      }
 
-      // 异步获取所有图片的原始尺寸
-      const assetsWithDimensions = await Promise.all(assets.map(async (asset) => {
-        if (asset.type === 'image' && (!asset.metadata.width || !asset.metadata.height)) {
-          try {
-            const dimensions = await new Promise<{ w: number, h: number }>((resolve, reject) => {
-              const img = new Image();
-              img.onload = () => resolve({ w: img.width, h: img.height });
-              img.onerror = reject;
-              img.src = asset.url;
-            });
-            return {
-              ...asset,
-              metadata: { ...asset.metadata, width: dimensions.w, height: dimensions.h }
-            };
-          } catch (e) {
-            console.warn('[useAgentOrchestrator] Failed to load image dimensions, using default', e);
-            return asset;
-          }
-        }
-        return asset;
+      console.log('[useAgentOrchestrator] Processing', pendingAssets.length, 'assets for canvas');
+
+      if (onAssetsGenerated) {
+        console.log('[useAgentOrchestrator] Handing assets to workspace-aware insertion');
+        await onAssetsGenerated(pendingAssets);
+        pendingAssets.forEach((asset) => {
+          writtenAssetKeysRef.current.add(`${asset.type}:${asset.url.trim()}`);
+        });
+        return;
+      }
+
+      if (!canvasState || !onElementsUpdate) {
+        console.log('[useAgentOrchestrator] Canvas integration disabled or not configured');
+        return;
+      }
+
+      const newElements: CanvasElement[] = pendingAssets.map((asset, index) => ({
+        id: asset.id || `agent-asset-${Date.now()}-${index}`,
+        type: asset.type === 'video' ? 'gen-video' : 'gen-image',
+        url: asset.url,
+        originalUrl: asset.url,
+        x: 100 + index * 40,
+        y: 100 + index * 40,
+        width: asset.metadata.width || 512,
+        height: asset.metadata.height || 512,
+        zIndex: canvasState.elements.length + index + 1,
+        genPrompt: asset.metadata.prompt,
+        genModel: asset.metadata.model as any,
       }));
 
-      const newElements = assetsToCanvasElementsAtCenter(
-        assetsWithDimensions,
-        containerW,
-        containerH,
-        canvasState.pan,
-        canvasState.zoom,
-        canvasState.elements.length
-      );
-
-      console.log('[useAgentOrchestrator] Created', newElements.length, 'canvas elements');
+      console.log('[useAgentOrchestrator] Created', newElements.length, 'legacy canvas elements');
 
       const updatedElements = [...canvasState.elements, ...newElements];
       onElementsUpdate(updatedElements);
@@ -211,10 +148,13 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       }
 
       console.log('[useAgentOrchestrator] Canvas updated successfully');
+      pendingAssets.forEach((asset) => {
+        writtenAssetKeysRef.current.add(`${asset.type}:${asset.url.trim()}`);
+      });
     } catch (error) {
       console.error('[useAgentOrchestrator] Failed to add assets to canvas:', error);
     }
-  }, [canvasState, onElementsUpdate, onHistorySave, autoAddToCanvas]);
+  }, [autoAddToCanvas, canvasState, onAssetsGenerated, onElementsUpdate, onHistorySave]);
 
   const processMessage = useCallback(async (
     message: string,
@@ -225,8 +165,13 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     if (!message.trim()) return null;
 
     if (isProcessingRef.current) {
-      messageQueue.current.push({ message, attachments, metadata, userMessageId });
-      console.log('[useAgentOrchestrator] Message queued, queue size:', messageQueue.current.length);
+      const queueSize = enqueueOrchestratorMessage(messageQueue.current, {
+        message,
+        attachments,
+        metadata,
+        userMessageId,
+      });
+      console.log('[useAgentOrchestrator] Message queued, queue size:', queueSize);
       return null;
     }
 
@@ -238,209 +183,68 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     try {
       console.log('[useAgentOrchestrator] Processing message:', message.substring(0, 50));
 
-      // 图片上传逻辑
-      let uploadedUrls: string[] = [];
-      if (attachments && attachments.length > 0) {
-        const hostProvider = useImageHostStore.getState().selectedProvider;
-        if (hostProvider !== 'none') {
-          console.log('[useAgentOrchestrator] Uploading attachments to host...');
-          setIsUploadingAttachments(true);
-          // 更新状态提示用户
-          setCurrentTask({
-            id: `upload-${Date.now()}`,
-            agentId: 'coco' as AgentType,
-            status: 'analyzing', // 借用 analyzing 状态显示上传中
-            progressMessage: '正在同步图片至云端...',
-            input: { message, attachments, context: projectContext },
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          });
-
-          try {
-            const uploadResults = await Promise.allSettled(
-              attachments.map((file) => uploadImage(file))
-            );
-            const failedUploads = uploadResults.filter(
-              (result): result is PromiseRejectedResult => result.status === 'rejected'
-            );
-
-            if (failedUploads.length > 0) {
-              throw new Error('图片上传失败，请检查网络或重新上传');
-            }
-
-            uploadedUrls = uploadResults
-              .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
-              .map((result) => result.value)
-              .filter((url) => /^https?:\/\//i.test(url));
-
-            if (uploadedUrls.length !== attachments.length) {
-              throw new Error('图片上传结果异常，请重新上传后重试');
-            }
-
-            console.log('[useAgentOrchestrator] Upload success:', uploadedUrls);
-
-            // 上传成功后回填为真实公网 URL，避免后续上下文使用 blob: 占位链接
-            if (userMessageId) {
-              useAgentStore.getState().actions.updateMessageAttachments(userMessageId, uploadedUrls);
-            }
-          } finally {
-            setIsUploadingAttachments(false);
-          }
-        }
-      }
-
-      // Read conversation history from store (single source of truth)
-      const hostProvider = useImageHostStore.getState().selectedProvider;
-      // 直接从 store 读取最新的 designSession，避免 React 闭包快照导致
-      // 新项目第一条消息仍携带旧项目 subjectAnchors/approvedAssetIds 的问题
       const freshDesignSession = useProjectStore.getState().designSession;
-      const updatedContext = {
-        ...projectContext,
-        designSession: {
-          ...freshDesignSession,
-          brand: {
-            ...freshDesignSession.brand,
-            ...useProjectStore.getState().brandInfo,
-          },
-        },
-        conversationHistory: useAgentStore.getState().messages.slice(-MAX_ORCHESTRATOR_HISTORY_MESSAGES)
-      };
-
-      const activeConversationId = String(projectContext.conversationId || '').trim();
-      const topicId = String(
-        (
-          metadata?.topicId ||
-          (activeConversationId
-            ? getMemoryKey(projectContext.projectId, activeConversationId)
-            : '') ||
-          ''
-        )
-      ).trim();
-      let topicPinnedContext = '';
-      let topicPinnedRefs: string[] = [];
       const projectActions = useProjectStore.getState().actions;
-      const inferredTaskMode = inferTaskModeFromRequest(message, metadata);
-      projectActions.setTaskMode(inferredTaskMode);
+      const { shouldPreferUploadedReferences } = getReferenceResolutionPolicy(metadata);
+      const hostProvider = useImageHostStore.getState().selectedProvider;
 
-      if (topicId) {
-        try {
-          const pinned = await buildTopicPinnedContext(topicId);
-          topicPinnedContext = pinned.text;
-          topicPinnedRefs = pinned.refs;
+      const {
+        uploadedUrls,
+        updatedContext,
+        topicId,
+        topicPinnedContext,
+        topicPinnedRefs,
+        inferredTaskMode,
+        messageForExecution,
+        pinnedAgent,
+        useOptimizeThenExecute,
+        optimizerUsed,
+        optimizerStatus,
+        optimizedMessageForTrace,
+        isUnifiedSidebarAgent,
+      } = await prepareOrchestratorContext({
+        message,
+        attachments,
+        metadata,
+        userMessageId,
+        projectContext,
+        freshDesignSession,
+        brandInfo: useProjectStore.getState().brandInfo,
+        conversationHistory: useAgentStore.getState().messages.slice(-MAX_ORCHESTRATOR_HISTORY_MESSAGES),
+        selectedHostProvider: hostProvider,
+        setIsUploadingAttachments,
+        setCurrentTask,
+        updateMessageAttachments: useAgentStore.getState().actions.updateMessageAttachments,
+        setTaskMode: projectActions.setTaskMode,
+      });
 
-          const hints = extractConstraintHints(message);
-          if (hints.length > 0) {
-            await upsertTopicSnapshot(topicId, {
-              pinned: {
-                constraints: hints,
-                decisions: [],
-              },
-            });
-          }
+      const pipelineRun = await maybeResolvePipeline({
+        message: messageForExecution,
+        isUnifiedSidebarAgent,
+        useOptimizeThenExecute,
+        updatedContext,
+        timeoutMs: PIPELINE_EXECUTION_TIMEOUT_MS,
+        withTimeout,
+        onStep: (stepIdx, stepResult) => {
+          console.log(`[useAgentOrchestrator] Pipeline step ${stepIdx} done:`, stepResult.status);
+          setCurrentTask(stepResult);
+        },
+      });
 
-          if (message.trim()) {
-            await addTopicMemoryItem({
-              topicId,
-              type: 'instruction',
-              text: message.trim(),
-            });
-          }
-        } catch {
-        }
-      }
-
-      const optimizerEnabled =
-        viteEnv.VITE_PROMPT_OPTIMIZER_ENABLED !== 'false';
-      const optimizerPipelineEnabled =
-        viteEnv.VITE_PROMPT_OPTIMIZER_PIPELINE_ENABLED !== 'false';
-      const isInternalCall = metadata?.internalCall === true;
-
-      let messageForExecution = message;
-      let pinnedAgent: AgentType | null = null;
-      let useOptimizeThenExecute = false;
-      let optimizerUsed = false;
-      let optimizerStatus: 'ok' | 'timeout' | 'fail' | 'skipped' = 'skipped';
-      let optimizedMessageForTrace: string | undefined;
-
-      if (
-        !isInternalCall &&
-        optimizerEnabled &&
-        optimizerPipelineEnabled &&
-        detectOptimizeThenExecuteIntent(message)
-      ) {
-        useOptimizeThenExecute = true;
-        optimizerUsed = true;
-        const strippedInput = stripOptimizePipelineCommand(message) || message;
-        const optimized = await optimizeUserText(strippedInput, updatedContext, {
-          requestId: userMessageId,
-        });
-        if (optimized.ok && optimized.optimizedText) {
-          messageForExecution = optimized.optimizedText;
-          optimizedMessageForTrace = optimized.optimizedText;
-          optimizerStatus = 'ok';
-        } else {
-          const failReason = (optimized as { reason?: string }).reason || '';
-          optimizerStatus = failReason === 'timeout' ? 'timeout' : 'fail';
-        }
-
-        const pinned = detectExplicitAgentPin(message);
-        if (
-          pinned &&
-          [
-            'coco',
-            'vireo',
-            'cameron',
-            'poster',
-            'package',
-            'motion',
-            'campaign',
-          ].includes(pinned)
-        ) {
-          pinnedAgent = pinned as AgentType;
-        }
-      }
-
-      if (
-        metadata?.agentSelectionMode === 'manual' &&
-        metadata?.pinnedAgentId &&
-        [
-          'coco',
-          'vireo',
-          'cameron',
-          'poster',
-          'package',
-          'motion',
-          'campaign',
-          'prompt-optimizer',
-        ].includes(metadata.pinnedAgentId)
-      ) {
-        pinnedAgent = metadata.pinnedAgentId;
-      }
-
-      // Pipeline detection
-      const pipelineId = !useOptimizeThenExecute ? detectPipeline(messageForExecution) : null;
-      if (pipelineId && PIPELINES[pipelineId]) {
-        const pipeline = PIPELINES[pipelineId];
+      if (pipelineRun) {
+        const { pipeline, pipelineResult } = pipelineRun;
         console.log('[useAgentOrchestrator] Pipeline detected:', pipeline.name);
 
         setCurrentTask({
           id: `pipeline-${Date.now()}`,
-          agentId: pipeline.steps[0].agentId,
+          agentId: pipeline.steps?.[0]?.agentId || 'poster',
           status: 'analyzing',
           input: { message: messageForExecution, context: updatedContext },
           createdAt: Date.now(),
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
         });
 
         console.log('[useAgentOrchestrator] Pipeline request start');
-        const pipelineResult = await withTimeout(
-          executePipeline(pipeline, messageForExecution, updatedContext, (stepIdx, stepResult) => {
-            console.log(`[useAgentOrchestrator] Pipeline step ${stepIdx} done:`, stepResult.status);
-            setCurrentTask(stepResult);
-          }),
-          PIPELINE_EXECUTION_TIMEOUT_MS,
-          '流水线执行超时，请稍后重试'
-        );
         console.log('[useAgentOrchestrator] Pipeline request done');
 
         if (pipelineResult.allAssets.length > 0) {
@@ -452,95 +256,32 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
           lastStep.output.assets = pipelineResult.allAssets;
         }
         setCurrentTask(lastStep || null);
-
-        // Messages are managed by Workspace via addMessage — no need to push here
-
         return lastStep || null;
       }
 
-      // Single agent routing — try local keyword match first to skip API call
       console.log('[useAgentOrchestrator] Routing to agent...');
-      const localAgent = localPreRoute(messageForExecution);
-      let decision;
-      if (pinnedAgent) {
-        decision = {
-          action: 'route' as const,
-          targetAgent: pinnedAgent,
-          taskType:
-            metadata?.agentSelectionMode === 'manual'
-              ? 'manual-role'
-              : 'optimized-routed',
-          complexity: 'simple' as const,
-          handoffMessage:
-            optimizerUsed && optimizedMessageForTrace
-              ? `用户请求(已优化): ${messageForExecution}`
-              : `用户请求: ${messageForExecution}`,
-          confidence: 0.9,
-          roleStrategy: 'reuse' as const,
-          roleStrategyReason:
-            metadata?.agentSelectionMode === 'manual'
-              ? 'User manually pinned this role.'
-              : 'Pinned role reused after optimization flow.',
-        };
-      } else if (localAgent) {
-        console.log('[useAgentOrchestrator] Local pre-route hit:', localAgent);
-        decision = {
-          action: 'route' as const,
-          targetAgent: localAgent,
-          taskType: 'local-routed',
-          complexity: 'simple' as const,
-          handoffMessage: `用户请求: ${messageForExecution}`,
-          confidence: 0.75,
-          roleStrategy: 'reuse' as const,
-          roleStrategyReason: 'Local keyword routing matched an existing specialist.',
-        };
-      } else {
-        console.log('[useAgentOrchestrator] 发起路由请求...');
-        decision = await withTimeout(
-          routeToAgent(messageForExecution, updatedContext),
-          60000,
-          '路由请求超时，请稍后重试'
-        );
-        console.log('[useAgentOrchestrator] 路由请求返回:', decision?.targetAgent);
-      }
-
-      if (!decision) {
-        console.warn('[useAgentOrchestrator] All routing failed, using poster fallback');
-        decision = {
-          action: 'route' as const,
-          targetAgent: 'poster' as AgentType,
-          taskType: 'fallback',
-          complexity: 'simple' as const,
-          handoffMessage: `用户请求: ${messageForExecution}`,
-          confidence: 0.4,
-          roleStrategy: 'reuse' as const,
-          roleStrategyReason: 'Fallback used the safest default specialist path.',
-        };
-      }
+      const shouldPreferAutonomousChatFallback = shouldPreferAutonomousChatFallbackModule(
+        messageForExecution,
+        metadata,
+        attachments,
+      );
+      const decision = await resolveRoutingDecision({
+        message: messageForExecution,
+        metadata,
+        attachments,
+        updatedContext,
+        pinnedAgent,
+        isUnifiedSidebarAgent,
+        shouldPreferAutonomousChatFallback,
+        optimizerUsed,
+        optimizedMessageForTrace,
+        withTimeout,
+      });
 
       console.log('[useAgentOrchestrator] Routed to:', decision.targetAgent);
 
       if (metadata?.agentSelectionMode === 'auto') {
-        setCurrentAutoRoleSession({
-          targetAgent: decision.targetAgent,
-          roleStrategy:
-            decision.roleStrategy === 'augment' || decision.roleStrategy === 'create'
-              ? decision.roleStrategy
-              : 'reuse',
-          roleStrategyReason: String(decision.roleStrategyReason || '').trim(),
-          roleDraft: decision.roleDraft
-            ? {
-                title: String(decision.roleDraft.title || '').trim(),
-                summary: String(decision.roleDraft.summary || '').trim(),
-                instructions: Array.isArray(decision.roleDraft.instructions)
-                  ? decision.roleDraft.instructions
-                      .map((item) => String(item || '').trim())
-                      .filter(Boolean)
-                  : [],
-              }
-            : null,
-          updatedAt: Date.now(),
-        });
+        setCurrentAutoRoleSession(buildAutoRoleSessionState(decision));
       } else {
         setCurrentAutoRoleSession(null);
       }
@@ -558,200 +299,63 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       );
 
       if (decision.action === 'respond' || decision.action === 'clarify') {
-        const guidance = [
-          ...(decision.questions || []),
-          ...(decision.suggestions || []),
-        ].filter(Boolean);
-        const guidanceText = guidance.length > 0 ? `\n\n${guidance.join('\n')}` : '';
-        const responseTask: AgentTask = {
-          id: `task-${Date.now()}`,
-          agentId: 'coco',
-          status: 'completed',
-          input: {
-            message: messageForExecution,
-            attachments,
-            uploadedAttachments: uploadedUrls.length > 0 ? uploadedUrls : undefined,
-            context: updatedContext,
-            metadata,
-          },
-          output: {
-            message: `${decision.message || decision.handoffMessage || '我先帮你梳理一下需求。'}${guidanceText}`,
-            questions: decision.questions,
-            suggestions: decision.suggestions,
-          },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        const responseTask = buildImmediateResponseTask({
+          decision,
+          messageForExecution,
+          attachments,
+          uploadedUrls,
+          updatedContext,
+          metadata,
+        });
         setCurrentTask(responseTask);
         return responseTask;
       }
 
-      // ── 跟进消息自动继承上次生成图作为参考 ──────────────────────────────
-      // 当用户没有上传新图（"换个风格"/"换个色调"等跟进指令），
-      // 自动把上一次任务生成的图片 URL 注入为参考，防止从头生成无关内容
-      const isFollowUpEdit = !attachments?.length && !uploadedUrls.length && (
-        /换个|换种|换成|改变|调整|重新|再来|再生|另一|不同|其他|新的风格|新的色调|新角度/i.test(message) ||
-        /change|another|different|new style|retry|redo|again/i.test(message)
-      );
-
-      let inheritedReferenceUrls: string[] = [];
-      if (isFollowUpEdit) {
-        // 优先从当前 task 的 output assets 拿
-        const lastTask = useAgentStore.getState().currentTask;
-        const taskAssetUrls = (lastTask?.output?.assets || [])
-          .map((a: any) => a.url)
-          .filter((u: string) => /^https?:\/\//i.test(u))
-          .slice(0, 2);
-
-        // 其次从 designSession.approvedAssetIds 拿（从 store 实时读，避免闭包旧值）
-        const sessionAssetUrls = (useProjectStore.getState().designSession?.approvedAssetIds || [])
-          .filter((u: string) => /^https?:\/\//i.test(u))
-          .slice(0, 2);
-
-        // 也从消息历史里找最近的图片附件（已上传的 ImgBB URL）
-        const historyImageUrls = useAgentStore.getState().messages
-          .slice(-6)
-          .flatMap((msg: any) => msg.attachments || [])
-          .filter((u: string) => /^https?:\/\//i.test(u) && /\.(jpg|jpeg|png|webp|gif)/i.test(u))
-          .slice(0, 2);
-
-        inheritedReferenceUrls = [...new Set([...taskAssetUrls, ...historyImageUrls, ...sessionAssetUrls])].slice(0, 3);
-
-        if (inheritedReferenceUrls.length > 0) {
-          console.log('[useAgentOrchestrator] Follow-up edit: auto-injecting reference URLs:', inheritedReferenceUrls);
-        }
-      }
-      // ────────────────────────────────────────────────────────────────────────
-
-      const taskMetadata = {
-        ...(metadata || {}),
-        imageHostProvider: hostProvider,
+      const lastTask = useAgentStore.getState().currentTask;
+      const { task, inheritedReferenceUrls } = await prepareAgentExecutionTask({
+        agentId: decision.targetAgent,
+        message,
+        messageForExecution,
+        attachments,
+        metadata,
+        uploadedUrls,
+        updatedContext,
+        projectActions,
+        existingDesignSession: projectContext.designSession || freshDesignSession,
+        hostProvider,
         topicId,
+        topicPinnedContext,
+        topicPinnedRefs,
+        inferredTaskMode,
+        optimizerUsed,
+        optimizerStatus,
+        optimizedMessageForTrace,
+        originalMessage: message,
+        shouldPreferUploadedReferences,
         roleStrategy: decision.roleStrategy,
         roleStrategyReason: decision.roleStrategyReason,
         roleDraft: decision.roleDraft,
         rolePromptLabel: rolePromptLayer.rolePromptLabel,
         rolePromptAddon: rolePromptLayer.rolePromptAddon,
-        topicPinnedContext,
-        taskMode: inferredTaskMode,
-        originalMessage: message,
-        optimizedMessage: optimizedMessageForTrace,
-        optimizerUsed,
-        optimizerStatus,
-        allReferenceImageUrls: [...uploadedUrls],
-        injectedReferenceImageUrls: [] as string[],
-        multimodalContext: {
-          ...(metadata?.multimodalContext || {}),
-          referenceImageUrls: [
-            ...topicPinnedRefs,
-            ...((metadata?.multimodalContext?.referenceImageUrls || [])),
-            ...uploadedUrls,
-            ...inheritedReferenceUrls,  // ← 自动继承上次生成图
-          ].filter((url, idx, arr) => typeof url === 'string' && !!url && arr.indexOf(url) === idx),
-          hasReferenceImages:
-            topicPinnedRefs.length +
-            (((metadata?.multimodalContext?.referenceImageUrls as string[]) || []).length) +
-            uploadedUrls.length +
-            inheritedReferenceUrls.length >
-            0,
-          referenceSummary: summarizeReferenceSet([
-            ...topicPinnedRefs,
-            ...((metadata?.multimodalContext?.referenceImageUrls || [])),
-            ...uploadedUrls,
-            ...inheritedReferenceUrls,
-          ]),
-        },
-      };
-
-      const existingDesignSession = projectContext.designSession;
-      const sessionConstraints = extractConstraintHints(message);
-      projectActions.updateDesignSession({
-        taskMode: inferredTaskMode,
-        referenceSummary: taskMetadata.multimodalContext.referenceSummary,
-        subjectAnchors: taskMetadata.multimodalContext.referenceImageUrls.slice(0, 8),
-        styleHints: mergeUniqueStrings([
-          ...(existingDesignSession?.styleHints || []),
-          typeof metadata?.creationMode === 'string' ? metadata.creationMode : '',
-          typeof metadata?.multimodalContext?.research?.reportBrief === 'string'
-            ? metadata.multimodalContext.research.reportBrief
-            : '',
-        ].filter(Boolean), [], 8),
-        constraints: mergeUniqueStrings([
-          ...(existingDesignSession?.constraints || []),
-          ...sessionConstraints,
-        ], [], 20),
-        researchSummary: typeof metadata?.multimodalContext?.research?.reportBrief === 'string'
-          ? metadata.multimodalContext.research.reportBrief
-          : existingDesignSession?.researchSummary,
-        referenceWebPages: Array.isArray(metadata?.multimodalContext?.referenceWebPages)
-          ? metadata.multimodalContext.referenceWebPages.slice(0, 8)
-          : existingDesignSession?.referenceWebPages,
+        currentTaskAssetUrls: (lastTask?.output?.assets || [])
+          .map((a: any) => a.url)
+          .filter((u: string) => /^https?:\/\//i.test(u)),
+        sessionApprovedUrls: (useProjectStore.getState().designSession?.approvedAssetIds || [])
+          .filter((u: string) => /^https?:\/\//i.test(u)),
+        recentHistoryAttachmentUrls: useAgentStore.getState().messages
+          .slice(-6)
+          .flatMap((msg: any) => msg.attachments || [])
+          .filter((u: string) => /^https?:\/\//i.test(u) && /\.(jpg|jpeg|png|webp|gif)/i.test(u)),
+        isAttachmentValidationStrict: Boolean(viteEnv.MODE === 'test' || viteEnv.DEV),
       });
 
-      if (topicId) {
-        const researchBrief = metadata?.multimodalContext?.research?.reportBrief;
-        const topicConstraints = mergeUniqueStrings(
-          sessionConstraints,
-          typeof researchBrief === 'string' && researchBrief ? [researchBrief] : [],
-          20,
-        );
-        const topicDecisions = mergeUniqueStrings(
-          existingDesignSession?.styleHints || [],
-          typeof metadata?.creationMode === 'string' ? [metadata.creationMode] : [],
-          20,
-        );
-        await upsertTopicSnapshot(topicId, {
-          summaryText: taskMetadata.multimodalContext.referenceSummary || existingDesignSession?.referenceSummary || '',
-          pinned: {
-            constraints: topicConstraints,
-            decisions: topicDecisions,
-          },
-        });
-      }
-
-      if (topicId && taskMetadata.multimodalContext.referenceSummary) {
-        await upsertTopicSnapshot(topicId, {
-          summaryText: taskMetadata.multimodalContext.referenceSummary,
-        });
-      }
-
-      const originalAttachmentCount = attachments?.length || 0;
-      const originalUploadedCount = uploadedUrls.length;
-
-      const task: AgentTask = {
-        id: `task-${Date.now()}`,
-        agentId: decision.targetAgent,
-        status: 'pending',
-        input: {
-          message: messageForExecution,
-          attachments,
-          uploadedAttachments: uploadedUrls.length > 0 ? uploadedUrls : undefined,
-          context: updatedContext,
-          metadata: taskMetadata,
-        },
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      const passthroughAttachmentCount = task.input.attachments?.length || 0;
-      const passthroughUploadedCount = task.input.uploadedAttachments?.length || 0;
-      if (
-        passthroughAttachmentCount !== originalAttachmentCount ||
-        passthroughUploadedCount !== originalUploadedCount
-      ) {
-        const err =
-          `[useAgentOrchestrator] Attachment passthrough mismatch: attachments ${passthroughAttachmentCount}/${originalAttachmentCount}, uploaded ${passthroughUploadedCount}/${originalUploadedCount}`;
-        if (viteEnv.MODE === 'test' || viteEnv.DEV) {
-          throw new Error(err);
-        }
-        console.error(err);
+      if (inheritedReferenceUrls.length > 0) {
+        console.log('[useAgentOrchestrator] Follow-up edit: auto-injecting reference URLs:', inheritedReferenceUrls);
       }
 
       setCurrentTask({ ...task, status: 'analyzing' });
 
       console.log('[useAgentOrchestrator] Executing task...');
-
-      // Auto-switch to executing after 200ms
       executingTimer = setTimeout(() => {
         const cur = useAgentStore.getState().currentTask;
         if (cur && cur.status === 'analyzing') {
@@ -759,82 +363,41 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         }
       }, 200);
 
-      console.log('[useAgentOrchestrator] 发起 Agent 执行请求...');
+      console.log('[useAgentOrchestrator] Starting agent execution...');
       const result = await withTimeout(
         executeAgentTask(task),
         AGENT_EXECUTION_TIMEOUT_MS,
-        '任务执行超时，请稍后重试'
+        'Agent execution timed out',
       );
-      console.log('[useAgentOrchestrator] 收到 Agent 执行回复');
+      console.log('[useAgentOrchestrator] Agent execution finished');
       if (executingTimer) {
         clearTimeout(executingTimer);
         executingTimer = null;
       }
       console.log('[useAgentOrchestrator] Task result:', result.status);
 
-      if (result.output?.assets && result.output.assets.length > 0) {
-        console.log('[useAgentOrchestrator] Auto-adding assets to canvas...');
-        addAssetsToCanvas(result.output.assets);
-      }
-
-      const approvedUrls = [
-        ...(result.output?.imageUrls || []),
-        ...((result.output?.assets || [])
-          .filter((asset) => asset?.type === 'image' && typeof asset.url === 'string')
-          .map((asset) => asset.url)),
-      ].filter((url, index, arr) => !!url && arr.indexOf(url) === index);
-
-      if (topicId && approvedUrls.length > 0) {
-        const approvedAssetIds = mergeUniqueStrings(
+      await finalizeExecutionSuccess({
+        result,
+        topicId,
+        decisionLabel: `Agent output was adopted as a downstream design anchor: ${decision.targetAgent}`,
+        addAssetsToCanvas,
+        updateDesignSession: projectActions.updateDesignSession,
+        getCurrentApprovedAssetIds: () =>
           useProjectStore.getState().designSession.approvedAssetIds || [],
-          approvedUrls,
-          12,
-        );
-        projectActions.updateDesignSession({
-          approvedAssetIds,
-          subjectAnchors: mergeUniqueStrings(
-            useProjectStore.getState().designSession.subjectAnchors || [],
-            approvedUrls,
-            8,
-          ),
-          referenceSummary: summarizeReferenceSet(approvedUrls),
-        });
-
-        for (const url of approvedUrls.slice(0, 4)) {
-          await rememberApprovedAsset(topicId, {
-            url,
-            role: 'result',
-            summary: summarizeReferenceSet([url]),
-            decision: `Agent 输出已采用为后续设计锚点: ${decision.targetAgent}`,
-          });
-        }
-      }
+        getCurrentSubjectAnchors: () =>
+          useProjectStore.getState().designSession.subjectAnchors || [],
+      });
 
       setCurrentTask(result);
-
-      // Messages are managed by Workspace via addMessage — no need to push here
-
       return result;
     } catch (error) {
       console.error('Agent Pipeline Failure', { stage: 'processMessage', error });
-      console.error('生成流中断:', error);
       console.error('[useAgentOrchestrator] Error:', error);
-      const rawMessage = error instanceof Error ? error.message : String(error || '');
-      const imageFailure = /图片|image|upload|base64|attachment|mime|格式/i.test(rawMessage);
-      const failMessage = imageFailure
-        ? '图片处理失败，请检查网络或重新上传'
-        : '抱歉，生成过程中遇到网络或解析错误，请重试。';
-      const errorTask: AgentTask = {
-        id: `task-${Date.now()}`,
-        agentId: 'coco' as AgentType,
-        status: 'failed',
-        input: { message, context: projectContext },
-        output: {
-          message: failMessage
-        },
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
+      const errorTask = buildProcessMessageErrorTask(
+        message,
+        projectContext,
+        error,
+      );
       setCurrentTask(errorTask);
       return errorTask;
     } finally {
@@ -845,8 +408,8 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       isProcessingRef.current = false;
       setIsProcessing(false);
 
-      if (messageQueue.current.length > 0) {
-        const next = messageQueue.current.shift()!;
+      const next = dequeueNextOrchestratorMessage(messageQueue.current);
+      if (next) {
         queueMicrotask(() => {
           processMessage(next.message, next.attachments, next.metadata, next.userMessageId);
         });
@@ -857,12 +420,13 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
   const executeProposal = useCallback(async (proposalId: string): Promise<void> => {
     const curTask = useAgentStore.getState().currentTask;
     const projectActions = useProjectStore.getState().actions;
-    if (!curTask || !curTask.output?.proposals) {
+    const currentProposals = getTaskOutputProposals(curTask);
+    if (!curTask || currentProposals.length === 0) {
       console.error('[useAgentOrchestrator] No current task or proposals');
       return;
     }
 
-    const proposal = curTask.output.proposals.find(p => p.id === proposalId);
+    const proposal = currentProposals.find(p => p.id === proposalId);
     if (!proposal) {
       console.error('[useAgentOrchestrator] Proposal not found:', proposalId);
       return;
@@ -873,75 +437,33 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
 
       setCurrentTask({ ...curTask, status: 'executing' });
 
-      const task: AgentTask = {
-        id: `task-${Date.now()}`,
-        agentId: curTask.agentId,
-        status: 'executing',
-        input: {
-          message: `执行方案: ${proposal.title}`,
-          attachments: curTask.input.attachments,
-          uploadedAttachments: curTask.input.uploadedAttachments,
-          context: curTask.input.context || projectContext,
-          metadata: {
-            ...(curTask.input.metadata || {}),
-            forceSkills: true,
-            executeProposalId: proposal.id,
-            selectedSkillCalls: (proposal.skillCalls || []).map(call => ({
-              ...call,
-              params: { ...(call.params || {}) }
-            }))
-          }
+      const { result } = await executeProposalTaskFlow({
+        curTask,
+        proposalId,
+        projectContext,
+        executeTask: async (task) => {
+          console.log('[useAgentOrchestrator] Proposal request start', { proposalId });
+          const result = await withTimeout(
+            executeAgentTask(task),
+            AGENT_EXECUTION_TIMEOUT_MS,
+            '方案执行超时，请稍后重试'
+          );
+          console.log('[useAgentOrchestrator] Proposal request done', { status: result.status });
+          return result;
         },
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      console.log('[useAgentOrchestrator] Proposal request start', { proposalId });
-      const result = await withTimeout(
-        executeAgentTask(task),
-        AGENT_EXECUTION_TIMEOUT_MS,
-        '方案执行超时，请稍后重试'
-      );
-      console.log('[useAgentOrchestrator] Proposal request done', { status: result.status });
+        addAssetsToCanvas: async (assets) => {
+          if (assets.length > 0) {
+            console.log('[useAgentOrchestrator] Auto-adding proposal assets to canvas...');
+          }
+          await addAssetsToCanvas(assets);
+        },
+        updateDesignSession: projectActions.updateDesignSession,
+        getCurrentApprovedAssetIds: () =>
+          useProjectStore.getState().designSession.approvedAssetIds || [],
+        getCurrentSubjectAnchors: () =>
+          useProjectStore.getState().designSession.subjectAnchors || [],
+      });
       console.log('[useAgentOrchestrator] Proposal execution result:', result.status);
-
-      if (result.output?.assets && result.output.assets.length > 0) {
-        console.log('[useAgentOrchestrator] Auto-adding proposal assets to canvas...');
-        addAssetsToCanvas(result.output.assets);
-      }
-
-      const proposalApprovedUrls = [
-        ...(result.output?.imageUrls || []),
-        ...((result.output?.assets || [])
-          .filter((asset) => asset?.type === 'image' && typeof asset.url === 'string')
-          .map((asset) => asset.url)),
-      ].filter((url, index, arr) => !!url && arr.indexOf(url) === index);
-
-      const proposalTopicId = curTask.input.metadata?.topicId as string | undefined;
-      if (proposalTopicId && proposalApprovedUrls.length > 0) {
-        projectActions.updateDesignSession({
-          approvedAssetIds: mergeUniqueStrings(
-            useProjectStore.getState().designSession.approvedAssetIds || [],
-            proposalApprovedUrls,
-            12,
-          ),
-          subjectAnchors: mergeUniqueStrings(
-            useProjectStore.getState().designSession.subjectAnchors || [],
-            proposalApprovedUrls,
-            8,
-          ),
-          referenceSummary: summarizeReferenceSet(proposalApprovedUrls),
-        });
-
-        for (const url of proposalApprovedUrls.slice(0, 4)) {
-          await rememberApprovedAsset(proposalTopicId, {
-            url,
-            role: 'result',
-            summary: summarizeReferenceSet([url]),
-            decision: `方案执行结果已采用: ${proposal.title}`,
-          });
-        }
-      }
 
       setCurrentTask(result);
     } catch (error) {
@@ -949,15 +471,7 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       console.error('[useAgentOrchestrator] Proposal execution error:', error);
       const cur = useAgentStore.getState().currentTask;
       if (cur) {
-        setCurrentTask({
-          ...cur,
-          status: 'failed',
-          output: {
-            ...(cur.output || {}),
-            message: '抱歉，生成过程中遇到网络或解析错误，请重试。'
-          },
-          updatedAt: Date.now()
-        });
+        setCurrentTask(buildProposalExecutionErrorTask(cur));
       }
       return;
     }
@@ -981,3 +495,4 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     resetAgent,
   };
 }
+

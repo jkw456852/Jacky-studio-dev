@@ -32,6 +32,8 @@ This repository keeps non-runtime documents under `docs/` to avoid cluttering th
   - live refactor progress map for `pages/Workspace.tsx`.
 - `docs/architecture/ROOT_DIRECTORY_POLICY.md`
   - rules for what is allowed to stay in the repository root.
+- `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md`
+  - internal contract for the unified sidebar main brain, routing policy, and multimodal execution handoff.
 
 ### Product
 
@@ -79,8 +81,9 @@ For a new AI agent entering this repo, the recommended reading order is:
 2. `docs/architecture/ROOT_DIRECTORY_POLICY.md`
 3. `docs/architecture/PROJECT_MODULE_MAP.md`
 4. `docs/architecture/WORKSPACE_REFACTOR_MAP.md` if touching `Workspace.tsx`
-5. `docs/roo-code-workflow.md` if using Roo Code / multi-role collaboration
-6. product or reference documents relevant to the current task
+5. `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md` if touching agent orchestration or sidebar intelligence
+6. `docs/roo-code-workflow.md` if using Roo Code / multi-role collaboration
+7. product or reference documents relevant to the current task
 
 ## Non-doc support folders
 

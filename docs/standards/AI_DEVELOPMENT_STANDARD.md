@@ -69,6 +69,20 @@ When editing this repo, AI must follow these rules in order:
 7. If the implementation starts turning into patch-on-patch nesting, stop and redesign the main flow before adding more guards.
 8. For agent-owned or model-owned decision layers, do not replace missing intelligence with rule fallback.
 9. If orchestration, planning, routing, or reference-role reasoning fails, fail explicitly instead of silently degrading to a fake-smart rule path.
+10. User examples are evidence, not implementation templates.
+11. Do not convert a user’s example phrasing, sample scenario, or illustrative wording into hardcoded prompt rules, branch conditions, or fixed workflow slots.
+12. When the user gives examples, extract the underlying principle and implement it as a reusable mechanism:
+   - decision policy
+   - typed data structure
+   - planner/orchestrator contract
+   - attribute-level reconciliation rule
+   - validation or visibility rule
+13. If an implementation can be described as “because the user mentioned X example, we hardcoded X behavior,” it is considered drift and must be redesigned.
+14. For unified-agent or "main brain" work, always preserve the raw-input-first contract:
+   - the orchestrator must pass the user's original text and fresh attachments forward before narrowing the workflow
+   - workflow selection must remain a decision layer, not a hardcoded keyword gate
+   - screenshot Q&A, research, planning, and execution must stay separable capabilities
+15. Main-brain capability wiring must follow the internal interface contract documented in `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md`.
 
 If a generic best practice conflicts with the actual repo structure, prefer the repo structure unless there is a clear maintenance or correctness problem.
 
@@ -85,7 +99,14 @@ Before editing:
   - whether the next change is still inside that stage boundary
   - whether the implementation direction has drifted from the intended product concept
 - For agent, orchestrator, runtime, or tool-system work, always re-check that the solution is still converging on a general execution agent rather than drifting into a planner-only UI, workflow hardcode, or hidden rule fallback.
+- When the user provides one or more examples:
+  - treat them as evidence of the desired behavior, not as the literal rule to encode
+  - identify the invariant behind the example
+  - express that invariant in general form before editing code
+  - prefer mechanism over phrase-matching
+  - write the mechanism so future examples of the same class work without adding another special case
 - If drift is detected, stop and realign to the plan before adding more code.
+- If editing unified-agent orchestration, re-open `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md` before changing routing, attachment policy, or downstream execution metadata.
 
 During editing:
 - Keep changes local to the requested task.

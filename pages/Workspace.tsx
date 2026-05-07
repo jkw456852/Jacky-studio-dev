@@ -223,6 +223,8 @@ import {
   isWorkspaceTreeNode,
   resolveWorkspaceTreeNodeKind,
   TREE_PROMPT_PARENT_REFERENCE_LIMIT,
+  getWorkspaceImageNodeHeight,
+  WORKSPACE_IMAGE_NODE_WIDTH,
 } from "./Workspace/workspaceTreeNode";
 
 const ECOMMERCE_LOCAL_CACHE_PREFIX = "jkstudio:ecom-oneclick:";
@@ -2486,6 +2488,7 @@ const Workspace: React.FC = () => {
     },
     onHistorySave: (els) => saveToHistory(els, markersRef.current),
     autoAddToCanvas: true,
+    onAssetsGenerated: handleAgentGeneratedAssets,
   });
 
   // Close video dropdowns on outside click
@@ -4014,6 +4017,99 @@ const Workspace: React.FC = () => {
     updateDesignSession: projectActions.updateDesignSession,
   });
 
+  async function handleAgentGeneratedAssets(
+    assets: import("../types/agent.types").GeneratedAsset[],
+  ) {
+    const normalizedAssets = assets.filter(
+      (asset) =>
+        asset &&
+        (asset.type === "image" || asset.type === "video") &&
+        typeof asset.url === "string" &&
+        asset.url.trim().length > 0,
+    );
+    if (normalizedAssets.length === 0) return;
+
+    const existingUrls = new Set(
+      elementsRef.current
+        .flatMap((element) =>
+          [element.url, element.originalUrl, element.persistedOriginalUrl]
+            .map((item) => String(item || "").trim())
+            .filter(Boolean),
+        ),
+    );
+
+    const pendingAssets = normalizedAssets.filter(
+      (asset) => !existingUrls.has(asset.url.trim()),
+    );
+    if (pendingAssets.length === 0) return;
+
+    const viewport = getCanvasViewportSize(showAssistant);
+    const canvasCenter = getCanvasCenterPoint({
+      showAssistant,
+      pan,
+      zoom,
+    });
+    const baseZIndex =
+      elementsRef.current.reduce(
+        (max, element) => Math.max(max, element.zIndex || 0),
+        0,
+      ) + 1;
+    const createdAt = Date.now();
+    const nextElements = [...elementsRef.current];
+
+    for (let index = 0; index < pendingAssets.length; index += 1) {
+      const asset = pendingAssets[index];
+      if (asset.type !== "image") {
+        continue;
+      }
+
+      const proxied = await makeImageProxyFromUrl(
+        asset.url,
+        DEFAULT_PROXY_MAX_DIM,
+        viewport,
+      );
+
+      const width = WORKSPACE_IMAGE_NODE_WIDTH;
+      const height = getWorkspaceImageNodeHeight(
+        proxied.originalWidth,
+        proxied.originalHeight,
+      );
+
+      nextElements.push({
+        id: asset.id || `agent-result-${createdAt}-${index}`,
+        type: "image",
+        url: proxied.displayUrl,
+        originalUrl: proxied.originalUrl,
+        proxyUrl:
+          proxied.displayUrl !== proxied.originalUrl
+            ? proxied.displayUrl
+            : undefined,
+        x:
+          canvasCenter.x -
+          width / 2 +
+          (index % 3) * (width + 24),
+        y:
+          canvasCenter.y -
+          height / 2 +
+          Math.floor(index / 3) * (height + 24),
+        width,
+        height,
+        zIndex: baseZIndex + index,
+        genPrompt: asset.metadata.prompt,
+        genModel: asset.metadata.model as ImageModel,
+        genAspectRatio: `${proxied.originalWidth}:${proxied.originalHeight}`,
+        nodeInteractionMode:
+          nodeInteractionMode === "branch" ? "branch" : undefined,
+        treeNodeKind: nodeInteractionMode === "branch" ? "image" : undefined,
+        hasFreshGeneratedGlow: true,
+      });
+    }
+
+    if (nextElements.length === elementsRef.current.length) return;
+    setElementsSynced(nextElements);
+    saveToHistory(nextElements, markersRef.current);
+  }
+
   // --- Image Processing Handlers ---
 
   const handleProductSwap = useWorkspaceProductSwap({
@@ -5131,6 +5227,7 @@ const Workspace: React.FC = () => {
       activeImageProviderId,
       imageGenRatio,
       imageGenRes,
+      nodeInteractionMode,
       creationMode,
       setCreationMode,
       setPrompt,

@@ -82,6 +82,7 @@ type UseWorkspaceSidebarPropsArgs = {
   activeImageProviderId: string | null;
   imageGenRatio: string;
   imageGenRes: "1K" | "2K" | "4K";
+  nodeInteractionMode: "classic" | "branch";
   creationMode: React.ComponentProps<
     typeof AssistantSidebar
   >["composer"]["creationMode"];
@@ -346,6 +347,7 @@ export const useWorkspaceSidebarProps = ({
   activeImageProviderId,
   imageGenRatio,
   imageGenRes,
+  nodeInteractionMode,
   creationMode,
   setCreationMode,
   setPrompt,
@@ -579,7 +581,7 @@ export const useWorkspaceSidebarProps = ({
             genResolution: imageGenRes,
             genRefImages: referenceImages || [],
             genRefPreviewImages: referenceImages || [],
-            nodeInteractionMode: "classic",
+            nodeInteractionMode,
             disableAutoParentLink: true,
           }),
       },

@@ -85,6 +85,17 @@ type GoalPlannerPatch = {
   rawResponseText?: string;
 };
 
+const readPlannerModeHint = (metadata: Record<string, unknown> | null | undefined) => {
+  if (!metadata || metadata.allowAutonomousRouting !== true) return "";
+  return [
+    "[Autonomous Routing]",
+    "This request comes from the unified sidebar main-brain entry.",
+    "First classify whether the user wants explanation/chat, browser/page control, image generation, plugin or agent setup, or another task type.",
+    "Do not default to generation unless the request explicitly asks to create or modify visual output.",
+    "For explanation/chat requests, prefer read-only inspection and answer-oriented plans.",
+  ].join("\n");
+};
+
 type PlannerCatalogResolver = {
   toolIds: Set<string>;
   actionIds: Set<string>;
@@ -185,6 +196,7 @@ const buildGoalPlannerPrompt = (args: {
   recentSession?: BrowserAgentSessionRecord | null;
   targetElementId?: string | null;
   referenceImageCount?: number;
+  metadata?: Record<string, unknown> | null;
 }) => {
   const toolCatalog = args.tools.map((tool) => ({
     id: tool.id,
@@ -212,6 +224,7 @@ const buildGoalPlannerPrompt = (args: {
       referenceCount: Number(args.referenceImageCount || 0),
     }),
   );
+  const plannerModeHint = readPlannerModeHint(args.metadata);
 
   return [
     "You are a browser-native workspace execution planner.",
@@ -219,6 +232,7 @@ const buildGoalPlannerPrompt = (args: {
     "Return JSON only.",
     "Do not include markdown fences.",
     "Do not omit required fields.",
+    plannerModeHint,
     "",
     "[Primary Goal]",
     args.goal,
@@ -954,6 +968,7 @@ export const planBrowserAgentGoalSession = async (args: {
   recentSession?: BrowserAgentSessionRecord | null;
   targetElementId?: string | null;
   referenceImages?: string[];
+  metadata?: Record<string, unknown> | null;
 }): Promise<BrowserAgentGoalSessionPlan> => {
   const goal = String(args.goal || "").trim();
   if (!goal) {
@@ -985,6 +1000,7 @@ export const planBrowserAgentGoalSession = async (args: {
     recentSession: args.recentSession || null,
     targetElementId: args.targetElementId || null,
     referenceImageCount: referenceImages.length,
+    metadata: args.metadata || null,
   });
   const parts = [
     {

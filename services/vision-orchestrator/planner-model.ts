@@ -1058,10 +1058,27 @@ const inferResearchDecisionFromInput = (
 ): VisualResearchDecision => {
   const prompt = String(input.prompt || "").trim();
   const normalizedPrompt = prompt.toLowerCase();
+  const explicitResearchIntent =
+    /调查|调研|研究|查资料|查一下|搜集|搜一下|了解一下|竞品|品牌信息|产品信息|research|investigate|study|look up|find references|reference research/.test(
+      normalizedPrompt,
+    );
   const isConventionHeavy =
     /详情页|詳情頁|detail page|电商|e-?commerce|campaign|海报系列|卖点|主图/.test(
       normalizedPrompt,
     );
+  if (explicitResearchIntent) {
+    const query = /品牌|brand/.test(normalizedPrompt)
+      ? `${prompt} 品牌 产品 卖点 外观 资料`
+      : `${prompt} 产品 卖点 外观 资料`;
+    return {
+      shouldResearch: true,
+      mode: "web+images",
+      reason:
+        "用户明确要求先调查或补足外部信息，当前应先收集产品、品牌和参考证据，再进入视觉规划。",
+      topics: ["产品信息", "品牌特征", "核心卖点", "外观与材质", "可参考的视觉证据"],
+      searchQueries: [query.slice(0, 120)],
+    };
+  }
   if (isConventionHeavy && input.referenceImages.length <= 2) {
     const query = /详情页|detail page|电商|e-?commerce/.test(normalizedPrompt)
       ? `${prompt} 详情页 版式 卖点 结构`
@@ -1139,7 +1156,7 @@ const buildMainBrainFallbackPlanningBrief = (
     researchFocus:
       mode === "set"
         ? ["交付结构", "页面职责", "比例策略", "模型适配"]
-        : ["主体约束", "编辑边界", "模型适配", "输出真实性"],
+        : ["主体约束", "参考图职责分配", "冲突信息改写", "编辑边界", "模型适配", "输出真实性"],
     researchDecision: inferResearchDecisionFromInput(input, mode),
     modelFitNotes: [
       input.selectedGenerationModel
@@ -1149,7 +1166,11 @@ const buildMainBrainFallbackPlanningBrief = (
     promptDirectives:
       mode === "set"
         ? ["每张图只承担当前页面职责，不把整套内容混进单张图。"]
-        : ["只围绕当前目标输出单张结果，不额外展开成套版式。"],
+        : [
+            "先区分每张参考图分别在提供什么信息，再决定哪些保留、哪些替换。",
+            "如果版式参考和产品参考冲突，保留版式结构，但把产品真值、品牌和外观改成产品参考与文字需求指定的版本。",
+            "只围绕当前目标输出单张结果，不额外展开成套版式。",
+          ],
     risks: [
       mode === "set"
         ? "如果页面职责不够分离，容易退化成重复页面。"

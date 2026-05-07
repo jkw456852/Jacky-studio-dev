@@ -1,5 +1,4 @@
-import { Project } from '../types';
-import { compactProjectForPersist } from '../pages/Workspace/controllers/workspacePersistence';
+import type { Project } from '../types/index.ts';
 
 export const DB_NAME = 'XcStudioDB';
 export const STORE_NAME = 'projects';
@@ -148,6 +147,9 @@ export const getProject = async (id: string): Promise<Project | undefined> => {
 export const saveProject = async (project: Project): Promise<void> => {
   try {
     const db = await openDB();
+    const { compactProjectForPersist } = await import(
+      '../pages/Workspace/controllers/workspacePersistence.ts'
+    );
     const compactProject = compactProjectForPersist(project);
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');

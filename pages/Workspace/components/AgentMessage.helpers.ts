@@ -144,8 +144,10 @@ export const deriveAgentMessageOneClickView = (
   message: ChatMessage,
 ): AgentMessageOneClickView => {
   if (
+    message.skillData?.id !== "jkai-oneclick" &&
     message.skillData?.id !== "xcai-oneclick" &&
-    message.text.indexOf("SKYSPER One-Click") === -1
+    message.text.indexOf("SKYSPER One-Click") === -1 &&
+    message.text.indexOf("JKAI One-Click") === -1
   ) {
     return { intro: "", sections: [] };
   }

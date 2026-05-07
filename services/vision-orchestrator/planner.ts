@@ -70,6 +70,10 @@ const buildPlanNotes = (
   referenceCount: number,
   effectiveReferenceRoleMode: VisualGenerationPlan["effectiveReferenceRoleMode"],
   consistencyContext?: PlannerConsistencyContext,
+  options?: {
+    preserveProductIdentity?: boolean;
+    shouldAnalyzeMismatch?: boolean;
+  },
 ) => {
   const notes: string[] = [];
 
@@ -82,6 +86,14 @@ const buildPlanNotes = (
     notes.push("Single reference detected; planner will bias toward subject and brand fidelity.");
   } else {
     notes.push("Multiple references detected; planner will keep role assignments explicit and preserve all supporting detail references.");
+  }
+
+  if (options?.preserveProductIdentity) {
+    notes.push("When references conflict, prioritize the designated product anchor for product identity, branding, packaging, and factual appearance.");
+  }
+
+  if (options?.shouldAnalyzeMismatch) {
+    notes.push("Before generation, compare the layout anchor against the product anchor and identify what visual information must be replaced, retained, or rewritten.");
   }
 
   if (consistencyContext?.referenceSummary) {
@@ -225,12 +237,17 @@ const buildRuleBasedPlannedGeneration = (
     analysis.orderedReferenceImages.length,
     analysis.effectiveReferenceRoleMode,
     consistencyContext,
+    {
+      preserveProductIdentity: analysis.preserveProductIdentity,
+      shouldAnalyzeMismatch: analysis.shouldAnalyzeMismatch,
+    },
   );
   const plan: VisualGenerationPlan = {
     intent,
     strategyId: intent,
     userGoal: input.prompt,
     references: analysis.references,
+    referenceReasoning: analysis.referenceReasoning,
     taskRoleOverlay: input.taskRoleOverlay,
     styleLibrary: input.styleLibrary,
     locks,
@@ -356,6 +373,7 @@ export const planVisualGenerationWithModel = async (
     strategyId: patch.strategyId,
     userGoal: input.prompt,
     references: analysis.references,
+    referenceReasoning: analysis.referenceReasoning,
     taskRoleOverlay: input.taskRoleOverlay,
     styleLibrary: input.styleLibrary,
     locks: {
@@ -378,6 +396,7 @@ export const planVisualGenerationWithModel = async (
     plannerNotes: Array.from(
       new Set([
         ...(patch.plannerNotes || []),
+        ...(analysis.referenceReasoning?.roleSummary || []),
         `planner-model=${modelConfig.label || modelConfig.modelId}`,
       ]),
     ).slice(0, 12),

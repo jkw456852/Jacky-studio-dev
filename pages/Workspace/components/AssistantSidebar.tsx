@@ -4,6 +4,10 @@ import { useAgentStore } from "../../../stores/agent.store";
 import type { BrowserAgentSessionRecord } from "../../../services/browser-agent";
 import { getBrowserAgentModelLabel } from "../../../services/provider-settings";
 import { buildUserChatMessagePayloadFromInputBlocks } from "../chatMessageContent";
+import {
+  resolveBrowserAgentSessionResultElementIds as resolveSessionResultElementIds,
+  resolveBrowserAgentStepElementId as resolveStepElementId,
+} from "../browserAgentResultProtocol";
 import { createImagePreviewDataUrl } from "../workspaceShared";
 import { useAssistantSidebarConversationUi } from "../controllers/useAssistantSidebarConversationUi";
 import { useAssistantSidebarBrowserAgentUi } from "../controllers/useAssistantSidebarBrowserAgentUi";
@@ -55,6 +59,46 @@ const readStringArrayValue = (value: unknown): string[] =>
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
+
+const EXECUTION_INTENT_PATTERN =
+  /(生成|制作|创建|出图|重画|改图|优化|执行|运行|开始|继续|同步|插入|替换|apply|run|generate|create|make|edit|update|redesign|render)/i;
+const CHAT_QUERY_PATTERN =
+  /(是什么|干嘛|做什么|什么意思|怎么|为什么|能不能解释|解释一下|看看|帮我看|这块|这里|what|why|how|explain|tell me|look at)/i;
+const BROWSER_SURFACE_PATTERN =
+  /(网页|页面|画布|节点|当前节点|这个节点|这块|这里|按钮|弹窗|工具栏|侧边栏|预览图|图层|模块|控件|canvas|node|page|toolbar|sidebar|modal|panel|preview|element)/i;
+const GENERAL_WORK_PATTERN =
+  /(插件|plugin|智能体|agent\s|agent模板|prompt|提示词|脚本|代码|文档|markdown|方案|策略|分析|总结|说明)/i;
+
+const shouldTreatAsDirectComposerSubmit = (
+  overridePrompt?: string,
+  overrideAttachments?: File[],
+) => overridePrompt === undefined && overrideAttachments === undefined;
+
+const shouldRouteSidebarMessageToBrowserAgent = ({
+  text,
+  hasSelectedElement,
+  chatEnabled,
+}: {
+  text: string;
+  hasSelectedElement: boolean;
+  chatEnabled: boolean;
+}) => {
+  const normalized = String(text || "").trim();
+  if (!normalized) return false;
+  if (CHAT_QUERY_PATTERN.test(normalized) && !EXECUTION_INTENT_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (GENERAL_WORK_PATTERN.test(normalized) && !BROWSER_SURFACE_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (BROWSER_SURFACE_PATTERN.test(normalized) && EXECUTION_INTENT_PATTERN.test(normalized)) {
+    return true;
+  }
+  if (hasSelectedElement && EXECUTION_INTENT_PATTERN.test(normalized)) {
+    return true;
+  }
+  return chatEnabled && EXECUTION_INTENT_PATTERN.test(normalized);
+};
 
 const getBrowserSessionStatusLabel = (status: string | null | undefined) => {
   switch (String(status || "").trim()) {
@@ -129,26 +173,6 @@ const readLatestDiagnosisIssues = (
   metadata: BrowserAgentSessionRecord["metadata"] | null | undefined,
 ) => readStringArrayValue(metadata?.latestDiagnosisIssues);
 
-const resolveStepElementId = (
-  step: BrowserAgentSessionRecord["steps"][number],
-  session: BrowserAgentSessionRecord | null,
-) => {
-  const resultRecord = isRecord(step.result) ? step.result : null;
-  const toolResult = isRecord(resultRecord?.result) ? resultRecord.result : null;
-  const payload = isRecord(toolResult?.payload) ? toolResult.payload : null;
-  const report = isRecord(resultRecord?.report) ? resultRecord.report : null;
-
-  const candidates = [
-    readStringValue(step.resolvedInput?.elementId),
-    readStringValue(payload?.targetElementId),
-    readStringValue(payload?.elementId),
-    readStringValue(report?.targetElementId),
-    readStringValue(resultRecord?.elementId),
-    readStringValue(session?.metadata?.targetElementId),
-  ].filter(Boolean);
-
-  return candidates[0] || null;
-};
 
 type AssistantSidebarComposerProps = Omit<
   InputAreaComposerProps,
@@ -859,8 +883,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       const repairSummary = readLatestRepairSummary(session.metadata);
       const repairNotes = readLatestRepairNotes(session.metadata);
       const diagnosisIssues = readLatestDiagnosisIssues(session.metadata);
-      const targetElementId =
-        readStringValue(session.metadata?.targetElementId) || null;
+      const resultElementIds = resolveSessionResultElementIds(session);
+      const targetElementId = resultElementIds[0] || null;
       const targetAsset = targetElementId
         ? browserAgent.resolveElementAsset?.(targetElementId)
         : null;
@@ -916,6 +940,12 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       const currentStep = steps.find(
         (step) => step.id === session?.currentStepId,
       );
+      const resultElementIds = resolveSessionResultElementIds(session || null);
+      const targetElementId = resultElementIds[0] || null;
+      const targetAsset = targetElementId
+        ? browserAgent.resolveElementAsset?.(targetElementId)
+        : null;
+      const targetPreviewUrl = readStringValue(targetAsset?.previewUrl);
       const rationaleSummary = String(sessionSummary.rationaleSummary || "").trim();
       const latestObservation = readLatestObservationFromSession(session);
       const text =
@@ -966,6 +996,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           model: browserAgentModelLabel,
           title: "\u6267\u884c\u4ee3\u7406",
           description: descriptionLines.join("\n") || undefined,
+          imageUrls: targetPreviewUrl ? [targetPreviewUrl] : undefined,
           isGenerating: status === "pending" || status === "running",
           browserSession: buildBrowserAgentSessionView(session || null),
         },
@@ -1018,17 +1049,36 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                 attachmentMetadata: undefined,
                 inlineParts: undefined,
               };
+      const autonomousChatSkill: ChatMessage["skillData"] = {
+        id: "autonomous-main-brain",
+        name: "自主主脑路由",
+        iconName: "Sparkles",
+        config: {
+          allowAutonomousRouting: true,
+          mode: "unified-sidebar-agent",
+        },
+      };
+      const normalizedSkillData = shouldTreatAsDirectComposerSubmit(
+        overridePrompt,
+        overrideAttachments,
+      )
+        ? undefined
+        : skillData;
       const shouldUseBrowserAgentChat =
         chatEnabled &&
-        composer.creationMode === "agent" &&
-        !skillData;
+        !normalizedSkillData &&
+        shouldRouteSidebarMessageToBrowserAgent({
+          text,
+          hasSelectedElement: Boolean(browserAgent.selectedElementId),
+          chatEnabled,
+        });
 
       if (!shouldUseBrowserAgentChat) {
-        return handleSendWithQuickSkill(
+        return handleSend(
           overridePrompt,
           overrideAttachments,
           overrideWeb,
-          skillData,
+          normalizedSkillData || autonomousChatSkill,
         );
       }
 
@@ -1052,6 +1102,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         const result = await handleStartGoalSession({
           goal: text,
           attachments: effectiveAttachments,
+          skillData: autonomousChatSkill,
         });
         const plan = result?.plan || null;
         if (!plan) {
@@ -1256,6 +1307,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           onSaveMarkerLabel={onSaveMarkerLabel}
           activeQuickSkill={activeQuickSkill}
           onClearQuickSkill={clearActiveQuickSkill}
+          persistQuickSkillOnSend={false}
         />
       </div>
     </motion.div>

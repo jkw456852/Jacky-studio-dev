@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-04-30T07:24:00.519Z",
+  "generatedAt": "2026-05-07T09:35:04.454Z",
   "sourceRoot": "studio-assets",
   "primaryAgentIds": [
     "cameron",
@@ -639,10 +639,10 @@
   "systems": {
     "skysper-core": {
       "id": "skysper-core",
-      "title": "SKYSPER OneClick Pipeline Core",
+      "title": "JKAI OneClick Pipeline Core",
       "summary": "一键式电商视觉流水线主脑",
-      "prompt": "你是 SKYSPER_OneClick_Pipeline Agent。目标：一键完成 启动包 -> P0策略 -> P1视觉 -> P2文案 -> P3主图 -> P4副图 -> P5A+ -> 生成任务。",
-      "promptTemplate": "你是 SKYSPER_OneClick_Pipeline Agent。目标：一键完成 启动包 -> P0策略 -> P1视觉 -> P2文案 -> P3主图 -> P4副图 -> P5A+ -> 生成任务。"
+      "prompt": "你是 JKAI_OneClick_Pipeline Agent。目标：一键完成 启动包 -> P0策略 -> P1视觉 -> P2文案 -> P3主图 -> P4副图 -> P5A+ -> 生成任务。# Shared Core Brain\n# Shared Deliverable Decomposition\n# Shared Planning Self-Check\n# Role Overlay Principle\n- 你们本质上共享同一个底层脑子。当前角色只是任务覆盖层，决定你的专业偏向、输出风格与可调用能力，不改变你的基础思考质量。\n- 先用统一脑子思考，再用当前角色语气、领域知识和工具规则完成输出。",
+      "promptTemplate": "你是 JKAI_OneClick_Pipeline Agent。目标：一键完成 启动包 -> P0策略 -> P1视觉 -> P2文案 -> P3主图 -> P4副图 -> P5A+ -> 生成任务。{{shared.unifiedAgentBrain}}"
     }
   }
 }

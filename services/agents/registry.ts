@@ -7,7 +7,7 @@ import { P3_PACK } from './prompts/packs/p3.pack';
 import { P4_PACK } from './prompts/packs/p4.pack';
 import { P5_PACK } from './prompts/packs/p5.pack';
 
-export type XcaiPackName =
+export type JkaiPackName =
   | 'STARTUP_PACK'
   | 'P0_PACK'
   | 'P1_PACK'
@@ -16,7 +16,7 @@ export type XcaiPackName =
   | 'P4_PACK'
   | 'P5_PACK';
 
-const xcaiOneclickPacks: Record<XcaiPackName, string> = {
+const jkaiOneclickPacks: Record<JkaiPackName, string> = {
   STARTUP_PACK,
   P0_PACK,
   P1_PACK,
@@ -27,9 +27,13 @@ const xcaiOneclickPacks: Record<XcaiPackName, string> = {
 };
 
 export const AgentRegistry = {
+  'jkai-oneclick': {
+    core: SKYSPER_CORE_SYSTEM,
+    packs: jkaiOneclickPacks,
+  },
   'xcai-oneclick': {
     core: SKYSPER_CORE_SYSTEM,
-    packs: xcaiOneclickPacks,
+    packs: jkaiOneclickPacks,
   },
 };
 

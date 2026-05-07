@@ -49,6 +49,13 @@ export const MessageList: React.FC<MessageListProps> = ({
   const currentTask = useAgentStore((s) => s.currentTask);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const shouldShowUserSkillBadge = (msg: ChatMessage) =>
+    Boolean(
+      msg.skillData &&
+        msg.skillData.id !== "autonomous-main-brain" &&
+        msg.skillData.name !== "自主主脑路由",
+    );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [visibleMessages, currentTask?.progressMessage]);
@@ -63,7 +70,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
         >
           {msg.role === "user" ? (
-            msg.skillData ? (
+            shouldShowUserSkillBadge(msg) ? (
               <div className="w-full max-w-[95%] xl:max-w-[90%] rounded-3xl rounded-br-md border border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-800 shadow-sm flex flex-col gap-2 overflow-hidden">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-gray-900">

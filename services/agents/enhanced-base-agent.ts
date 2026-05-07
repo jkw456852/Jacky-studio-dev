@@ -1,6 +1,6 @@
-/**
- * 增强型基础智能体
- * 使用Skills系统统一处理任务，提供完善的错误处理和状态管理
+﻿/**
+ * 澧炲己鍨嬪熀纭€鏅鸿兘浣?
+ * 浣跨敤Skills绯荤粺缁熶竴澶勭悊浠诲姟锛屾彁渚涘畬鍠勭殑閿欒澶勭悊鍜岀姸鎬佺鐞?
  */
 
 import { Chat, Type } from "@google/genai";
@@ -12,61 +12,46 @@ import {
   GeneratedAsset,
 } from "../../types/agent.types";
 import { executeSkill, AVAILABLE_SKILLS } from "../skills";
+import {
+  isAssetProducingSkillName,
+  isImageGenerationSkillName,
+  isVideoGenerationSkillName,
+} from "../skills/skill-manifest";
 import { errorHandler, ErrorType, AppError } from "../../utils/error-handler";
 import { buildEcommerceProposals } from "./shared/ecommerce-variants";
 import { useAgentStore } from "../../stores/agent.store";
-import { collectReferenceCandidates } from "./utils/reference-images";
 import { buildRuntimeRolePrompt } from "./runtime-role";
+import { runMainBrainRuntime } from "./main-brain-runtime";
+import { buildMainBrainTaskProgressUpdate } from "./main-brain-progress-state";
+import { buildAnalyzePlanPrompt } from "./analyze-plan-prompt";
+import { resolveMainBrainOutput } from "./main-brain-output";
+import { prepareSkillExecutionCall } from "./skill-execution-preprocessor";
+import { normalizeAgentJsonResponse } from "./agent-response-normalizer";
+import {
+  buildForcedGenerateImageCall,
+  ensureForcedImagePlan,
+} from "./forced-image-guard";
+import { retryMainBrainOperation } from "./main-brain-failure-policy";
+import {
+  buildAgentTaskOutput,
+  buildMainBrainTaskOutput,
+  buildSkillExecutionRuntimeEnvelope,
+} from "./agent-task-output";
+import {
+  normalizeSkillCalls,
+} from "./skill-call-normalizer";
+import { buildImageAttachmentTokens } from "./environment-input-protocol";
+import {
+  buildFailedSkillExecutionResult,
+  buildReferenceInjectionTelemetry,
+  buildSuccessfulSkillExecutionResult,
+  executeSkillWithTimeout,
+  normalizeSettledSkillExecutionResults,
+  resolveSkillTimeoutMs,
+} from "./skill-execution-runtime";
+import { runWithTimeout, withTimeout } from "./timeout-utils";
 
-// 带指数退避的重试工具（用于 analyzeAndPlan 等内部调用）
-const retryAsync = async <T>(
-  fn: () => Promise<T>,
-  retries: number = 3,
-  delay: number = 1500,
-): Promise<T> => {
-  try {
-    return await fn();
-  } catch (error: any) {
-    const code = error.status || error.code || 0;
-    const msg = error.message || "";
-    if (code === 413 || msg.includes("413") || msg.includes("input tokens") || msg.includes("context length")) {
-      console.warn(`[analyzeAndPlan] request too large, skip retry. code=${code}`);
-      throw error;
-    }
-    const isRetryable =
-      [500, 502, 503, 429].includes(code) ||
-      msg.includes("overloaded") ||
-      msg.includes("UNAVAILABLE") ||
-      msg.includes("Bad Gateway") ||
-      msg.includes("RESOURCE_EXHAUSTED") ||
-      msg.includes("Internal Server Error") ||
-      msg.includes("fetch failed");
-    if (retries > 0 && isRetryable) {
-      const wait = code === 429 ? Math.max(delay, 3000) : delay;
-      console.warn(
-        `[analyzeAndPlan 重试] 错误码=${code}, ${wait}ms 后重试 (剩余 ${retries} 次)`,
-      );
-      await new Promise((r) => setTimeout(r, wait));
-      return retryAsync(fn, retries - 1, wait * 2);
-    }
-    throw error;
-  }
-};
-
-const withTimeout = async <T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs),
-    ),
-  ]);
-};
-
-// 限流并发执行器：限制最多 concurrency 个任务同时执行
+// 闄愭祦骞跺彂鎵ц鍣細闄愬埗鏈€澶?concurrency 涓换鍔″悓鏃舵墽琛?
 const runWithConcurrency = async <T>(
   tasks: (() => Promise<T>)[],
   concurrency: number,
@@ -91,8 +76,17 @@ const runWithConcurrency = async <T>(
   return results;
 };
 
+const SKILL_EXECUTION_PROGRESS_STEPS = [
+  "正在连接 Nano Banana Pro 模型...",
+  "正在分析视觉元素与构图结构...",
+  "正在细化光影层次与画面氛围...",
+  "正在优化清晰度与输出质量...",
+  "正在执行最后的细节精修...",
+  "正在把结果同步到画布...",
+];
+
 /**
- * 任务执行配置
+ * 浠诲姟鎵ц閰嶇疆
  */
 interface ExecutionConfig {
   maxRetries: number;
@@ -107,21 +101,10 @@ interface ImageParamsSchema {
 
 const DEFAULT_EXECUTION_CONFIG: ExecutionConfig = {
   maxRetries: 0,
-  timeout: 600000, // 10 分钟（图片生成 + 分析可能需要较长时间）
+  timeout: 600000, // 10 鍒嗛挓锛堝浘鐗囩敓鎴?+ 鍒嗘瀽鍙兘闇€瑕佽緝闀挎椂闂达級
   enableCache: true,
 };
 
-const SKILL_TIMEOUTS: Record<string, number> = {
-  generateImage: 180_000, // 图像生成在代理环境下可能需要更久
-  smartEdit: 120_000,
-  touchEdit: 120_000,
-  generateVideo: 180_000, // 视频生成可能很慢
-  generateCopy: 15_000, // 文本生成很快
-  extractText: 15_000,
-  analyzeRegion: 15_000,
-  export: 30_000,
-};
-const DEFAULT_SKILL_TIMEOUT = 120_000;
 const DEFAULT_MAX_REFERENCE_IMAGES = 8;
 const parsedMaxReferenceImages = Number.parseInt(
   String((import.meta as any).env?.VITE_MAX_REFERENCE_IMAGES ?? DEFAULT_MAX_REFERENCE_IMAGES),
@@ -145,27 +128,30 @@ const IMAGE_TOOL_PARAMS_SCHEMA: ImageParamsSchema = {
     init_image: { type: Type.STRING },
   },
 };
-const MULTI_IMAGE_REQUEST_RE = /(\d+)\s*张|(\d+)\s*images?|一套|一组|系列|套图/i;
-const ECOM_SET_RE = /亚马逊|amazon|listing|副图|电商|主图|详情图|套图/i;
+const MULTI_IMAGE_REQUEST_RE = /(\d+)\s*寮爘(\d+)\s*images?|涓€濂梶涓€缁剕绯诲垪|濂楀浘/i;
+const ECOM_SET_RE = /浜氶┈閫妡amazon|listing|鍓浘|鐢靛晢|涓诲浘|璇︽儏鍥緗濂楀浘/i;
 const BANNED_MULTI_FRAME_TERMS_RE =
   /\b(collage|set of images|multiple views|listing template|contact sheet|mosaic|grid panel)\b/gi;
-const MAX_ANALYZE_HISTORY_MESSAGES = 4; // 减少历史条数防止 Token 爆炸
-const MAX_MESSAGE_TEXT_CHARS = 1200;
-const MAX_TOPIC_CONTEXT_CHARS = 1200;
-const MAX_REFERENCE_SUMMARY_CHARS = 400;
-const MAX_BRAND_INFO_CHARS = 400;
-
-const truncateText = (value: unknown, maxChars: number): string => {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text.length > maxChars ? `${text.slice(0, maxChars)}...` : text;
-};
-
-const compactJson = (value: unknown, maxChars: number): string => {
+const fileToInlinePart = async (
+  file: File,
+): Promise<{ inlineData: { mimeType: string; data: string } } | null> => {
   try {
-    return truncateText(JSON.stringify(value || {}), maxChars);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("image read failed"));
+      reader.readAsDataURL(file);
+    });
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match || !match[1] || !match[2]) return null;
+    return {
+      inlineData: {
+        mimeType: match[1],
+        data: match[2],
+      },
+    };
   } catch {
-    return "{}";
+    return null;
   }
 };
 
@@ -175,34 +161,88 @@ export abstract class EnhancedBaseAgent {
 
   abstract get agentInfo(): AgentInfo;
   abstract get systemPrompt(): string;
-  abstract get preferredSkills(): string[]; // 智能体偏好的技能
+  abstract get preferredSkills(): string[]; // 鏅鸿兘浣撳亸濂界殑鎶€鑳?
 
-  /** 最大并发数（子类可覆盖：图片密集型=3，视频密集型=1，混合=2） */
+  /** 鏈€澶у苟鍙戞暟锛堝瓙绫诲彲瑕嗙洊锛氬浘鐗囧瘑闆嗗瀷=3锛岃棰戝瘑闆嗗瀷=1锛屾贩鍚?2锛?*/
   get maxConcurrency(): number {
     return 2;
   }
 
-  // 增强生图意图识别：如果消息明确要求视觉产出，则强制调用生图工具
+  private shouldShowImageExecutionProgress(
+    skillCalls: Array<{ skillName?: string }>,
+  ): boolean {
+    return skillCalls.some((call) =>
+      ["generateImage", "smartEdit", "touchEdit"].includes(
+        String(call?.skillName || ""),
+      ),
+    );
+  }
+
+  private startSkillExecutionProgress(
+    task: AgentTask,
+    skillCalls: Array<{ skillName?: string }>,
+  ): (() => void) | null {
+    if (!this.shouldShowImageExecutionProgress(skillCalls)) {
+      return null;
+    }
+
+    let progressIndex = 0;
+    const intervalId = setInterval(() => {
+      if (progressIndex >= SKILL_EXECUTION_PROGRESS_STEPS.length) {
+        return;
+      }
+
+      useAgentStore.getState().actions.setCurrentTask({
+        ...task,
+        status: "executing",
+        progressMessage: SKILL_EXECUTION_PROGRESS_STEPS[progressIndex],
+        progressStep: 3,
+        totalSteps: 4,
+      });
+      progressIndex += 1;
+    }, 3000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }
+
+  private shouldSuppressAutonomousSkillExecution(
+    task: AgentTask,
+  ): boolean {
+    const metadata = task.input.metadata;
+    if (metadata?.allowAutonomousRouting !== true) {
+      return false;
+    }
+
+    const taskMode = String(metadata?.taskMode || "").trim().toLowerCase();
+    return taskMode === "chat" || taskMode === "research";
+  }
+
+  // 澧炲己鐢熷浘鎰忓浘璇嗗埆锛氬鏋滄秷鎭槑纭姹傝瑙変骇鍑猴紝鍒欏己鍒惰皟鐢ㄧ敓鍥惧伐鍏?
   private shouldForceImageToolCall(
     message: string,
     metadata?: Record<string, any>,
   ): boolean {
-    // 上游可显式强制
+    if (metadata?.allowAutonomousRouting === true) {
+      return false;
+    }
+    // 涓婃父鍙樉寮忓己鍒?
     if (
       metadata?.forceToolCall === true ||
       metadata?.forceGenerateImage === true
     )
       return true;
 
-    // 基础意图识别：明确要产出视觉内容（海报、头图、Banner、Logo、画图等）
+    // 鍩虹鎰忓浘璇嗗埆锛氭槑纭浜у嚭瑙嗚鍐呭锛堟捣鎶ャ€佸ご鍥俱€丅anner銆丩ogo銆佺敾鍥剧瓑锛?
     const imageIntent =
-      /(生成|出图|做图|画图|画一个|画一张|海报|poster|banner|封面|配图|图片|图像|视觉设计|头部|头图|设计一张|图解|插图|绘图|design a|generate image|create poster|draw)/i.test(
+      /(生成|出图|做图|画图|画一个|画一张|海报|poster|banner|封面|配图|图片|图像|视觉设计|头图|主图|设计一张|插图|绘图|design a|generate image|create poster|draw)/i.test(
         message,
       );
 
-    // 排除纯咨询或文案类场景
+    // 鎺掗櫎绾挩璇㈡垨鏂囨绫诲満鏅?
     const consultOnly =
-      /(解释|原理|教程|怎么做|如何做|为什么|文字版|仅文案|不需要图|告诉我)/i.test(
+      /(解释|原理|教程|怎么做|如何做|为什么|文字稿|仅文案|不需要图|告诉我)/i.test(
         message,
       );
 
@@ -211,56 +251,6 @@ export abstract class EnhancedBaseAgent {
       console.log(`[${this.agentInfo.id}] Detect Image Intent: Forced tool call activated.`);
     }
     return result;
-  }
-
-  private buildForcedGenerateImageCall(
-    message: string,
-    attachments?: File[],
-    metadata?: Record<string, any>,
-  ) {
-    // 智能提取比例关键词
-    let aspectRatio = (metadata?.preferredAspectRatio as string) || "3:4";
-    if (/(横版|横屏|宽屏|16:9|landscape)/i.test(message)) {
-      aspectRatio = "16:9";
-    } else if (/(竖版|竖屏|手机屏|9:16|portrait)/i.test(message)) {
-      aspectRatio = "9:16";
-    } else if (/(方图|正方形|1:1|square)/i.test(message)) {
-      aspectRatio = "1:1";
-    } else if (/(4:3)/i.test(message)) {
-      aspectRatio = "4:3";
-    }
-
-    // 智能注入布局描述，强化模型对参数的遵循度
-    let layoutDescriptor = "";
-    if (aspectRatio === "16:9") layoutDescriptor = "ultra-wide cinematic 2k masterpiece, 16:9 landscape orientation, expansive detailed view, ";
-    else if (aspectRatio === "9:16") layoutDescriptor = "vertical smartphone 2k wallpaper, 9:16 portrait orientation, vertical detailed composition, ";
-    else if (aspectRatio === "4:3") layoutDescriptor = "high-resolution 2k professional 4:3 presentation layout, ";
-    else if (aspectRatio === "3:4") layoutDescriptor = "high-definition 2k portrait photography, 3:4 orientation, ";
-    else if (aspectRatio === "1:1") layoutDescriptor = "hi-res 2k square format, 1:1 ratio, ";
-
-    const forcedCall: any = {
-      skillName: "generateImage",
-      params: {
-        prompt: `${layoutDescriptor}${message}, high-impact visual design, clean composition, studio lighting, professional 2k digital art, 8k resolution details`,
-        aspectRatio,
-        quality: "hd", // 默认高清
-        resolution: "2048x2048", // 默认 2K 级别
-        model: "Nano Banana Pro",
-      },
-    };
-
-    // 有附件时默认绑定首张参考图，确保不会空跑
-    if (attachments && attachments.length > 0) {
-      const attachmentRefs = attachments.map((_, index) => `ATTACHMENT_${index}`);
-      forcedCall.params.referenceImages = attachmentRefs;
-      forcedCall.params.referenceImage = "ATTACHMENT_0";
-      forcedCall.params.reference_image_url = "ATTACHMENT_0";
-      forcedCall.params.init_image = "ATTACHMENT_0";
-      forcedCall.params.referencePriority = attachmentRefs.length > 1 ? "all" : "first";
-      forcedCall.params.referenceMode = "product";
-    }
-
-    return forcedCall;
   }
 
   private parseRequestedImageCount(message: string): number {
@@ -305,7 +295,7 @@ export abstract class EnhancedBaseAgent {
     const model = "Nano Banana Pro";
     const variants = [
       {
-        title: "白底主图",
+        title: "鐧藉簳涓诲浘",
         prompt:
           "Single hero product shot, pure white background, centered composition, soft shadow, commercial e-commerce style, 8k",
       },
@@ -357,10 +347,13 @@ export abstract class EnhancedBaseAgent {
       };
 
       if (attachments && attachments.length > 0) {
-        params.referenceImages = attachments.map((_, attachmentIndex) => `ATTACHMENT_${attachmentIndex}`);
-        params.referenceImage = "ATTACHMENT_0";
-        params.referencePriority = attachments.length > 1 ? "all" : "first";
-        params.referenceMode = "product";
+        const attachmentRefs = buildImageAttachmentTokens(attachments);
+        if (attachmentRefs.length > 0) {
+          params.referenceImages = attachmentRefs;
+          params.referenceImage = attachmentRefs[0];
+          params.referencePriority = attachmentRefs.length > 1 ? "all" : "first";
+          params.referenceMode = "product";
+        }
       }
 
       return {
@@ -413,10 +406,7 @@ export abstract class EnhancedBaseAgent {
 
     const generateImageIndices = skillCalls.reduce<number[]>(
       (indices, call, index) => {
-        if (
-          call?.skillName === "generateImage" ||
-          call?.skillName === "imageGenSkill"
-        ) {
+        if (isImageGenerationSkillName(call?.skillName)) {
           indices.push(index);
         }
         return indices;
@@ -456,7 +446,7 @@ export abstract class EnhancedBaseAgent {
   }
 
   /**
-   * 初始化智能体
+   * 鍒濆鍖栨櫤鑳戒綋
    */
   async initialize(context: ProjectContext): Promise<void> {
     try {
@@ -475,7 +465,7 @@ export abstract class EnhancedBaseAgent {
   }
 
   /**
-   * 执行任务（核心方法）
+   * 鎵ц浠诲姟锛堟牳蹇冩柟娉曪級
    */
   async execute(
     task: AgentTask,
@@ -487,13 +477,13 @@ export abstract class EnhancedBaseAgent {
     try {
       console.log(`[${this.agentInfo.id}] Starting task execution:`, taskId);
 
-      // 更新任务状态
+      // 鏇存柊浠诲姟鐘舵€?
       task = this.updateTaskStatus(task, "analyzing");
 
-      // 验证输入
+      // 楠岃瘉杈撳叆
       this.validateInput(task);
 
-      // 检查缓存
+      // 妫€鏌ョ紦瀛?
       if (finalConfig.enableCache) {
         const cached = this.getCachedResult(task);
         if (cached) {
@@ -502,7 +492,7 @@ export abstract class EnhancedBaseAgent {
         }
       }
 
-      // 使用错误处理包装器执行
+      // 浣跨敤閿欒澶勭悊鍖呰鍣ㄦ墽琛?
       const result = await errorHandler.withRetry(
         () => this.executeWithTimeout(task, finalConfig.timeout),
         {
@@ -517,7 +507,7 @@ export abstract class EnhancedBaseAgent {
         },
       );
 
-      // 缓存结果
+      // 缂撳瓨缁撴灉
       if (finalConfig.enableCache && result.status === "completed") {
         this.cacheResult(task, result);
       }
@@ -532,7 +522,10 @@ export abstract class EnhancedBaseAgent {
         ...task,
         status: "failed",
         output: {
-          message: `执行失败: ${appError.message}`,
+          ...buildAgentTaskOutput({
+            message: `鎵ц澶辫触: ${appError.message}`,
+            runtime: { mode: "skill-execution" },
+          }),
           error: appError,
         },
         updatedAt: Date.now(),
@@ -541,34 +534,28 @@ export abstract class EnhancedBaseAgent {
   }
 
   /**
-   * 带超时的执行
+   * 甯﹁秴鏃剁殑鎵ц
    */
   private async executeWithTimeout(
     task: AgentTask,
     timeout: number,
   ): Promise<AgentTask> {
-    return Promise.race([
-      this.executeInternal(task),
-      new Promise<AgentTask>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              errorHandler.createError(
-                ErrorType.AGENT,
-                "任务执行超时",
-                undefined,
-                { taskId: task.id, timeout },
-                true,
-              ),
-            ),
-          timeout,
+    return runWithTimeout({
+      promise: this.executeInternal(task),
+      timeoutMs: timeout,
+      createTimeoutError: () =>
+        errorHandler.createError(
+          ErrorType.AGENT,
+          "浠诲姟鎵ц瓒呮椂",
+          undefined,
+          { taskId: task.id, timeout },
+          true,
         ),
-      ),
-    ]);
+    });
   }
 
   /**
-   * 内部执行逻辑（使用Skills）
+   * 鍐呴儴鎵ц閫昏緫锛堜娇鐢⊿kills锛?
    */
   private async executeInternal(task: AgentTask): Promise<AgentTask> {
     const { message, context } = task.input;
@@ -576,40 +563,38 @@ export abstract class EnhancedBaseAgent {
     const skillData = task.input.metadata?.skillData as
       | { id?: string; config?: Record<string, any> }
       | undefined;
+    const allowAutonomousRouting =
+      task.input.metadata?.allowAutonomousRouting === true;
     const forceImageToolCall = this.shouldForceImageToolCall(
       message,
       task.input.metadata,
     );
 
-    // Step 1: 接受任务
+    if (allowAutonomousRouting) {
+      return this.executeAutonomousMainBrainTask(task);
+    }
+
     store.actions.setCurrentTask({
       ...task,
       status: "analyzing",
-      progressMessage: `好的，我来为您处理这个请求`,
+      progressMessage: "正在接收任务并整理上下文...",
       progressStep: 1,
       totalSteps: 4,
     });
 
-    // 1. 分析任务并生成执行计划
-    // Step 2: 分析需求
-    store.actions.setCurrentTask({
-      ...task,
-      status: "analyzing",
-      progressMessage: "正在分析您的需求，制定创作方案...",
-      progressStep: 2,
-      totalSteps: 4,
-    });
-
-    if (skillData?.id === "xcai-oneclick") {
+    if (
+      skillData?.id === "jkai-oneclick" ||
+      skillData?.id === "xcai-oneclick"
+    ) {
       store.actions.setCurrentTask({
         ...task,
         status: "executing",
-        progressMessage: "正在执行 SKYSPER 一键流程（Startup -> P5）...",
+        progressMessage: "正在执行 JKAI One-Click 工作流（Startup -> P5）...",
         progressStep: 3,
         totalSteps: 4,
       });
 
-      const oneclickResult = await executeSkill("xcaiOneclick", {
+      const oneclickResult = await executeSkill("jkaiOneclick", {
         input: {
           message,
           referenceImages: task.input.uploadedAttachments || [],
@@ -621,16 +606,28 @@ export abstract class EnhancedBaseAgent {
       return {
         ...task,
         status: "completed",
-        output: {
+        output: buildAgentTaskOutput({
           message:
             typeof oneclickResult === "string"
               ? oneclickResult
-              : "SKYSPER One-Click 执行完成。",
+              : "JKAI One-Click 执行完成。",
           analysis: "已按 Core + Packs 方式完成 Startup、P0-P5 分阶段编排。",
+          adjustments: [
+            "可继续：按 P3 主图指令直接生成",
+            "可继续：按 P4 输出分批生成副图",
+          ],
           proposals: [],
           assets: [],
-          adjustments: ["可继续：按 P3 主图指令直接生成", "可继续：按 P4 输出分批生成副图"],
-        },
+          skillCalls: [],
+          runtime: {
+            mode: "skill-execution",
+            proposalCount: 0,
+            assetCount: 0,
+            skillCallCount: 0,
+            successfulSkillCount: 0,
+            failedSkillCount: 0,
+          },
+        }),
         updatedAt: Date.now(),
       };
     }
@@ -665,37 +662,58 @@ export abstract class EnhancedBaseAgent {
               ),
             );
 
-      const productImages = [...uploadedRefs, ...localRefs].filter(Boolean).slice(0, 6);
+      const productImages = [...uploadedRefs, ...localRefs]
+        .filter(Boolean)
+        .slice(0, 6);
 
       if (productImages.length === 0) {
         return {
           ...task,
           status: "completed",
-          output: {
+          output: buildAgentTaskOutput({
             message: "请先上传至少 1 张商品图片，我再为你生成中文详情页套图。",
             proposals: [],
             assets: [],
-            imageUrls: [],
             adjustments: ["上传商品图后重试", "可补充品牌调性与人群定位"],
-          },
+            runtime: {
+              mode: "skill-execution",
+              proposalCount: 0,
+              assetCount: 0,
+              skillCallCount: 0,
+              successfulSkillCount: 0,
+              failedSkillCount: 0,
+            },
+          }),
           updatedAt: Date.now(),
         };
       }
 
       const defaults = (skillData.config?.defaults || {}) as Record<string, any>;
-      const promptVersion = defaults.promptVersion === "original" ? "original" : "new";
-      const textMode = defaults.textMode === "withText" || defaults.textMode === "noText" ? defaults.textMode : "auto";
+      const promptVersion =
+        defaults.promptVersion === "original" ? "original" : "new";
+      const textMode =
+        defaults.textMode === "withText" || defaults.textMode === "noText"
+          ? defaults.textMode
+          : "auto";
       const ratioMode = defaults.ratioMode === "fixed" ? "fixed" : "adaptive";
-      const fixedAspectRatio = typeof defaults.fixedAspectRatio === "string" ? defaults.fixedAspectRatio : "";
-      const qualityThreshold = Number.isFinite(Number(defaults.qualityThreshold))
+      const fixedAspectRatio =
+        typeof defaults.fixedAspectRatio === "string"
+          ? defaults.fixedAspectRatio
+          : "";
+      const qualityThreshold = Number.isFinite(
+        Number(defaults.qualityThreshold),
+      )
         ? Number(defaults.qualityThreshold)
         : 0.68;
-      const replacementBudget = Number.isFinite(Number(defaults.replacementBudget))
+      const replacementBudget = Number.isFinite(
+        Number(defaults.replacementBudget),
+      )
         ? Number(defaults.replacementBudget)
         : 2;
-      const retryPolicy = defaults.retryPolicy && typeof defaults.retryPolicy === "object"
-        ? defaults.retryPolicy
-        : undefined;
+      const retryPolicy =
+        defaults.retryPolicy && typeof defaults.retryPolicy === "object"
+          ? defaults.retryPolicy
+          : undefined;
 
       const cnDetailResult = await executeSkill("cnDetailPage", {
         productImages,
@@ -714,7 +732,9 @@ export abstract class EnhancedBaseAgent {
       });
 
       const images = Array.isArray(cnDetailResult?.images)
-        ? cnDetailResult.images.filter((item: any) => typeof item?.url === "string" && item.url)
+        ? cnDetailResult.images.filter(
+            (item: any) => typeof item?.url === "string" && item.url,
+          )
         : [];
       const assets: GeneratedAsset[] = images.map((item: any) => ({
         id: `asset-${Date.now()}-${Math.random()}`,
@@ -731,15 +751,14 @@ export abstract class EnhancedBaseAgent {
       return {
         ...task,
         status: "completed",
-        output: {
+        output: buildAgentTaskOutput({
           message:
             imageUrls.length > 0
               ? `已为你生成 ${imageUrls.length} 张国内电商中文详情页分屏图。`
               : "本次未生成有效图片，请调整需求后重试。",
-          analysis: "已按中文详情页结构（KV/卖点/参数/场景/对比/转化）执行。",
+          analysis: "已按中文详情页结构（KV、卖点、参数、场景、对比、转化）执行。",
           proposals: [],
           assets,
-          imageUrls,
           skillCalls: [
             {
               skillName: "cnDetailPage",
@@ -761,14 +780,42 @@ export abstract class EnhancedBaseAgent {
           ],
           adjustments:
             imageUrls.length > 0
-              ? ["继续细化卖点分屏", "改成更强转化风格", "替换场景氛围", "重新生成"]
-              : ["上传更清晰产品图", "补充更具体卖点要求"],
-        },
+              ? [
+                  "继续细化卖点分屏",
+                  "改成更强转化风格",
+                  "替换场景氛围",
+                  "重新生成",
+                ]
+              : ["上传更清晰的产品图", "补充更具体的卖点要求"],
+          runtime: buildSkillExecutionRuntimeEnvelope({
+            assets,
+            skillResults: [
+              {
+                skillName: "cnDetailPage",
+                params: {
+                  count: Number(defaults.count ?? 6),
+                  aspectRatio: String(defaults.aspectRatio || "3:4"),
+                  imageSize: defaults.imageSize || "2K",
+                  model: defaults.model || "nanobanana2",
+                  promptVersion,
+                  textMode,
+                  ratioMode,
+                  fixedAspectRatio,
+                  qualityThreshold,
+                  replacementBudget,
+                  retryPolicy,
+                },
+                result: cnDetailResult,
+                success: imageUrls.length > 0,
+              },
+            ],
+            proposals: [],
+          }),
+        }),
         updatedAt: Date.now(),
       };
     }
 
-    // 1.5 定义字段名容错修复函数
     const fixSkillCalls = (obj: any) => {
       if (!obj || typeof obj !== "object") return;
       const keys = Object.keys(obj);
@@ -791,7 +838,6 @@ export abstract class EnhancedBaseAgent {
     };
 
     let plan: any;
-
     const workflowMode =
       task.input.metadata?.workflowMode === "fast" ? "fast" : "designer";
     const isThinkingMode = useAgentStore.getState().modelMode === "thinking";
@@ -803,11 +849,16 @@ export abstract class EnhancedBaseAgent {
       !isThinkingMode &&
       !bypassFastPath;
 
+    store.actions.setCurrentTask({
+      ...task,
+      status: "analyzing",
+      progressMessage: "正在分析需求并制定执行方案...",
+      progressStep: 2,
+      totalSteps: 4,
+    });
+
     if (shouldUseFastPath) {
-      console.log(
-        `[${this.agentInfo.id}] Fast workflow enabled: skipping planning stage.`,
-      );
-      const directCall = this.buildForcedGenerateImageCall(
+      const directCall = buildForcedGenerateImageCall(
         message,
         task.input.attachments,
         task.input.metadata,
@@ -819,7 +870,7 @@ export abstract class EnhancedBaseAgent {
         analysis: "已识别为快速生图模式，跳过方案沟通并直接执行。",
         preGenerationMessage: "已收到需求，正在快速生成视觉稿。",
         postGenerationSummary: "本次快速模式已完成基础构图与视觉输出，可继续精修。",
-        message: "好的，正在根据您的需求直接开始生成。",
+        message: "好的，正在根据你的需求直接开始生成。",
         skillCalls: [directCall],
         proposals: [],
         suggestions: ["换个风格重试", "改成其他比例"],
@@ -838,52 +889,46 @@ export abstract class EnhancedBaseAgent {
         );
       } catch (error) {
         console.error(`[${this.agentInfo.id}] analyzeAndPlan failed:`, error);
-        if (forceImageToolCall) {
-          if (requestedCount > 1 || bypassFastPath) {
-            const fallbackCount = Math.max(requestedCount, 5);
-            console.warn(
-              `[${this.agentInfo.id}] Analysis failed for multi-image task. Using decomposed fallback calls (${fallbackCount}).`,
-            );
-            plan = {
-              analysis: "分析阶段超时，已自动切换为多图拆解兜底执行。",
-              preGenerationMessage: `正在为您拆解并并行生成 ${fallbackCount} 张独立图片。`,
-              postGenerationSummary: "本次已按单图策略拆解生成，可继续逐张微调。",
-              message: `已按多图需求拆解为 ${fallbackCount} 个独立画面并开始生成。`,
-              skillCalls: this.buildMultiImageFallbackCalls(
+        if (!forceImageToolCall) {
+          throw error;
+        }
+
+        if (requestedCount > 1 || bypassFastPath) {
+          const fallbackCount = Math.max(requestedCount, 5);
+          plan = {
+            analysis: "分析阶段超时，已自动切换为多图拆解兜底执行。",
+            preGenerationMessage: `正在为你拆解并并行生成 ${fallbackCount} 张独立图片。`,
+            postGenerationSummary: "本次已按单图策略拆解生成，可继续逐张微调。",
+            message: `已按多图需求拆解为 ${fallbackCount} 个独立画面并开始生成。`,
+            skillCalls: this.buildMultiImageFallbackCalls(
+              message,
+              fallbackCount,
+              task.input.attachments,
+              task.input.metadata,
+            ),
+            proposals: [],
+          };
+        } else {
+          plan = {
+            analysis: "分析阶段超时，已为你进入安全降级的直接出图流程。",
+            preGenerationMessage:
+              "我已理解你的设计目标，先为你生成首版视觉稿，随后给出设计复盘。",
+            postGenerationSummary:
+              "首版已完成，后续可按风格、构图和光影继续微调。",
+            message: "分析稍慢，我先为你生成第一版图像。",
+            skillCalls: [
+              buildForcedGenerateImageCall(
                 message,
-                fallbackCount,
                 task.input.attachments,
                 task.input.metadata,
               ),
-              proposals: [],
-            };
-          } else {
-            console.warn(
-              `[${this.agentInfo.id}] Analysis failed but image intent detected. Using single fallback call.`,
-            );
-            plan = {
-              analysis: "分析阶段超时，已为您进入安全降级的直接出图流程。",
-              preGenerationMessage:
-                "我已理解您的设计目标，先为您生成首版视觉稿，随后给出设计复盘。",
-              postGenerationSummary:
-                "首版已完成，后续可按风格、构图和光影继续微调。",
-              message: "分析稍慢，我先为您生成第一版图像。",
-              skillCalls: [
-                this.buildForcedGenerateImageCall(
-                  message,
-                  task.input.attachments,
-                  task.input.metadata,
-                ),
-              ],
-            };
-          }
-        } else {
-          throw error;
+            ],
+            proposals: [],
+          };
         }
       }
     }
 
-    // 修复顶层和 proposals 内部的字段名
     fixSkillCalls(plan);
     if (Array.isArray(plan.proposals)) {
       plan.proposals.forEach(fixSkillCalls);
@@ -893,188 +938,16 @@ export abstract class EnhancedBaseAgent {
       plan.preGenerationMessage = this.composePreGenerationMessage(task, plan);
     }
 
-    console.log(`[${this.agentInfo.id}] Plan received:`, {
-      hasProposals: !!(plan.proposals && plan.proposals.length),
-      proposalCount: plan.proposals?.length || 0,
-      hasSkillCalls: !!(plan.skillCalls && plan.skillCalls.length),
-      skillCallCount: plan.skillCalls?.length || 0,
-      forceImageToolCall,
-    });
-
-    // 2. 检测用户是否请求了多张图
     const requestedCountFromMessage = this.parseRequestedImageCount(message);
+    const shouldSuppressAutonomousSkillExecution =
+      this.shouldSuppressAutonomousSkillExecution(task);
 
-    let effectiveProposals =
-      plan.proposals && plan.proposals.length > 0 ? [...plan.proposals] : [];
-
-    // 3.5 修复: AI 可能用不同的字段名返回 skillCalls（如 skills, calls, actions 等）
-    for (const p of effectiveProposals) {
-      if (!p.skillCalls || p.skillCalls.length === 0) {
-        // 尝试常见的别名和不同的大小写
-        const keys = Object.keys(p);
-        for (const key of keys) {
-          const lowerKey = key.toLowerCase();
-          if (
-            [
-              "skillcalls",
-              "skills",
-              "calls",
-              "actions",
-              "skill_calls",
-              "tool_calls",
-            ].includes(lowerKey)
-          ) {
-            if (p[key] && Array.isArray(p[key]) && p[key].length > 0) {
-              console.log(
-                `[${this.agentInfo.id}] Fixed proposal "${p.title}": renamed "${key}" -> "skillCalls"`,
-              );
-              p.skillCalls = p[key];
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // 4. 如果 proposals 为空或 proposals 内没有 skillCalls，但顶层有 skillCalls，尝试修复
-    const proposalsHaveSkills = effectiveProposals.some(
-      (p: any) => p.skillCalls && p.skillCalls.length > 0,
-    );
-
-    if (!proposalsHaveSkills && plan.skillCalls && plan.skillCalls.length > 0) {
-      console.log(
-        `[${this.agentInfo.id}] Proposals missing skillCalls, restructuring from top-level skillCalls`,
-      );
-
-      if (
-        requestedCountFromMessage > 1 &&
-        plan.skillCalls.length === 1 &&
-        !["cameron", "vireo", "motion"].includes(this.agentInfo.id)
-      ) {
-        // 用户要求多张图但只有1个 skillCall — 使用共享电商套图模块生成变体（仅限产品设计类智能体）
-        const baseCall = plan.skillCalls[0];
-        const basePrompt = baseCall.params?.prompt || "";
-        effectiveProposals = buildEcommerceProposals(
-          basePrompt,
-          {
-            aspectRatio: baseCall.params?.aspectRatio,
-            model: baseCall.params?.model,
-          },
-          requestedCountFromMessage,
-        );
-        console.log(
-          `[${this.agentInfo.id}] Created ${effectiveProposals.length} variant proposals from single skillCall`,
-        );
-      } else {
-        // 将每个顶层装成一个 proposal
-        effectiveProposals = plan.skillCalls.map((call: any, idx: number) => ({
-          id: String(idx + 1),
-          title: `方案 ${idx + 1}`,
-          description: call.params?.prompt?.substring(0, 80) || "",
-          skillCalls: [call],
-        }));
-      }
-    }
-
-    // 4.5 最后的兜底: proposals 有数据但 skillCalls 仍然为空 — 从 proposal 的 prompt 字段自动构建
-    const stillNoSkills = !effectiveProposals.some(
-      (p: any) => p.skillCalls && p.skillCalls.length > 0,
-    );
-    if (stillNoSkills && effectiveProposals.length > 0) {
-      console.warn(
-        `[${this.agentInfo.id}] Proposals exist but ALL lack skillCalls — auto-building from proposal data`,
-      );
-      console.log(
-        `[${this.agentInfo.id}] Raw proposal keys:`,
-        effectiveProposals.map((p: any) => Object.keys(p)),
-      );
-
-      for (const p of effectiveProposals) {
-        // 尝试从 proposal 内提取 prompt（AI 可能把 prompt 直接放到 proposal 顶层）
-        const prompt =
-          p.prompt || p.imagePrompt || p.image_prompt || p.params?.prompt || "";
-        const model = p.model || p.params?.model || "Nano Banana Pro";
-        const ratio =
-          p.aspectRatio ||
-          p.aspect_ratio ||
-          p.ratio ||
-          p.params?.aspectRatio ||
-          "1:1";
-
-        if (prompt) {
-          // 注入布局描述词：模型更倾向于听 Prompt 里的描述而非参数
-          const layoutMap: Record<string, string> = {
-            '1:1': 'square format, centered composition, 1:1 aspect ratio',
-            '16:9': 'wide screen cinematic, 16:9 landscape orientation',
-            '9:16': 'vertical smartphone screen, 9:16 portrait orientation',
-            '4:3': 'standard traditional photography, 4:3 landscape',
-            '3:4': 'classic portrait photography, 3:4 orientation'
-          };
-          const layoutDesc = layoutMap[ratio] || '';
-          const finalPrompt = layoutDesc ? `${layoutDesc}, ${prompt}` : prompt;
-
-          p.skillCalls = [
-            {
-              skillName: "generateImage",
-              params: {
-                prompt: finalPrompt,
-                aspect_ratio: ratio,
-                model: model,
-              },
-              explanation: `正在按要求制作一张 ${ratio === '16:9' ? '横版' : (ratio === '9:16' ? '竖版' : '指定比例')} 的图片...`
-            },
-          ];
-          console.log(
-            `[${this.agentInfo.id}] Auto-built skillCall for "${p.title}" from prompt field`,
-          );
-        }
-      }
-
-      // 如果连 prompt 字段也没有，从 description 或 title 生成
-      const stillEmpty = !effectiveProposals.some(
-        (p: any) => p.skillCalls && p.skillCalls.length > 0,
-      );
-      if (stillEmpty) {
-        console.warn(
-          `[${this.agentInfo.id}] No prompt field found — building from description`,
-        );
-        for (const p of effectiveProposals) {
-          const fallbackPrompt = p.description || p.title || message;
-          if (fallbackPrompt) {
-            p.skillCalls = [
-              {
-                skillName: "generateImage",
-                params: {
-                  prompt: fallbackPrompt,
-                  model: "Nano Banana Pro",
-                  aspectRatio: "1:1",
-                },
-              },
-            ];
-          }
-        }
-      }
-    }
-
-    const mustAutoExecute = this.shouldForceAutoExecution(
-      message,
-      requestedCountFromMessage,
-      forceImageToolCall,
-    );
-
-    // 5.5 如果 AI 选择对话而非直接生成（proposals 为空但有 message，且不是强制执行任务），返回对话响应
-    if (
-      effectiveProposals.length === 0 &&
-      plan.message &&
-      !plan.skillCalls?.length &&
-      !task.input.metadata?.forceSkills &&
-      !mustAutoExecute
-    ) {
+    if (shouldSuppressAutonomousSkillExecution) {
       return {
         ...task,
         status: "completed",
         output: {
-          message: plan.message,
+          message: plan.message || plan.analysis || "已完成本轮响应。",
           analysis: plan.analysis,
           proposals: [],
           assets: [],
@@ -1084,103 +957,35 @@ export abstract class EnhancedBaseAgent {
       };
     }
 
-    // 6. 执行顶层 Skills（无 proposals 的情况）
-    // 如果已经有了 proposals，默认进入“预览 -> 选择”流程，除非 metadata.forceSkills 明确要求立即执行。
-    let fallbackSkillCalls = [];
-    if (effectiveProposals.length === 0) {
-      fallbackSkillCalls = plan.skillCalls || [];
+    let activeSkillCalls = Array.isArray(plan.skillCalls)
+      ? [...plan.skillCalls]
+      : [];
 
-      // Poster 强制出图兜底：如果模型未给出 skillCalls，直接注入 generateImage。
-      if (forceImageToolCall && fallbackSkillCalls.length === 0) {
-        console.warn(
-          `[${this.agentInfo.id}] forceImageToolCall active: injecting fallback generateImage call.`,
-        );
-        fallbackSkillCalls = [
-          this.buildForcedGenerateImageCall(
-            message,
-            task.input.attachments,
-            task.input.metadata,
-          ),
-        ];
-      }
-
-      // 6.5 Fallback 兜底: 如果 Plan 中有 prompt 但没有 skillCalls，自动构建
-      if (fallbackSkillCalls.length === 0) {
-        const planPrompt =
-          plan.prompt || plan.imagePrompt || plan.image_prompt || "";
-        if (planPrompt) {
-          console.log(
-            `[${this.agentInfo.id}] Fallback: building skillCall from plan.prompt`,
-          );
-          fallbackSkillCalls = [
-            {
-              skillName: "generateImage",
-              params: {
-                prompt: planPrompt,
-                model: plan.model || "Nano Banana Pro",
-                aspectRatio: plan.aspectRatio || plan.aspect_ratio || "1:1",
-              },
-            },
-          ];
-        } else {
-          console.warn(
-            `[${this.agentInfo.id}] No skillCalls, no proposals with skills, no prompt found. Plan keys:`,
-            Object.keys(plan),
-          );
-
-          if (mustAutoExecute) {
-            fallbackSkillCalls =
-              requestedCountFromMessage > 1
-                ? this.buildMultiImageFallbackCalls(
-                  message,
-                  requestedCountFromMessage,
-                  task.input.attachments,
-                  task.input.metadata,
-                )
-                : [
-                  this.buildForcedGenerateImageCall(
-                    message,
-                    task.input.attachments,
-                    task.input.metadata,
-                  ),
-                ];
-            console.warn(
-              `[${this.agentInfo.id}] Forced execution guard activated. Built ${fallbackSkillCalls.length} fallback skillCalls.`,
-            );
-          }
-        }
-      }
-    } else {
-      console.log(
-        `[${this.agentInfo.id}] Proposals exist. Skipping fallback skill execution.`,
-      );
+    if (activeSkillCalls.length === 0 && forceImageToolCall) {
+      activeSkillCalls =
+        requestedCountFromMessage > 1
+          ? this.buildMultiImageFallbackCalls(
+              message,
+              requestedCountFromMessage,
+              task.input.attachments,
+              task.input.metadata,
+            )
+          : [
+              buildForcedGenerateImageCall(
+                message,
+                task.input.attachments,
+                task.input.metadata,
+              ),
+            ];
     }
 
-    // 6.8 默认直执行：有 proposals 时不再停在预览确认，直接执行对应 skillCalls
-
-    // 7. 执行技能：优先执行用户选中的 proposal skillCalls
     const selectedSkillCalls = Array.isArray(
       task.input.metadata?.selectedSkillCalls,
     )
       ? task.input.metadata.selectedSkillCalls
       : [];
-
-    let activeSkillCalls = [...fallbackSkillCalls];
-
     if (selectedSkillCalls.length > 0) {
-      console.log(
-        `[${this.agentInfo.id}] Executing selected proposal skillCalls: ${selectedSkillCalls.length}`,
-      );
-      activeSkillCalls = selectedSkillCalls;
-    } else if (effectiveProposals.length > 0) {
-      console.log(
-        `[${this.agentInfo.id}] Auto executing proposal skillCalls: ${effectiveProposals.length} proposals.`,
-      );
-      for (const p of effectiveProposals) {
-        if (p.skillCalls && p.skillCalls.length > 0) {
-          activeSkillCalls = [...activeSkillCalls, ...p.skillCalls];
-        }
-      }
+      activeSkillCalls = [...selectedSkillCalls];
     }
 
     if (requestedCountFromMessage > 1) {
@@ -1191,13 +996,10 @@ export abstract class EnhancedBaseAgent {
           task.input.attachments,
           task.input.metadata,
         );
-        console.warn(
-          `[${this.agentInfo.id}] Multi-image guard activated: expanded to ${activeSkillCalls.length} generateImage calls.`,
-        );
       }
 
       activeSkillCalls = activeSkillCalls.map((call: any) => {
-        if (call?.skillName === "generateImage") {
+        if (isImageGenerationSkillName(call?.skillName)) {
           call.params = call.params || {};
           call.params.prompt = this.sanitizeSingleFramePrompt(
             call.params.prompt || "",
@@ -1211,28 +1013,19 @@ export abstract class EnhancedBaseAgent {
       task.input.metadata,
     );
     if (requestedCountFromMessage <= 1 && preferredImageCount > 1) {
-      const expandedSkillCalls = this.expandPreferredImageCountCalls(
+      activeSkillCalls = this.expandPreferredImageCountCalls(
         activeSkillCalls,
         preferredImageCount,
       );
-      if (expandedSkillCalls.length !== activeSkillCalls.length) {
-        activeSkillCalls = expandedSkillCalls;
-        console.log(
-          `[${this.agentInfo.id}] Applied preferred image count: ${preferredImageCount}`,
-        );
-      }
     }
 
-    let skillResults = [];
+    let skillResults: any[] = [];
     if (activeSkillCalls.length > 0) {
-      // Step 3: 生成中
-      const imageCount = activeSkillCalls.filter(
-        (c) =>
-          c.skillName === "generateImage" || c.skillName === "imageGenSkill",
+      const imageCount = activeSkillCalls.filter((c) =>
+        isImageGenerationSkillName(c.skillName),
       ).length;
-      const videoCount = activeSkillCalls.filter(
-        (c) =>
-          c.skillName === "generateVideo" || c.skillName === "videoGenSkill",
+      const videoCount = activeSkillCalls.filter((c) =>
+        isVideoGenerationSkillName(c.skillName),
       ).length;
       const genDesc =
         imageCount > 0
@@ -1253,28 +1046,24 @@ export abstract class EnhancedBaseAgent {
       skillResults = await this.executeSkills(activeSkillCalls, task);
     }
 
-    // 7. 提取生成的资产
     const assets = this.extractAssets(skillResults);
-    const assetUrls = assets.map((a) => a.url);
+    const assetUrls = assets.map((asset) => asset.url);
 
-    // Step 4: 完成
     if (assets.length > 0) {
       store.actions.setCurrentTask({
         ...task,
         status: "executing",
-        progressMessage: `已生成 ${assets.length} 张图片，正在添加到画布...`,
+        progressMessage: `已生成 ${assets.length} 项结果，正在整理并同步到画布...`,
         progressStep: 4,
         totalSteps: 4,
       });
     }
 
-    // 8. 组装最终输出
-    // 如果资产生成成功，message 应该是完成反馈；否则使用分析信息
     let finalMessage =
       assets.length > 0
         ? plan.message ||
-        `我已根据方案为您生成了 ${assets.length} 张图片并添加至画布。`
-        : plan.message || plan.analysis || "任务已完成";
+          `我已经根据方案为你生成了 ${assets.length} 张图片，并添加到了画布。`
+        : plan.message || plan.analysis || "任务已完成。";
 
     const postGenerationSummary =
       plan.postGenerationSummary ||
@@ -1286,38 +1075,100 @@ export abstract class EnhancedBaseAgent {
       finalMessage = `${finalMessage}\n\n${postGenerationSummary}`;
     }
 
-    // 彻底清理文本中的 json:generation 块（支持多行和代码块语法），防止前端渲染多余按钮
     finalMessage = finalMessage
       .replace(/```json:generation\s*[\s\S]*?```/g, "")
       .trim();
 
-    // 最终清理环节：重置任务状态，确保进度 UI 彻底消失
     store.actions.setCurrentTask(null);
 
     return {
       ...task,
       status: "completed",
-      output: {
+      output: buildAgentTaskOutput({
         message: finalMessage,
         analysis: plan.analysis,
         preGenerationMessage: plan.preGenerationMessage,
         postGenerationSummary,
-        // 默认直执行模式下，不返回 proposals，避免前端继续展示“立即生成”卡片
         proposals: [],
         assets,
-        imageUrls: assetUrls, // 同步到 imageUrls 供 AgentMessage 列表渲染
         skillCalls: skillResults,
         adjustments:
           assets.length > 0
-            ? this.getAdjustments(message, effectiveProposals)
+            ? this.getAdjustments(message, [])
             : plan.suggestions || [],
+        runtime: buildSkillExecutionRuntimeEnvelope({
+          assets,
+          skillResults,
+          proposals: [],
+        }),
+      }),
+      updatedAt: Date.now(),
+    };
+  }
+
+  private async executeAutonomousMainBrainTask(
+    task: AgentTask,
+  ): Promise<AgentTask> {
+    const store = useAgentStore.getState();
+
+    store.actions.setCurrentTask(
+      buildMainBrainTaskProgressUpdate(
+        task,
+        "understand",
+        "正在读取需求、附件和工作区状态...",
+      ),
+    );
+
+    const runtimeResult = await runMainBrainRuntime({
+      task,
+      analyzeAndPlan: (message, context, attachments, uploadedAttachments, metadata) =>
+        this.analyzeAndPlan(
+          message,
+          context,
+          attachments,
+          uploadedAttachments,
+          metadata,
+        ),
+      executeSkills: (skillCalls, runtimeTask) =>
+        this.executeSkills(skillCalls, runtimeTask),
+      extractAssets: (skillResults) => this.extractAssets(skillResults),
+      onPhaseChange: (phase, detail) => {
+        store.actions.setCurrentTask(
+          buildMainBrainTaskProgressUpdate(task, phase, detail.summary),
+        );
       },
+    });
+
+    const finalPlan = runtimeResult.finalPlan || {};
+    const assets = runtimeResult.allAssets;
+    const resolvedOutput = resolveMainBrainOutput({
+      task,
+      runtimeResult,
+      finalPlan,
+      assets,
+      getAdjustments: (message, proposals) =>
+        this.getAdjustments(message, proposals),
+      composePostGenerationSummary: (currentTask, plan, assetCount) =>
+        this.composePostGenerationSummary(currentTask, plan, assetCount),
+    });
+
+    store.actions.setCurrentTask(null);
+
+    return {
+      ...task,
+      status: "completed",
+      output: buildMainBrainTaskOutput({
+        finalPlan,
+        assets,
+        runtimeResult,
+        resolvedOutput,
+      }),
       updatedAt: Date.now(),
     };
   }
 
   /**
-   * 分析任务并制定执行计划
+   * 鍒嗘瀽浠诲姟骞跺埗瀹氭墽琛岃鍒?
    */
   private async analyzeAndPlan(
     message: string,
@@ -1327,205 +1178,43 @@ export abstract class EnhancedBaseAgent {
     metadata?: Record<string, any>,
   ): Promise<any> {
     try {
+      const allowAutonomousRouting = metadata?.allowAutonomousRouting === true;
       const forceImageToolCall = this.shouldForceImageToolCall(
         message,
         metadata,
       );
 
-      // 按需构建提示词段落，减少不必要的 token 消耗
-      const hasAttachments = attachments && attachments.length > 0;
-      const isEdit =
-        /换成|改成|改为|替换|修改|调整|变成|去掉|删除|移除|去背景|换背景|换颜色|改颜色|抠图|高清|放大画质|upscale|remove|replace|recolor|edit/i.test(
-          message,
-        );
-      const isMultiImage = /(\d+)\s*张|一套|一组|系列|套图/i.test(message);
+      const promptBuild = buildAnalyzePlanPrompt({
+        agentId: this.agentInfo.id,
+        systemPrompt: this.systemPrompt,
+        preferredSkills: this.preferredSkills,
+        message,
+        context,
+        attachments,
+        uploadedAttachments,
+        metadata,
+        forceImageToolCall,
+        allowAutonomousRouting,
+      });
+      const fullPrompt = promptBuild.fullPrompt;
 
-      const smartEditSection = isEdit
-        ? `
-特殊技能 smartEdit（图片编辑）:
-- 删除物体: editType='object-remove', parameters: {"object": "目标名称"}
-- 去除背景: editType='background-remove'
-- 更换颜色: editType='recolor', parameters: {"object": "目标", "color": "颜色"}
-- 替换物体: editType='replace', parameters: {"object": "原物体", "replacement": "新物体"}
-- 放大画质: editType='upscale'
-- sourceUrl 设为 "ATTACHMENT_X"
-`
-        : "";
-
-      const promptLanguagePolicy: 'original-zh' | 'translate-en' =
-        metadata?.promptLanguagePolicy === 'translate-en' ? 'translate-en' : 'original-zh';
-      const promptLanguageRule = promptLanguagePolicy === 'translate-en'
-        ? 'prompt 字段必须使用英文（已开启英译策略）。'
-        : 'prompt 字段可使用中文并优先保留用户中文原文（未开启英译策略）。';
-
-      const productSection =
-        hasAttachments && !["cameron"].includes(this.agentInfo.id)
-          ? `
-【产品识别 - 最高优先级】
-- 如果用户附带了图片（附件），这些图片就是用户的产品/素材。你必须仔细观察每张图片，识别出产品的具体类型、颜色、材质、形状、品牌元素等细节。
-- 在每个 generateImage 的 prompt 中，必须以产品的精确视觉描述开头（例如“哑光黑不锈钢保温杯，竹盖，极简 logo”，不要只写“一个水杯”）。
-- 所有生成的图片必须围绕这些具体产品，不能生成无关的随机产品。
-- 重要：如果用户上传了多张图片并要求生成，你必须为每一张图片独立创建一个 proposal，并在 params 中设置 "referenceImage": "ATTACHMENT_N"。严禁在多图场景下只参考第一张图。
-- 每个 generateImage 的 prompt 必须以产品的精确视觉描述开头。
-`
-          : "";
-
-      const quantitySection = `
-【输出数量规则 — 最重要】
-- 默认只返回 1 个 proposal（1张图/1个视频）。用户说"做个海报"、"设计一个logo"、"帮我做张图" → 只返回 1 个 proposal。
-- 只有用户明确要求多张时才返回多个 proposals：
-  - "5张副图" → 5 个 proposals
-  - "一套图" / "一组" / "系列" → 3-5 个 proposals
-  - "3张海报" → 3 个 proposals
-- 修改/编辑请求说"改成XX"/"换成XX"/"去掉XX"）→ 只返回 1 个 proposal，使用 smartEdit 技能。
-- 绝对不要在用户没要求多张的情况下返回多个 proposals。1个请求 = 1张图，这是默认行为。
-`;
-
-      const multiImageSection = isMultiImage
-        ? `
-【多图规则（仅当用户明确要求时）】
-- 每个 proposal 必须包含自己的 skillCalls 数组，内容/角度/用途各不相同。
-- 电商套图（亚马逊副图）应包含：白底主图、信息图、场景图、细节特写、尺寸包装图等。
-- 不能返回少于用户要求数量的 proposals。
-`
-        : "";
-
-      const forcedToolSection = forceImageToolCall
-        ? `
-【强制工具调用规则（绝对必须）】
-- 本次请求已判定为“必须出图”任务。
-- 你不能只返回 message/analysis。
-- 你必须返回可执行的 skillCalls，并且至少包含 1 个 skillName="generateImage"。
-- 若未返回 generateImage skillCalls，本次输出将被系统判定为失败。
-`
-        : "";
-
-      // 过滤 base64，只保留正常 https URL，防止 Token 爆炸
-      const multimodalRefUrls = (metadata?.multimodalContext?.referenceImageUrls || [])
-        .filter((u: string) => /^https?:\/\//i.test(u))
-        .slice(0, 4);
-      const multimodalReferenceSummary =
-        typeof metadata?.multimodalContext?.referenceSummary === 'string'
-          ? truncateText(metadata.multimodalContext.referenceSummary.trim(), MAX_REFERENCE_SUMMARY_CHARS)
-          : '';
-      const multimodalSection =
-        multimodalRefUrls.length > 0
-          ? `
-【多模态参考图 URL（优先用于 Tool 参数）】
-${multimodalRefUrls
-            .map((url: string, index: number) => `- REF_URL_${index}: ${url}`)
-            .join("\n")}
-- 参考摘要: ${multimodalReferenceSummary || '请将这些参考图视为同一主体的多角度/多细节锚点。'}
-- 当你构造 generateImage 参数时，优先把参考图填入 reference_image_url（也可同步填入 init_image）。
-- 多张参考图必须优先写入 referenceImages，只有单张参考时才仅使用 referenceImage。
-- 若使用 ATTACHMENT_N，也请同时保证 referenceImage 字段存在。`
-          : "";
-
-      const topicPinnedContext =
-        typeof metadata?.topicPinnedContext === "string" && metadata.topicPinnedContext.trim().length > 0
-          ? `
-【话题长期记忆（必须优先遵守）】
-${truncateText(metadata.topicPinnedContext, MAX_TOPIC_CONTEXT_CHARS)}
-`
-          : "";
-
-      const designSession = context.designSession;
-      const compactConversationHistory = (context.conversationHistory || [])
-        .slice(-MAX_ANALYZE_HISTORY_MESSAGES)
-        .map((msg) => {
-          const roleName = msg.role === "user" ? "用户" : "智能助手";
-          // 清洁文本：剥离 base64 data URL 防止 Token 爆炸
-          const cleanText = truncateText(
-            String(msg.text || "")
-              .replace(/data:[a-z0-9+\-]+\/[a-z0-9+\-]+;base64,[A-Za-z0-9+/=]+/gi, '[图片]')
-              .replace(/https?:\/\/[^\s"']{80,}/g, '[URL]'),
-            MAX_MESSAGE_TEXT_CHARS
-          );
-          // 清洁附件：只保留短 URL，剥离 base64
-          const cleanAttachments = (msg.attachments || [])
-            .slice(0, 3)
-            .map((a: string) =>
-              /^data:/.test(a) ? '[已上传图片]' :
-                a.length > 120 ? '[URL]' : a
-            );
-          const attachmentsText = cleanAttachments.length > 0
-            ? ` [附图/素材: ${cleanAttachments.join(", ")}${(msg.attachments?.length || 0) > 3 ? ", ..." : ""}]`
-            : "";
-          return `${roleName}: ${cleanText}${attachmentsText}`;
-        })
-        .join("\n");
-      const truncateUrl = (s: string) => s.length > 60 ? s.slice(0, 57) + '...' : s;
-      const designSessionSection = designSession
-        ? `
-【统一设计会话（必须继承）】
-- 当前任务模式: ${designSession.taskMode}
-- 已批准资产: ${(designSession.approvedAssetIds || []).slice(-3).map(truncateUrl).join(', ') || '无'}
-- 主体锚点: ${(designSession.subjectAnchors || []).slice(-3).map(truncateUrl).join(', ') || '无'}
-- 参考摘要: ${truncateText(designSession.referenceSummary || '无', MAX_REFERENCE_SUMMARY_CHARS)}
-- 禁止变更: ${(designSession.forbiddenChanges || []).join('；') || '无'}
-`
-        : "";
-
-      const fullPrompt = `${buildRuntimeRolePrompt(this.systemPrompt, metadata)}
-
-【语言要求】你必须用中文回复所有内容（analysis、message、title、description 等字段全部用中文）。${promptLanguageRule}
-
-项目信息:
-- 项目名称: ${context.projectTitle}
-- 品牌信息: ${compactJson(context.brandInfo || {}, MAX_BRAND_INFO_CHARS)}
-- 已有素材数量: ${context.existingAssets.length}
-
-附件列表:
-${(attachments || [])
-          .map((file, index) => {
-            const info = (file as any).markerInfo;
-            const markerName = (file as any).markerName;
-            const uploadedUrl =
-              uploadedAttachments && uploadedAttachments[index]
-                ? `\n- 🌐 公网预览图: ${uploadedAttachments[index]}`
-                : "";
-
-            if (info) {
-              const ratio = (info.width / info.height).toFixed(2);
-              return `- 附件 ${index + 1}: [画布选区]${markerName ? ` (描述/标识: "${markerName}")` : ""} (尺寸: ${info.width}x${info.height}, 比例: ${ratio})。这是用户的产品图片，必须作为参考图使用。设置 referenceImage 为 'ATTACHMENT_${index}'。${uploadedUrl}`;
-            }
-            return `- 附件 ${index + 1}: ${file.name}${markerName ? ` (描述/标识: "${markerName}")` : ""} (${file.type})。引用方式: 'ATTACHMENT_${index}'${uploadedUrl}`;
-          })
-          .join("\n")}
-
-对话历史 (Context):
-${compactConversationHistory || '无'}
-
-可用技能: ${this.preferredSkills.join(", ")}
-${smartEditSection}
-用户请求: ${message}
-${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}
-请分析用户需求，默认返回可直接执行的 JSON（不要让用户二次点击确认）:
-{
-  "analysis": "用中文简要分析用户需求",
-  "preGenerationMessage": "调用工具前的设计师沟通文案，需复述参考图内容并说明风格与构图策略",
-  "skillCalls": [{"skillName": "generateImage", "params": {"prompt": "...", "referenceImages": ["ATTACHMENT_0", "ATTACHMENT_1"], "referenceImage": "ATTACHMENT_0", "aspectRatio": "1:1", "model": "Nano Banana Pro"}}],
-  "message": "用中文回复用户",
-  "postGenerationSummary": "工具执行后的简短设计复盘，描述灯光/色调/构图亮点",
-  "suggestions": ["可选：如果需要用户提供更多信息或选择项，可在此提供1-4个建议短语供用户快速点击，例如'温馨日常故事'"]
-}
-仅当用户明确要求“先看方案/给几个方案再选”时，才返回 proposals 字段。`;
-
-      // Build content parts - text + image attachments for visual understanding
-      const parts: any[] = [{ text: fullPrompt }];
+      const attachmentInlineParts = (
+        await Promise.all((attachments || []).map((file) => fileToInlinePart(file)))
+      ).filter(Boolean) as Array<{ inlineData: { mimeType: string; data: string } }>;
+      const parts: any[] = [{ text: fullPrompt }, ...attachmentInlineParts];
 
       const selectedMode = useAgentStore.getState().modelMode || 'fast';
       const bestModel = getBestModelSelection(
-        selectedMode === 'thinking' ? "thinking" : "text",
+        selectedMode === 'thinking' ? 'thinking' : 'text',
       );
 
       const payloadDiagnostics = {
         promptChars: fullPrompt.length,
-        historyCount: (context.conversationHistory || []).length,
-        historyUsed: Math.min((context.conversationHistory || []).length, MAX_ANALYZE_HISTORY_MESSAGES),
+        historyCount: promptBuild.historyCount,
+        historyUsed: promptBuild.historyCount,
         attachmentCount: attachments?.length || 0,
-        uploadedAttachmentCount: uploadedAttachments?.length || 0,
-        includesInlineImages: false,
+        uploadedAttachmentCount: metadata?.multimodalContext?.uploadedAttachmentCount || 0,
+        includesInlineImages: attachmentInlineParts.length > 0,
         estimatedPayloadChars: JSON.stringify({ prompt: fullPrompt }).length,
         model: bestModel.modelId,
         providerId: bestModel.providerId || null,
@@ -1537,7 +1226,7 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
         toolConfig.tools = [{ googleSearch: {} }];
       }
 
-      const forcedSchema = forceImageToolCall
+      const forcedSchema = forceImageToolCall && !allowAutonomousRouting
         ? {
           type: Type.OBJECT,
           properties: {
@@ -1561,15 +1250,15 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
                       properties: {
                         skillName: {
                           type: Type.STRING,
-                          enum: ["generateImage"],
+                          enum: ['generateImage'],
                         },
                         params: IMAGE_TOOL_PARAMS_SCHEMA,
                       },
-                      required: ["skillName", "params"],
+                      required: ['skillName', 'params'],
                     },
                   },
                 },
-                required: ["id", "title", "description", "skillCalls"],
+                required: ['id', 'title', 'description', 'skillCalls'],
               },
             },
             skillCalls: {
@@ -1578,10 +1267,10 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  skillName: { type: Type.STRING, enum: ["generateImage"] },
+                  skillName: { type: Type.STRING, enum: ['generateImage'] },
                   params: IMAGE_TOOL_PARAMS_SCHEMA,
                 },
-                required: ["skillName", "params"],
+                required: ['skillName', 'params'],
               },
             },
             suggestions: {
@@ -1593,53 +1282,40 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
         : undefined;
 
       const response = await withTimeout(
-        retryAsync(
-          async () => {
+        retryMainBrainOperation({
+          operation: async () => {
             console.log(
-              `[analyzeAndPlan] [${selectedMode}] 发起分析请求，选用模型: ${bestModel.modelId} @ ${bestModel.providerId || 'default'}`,
+              `[analyzeAndPlan] [${selectedMode}] ???????????: ${bestModel.modelId} @ ${bestModel.providerId || 'default'}`,
             );
             return generateJsonResponse({
               model: bestModel.modelId,
               providerId: bestModel.providerId || undefined,
               parts,
-              temperature: forceImageToolCall ? 0.2 : 0.7,
+              temperature: forceImageToolCall && !allowAutonomousRouting ? 0.2 : 0.7,
               ...(forcedSchema ? { responseSchema: forcedSchema } : {}),
               ...(toolConfig?.tools ? { tools: toolConfig.tools } : {}),
               operation: `${this.agentInfo.id}.analyzeAndPlan`
             });
           },
-          3, // 增加到 3 次重试，应付中转站波动
-        ),
-        120000, // 120 秒超时
-        "analyzeAndPlan 超时",
+          label: `${this.agentInfo.id}.analyzeAndPlan`,
+          maxRetries: 3,
+        }),
+        120000,
+        'analyzeAndPlan ??',
       ) as any;
-      console.log(`[${this.agentInfo.id}] [analyzeAndPlan] 收到模型回复`);
+      console.log(`[${this.agentInfo.id}] [analyzeAndPlan] ??????`);
 
-      const parsedPlan = this.parseResponse(response.text || "{}");
+      const parsedPlan = normalizeAgentJsonResponse(response.text || '{}');
 
-      // 最终兜底：强制出图时不允许只返回文本。
-      if (forceImageToolCall) {
-        const topCalls = Array.isArray(parsedPlan.skillCalls)
-          ? parsedPlan.skillCalls
-          : [];
-        const proposalCalls = Array.isArray(parsedPlan.proposals)
-          ? parsedPlan.proposals.flatMap((p: any) =>
-            Array.isArray(p.skillCalls) ? p.skillCalls : [],
-          )
-          : [];
-        const hasGenerateImage = [...topCalls, ...proposalCalls].some(
-          (c: any) => /^generateImage$/i.test(c?.skillName || ""),
-        );
-
-        if (!hasGenerateImage) {
-          parsedPlan.skillCalls = [
-            this.buildForcedGenerateImageCall(message, attachments, metadata),
-          ];
-          parsedPlan.message = "已触发强制出图流程，正在为您生成图像。";
-        }
+      if (forceImageToolCall && !allowAutonomousRouting) {
+        ensureForcedImagePlan({
+          parsedPlan,
+          message,
+          attachments,
+          metadata,
+        });
       }
 
-      // Handle Grounding Metadata (Sources)
       const groundingChunks =
         response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (groundingChunks && groundingChunks.length > 0) {
@@ -1653,7 +1329,9 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
           .filter((s: any) => s) as string[];
 
         if (sources.length > 0) {
-          const sourceText = `\n\n**参考来源:**\n${sources.map((s: string) => `- ${s}`).join("\n")}`;
+          const sourceText = `\n\n**参考来源**\n${sources
+            .map((s: string) => `- ${s}`)
+            .join("\n")}`;
           if (parsedPlan.message) {
             parsedPlan.message += sourceText;
           }
@@ -1667,61 +1345,17 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
     } catch (error) {
       throw errorHandler.handleError(error, {
         agent: this.agentInfo.id,
-        function: "analyzeAndPlan",
+        function: 'analyzeAndPlan',
       });
     }
   }
 
-  /**
-   * 执行Skills（带完善错误处理）
-   */
   protected async executeSkills(
     skillCalls: any[],
     task: AgentTask,
   ): Promise<any[]> {
-    // Skill name alias mapping (Gemini may return old-style names)
-    const SKILL_ALIASES: Record<string, string> = {
-      imageGenSkill: "generateImage",
-      videoGenSkill: "generateVideo",
-      copyGenSkill: "generateCopy",
-      textExtractSkill: "extractText",
-      regionAnalyzeSkill: "analyzeRegion",
-      smartEditSkill: "smartEdit",
-      exportSkill: "export",
-      touchEditSkill: "touchEdit",
-    };
-
-    const normalizedCalls = (skillCalls || []).map((rawCall) => {
-      const call = this.normalizeImageReferenceParams(rawCall);
-      if (SKILL_ALIASES[call.skillName]) {
-        call.skillName = SKILL_ALIASES[call.skillName];
-      }
-      return call;
-    });
-
-    // --- 进度反馈增强逻辑 (Patch v16) ---
-    const progressSteps = [
-      "正在连接 Nano Banana Pro 模型...",
-      "正在分析视觉元素与构图构思...",
-      "正在渲染高动态范围光影细节...",
-      "正在进行 2K 超清分辨率优化...",
-      "正在执行最后的像素级精修...",
-      "正在为您将作品同步至画布..."
-    ];
-
-    let pIdx = 0;
-    const pInterval = setInterval(() => {
-      if (pIdx < progressSteps.length) {
-        useAgentStore.getState().actions.setCurrentTask({
-          ...task,
-          status: "executing",
-          progressMessage: progressSteps[pIdx],
-          progressStep: 3,
-          totalSteps: 4,
-        });
-        pIdx++;
-      }
-    }, 3000);
+    const normalizedCalls = normalizeSkillCalls(skillCalls || []);
+    const stopProgress = this.startSkillExecutionProgress(task, normalizedCalls);
 
     try {
       const jobs = normalizedCalls.map((call, callIndex) => async () => {
@@ -1731,34 +1365,21 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
             callIndex,
             task,
           );
-          return { ...call, result, success: true };
+          return buildSuccessfulSkillExecutionResult(call, result);
         } catch (error) {
           const appError = errorHandler.handleError(error, {
             skill: call?.skillName,
             agent: this.agentInfo.id,
           });
-          return {
-            ...call,
-            error: appError.message,
-            success: false,
-          };
+          return buildFailedSkillExecutionResult(call, appError.message);
         }
       });
 
       const settled = await runWithConcurrency(jobs, this.maxConcurrency);
-      return settled.map((item) => {
-        if (item.status === "fulfilled") {
-          return item.value;
-        }
-        return {
-          skillName: "unknown",
-          success: false,
-          error: String(item.reason || "Unknown error"),
-        };
-      });
+      return normalizeSettledSkillExecutionResults(settled);
 
     } finally {
-      clearInterval(pInterval);
+      stopProgress?.();
     }
   }
 
@@ -1771,327 +1392,44 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
       `[${this.agentInfo.id}] [executeSkills] 解析技能参数: ${call.skillName}`,
     );
 
-    if (typeof call.params === "string") {
-      try {
-        let cleanedParams = call.params.trim();
-        const codeBlockMatch = cleanedParams.match(
-          /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
-        );
-        if (codeBlockMatch) {
-          cleanedParams = codeBlockMatch[1].trim();
-        }
-        call.params = JSON.parse(cleanedParams);
-      } catch (parseError) {
-        console.error(
-          `[${this.agentInfo.id}] 参数 JSON 解析失败:`,
-          parseError,
-        );
-        call.params = {};
-      }
+    const prepared = await prepareSkillExecutionCall({
+      call,
+      task,
+      callIndex,
+      maxReferenceImages: MAX_REFERENCE_IMAGES,
+    });
+
+    const telemetry = buildReferenceInjectionTelemetry({
+      prepared,
+      call,
+      task,
+      maxReferenceImages: MAX_REFERENCE_IMAGES,
+    });
+
+    if (telemetry?.warningMessage) {
+      console.warn(`[${this.agentInfo.id}] ${telemetry.warningMessage}`);
     }
 
-    if (!call.params || typeof call.params !== "object") {
-      call.params = {};
+    if (telemetry) {
+      console.info(
+        `[${this.agentInfo.id}] reference injection stats`,
+        telemetry.stats,
+      );
     }
 
-    if (!AVAILABLE_SKILLS[call.skillName as keyof typeof AVAILABLE_SKILLS]) {
-      throw new Error(`Skill ${call.skillName} not found`);
-    }
-
-    const preferredAspectRatio = task.input.metadata?.preferredAspectRatio;
-    const preferredImageSize = task.input.metadata?.preferredImageSize;
-    const creationMode = task.input.metadata?.creationMode;
-    const promptLanguagePolicy =
-      task.input.metadata?.promptLanguagePolicy === "translate-en"
-        ? "translate-en"
-        : "original-zh";
-    const textRenderPolicy = task.input.metadata?.textRenderPolicy;
-    if (
-      typeof preferredAspectRatio === "string" &&
-      preferredAspectRatio &&
-      ((creationMode === "image" && call.skillName === "generateImage") ||
-        (creationMode === "video" && call.skillName === "generateVideo"))
-    ) {
-      call.params = call.params || {};
-      call.params.aspectRatio = preferredAspectRatio;
-    }
-
-    // 把用户选择的分辨率（1K / 2K / 4K）注入到 generateImage，确保 UI 设置生效
-    if (
-      call.skillName === "generateImage" &&
-      typeof preferredImageSize === "string" &&
-      preferredImageSize &&
-      !call.params.imageSize // 只在 AI 没有明确指定时才覆盖
-    ) {
-      call.params = call.params || {};
-      call.params.imageSize = preferredImageSize;
-    }
-
-    // 把语言策略/画面文字策略注入到 generateImage，确保与输入框开关一致
-    if (call.skillName === "generateImage") {
-      call.params = call.params || {};
-      if (!call.params.promptLanguagePolicy) {
-        call.params.promptLanguagePolicy = promptLanguagePolicy;
-      }
-      if (!call.params.textPolicy && textRenderPolicy) {
-        call.params.textPolicy = {
-          enforceChinese: textRenderPolicy.enforceChinese !== false,
-          requiredCopy:
-            typeof textRenderPolicy.requiredCopy === "string"
-              ? textRenderPolicy.requiredCopy.trim() || undefined
-              : undefined,
-        };
-      }
-    }
-
-    if (
-      (call.skillName === "generateImage" ||
-        call.skillName === "generateVideo" ||
-        call.skillName === "smartEdit") &&
-      task.input.metadata?.forceSkills
-    ) {
-      const refKey =
-        call.skillName === "smartEdit" ? "sourceUrl" : "referenceImage";
-      const refVal = call.params?.[refKey];
-      const requiresAttachment =
-        (typeof refVal === "string" && refVal.startsWith("ATTACHMENT_")) ||
-        call.skillName === "smartEdit";
-
-      if (
-        requiresAttachment &&
-        (!task.input.attachments || task.input.attachments.length === 0)
-      ) {
-        throw new Error(
-          "执行方案时缺少参考附件，请先在输入区保留产品图/标记图后再执行。",
-        );
-      }
-    }
-
-    if (
-      call.skillName === "generateImage" ||
-      call.skillName === "generateVideo" ||
-      call.skillName === "smartEdit"
-    ) {
-      if (
-        call.skillName === "generateImage" ||
-        call.skillName === "generateVideo"
-      ) {
-        if (call.skillName === "generateImage") {
-          if (typeof call.params.referenceStrength !== "number") {
-            call.params.referenceStrength = 0.75;
-          }
-          if (!call.params.referencePriority) {
-            call.params.referencePriority = task.input.context.designSession?.subjectAnchors?.length && task.input.context.designSession.subjectAnchors.length > 1
-              ? "all"
-              : "first";
-          }
-          if (!call.params.referenceMode) {
-            call.params.referenceMode = "product";
-          }
-          if (!call.params.consistencyContext) {
-            call.params.consistencyContext = {
-              approvedAssetIds: task.input.context.designSession?.approvedAssetIds || [],
-              subjectAnchors: task.input.context.designSession?.subjectAnchors || [],
-              referenceSummary: task.input.context.designSession?.referenceSummary,
-              forbiddenChanges: task.input.context.designSession?.forbiddenChanges || [],
-            };
-          }
-        }
-
-        const resolvedRefs = await this.resolveReferenceImages(task, call.params);
-        const expectedRefCount = Math.min(
-          resolvedRefs.sourceCount,
-          MAX_REFERENCE_IMAGES,
-        );
-
-        if (resolvedRefs.references.length > 0) {
-          const callRefCount = Array.isArray(call.params.referenceImages)
-            ? call.params.referenceImages.length
-            : 0;
-          if (callRefCount !== expectedRefCount) {
-            console.warn(
-              `[${this.agentInfo.id}] Auto-repairing referenceImages for ${call.skillName}: expected=${expectedRefCount}, actual=${callRefCount}`,
-            );
-          }
-
-          call.params.referenceImages = resolvedRefs.references;
-
-          const firstRef = resolvedRefs.references[0];
-          if (!call.params.referenceImage) call.params.referenceImage = firstRef;
-          if (!call.params.reference_image_url)
-            call.params.reference_image_url = firstRef;
-          if (!call.params.init_image) call.params.init_image = firstRef;
-
-          if (resolvedRefs.truncated) {
-            console.warn(
-              `[${this.agentInfo.id}] referenceImages truncated to ${MAX_REFERENCE_IMAGES}`,
-            );
-            if (typeof call.params.prompt === "string" && call.params.prompt.trim()) {
-              call.params.prompt = `${call.params.prompt}\n\nReference note: ${resolvedRefs.sourceCount} reference images were provided. Due to model input limits, ${resolvedRefs.references.length} representative references were injected. Keep composition, color language, and subject traits consistent with all provided references.`;
-            }
-          }
-        }
-
-        // ⚠️ task 来自 immer store，metadata 是冻结对象，不能直接赋值
-        // 必须通过 structuredClone 或 spread 创建可写副本，不修改原对象
-        const injectionStats = {
-          maxReferenceImages: MAX_REFERENCE_IMAGES,
-          uploaded_total: task.input.uploadedAttachments?.length || 0,
-          source_total: resolvedRefs.sourceCount,
-          injected_total: resolvedRefs.references.length,
-          truncated: resolvedRefs.truncated,
-          omitted_total: resolvedRefs.omittedCount,
-        };
-        console.info(
-          `[${this.agentInfo.id}] reference injection stats`,
-          injectionStats,
-        );
-      }
-
-      const paramKey =
-        call.skillName === "smartEdit" ? "sourceUrl" : "referenceImage";
-
-      if (
-        call.skillName === "generateImage" &&
-        (!Array.isArray(call.params.referenceImages) ||
-          call.params.referenceImages.length === 0) &&
-        !call.params[paramKey] &&
-        task.input.attachments &&
-        task.input.attachments.length > 0
-      ) {
-        const imageAttachments = task.input.attachments.filter(
-          (f) => f.type && f.type.startsWith("image/"),
-        );
-        if (imageAttachments.length > 0) {
-          const attachIdx =
-            imageAttachments.length === 1
-              ? 0
-              : callIndex % imageAttachments.length;
-          const actualIdx = task.input.attachments.indexOf(
-            imageAttachments[attachIdx],
-          );
-          call.params[paramKey] = `ATTACHMENT_${actualIdx}`;
-          console.log(
-            `[${this.agentInfo.id}] Auto-injected referenceImage=ATTACHMENT_${actualIdx} for proposal #${callIndex}`,
-          );
-        }
-      }
-
-      if (
-        call.params[paramKey] &&
-        typeof call.params[paramKey] === "string" &&
-        call.params[paramKey].startsWith("ATTACHMENT_")
-      ) {
-        const index = parseInt(call.params[paramKey].split("_")[1]);
-        const selectedProvider = String(task.input.metadata?.imageHostProvider || 'none');
-        const preferHostedUrls = selectedProvider !== 'none';
-        const hostedUrl = task.input.uploadedAttachments?.[index];
-
-        if (preferHostedUrls && hostedUrl && /^https?:\/\//i.test(hostedUrl)) {
-          call.params[paramKey] = hostedUrl;
-        } else {
-          const availableAttachments = task.input.attachments || [];
-          if (availableAttachments[index]) {
-            const file = availableAttachments[index];
-            const reader = new FileReader();
-            const base64 = await new Promise<string>((resolve) => {
-              reader.onload = () => {
-                const res = reader.result as string;
-                resolve(res);
-              };
-              reader.readAsDataURL(file);
-            });
-            call.params[paramKey] = base64;
-
-            if (call.skillName === "smartEdit" && (file as any).markerInfo) {
-              const info = (file as any).markerInfo;
-              const ratio = info.width / info.height;
-              let aspect = "1:1";
-              if (ratio > 1.5) aspect = "16:9";
-              else if (ratio < 0.7) aspect = "9:16";
-              else if (ratio > 1.2) aspect = "4:3";
-              else if (ratio < 0.8) aspect = "3:4";
-              call.params.aspectRatio = aspect;
-            }
-          }
-        }
-      }
-    }
-
-    const skillTimeout = SKILL_TIMEOUTS[call.skillName] || DEFAULT_SKILL_TIMEOUT;
-    return Promise.race([
-      executeSkill(call.skillName, call.params),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(`Skill ${call.skillName} 执行超时(${skillTimeout / 1000}s)`),
-            ),
-          skillTimeout,
-        ),
-      ),
-    ]);
-  }
-
-  private async resolveReferenceImages(
-    task: AgentTask,
-    params: Record<string, any>,
-  ): Promise<{
-    references: string[];
-    sourceCount: number;
-    truncated: boolean;
-    omittedCount: number;
-  }> {
-    const { limitedCandidates, sourceCount, truncated } =
-      collectReferenceCandidates(params, task.input, MAX_REFERENCE_IMAGES);
-    const references: string[] = [];
-
-    for (const item of limitedCandidates) {
-      const resolved = await this.resolveReferenceItem(task, item);
-      if (resolved) references.push(resolved);
-    }
-
-    return {
-      references,
-      sourceCount,
-      truncated,
-      omittedCount: Math.max(0, sourceCount - references.length),
-    };
-  }
-
-  private async resolveReferenceItem(
-    task: AgentTask,
-    value: string,
-  ): Promise<string | null> {
-    const selectedProvider = String(task.input.metadata?.imageHostProvider || 'none');
-    const preferHostedUrls = selectedProvider !== 'none';
-
-    if (!value.startsWith("ATTACHMENT_")) return value;
-
-    const idx = Number.parseInt(value.split("_")[1] || "", 10);
-    if (preferHostedUrls) {
-      const hostedUrl = task.input.uploadedAttachments?.[idx];
-      if (hostedUrl && /^https?:\/\//i.test(hostedUrl)) {
-        return hostedUrl;
-      }
-    }
-
-    const file = task.input.attachments?.[idx];
-    if (!file) return null;
-
-    return new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string) || "");
-      reader.onerror = () => resolve("");
-      reader.readAsDataURL(file);
-    }).then((v) => (v ? v : null));
+    return executeSkillWithTimeout({
+      skillName: call.skillName,
+      params: call.params,
+      timeoutMs: resolveSkillTimeoutMs(call.skillName),
+      executeSkillFn: executeSkill,
+    });
   }
 
   /**
-   * 从技能结果中提取资产
+   * 浠庢妧鑳界粨鏋滀腑鎻愬彇璧勪骇
    */
   protected extractAssets(skillCalls: any[]): GeneratedAsset[] {
-    // 记录失败的 skillCalls 以便调试
+    // 璁板綍澶辫触鐨?skillCalls 浠ヤ究璋冭瘯
     const failed = skillCalls.filter((s) => !s.success);
     if (failed.length > 0) {
       console.warn(
@@ -2102,20 +1440,13 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
 
     return skillCalls
       .filter(
-        (s) =>
-          s.success &&
-          s.result &&
-          (s.skillName === "generateImage" ||
-            s.skillName === "generateVideo" ||
-            s.skillName === "smartEdit" ||
-            s.skillName === "touchEdit"),
+        (s) => s.success && s.result && isAssetProducingSkillName(s.skillName),
       )
       .map((s) => ({
         id: `asset-${Date.now()}-${Math.random()}`,
-        type:
-          s.skillName === "generateVideo"
-            ? ("video" as const)
-            : ("image" as const),
+        type: isVideoGenerationSkillName(s.skillName)
+          ? ("video" as const)
+          : ("image" as const),
         url: s.result,
         metadata: {
           prompt: s.params?.prompt || s.params?.editType || "",
@@ -2126,11 +1457,11 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 根据任务类型动态生成快捷操作按钮
+   * 鏍规嵁浠诲姟绫诲瀷鍔ㄦ€佺敓鎴愬揩鎹锋搷浣滄寜閽?
    */
   private getAdjustments(message: string, proposals: any[]): string[] {
     const isEdit =
-      /换成|改成|改为|替换|修改|调整|去掉|删除|移除|去除|去背景|换背景|换颜色|改颜色|recolor|remove|replace/i.test(
+      /鎹㈡垚|鏀规垚|鏀逛负|鏇挎崲|淇敼|璋冩暣|鍘绘帀|鍒犻櫎|绉婚櫎|鍘婚櫎|鍘昏儗鏅瘄鎹㈣儗鏅瘄鎹㈤鑹瞸鏀归鑹瞸recolor|remove|replace/i.test(
         message,
       );
 
@@ -2138,9 +1469,9 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
       return ["继续微调", "一键抠图", "提升画质", "尝试不同配色"];
     }
 
-    const isLandscape = /(横版|横屏|宽屏|16:9|landscape)/i.test(message);
-    const isPortrait = /(竖版|竖屏|手机屏|9:16|portrait)/i.test(message);
-    const isSquare = /(方图|1:1|正方形|square)/i.test(message);
+    const isLandscape = /(妯増|妯睆|瀹藉睆|16:9|landscape)/i.test(message);
+    const isPortrait = /(绔栫増|绔栧睆|鎵嬫満灞弢9:16|portrait)/i.test(message);
+    const isSquare = /(鏂瑰浘|1:1|姝ｆ柟褰square)/i.test(message);
 
     const suggestions = [];
     if (isLandscape) suggestions.push("换成竖版");
@@ -2163,10 +1494,10 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
         : "电影质感与高级商业构图";
 
     if (refCount > 0) {
-      return `我看到了您上传的 ${refCount} 张参考图，接下来我会围绕主体特征进行设计，采用${styleHint}的方向来完成本次视觉稿。`;
+      return `我看到了您上传的 ${refCount} 张参考图，接下来我会围绕主体特征进行设计，并按“${styleHint}”这个方向完成本次视觉稿。`;
     }
 
-    return `我已理解您的需求，接下来我会以${styleHint}为核心，先完成一版主视觉并保证构图与氛围统一。`;
+    return `我已理解您的需求，接下来我会以“${styleHint}”为核心，先完成一版主视觉，并保证构图与氛围统一。`;
   }
 
   private composePostGenerationSummary(
@@ -2178,102 +1509,30 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
       (task.input.uploadedAttachments?.length || 0) > 0 ||
       (task.input.metadata?.multimodalContext?.referenceImageUrls?.length || 0) >
       0;
-    const lighting = /夜景|cinematic|电影|neon|霓虹/i.test(
+    const lighting = /澶滄櫙|cinematic|鐢靛奖|neon|闇撹櫣/i.test(
       task.input.message || "",
     )
       ? "光影层次更偏电影感"
       : "光线分布更强调主体识别";
-    const colorTone = /暖|warm|橙|gold/i.test(task.input.message || "")
+    const colorTone = /暖|warm|金|gold/i.test(task.input.message || "")
       ? "色调偏暖，氛围更亲和"
-      : "色调控制在清晰且耐看的商业区间";
+      : "色调控制在清爽且耐看的商业区间";
 
     const planTail =
       typeof plan?.analysis === "string" && plan.analysis.trim().length > 0
         ? `，并延续了“${plan.analysis.trim().slice(0, 24)}”的设计目标`
         : "";
 
-    return `设计复盘：本次共输出 ${assetCount} 张结果，${lighting}，${colorTone}，构图重点突出核心信息${planTail}${hasRefs ? "，并保持了与参考图的主体一致性" : ""}。`;
-  }
-
-  private normalizeImageReferenceParams(call: any): any {
-    if (!call?.params || typeof call.params !== "object") return call;
-    const params = call.params as Record<string, any>;
-
-    const aliasRef =
-      params.referenceImage ||
-      params.referenceImageUrl ||
-      params.reference_image_url ||
-      params.initImage ||
-      params.init_image;
-
-    if (aliasRef && !params.referenceImage) {
-      params.referenceImage = aliasRef;
-    }
-
-    return { ...call, params };
+    return `设计复盘：本次共输出 ${assetCount} 张结果，${lighting}，${colorTone}，构图重点突出核心信息${planTail}${hasRefs ? "，并保持了与参考图主体的一致性" : ""}。`;
   }
 
   /**
-   * 解析响应
+   * 瑙ｆ瀽鍝嶅簲
    */
   protected parseResponse(response: string): any {
-    try {
-      // 移除markdown代码块
-      let cleaned = response.trim();
-      const codeBlockMatch = cleaned.match(
-        /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
-      );
-      if (codeBlockMatch) {
-        cleaned = codeBlockMatch[1].trim();
-      }
-
-      cleaned = cleaned.replace(/,\s*([\]}])/g, "$1"); // Fix common trailing comma json errors
-
-      const parsed = JSON.parse(cleaned);
-
-      if (Array.isArray(parsed)) {
-        return { proposals: parsed, message: "为您生成了以下方案" };
-      }
-
-      return parsed;
-    } catch (error) {
-      console.warn(
-        "[Agent] JSON parse failed, trying more aggressive extraction",
-      );
-
-      try {
-        const matchObject = response.match(/\{[\s\S]*\}/);
-        const matchArray = response.match(/\[[\s\S]*\]/);
-
-        if (
-          matchObject &&
-          (!matchArray || matchObject[0].length > matchArray[0].length)
-        ) {
-          let cleanedData = matchObject[0].replace(/,\s*([\]}])/g, "$1");
-          return JSON.parse(cleanedData);
-        } else if (matchArray) {
-          let cleanedData = matchArray[0].replace(/,\s*([\]}])/g, "$1");
-          const parsed = JSON.parse(cleanedData);
-          if (Array.isArray(parsed)) {
-            return { proposals: parsed, message: "为您生成了以下方案" };
-          }
-        }
-      } catch (e2) {
-        console.warn("[Agent] Deep JSON extraction failed too", e2);
-      }
-
-      // 彻底移除所有 json:generation 块，并清理多余空行，确保最终文案纯净
-      const cleanedResponse = response
-        .replace(/```json:generation\s*[\s\S]*?```/g, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-      return { message: cleanedResponse, skillCalls: [] };
-    }
+    return normalizeAgentJsonResponse(response);
   }
 
-  /**
-   * 输入验证
-   */
   private validateInput(task: AgentTask): void {
     if (!task.input.message || !task.input.message.trim()) {
       throw errorHandler.createError(
@@ -2297,7 +1556,7 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 更新任务状态
+   * 鏇存柊浠诲姟鐘舵€?
    */
   private updateTaskStatus(
     task: AgentTask,
@@ -2311,7 +1570,7 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 缓存结果（带TTL）
+   * 缂撳瓨缁撴灉锛堝甫TTL锛?
    */
   private cacheResult(task: AgentTask, result: AgentTask): void {
     const key = this.getCacheKey(task);
@@ -2319,14 +1578,14 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 获取缓存结果（带TTL检查）
+   * 鑾峰彇缂撳瓨缁撴灉锛堝甫TTL妫€鏌ワ級
    */
   private getCachedResult(task: AgentTask): AgentTask | null {
     const key = this.getCacheKey(task);
     const cached = this.executionCache.get(key);
     if (!cached) return null;
 
-    // TTL: 5分钟过期
+    // TTL: 5鍒嗛挓杩囨湡
     const CACHE_TTL = 5 * 60 * 1000;
     if (Date.now() - cached.timestamp > CACHE_TTL) {
       this.executionCache.delete(key);
@@ -2337,11 +1596,11 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 生成缓存键（考虑附件和上下文）
-   * 带附件的请求不缓存（每次都是新的创作意图）
+   * 鐢熸垚缂撳瓨閿紙鑰冭檻闄勪欢鍜屼笂涓嬫枃锛?
+   * 甯﹂檮浠剁殑璇锋眰涓嶇紦瀛橈紙姣忔閮芥槸鏂扮殑鍒涗綔鎰忓浘锛?
    */
   private getCacheKey(task: AgentTask): string {
-    // 带附件的请求不缓存
+    // 甯﹂檮浠剁殑璇锋眰涓嶇紦瀛?
     if (task.input.attachments && task.input.attachments.length > 0) {
       return `nocache-${Date.now()}-${Math.random()}`;
     }
@@ -2352,10 +1611,11 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
   }
 
   /**
-   * 重置智能体
+   * 閲嶇疆鏅鸿兘浣?
    */
   reset(): void {
     this.chat = null;
     this.executionCache.clear();
   }
 }
+

@@ -119,16 +119,22 @@ const buildRequestMetadata = ({
   researchReferenceImageUrls,
   researchWebPages,
 }: BuildRequestMetadataParams): AgentTaskMetadata => {
+  const allowAutonomousRouting =
+    skillData?.config &&
+    typeof skillData.config === "object" &&
+    (skillData.config as Record<string, unknown>).allowAutonomousRouting === true;
+  const effectiveCreationMode = allowAutonomousRouting ? "agent" : creationMode;
+
   return {
     topicId,
     enableWebSearch: isWeb,
     agentSelectionMode,
     pinnedAgentId: agentSelectionMode === "manual" ? pinnedAgentId : undefined,
-    creationMode,
+    creationMode: effectiveCreationMode,
     preferredAspectRatio:
-      creationMode === "video" ? videoGenRatio : imageGenRatio,
+      effectiveCreationMode === "video" ? videoGenRatio : imageGenRatio,
     preferredImageSize: imageGenRes,
-    preferredImageCount: creationMode === "image" ? imageGenCount : 1,
+    preferredImageCount: effectiveCreationMode === "image" ? imageGenCount : 1,
     promptLanguagePolicy: translatePromptToEnglish
       ? "translate-en"
       : "original-zh",
@@ -137,6 +143,7 @@ const buildRequestMetadata = ({
       requiredCopy: (requiredChineseCopy || "").trim(),
     },
     skillData,
+    allowAutonomousRouting,
     multimodalContext: {
       referenceImageUrls: Array.from(
         new Set([
@@ -144,6 +151,11 @@ const buildRequestMetadata = ({
           ...researchReferenceImageUrls,
         ]),
       ),
+      referencePolicy:
+        allowAutonomousRouting && effectiveCreationMode === "agent"
+          ? "uploaded-only"
+          : "default",
+      uploadedAttachmentCount: 0,
       referenceWebPages: researchWebPages,
       research: researchPayload
         ? {
@@ -343,6 +355,17 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           researchReferenceImageUrls,
           researchWebPages,
         });
+        if (requestMetadata.multimodalContext) {
+          requestMetadata.multimodalContext.uploadedAttachmentCount =
+            attachments.length;
+          if (attachments.length > 0) {
+            requestMetadata.multimodalContext.referencePolicy = "uploaded-only";
+            requestMetadata.multimodalContext.referenceImageUrls = [];
+            if (requestMetadata.taskMode === "chat") {
+              requestMetadata.multimodalContext.isolateVisualQa = true;
+            }
+          }
+        }
 
         console.log(
           "[Workspace] handleSend: calling processMessage with text:",

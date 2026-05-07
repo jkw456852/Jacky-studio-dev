@@ -284,6 +284,7 @@ const registerBuiltInBrowserTools = () => {
           recentConsoleLimit: "number",
           recentSession: "BrowserAgentSessionRecord",
           referenceImages: "string[]",
+          metadata: "Record<string, unknown>",
         },
         outputSchema: {
           plan: "BrowserAgentGoalSessionPlan",
@@ -321,6 +322,9 @@ const registerBuiltInBrowserTools = () => {
               : null,
             targetElementId: String(input?.targetElementId || "").trim() || null,
             referenceImages: normalizeStringArray(input?.referenceImages, 4),
+            metadata: isPlainRecord(input?.metadata)
+              ? (input?.metadata as Record<string, unknown>)
+              : null,
           }),
         };
       },
@@ -340,6 +344,7 @@ const registerBuiltInBrowserTools = () => {
           recentConsoleLimit: "number",
           recentSession: "BrowserAgentSessionRecord",
           referenceImages: "string[]",
+          metadata: "Record<string, unknown>",
           autoStart: "boolean",
         },
         outputSchema: {
@@ -378,6 +383,9 @@ const registerBuiltInBrowserTools = () => {
             : null,
           targetElementId: String(input?.targetElementId || "").trim() || null,
           referenceImages,
+          metadata: isPlainRecord(input?.metadata)
+            ? (input?.metadata as Record<string, unknown>)
+            : null,
         });
         const session = startBrowserAgentSession({
           title: plan.title,
@@ -397,6 +405,9 @@ const registerBuiltInBrowserTools = () => {
             targetElementId: plan.targetElementId,
             plannedAt: plan.plannedAt,
             inputReferenceImages: referenceImages,
+            ...(isPlainRecord(input?.metadata)
+              ? (input?.metadata as Record<string, unknown>)
+              : {}),
           },
           autoStart: input?.autoStart !== false,
           steps: plan.steps,

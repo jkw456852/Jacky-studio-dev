@@ -5,7 +5,8 @@ import type {
 } from "../../types";
 import { createImagePreviewDataUrl } from "./workspaceShared";
 
-type MessageAttachmentMetadata = NonNullable<ChatMessage["attachmentMetadata"]>[number];
+type MessageAttachmentMetadata =
+  NonNullable<ChatMessage["attachmentMetadata"]>[number];
 
 type BuildUserChatMessagePayloadArgs = {
   inputBlocks: InputBlock[];
@@ -14,11 +15,21 @@ type BuildUserChatMessagePayloadArgs = {
   previewQuality?: number;
 };
 
-const isTransientAttachmentPreviewUrl = (value: string | null | undefined) =>
-  /^blob:/i.test(String(value || "").trim());
+const isTransientAttachmentPreviewUrl = (
+  value: string | null | undefined,
+) => /^blob:/i.test(String(value || "").trim());
 
 const stripFileExtension = (value: string | undefined) =>
   String(value || "").replace(/\.[^/.]+$/, "").trim();
+
+const normalizeGenericAttachmentLabel = (value: string | undefined) => {
+  const base = stripFileExtension(value);
+  if (!base) return "";
+  if (/^(image|img|photo|picture|screenshot|screen shot|snip|clipboard)$/i.test(base)) {
+    return "图片";
+  }
+  return base;
+};
 
 const buildFileChipLabel = (
   file: WorkspaceInputFile,
@@ -53,13 +64,13 @@ const buildFileChipLabel = (
       }
       index += 1;
       if (block.id === blockId) {
-        return `参考内容 ${index}`;
+        return `参考内容${index}`;
       }
     }
     return "参考内容";
   }
 
-  return stripFileExtension(file.name) || "参考内容";
+  return normalizeGenericAttachmentLabel(file.name) || "图片";
 };
 
 const resolveAttachmentPreviewUrl = async (
@@ -92,7 +103,11 @@ const buildAttachmentInlinePart = async ({
   previewMaxDim: number;
   previewQuality: number;
 }) => {
-  const url = await resolveAttachmentPreviewUrl(file, previewMaxDim, previewQuality);
+  const url = await resolveAttachmentPreviewUrl(
+    file,
+    previewMaxDim,
+    previewQuality,
+  );
   const label = buildFileChipLabel(file, inputBlocks, blockId);
   const metadata: MessageAttachmentMetadata = {
     markerName: label,

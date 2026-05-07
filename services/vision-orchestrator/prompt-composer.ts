@@ -112,6 +112,32 @@ const buildReferenceLines = (references: VisualReferencePlan[]) => {
   });
 };
 
+const buildCrossReferenceReasoningLines = (
+  plan: VisualGenerationPlan,
+  userPrompt: string,
+) => {
+  const reasoning = plan.referenceReasoning;
+  if (!reasoning?.shouldReconcile) return [];
+
+  const roleSummaryLines = reasoning.roleSummary.map((item) => `- ${item}.`);
+  const domainLine =
+    reasoning.lockedAttributeDomains.length > 0
+      ? [
+          `- Reconcile conflicts by attribute domain instead of copying one reference wholesale. Locked domains: ${reasoning.lockedAttributeDomains.join(
+            ", ",
+          )}.`,
+        ]
+      : [];
+  return [
+    "- First infer what evidence each reference contributes before composing the result.",
+    ...roleSummaryLines,
+    ...domainLine,
+    "- When references disagree, resolve the disagreement at the attribute level and keep only the evidence that serves the user goal.",
+    "- Remove or rewrite conflicting details rather than copying an entire reference literally.",
+    "- Use the written request as the final arbiter when image evidence and textual requirements diverge.",
+  ];
+};
+
 const buildOptionalSection = (title: string, lines: string[]) => {
   if (lines.length === 0) return "";
   return `\n[${title}]\n${lines.join("\n")}`;
@@ -173,6 +199,10 @@ export const composeVisualGenerationPrompt = (
   const noteLines = (plan.plannerNotes || []).map((item) => `- ${item}`);
   const roleOverlayLines = buildRoleOverlayLines(plan.taskRoleOverlay);
   const styleLibraryLines = buildStyleLibraryLines(plan.styleLibrary);
+  const crossReferenceReasoningLines = buildCrossReferenceReasoningLines(
+    plan,
+    userPrompt,
+  );
   const planningPolicyLines = (plan.taskRoleOverlay?.planningPolicy || []).map(
     (item) => `- ${item}`,
   );
@@ -189,6 +219,7 @@ export const composeVisualGenerationPrompt = (
     buildOptionalSection("Active Style Library", styleLibraryLines),
     buildOptionalSection("Task Planning Policy", planningPolicyLines),
     buildOptionalSection("Task Execution Directives", executionDirectiveLines),
+    buildOptionalSection("Cross-Reference Reconciliation", crossReferenceReasoningLines),
     buildOptionalSection("Intent Instructions", intentLines),
     buildOptionalSection("Reference Roles", referenceLines),
     buildOptionalSection("Required Locks", lockLines),

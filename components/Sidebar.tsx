@@ -2,11 +2,13 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ROUTES, createNewWorkspacePath } from "../utils/routes";
+import { useAuthSession } from "../hooks/useAuthSession";
 import {
   Home as HomeIcon,
   Folder,
   Plus,
   Settings,
+  User,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -16,6 +18,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAuthenticated } = useAuthSession();
 
   const handleNewProject = () => {
     if (onNewProject) {
@@ -78,6 +81,22 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           >
             <Settings size={20} />
           </button>
+          <button
+            onClick={() => navigate(ROUTES.userDetail)}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.userDetail)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
+            title={isAuthenticated ? "账号中心" : "登录 / 注册"}
+          >
+            <div className="relative">
+              <User size={20} />
+              {isAuthenticated && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
+              )}
+            </div>
+          </button>
         </div>
       </motion.div>
 
@@ -132,6 +151,25 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           />
           <span className="text-[10px] font-black uppercase tracking-tighter">
             设置
+          </span>
+        </button>
+        <button
+          onClick={() => navigate(ROUTES.userDetail)}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.userDetail) ? "text-black" : "text-gray-400"
+          }`}
+        >
+          <div className="relative">
+            <User
+              size={20}
+              strokeWidth={isActive(ROUTES.userDetail) ? 2.5 : 2}
+            />
+            {isAuthenticated && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
+            )}
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            我的
           </span>
         </button>
       </div>

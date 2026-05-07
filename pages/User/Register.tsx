@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { signUpWithEmail } from '../../services/supabase/auth';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,26 +37,20 @@ const RegisterPage: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          username: formData.username,
-        }),
+      const { error } = await signUpWithEmail({
+        email: formData.email,
+        password: formData.password,
+        username: formData.username,
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        alert('注册成功！请登录');
-        navigate('/user/login');
+      if (error) {
+        setError(error.message || '注册失败');
       } else {
-        setError(data.error?.message || '注册失败');
+        alert('注册成功，请检查邮箱完成验证后再登录');
+        navigate('/user/login');
       }
     } catch (err) {
-      setError('网络错误，请稍后重试');
+      setError(err instanceof Error ? err.message : '注册失败，请稍后重试');
     } finally {
       setLoading(false);
     }

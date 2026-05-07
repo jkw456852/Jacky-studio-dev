@@ -1,6 +1,9 @@
 ﻿import React from "react";
 import type { CanvasElement, WorkspaceNodeInteractionMode } from "../../../types";
-import { readWorkspaceGenerationTraceByElementId } from "../browserAgentGenerationTrace";
+import {
+  readPendingWorkspaceGenerationRequestByElementId,
+  readWorkspaceGenerationTraceByElementId,
+} from "../browserAgentGenerationTrace";
 import {
   buildWorkspaceBrowserAgentSnapshot,
   summarizeCanvasElementsForBrowserAgent,
@@ -103,7 +106,7 @@ type UseWorkspacePageShellPropsArgs = {
     elementId: string,
     updates: Partial<CanvasElement>,
   ) => boolean;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (elementId: string) => string | null | Promise<string | null>;
   handleManualPaste: React.ComponentProps<
     typeof WorkspaceContextMenu
   >["onManualPaste"];
@@ -310,7 +313,7 @@ export const useWorkspacePageShellProps = ({
         setSelectedElementIds([]);
         return true;
       },
-      triggerImageGeneration: (elementId) => {
+      triggerImageGeneration: async (elementId) => {
         const targetId = String(elementId || "").trim();
         if (!targetId) {
           return {
@@ -345,13 +348,18 @@ export const useWorkspacePageShellProps = ({
             traceStatus: null,
           };
         }
-        void Promise.resolve(handleGenImage(targetId));
+        const requestId = await Promise.resolve(handleGenImage(targetId));
+        const pendingRequestId =
+          readPendingWorkspaceGenerationRequestByElementId(targetId);
         const trace = readWorkspaceGenerationTraceByElementId(targetId);
         return {
           accepted: true,
           elementId: targetId,
-          requestId: trace?.requestId || null,
-          traceStatus: trace?.status || null,
+          requestId: requestId || pendingRequestId || trace?.requestId || null,
+          traceStatus:
+            (requestId || pendingRequestId) && !trace
+              ? "planning"
+              : trace?.status || null,
         };
       },
       updateElementControl: (elementId, controlId, rawValue) => {

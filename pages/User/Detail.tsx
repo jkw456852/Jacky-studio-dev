@@ -1,0 +1,248 @@
+import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Cloud,
+  LogOut,
+  Mail,
+  ShieldCheck,
+  User as UserIcon,
+} from 'lucide-react';
+import { useAuthSession } from '../../hooks/useAuthSession';
+import { syncLocalStudioUserAssetsToAccount } from '../../services/runtime-assets/account-sync';
+import { ROUTES } from '../../utils/routes';
+
+const formatDateTime = (value?: string) => {
+  if (!value) {
+    return '—';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
+
+const UserDetailPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { user, session, status, signOutAndClear } = useAuthSession();
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
+
+  const profile = useMemo(() => {
+    const email = user?.email || '未绑定邮箱';
+    const username = String(user?.user_metadata?.username || '').trim();
+    const displayName = username || email.split('@')[0] || '用户';
+
+    return {
+      email,
+      username: username || '未设置',
+      displayName,
+      userId: user?.id || '—',
+      createdAt: formatDateTime(user?.created_at),
+      lastSignInAt: formatDateTime(user?.last_sign_in_at),
+      sessionStatus: status === 'authenticated' ? '已登录' : '未登录',
+      sessionExpiry: session?.expires_at
+        ? formatDateTime(new Date(session.expires_at * 1000).toISOString())
+        : '—',
+    };
+  }, [session?.expires_at, status, user]);
+
+  const handleSyncAssets = async () => {
+    const accessToken = String(session?.access_token || '').trim();
+
+    if (!accessToken) {
+      setError('当前会话缺少 access token，无法同步账号资产。');
+      return;
+    }
+
+    setSyncing(true);
+    setError('');
+    setSyncMessage('');
+
+    try {
+      const result = await syncLocalStudioUserAssetsToAccount({
+        accessToken,
+      });
+
+      setSyncMessage(
+        `同步完成：已合并本地与账号资产，远端审计记录 ${result.remoteAuditCount} 条，合并决策 ${result.decisions.length} 项。`,
+      );
+    } catch (syncError) {
+      console.error('Failed to sync account assets', syncError);
+      setError(syncError instanceof Error ? syncError.message : '账号资产同步失败，请稍后重试');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      await signOutAndClear();
+      navigate(ROUTES.userLogin, { replace: true });
+    } catch (signOutError) {
+      console.error('Failed to sign out', signOutError);
+      setError(signOutError instanceof Error ? signOutError.message : '退出登录失败，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            返回
+          </button>
+          <button
+            onClick={() => navigate(ROUTES.dashboard)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
+          >
+            返回首页
+          </button>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-6 py-6 sm:px-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
+                  <UserIcon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xl font-semibold text-gray-900">
+                    {profile.displayName}
+                  </div>
+                  <div className="mt-1 break-all text-sm leading-6 text-gray-500">
+                    {profile.email}
+                  </div>
+                </div>
+              </div>
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+                <BadgeCheck className="h-4 w-4" />
+                {profile.sessionStatus}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 px-6 py-6 sm:grid-cols-2 sm:px-8">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="text-sm font-medium text-gray-500">用户名</div>
+              <div className="mt-2 text-base font-semibold text-gray-900 break-all">
+                {profile.username}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                <Mail className="h-4 w-4" />
+                登录邮箱
+              </div>
+              <div className="mt-2 break-all text-base font-semibold text-gray-900">
+                {profile.email}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="text-sm font-medium text-gray-500">注册时间</div>
+              <div className="mt-2 text-base font-semibold text-gray-900">
+                {profile.createdAt}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="text-sm font-medium text-gray-500">最近登录</div>
+              <div className="mt-2 text-base font-semibold text-gray-900">
+                {profile.lastSignInAt}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:col-span-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                <ShieldCheck className="h-4 w-4" />
+                用户 ID
+              </div>
+              <div className="mt-2 break-all text-sm font-medium leading-6 text-gray-900">
+                {profile.userId}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:col-span-2">
+              <div className="text-sm font-medium text-gray-500">当前会话到期时间</div>
+              <div className="mt-2 text-base font-semibold text-gray-900">
+                {profile.sessionExpiry}
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 px-6 py-6 sm:px-8">
+            {error && (
+              <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm leading-6 text-red-600">
+                {error}
+              </div>
+            )}
+
+            {syncMessage && (
+              <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-700">
+                {syncMessage}
+              </div>
+            )}
+
+            <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm leading-6 text-blue-800">
+              当前“账号同步”第一批只同步用户资产层：模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好等；
+              项目内容、图片资源、图床密钥暂不进入这一步。
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm leading-6 text-gray-500">
+                当前页面已经接入统一认证状态层，并补了第一批账号资产手动同步入口，后续配置同步和图床同步都会继续叠加在这个壳层上。
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={handleSyncAssets}
+                  disabled={syncing}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Cloud className="h-4 w-4" />
+                  {syncing ? '同步中...' : '同步账号资产'}
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <LogOut className="h-4 w-4" />
+                  {loading ? '退出中...' : '退出登录'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default UserDetailPage;

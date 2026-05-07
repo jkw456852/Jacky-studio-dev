@@ -55,12 +55,16 @@ export interface AgentMultimodalContext {
   referenceWebPages?: AgentReferenceWebPage[];
   referenceSummary?: string;
   hasReferences?: boolean;
+  referencePolicy?: 'default' | 'uploaded-only';
+  uploadedAttachmentCount?: number;
+  isolateVisualQa?: boolean;
   research?: AgentResearchContext;
 }
 
 export interface AgentTaskMetadata {
   topicId?: string;
   enableWebSearch?: boolean;
+  allowAutonomousRouting?: boolean;
   agentSelectionMode?: 'auto' | 'manual';
   pinnedAgentId?: AgentType;
   roleStrategy?: 'reuse' | 'augment' | 'create';
@@ -71,6 +75,7 @@ export interface AgentTaskMetadata {
   internalCall?: boolean;
   requestId?: string;
   timeoutMs?: number;
+  taskMode?: string;
   creationMode?: 'agent' | 'image' | 'video';
   workflowMode?: 'fast' | 'designer';
   preferredAspectRatio?: string;
@@ -144,10 +149,36 @@ export interface AgentTask {
     imageUrls?: string[];
     skillCalls?: SkillCall[];
     adjustments?: string[];
+    runtime?: AgentTaskRuntimeEnvelope;
     error?: { message: string; code?: string; details?: unknown };
   };
   createdAt: number;
   updatedAt: number;
+}
+
+export interface AgentTaskRuntimeEnvelope {
+  mode: 'direct-response' | 'skill-execution' | 'autonomous-main-brain';
+  stopReason?:
+    | 'responded'
+    | 'max-turns'
+    | 'max-execution-rounds'
+    | 'empty-plan'
+    | 'wait-for-input'
+    | 'stalled';
+  stopReasonLabel?:
+    | 'answered'
+    | 'need-user-input'
+    | 'retry-limit'
+    | 'stalled'
+    | 'turn-limit'
+    | 'empty-plan';
+  proposalCount?: number;
+  assetCount?: number;
+  skillCallCount?: number;
+  successfulSkillCount?: number;
+  failedSkillCount?: number;
+  executionRounds?: number;
+  turnCount?: number;
 }
 
 export interface GeneratedAsset {
@@ -170,4 +201,29 @@ export interface SkillCall {
   params: Record<string, any>;
   result?: any;
   error?: string;
+}
+
+export type MainBrainCapabilityKind =
+  | 'skill'
+  | 'internal-module'
+  | 'specialist-agent';
+
+export interface MainBrainCapabilityField {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+export interface MainBrainCapabilityDefinition {
+  id: string;
+  kind: MainBrainCapabilityKind;
+  label: string;
+  purpose: string;
+  useWhen: string[];
+  avoidWhen?: string[];
+  inputs?: MainBrainCapabilityField[];
+  outputs?: string[];
+  sideEffects?: string[];
+  aliases?: string[];
+  tags?: string[];
 }

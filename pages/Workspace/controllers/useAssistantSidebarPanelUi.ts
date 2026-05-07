@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useAgentStore } from '../../../stores/agent.store';
 
 const TASK_STATUS_LABELS: Record<string, string> = {
-  analyzing: 'AI 正在深度分析中...',
-  executing: '正在生成设计中...',
+  analyzing: '主脑正在理解你的请求...',
+  executing: '主脑正在处理当前任务...',
 };
 
 export const useAssistantSidebarPanelUi = () => {

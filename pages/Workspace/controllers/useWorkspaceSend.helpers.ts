@@ -116,7 +116,7 @@ type CollectCanvasReferenceUrlsParams = {
 };
 
 const SHOULD_RESEARCH_PATTERN =
-  /campaign|poster|style|landmark|route|event|video|cover|marketing/i;
+  /campaign|poster|style|landmark|route|event|video|cover|marketing|research|investigate|study|look up|reference|调查|调研|研究|查资料|查一下|搜集|搜一下|了解一下|资料|竞品|品牌信息|产品信息/i;
 
 export const IMAGE_ERROR_PATTERN =
   /image|upload|base64|attachment|mime|format/i;
@@ -200,10 +200,18 @@ export const shouldRunWorkspaceResearch = (
   text: string,
   researchMode: WorkspaceSendResearchMode,
   skillData?: ChatMessage["skillData"],
-) =>
-  researchMode !== "off" &&
-  !skillData &&
-  SHOULD_RESEARCH_PATTERN.test(text);
+) => {
+  const normalized = String(text || "").trim();
+  if (researchMode === "off" || !normalized) return false;
+  const allowAutonomousRouting =
+    skillData?.config &&
+    typeof skillData.config === "object" &&
+    (skillData.config as Record<string, unknown>).allowAutonomousRouting === true;
+  if (allowAutonomousRouting) {
+    return SHOULD_RESEARCH_PATTERN.test(normalized);
+  }
+  return !skillData && SHOULD_RESEARCH_PATTERN.test(normalized);
+};
 
 export const gatherWorkspaceResearchContext = async (
   text: string,

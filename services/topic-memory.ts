@@ -3,8 +3,8 @@ import {
   TOPIC_ASSET_STORE,
   TOPIC_MEMORY_ITEM_STORE,
   TOPIC_SNAPSHOT_STORE,
-} from "./storage";
-import { parseMemoryKey } from "./topicMemory/key";
+} from "./storage.ts";
+import { parseMemoryKey } from "./topicMemory/key.ts";
 import type {
   EcommerceAnalysisReview,
   EcommerceBatchJob,

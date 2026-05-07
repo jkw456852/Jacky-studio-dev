@@ -10,8 +10,11 @@ import {
   WORKSPACE_BROWSER_AGENT_HOST_ID,
   type WorkspaceElementControlsReport,
 } from "../browserAgentHost";
+import {
+  resolveBrowserAgentSessionResultElementIds as resolveSessionResultElementIds,
+} from "../browserAgentResultProtocol";
 import { compressImage, createImagePreviewDataUrl } from "../workspaceShared";
-import type { WorkspaceInputFile } from "../../../types";
+import type { ChatMessage, WorkspaceInputFile } from "../../../types";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 
 type UseAssistantSidebarBrowserAgentUiArgs = {
@@ -28,6 +31,7 @@ type UseAssistantSidebarBrowserAgentUiArgs = {
 type GoalActionArgs = {
   goal: string;
   attachments?: File[];
+  skillData?: ChatMessage["skillData"];
 };
 
 type BrowserAgentSessionStatus =
@@ -182,6 +186,7 @@ type PreparedGoalSessionPlan = {
   targetElementPendingCreation: boolean;
   referenceImages: string[];
   referenceImageCount: number;
+  skillData?: ChatMessage["skillData"];
   plan: BrowserAgentGoalSessionPlan;
   repairNotes: string[];
   controlSummary: {
@@ -223,6 +228,7 @@ const normalizeStringArray = (value: unknown): string[] =>
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
+
 
 const repairGoalPlanForPresentation = (args: {
   goal: string;
@@ -503,21 +509,6 @@ export const useAssistantSidebarBrowserAgentUi = ({
     [createTargetElement, selectedElementId],
   );
 
-  const refreshSessionById = React.useCallback(async (sessionId: string) => {
-    const normalizedSessionId = String(sessionId || "").trim();
-    if (!normalizedSessionId) return null;
-
-    const result = (await invokeBrowserAgentTool("browser.read_session", {
-      sessionId: normalizedSessionId,
-    })) as {
-      session?: BrowserAgentSessionRecord | null;
-    };
-
-    const nextSession = result?.session || null;
-    setCurrentSession(nextSession);
-    return nextSession;
-  }, []);
-
   const updateSessionRepairMetadata = React.useCallback(
     async (sessionId: string, metadataPatch: Record<string, unknown>) => {
       const normalizedSessionId = String(sessionId || "").trim();
@@ -539,6 +530,52 @@ export const useAssistantSidebarBrowserAgentUi = ({
     },
     [],
   );
+
+  const reconcileSessionResultMetadata = React.useCallback(
+    async (session: BrowserAgentSessionRecord | null) => {
+      if (!session?.id) return session;
+
+      const resultElementIds = resolveSessionResultElementIds(session);
+      if (resultElementIds.length === 0) {
+        return session;
+      }
+
+      const currentIds = normalizeStringArray(session.metadata?.resultElementIds);
+      const currentPrimary =
+        String(session.metadata?.resultElementId || "").trim() || null;
+      const nextPrimary = resultElementIds[0] || null;
+      const sameIds =
+        currentIds.length === resultElementIds.length &&
+        currentIds.every((value, index) => value === resultElementIds[index]);
+
+      if (sameIds && currentPrimary === nextPrimary) {
+        return session;
+      }
+
+      return updateSessionRepairMetadata(session.id, {
+        resultElementId: nextPrimary,
+        resultElementIds,
+        latestResultUpdatedAt: Date.now(),
+      });
+    },
+    [updateSessionRepairMetadata],
+  );
+
+  const refreshSessionById = React.useCallback(async (sessionId: string) => {
+    const normalizedSessionId = String(sessionId || "").trim();
+    if (!normalizedSessionId) return null;
+
+    const result = (await invokeBrowserAgentTool("browser.read_session", {
+      sessionId: normalizedSessionId,
+    })) as {
+      session?: BrowserAgentSessionRecord | null;
+    };
+
+    const nextSession = result?.session || null;
+    const reconciledSession = await reconcileSessionResultMetadata(nextSession);
+    setCurrentSession(reconciledSession || nextSession);
+    return reconciledSession || nextSession;
+  }, [reconcileSessionResultMetadata]);
 
   const refreshLatestSessionForSelection = React.useCallback(async () => {
     if (!selectedElementId) {
@@ -836,7 +873,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
   }, [currentSession, refreshSessionById]);
 
   const handleStartGoalSession = React.useCallback(
-    async ({ goal: nextGoal, attachments }: GoalActionArgs) => {
+    async ({ goal: nextGoal, attachments, skillData }: GoalActionArgs) => {
       const normalizedGoal = String(nextGoal || "").trim();
       if (!normalizedGoal) {
         setError("请输入执行目标。");
@@ -887,6 +924,11 @@ export const useAssistantSidebarBrowserAgentUi = ({
           recentConsoleLimit: 8,
           recentSession: currentSession || undefined,
           referenceImages,
+          metadata: {
+            skillData: skillData || undefined,
+            allowAutonomousRouting:
+              Boolean(skillData && (skillData as any).config?.allowAutonomousRouting),
+          },
         })) as {
           plan?: BrowserAgentGoalSessionPlan | null;
         };
@@ -913,6 +955,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
             targetResolution.targetElementPendingCreation,
           referenceImages,
           referenceImageCount: referenceImages.length,
+          skillData: skillData || undefined,
           plan: repairedPresentationPlan.plan,
           repairNotes: repairedPresentationPlan.repairNotes,
           controlSummary: extractPreparedPlanControlSummary(
@@ -1081,6 +1124,12 @@ export const useAssistantSidebarBrowserAgentUi = ({
           inputReferenceImages: preparedPlan.referenceImages,
           approvedFromPlan: true,
           approvedRepairNotes: preparedPlan.repairNotes,
+          skillData: preparedPlan.skillData || null,
+          allowAutonomousRouting:
+            Boolean(
+              preparedPlan.skillData &&
+                (preparedPlan.skillData as any).config?.allowAutonomousRouting,
+            ),
         },
         autoStart: true,
         steps: normalizedSteps,

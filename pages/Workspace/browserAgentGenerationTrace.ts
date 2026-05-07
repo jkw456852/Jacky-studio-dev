@@ -103,6 +103,7 @@ const MAX_TRACES = 100;
 
 const tracesByRequestId = new Map<string, WorkspaceGenerationTrace>();
 const latestRequestIdByElementId = new Map<string, string>();
+const pendingRequestIdByElementId = new Map<string, string>();
 const recentRequestIds: string[] = [];
 
 const normalizeTraceDiagnostic = (
@@ -149,7 +150,26 @@ const bindTraceToElementIds = (trace: WorkspaceGenerationTrace) => {
     const normalized = String(elementId || "").trim();
     if (!normalized) return;
     latestRequestIdByElementId.set(normalized, trace.requestId);
+    pendingRequestIdByElementId.delete(normalized);
   });
+};
+
+export const announceWorkspaceGenerationRequest = (
+  elementId: string,
+  requestId: string,
+) => {
+  const normalizedElementId = String(elementId || "").trim();
+  const normalizedRequestId = String(requestId || "").trim();
+  if (!normalizedElementId || !normalizedRequestId) return;
+  pendingRequestIdByElementId.set(normalizedElementId, normalizedRequestId);
+};
+
+export const readPendingWorkspaceGenerationRequestByElementId = (
+  elementId?: string,
+) => {
+  const normalized = String(elementId || "").trim();
+  if (!normalized) return null;
+  return pendingRequestIdByElementId.get(normalized) || null;
 };
 
 export const upsertWorkspaceGenerationTrace = (

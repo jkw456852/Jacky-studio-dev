@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Lock, Mail } from 'lucide-react';
+import { signInWithEmail } from '../../services/supabase/auth';
 
 // 简化的登录页面 - 集成到 Jacky-Studio / JK
 const LoginPage: React.FC = () => {
@@ -32,25 +33,18 @@ const LoginPage: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          login: formData.email,
-          password: formData.password,
-        }),
+      const { error } = await signInWithEmail({
+        email: formData.email,
+        password: formData.password,
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        localStorage.setItem('accessToken', data.data.accessToken);
-        navigate(redirect);
+      if (error) {
+        setError(error.message || '登录失败');
       } else {
-        setError(data.error?.message || '登录失败');
+        navigate(redirect);
       }
     } catch (err) {
-      setError('网络错误，请稍后重试');
+      setError(err instanceof Error ? err.message : '登录失败，请稍后重试');
     } finally {
       setLoading(false);
     }

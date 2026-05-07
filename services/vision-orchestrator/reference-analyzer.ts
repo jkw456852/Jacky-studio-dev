@@ -2,6 +2,7 @@ import type { ImageReferenceRoleMode } from "../../types";
 import type {
   PlanVisualGenerationInput,
   VisualReferencePlan,
+  VisualReferenceReasoning,
   VisualReferenceRole,
 } from "./types";
 
@@ -58,6 +59,61 @@ const PRODUCT_ROLE_CUES = [
   "packaging",
 ];
 
+const LAYOUT_LOCK_DOMAINS = [
+  "composition",
+  "layout",
+  "camera",
+  "atmosphere",
+  "typography-spacing",
+];
+
+const PRODUCT_LOCK_DOMAINS = [
+  "product-identity",
+  "branding",
+  "logo",
+  "packaging",
+  "materials",
+  "claims",
+  "factual-details",
+];
+
+const PRODUCT_LOCK_CUES = [
+  "不能变",
+  "不要变",
+  "保持",
+  "保留",
+  "以图二的产品为主",
+  "以图2的产品为主",
+  "以第二张的产品为主",
+  "主体不能变",
+  "产品不能变",
+  "品牌不能变",
+  "外观不能变",
+  "不能变成图一的产品",
+  "keep the product",
+  "keep product identity",
+  "product must stay",
+  "do not change the product",
+];
+
+const REFERENCE_COMPARISON_CUES = [
+  "对不上",
+  "不一致",
+  "冲突",
+  "改成",
+  "替换成",
+  "用图一",
+  "用图二",
+  "参考图一",
+  "参考图二",
+  "match",
+  "mismatch",
+  "conflict",
+  "replace with",
+  "use ref1",
+  "use ref2",
+];
+
 const normalizePrompt = (value: string) =>
   String(value || "")
     .toLowerCase()
@@ -91,6 +147,24 @@ const inferExplicitPosterProductIntent = (prompt: string) => {
   return null;
 };
 
+const inferReferenceReasoningSignals = (prompt: string) => {
+  const normalized = normalizePrompt(prompt);
+  const posterProductIntent = inferExplicitPosterProductIntent(prompt);
+  const preserveProductIdentity = PRODUCT_LOCK_CUES.some((cue) =>
+    normalized.includes(cue),
+  );
+  const shouldAnalyzeMismatch =
+    Boolean(posterProductIntent) &&
+    (preserveProductIdentity ||
+      REFERENCE_COMPARISON_CUES.some((cue) => normalized.includes(cue)));
+
+  return {
+    posterProductIntent,
+    preserveProductIdentity,
+    shouldAnalyzeMismatch,
+  };
+};
+
 const dedupeUrls = (items: string[]) => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -118,6 +192,42 @@ const createReference = (
   source,
   notes,
 });
+
+const buildReferenceReasoning = (args: {
+  references: VisualReferencePlan[];
+  preserveProductIdentity: boolean;
+  shouldAnalyzeMismatch: boolean;
+}): VisualReferenceReasoning | undefined => {
+  const { references, preserveProductIdentity, shouldAnalyzeMismatch } = args;
+  const hasLayoutAnchor = references.some((reference) => reference.role === "layout");
+  const hasProductAnchor = references.some((reference) => reference.role === "product");
+  const shouldReconcile =
+    Boolean(shouldAnalyzeMismatch) || (hasLayoutAnchor && hasProductAnchor);
+
+  if (!shouldReconcile) {
+    return undefined;
+  }
+
+  const roleSummary: string[] = [];
+  if (hasLayoutAnchor) {
+    roleSummary.push(
+      "layout-like references contribute structure, framing, visual rhythm, and atmosphere",
+    );
+  }
+  if (hasProductAnchor) {
+    roleSummary.push(
+      "product-like references contribute product truth, branding, packaging, materials, and factual details",
+    );
+  }
+
+  return {
+    shouldReconcile: true,
+    lockedAttributeDomains: preserveProductIdentity
+      ? [...LAYOUT_LOCK_DOMAINS, ...PRODUCT_LOCK_DOMAINS]
+      : [...LAYOUT_LOCK_DOMAINS, "product-identity", "branding", "packaging"],
+    roleSummary,
+  };
+};
 
 export const resolveReferenceRoleMode = (
   requestedMode: ImageReferenceRoleMode | undefined,
@@ -171,9 +281,8 @@ export const analyzeVisualReferences = (
 ) => {
   const manualReferenceImages = dedupeUrls(input.manualReferenceImages || []);
   const allReferenceImages = dedupeUrls(input.referenceImages || []);
-  const explicitPosterProductIntent = inferExplicitPosterProductIntent(
-    input.prompt,
-  );
+  const reasoningSignals = inferReferenceReasoningSignals(input.prompt);
+  const explicitPosterProductIntent = reasoningSignals.posterProductIntent;
   const effectiveReferenceRoleMode = resolveReferenceRoleMode(
     input.requestedReferenceRoleMode,
     manualReferenceImages.length,
@@ -210,19 +319,29 @@ export const analyzeVisualReferences = (
       layoutIndex,
       "layout",
       1,
-      "Poster/layout anchor",
+      reasoningSignals.shouldAnalyzeMismatch
+        ? "Layout anchor only. Borrow composition, typography rhythm, atmosphere, and spatial hierarchy from this reference."
+        : "Layout anchor",
     );
     pushManual(
       manualReferenceImages[productIndex],
       productIndex,
       "product",
       1,
-      "Product identity anchor",
+      reasoningSignals.preserveProductIdentity || reasoningSignals.shouldAnalyzeMismatch
+        ? "Product truth anchor. Override conflicting product appearance, branding, packaging, materials, and factual details with this reference."
+        : "Product identity anchor",
     );
 
     manualReferenceImages.forEach((url, index) => {
       if (index === layoutIndex || index === productIndex) return;
-      pushManual(url, index, "detail", 0.7, "Supporting detail reference");
+      pushManual(
+        url,
+        index,
+        "detail",
+        0.7,
+        "Supporting detail reference. Use only when it does not conflict with the primary product truth anchor.",
+      );
     });
 
     consistencyAnchors.forEach((url, index) => {
@@ -244,6 +363,13 @@ export const analyzeVisualReferences = (
       references,
       orderedReferenceImages: orderedUrls,
       explicitPosterProductIntent,
+      preserveProductIdentity: reasoningSignals.preserveProductIdentity,
+      shouldAnalyzeMismatch: reasoningSignals.shouldAnalyzeMismatch,
+      referenceReasoning: buildReferenceReasoning({
+        references,
+        preserveProductIdentity: reasoningSignals.preserveProductIdentity,
+        shouldAnalyzeMismatch: reasoningSignals.shouldAnalyzeMismatch,
+      }),
     };
   }
 
@@ -281,5 +407,12 @@ export const analyzeVisualReferences = (
     references,
     orderedReferenceImages: allReferenceImages,
     explicitPosterProductIntent,
+    preserveProductIdentity: reasoningSignals.preserveProductIdentity,
+    shouldAnalyzeMismatch: reasoningSignals.shouldAnalyzeMismatch,
+    referenceReasoning: buildReferenceReasoning({
+      references,
+      preserveProductIdentity: reasoningSignals.preserveProductIdentity,
+      shouldAnalyzeMismatch: reasoningSignals.shouldAnalyzeMismatch,
+    }),
   };
 };

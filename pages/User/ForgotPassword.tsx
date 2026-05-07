@@ -1,55 +1,90 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, ArrowLeft, ShieldCheck } from 'lucide-react';
+import {
+  getCurrentSession,
+  requestPasswordReset,
+  signOut,
+  updateCurrentUserPassword,
+} from '../../services/supabase/auth';
+import { supabase } from '../../services/supabase/client';
 
 const ForgotPasswordPage: React.FC = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
-    verificationCode: '',
     newPassword: '',
     confirmPassword: '',
   });
-  const [step, setStep] = useState(1); // 1: 输入邮箱, 2: 输入验证码和新密码
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [countdown, setCountdown] = useState(0);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncRecoveryMode = async () => {
+      const hash = window.location.hash || '';
+      const hasRecoveryToken = hash.includes('type=recovery') || hash.includes('access_token=');
+
+      if (!hasRecoveryToken) {
+        return;
+      }
+
+      const { data } = await getCurrentSession();
+
+      if (isMounted && data.session) {
+        setIsRecoveryMode(true);
+        setSuccessMessage('重置链接验证成功，请设置新密码。');
+      }
+    };
+
+    void syncRecoveryMode();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' && isMounted) {
+        setIsRecoveryMode(true);
+        setError('');
+        setSuccessMessage('重置链接验证成功，请设置新密码。');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     setError('');
+    setSuccessMessage('');
   };
 
-  const sendVerificationCode = async () => {
+  const handleSendResetEmail = async () => {
     if (!formData.email) {
       setError('请输入邮箱地址');
       return;
     }
+
     setLoading(true);
+    setError('');
+    setSuccessMessage('');
+
     try {
-      const response = await fetch('/api/auth/send-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, type: 'reset' }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setStep(2);
-        setCountdown(60);
-        const timer = setInterval(() => {
-          setCountdown(prev => {
-            if (prev <= 1) {
-              clearInterval(timer);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } else {
-        setError(data.error?.message || '发送失败');
+      const redirectTo = `${window.location.origin}/user/forgot-password`;
+      const { error: requestError } = await requestPasswordReset(formData.email, redirectTo);
+
+      if (requestError) {
+        setError(requestError.message || '发送失败');
+        return;
       }
-    } catch (err) {
+
+      setSuccessMessage('重置邮件已发送，请检查邮箱并点击邮件中的链接继续设置新密码。');
+    } catch (requestError) {
+      console.error('Failed to request password reset', requestError);
       setError('网络错误');
     } finally {
       setLoading(false);
@@ -58,7 +93,12 @@ const ForgotPasswordPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (!isRecoveryMode) {
+      await handleSendResetEmail();
+      return;
+    }
+
     if (formData.newPassword !== formData.confirmPassword) {
       setError('两次输入的密码不一致');
       return;
@@ -70,26 +110,22 @@ const ForgotPasswordPage: React.FC = () => {
     }
 
     setLoading(true);
+    setError('');
+    setSuccessMessage('');
+
     try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          code: formData.verificationCode,
-          newPassword: formData.newPassword,
-        }),
-      });
+      const { error: updateError } = await updateCurrentUserPassword(formData.newPassword);
 
-      const data = await response.json();
-
-      if (data.success) {
-        alert('密码重置成功！请使用新密码登录');
-        navigate('/user/login');
-      } else {
-        setError(data.error?.message || '重置失败');
+      if (updateError) {
+        setError(updateError.message || '重置失败');
+        return;
       }
-    } catch (err) {
+
+      await signOut();
+      alert('密码重置成功！请使用新密码登录');
+      navigate('/user/login');
+    } catch (updateError) {
+      console.error('Failed to update password', updateError);
       setError('网络错误');
     } finally {
       setLoading(false);
@@ -109,9 +145,13 @@ const ForgotPasswordPage: React.FC = () => {
 
         <div className="text-center mb-8">
           <ShieldCheck className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-          <h1 className="text-2xl font-bold text-gray-900">找回密码</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isRecoveryMode ? '设置新密码' : '找回密码'}
+          </h1>
           <p className="text-gray-500 mt-2">
-            {step === 1 ? '输入您的邮箱地址' : '输入验证码和新密码'}
+            {isRecoveryMode
+              ? '请输入新密码并完成重置'
+              : '输入注册邮箱，我们会发送密码重置链接到您的邮箱'}
           </p>
         </div>
 
@@ -122,7 +162,13 @@ const ForgotPasswordPage: React.FC = () => {
             </div>
           )}
 
-          {step === 1 ? (
+          {successMessage && (
+            <div className="bg-emerald-50 text-emerald-700 p-3 rounded-lg text-sm leading-6">
+              {successMessage}
+            </div>
+          )}
+
+          {!isRecoveryMode ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 邮箱地址
@@ -139,43 +185,19 @@ const ForgotPasswordPage: React.FC = () => {
                   required
                 />
               </div>
+              <p className="mt-3 text-sm text-gray-500 leading-6">
+                邮件中的重置链接会自动回到当前页面，验证成功后即可直接设置新密码。
+              </p>
               <button
-                type="button"
-                onClick={sendVerificationCode}
+                type="submit"
                 disabled={loading}
                 className="w-full mt-4 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? '发送中...' : '发送验证码'}
+                {loading ? '发送中...' : '发送重置邮件'}
               </button>
             </div>
           ) : (
             <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  验证码
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    name="verificationCode"
-                    value={formData.verificationCode}
-                    onChange={handleChange}
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="6位验证码"
-                    maxLength={6}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={sendVerificationCode}
-                    disabled={countdown > 0}
-                    className="px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    {countdown > 0 ? `${countdown}s` : '重新发送'}
-                  </button>
-                </div>
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   新密码
@@ -211,7 +233,7 @@ const ForgotPasswordPage: React.FC = () => {
                 disabled={loading}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? '处理中...' : '重置密码'}
+                {loading ? '处理中...' : '确认重置密码'}
               </button>
             </>
           )}

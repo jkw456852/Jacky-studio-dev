@@ -1,6 +1,14 @@
 import React from "react";
 import type { ChatMessage } from "../../../types";
 
+const normalizeAttachmentLabel = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (/^(image|img|photo|picture|screenshot|screen shot|snip|clipboard)$/i.test(trimmed)) {
+    return "图片";
+  }
+  return trimmed || "图片";
+};
+
 type UserMessageInlineContentProps = {
   inlineParts: NonNullable<ChatMessage["inlineParts"]>;
   onPreview?: (url: string) => void;
@@ -31,7 +39,7 @@ export const UserMessageInlineContent: React.FC<UserMessageInlineContentProps> =
             key={`inline-attachment-${index}`}
             type="button"
             onClick={() => onPreview?.(part.url)}
-            title={part.label}
+            title={normalizeAttachmentLabel(part.label)}
             className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white pl-[2px] pr-2 py-[2px] shadow-sm transition hover:bg-gray-50"
           >
             <div className="h-5 w-5 overflow-hidden rounded-full border border-gray-100 bg-white">
@@ -42,7 +50,7 @@ export const UserMessageInlineContent: React.FC<UserMessageInlineContentProps> =
               />
             </div>
             <span className="max-w-[120px] truncate text-[11px] font-semibold text-gray-700">
-              {part.label}
+              {normalizeAttachmentLabel(part.label)}
             </span>
           </button>
         ),

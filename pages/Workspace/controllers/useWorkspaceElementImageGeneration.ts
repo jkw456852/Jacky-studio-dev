@@ -16,6 +16,7 @@ import {
 } from "../../../services/vision-orchestrator";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 import {
+  announceWorkspaceGenerationRequest,
   appendWorkspaceGenerationTraceDiagnostics,
   patchWorkspaceGenerationTrace,
   updateWorkspaceGenerationVariantTrace,
@@ -913,7 +914,7 @@ export function useWorkspaceElementImageGeneration(
       const requestElement = elementsRef.current.find(
         (element) => element.id === elementId,
       );
-      if (!requestElement) return;
+      if (!requestElement) return null;
       const isTreePromptRequest =
         resolveWorkspaceTreeNodeKind(requestElement, nodeInteractionMode) ===
         "prompt";
@@ -922,13 +923,14 @@ export function useWorkspaceElementImageGeneration(
         : elementId;
 
       if (!isTreePromptRequest && activeRequestsRef.current.has(requestKey)) {
-        return;
+        return null;
       }
       activeRequestsRef.current.add(requestKey);
       const requestStartedAt = Date.now();
       const traceRequestId = `${elementId}:${requestStartedAt}:${Math.random()
         .toString(36)
         .slice(2, 8)}`;
+      announceWorkspaceGenerationRequest(elementId, traceRequestId);
       let plannerStartedAt = 0;
       let taskPlannerStartedAt = 0;
       let taskPlannerRunCount = 0;
@@ -936,7 +938,7 @@ export function useWorkspaceElementImageGeneration(
       let targetElementIds: string[] = [];
       try {
         const el = elementsRef.current.find((element) => element.id === elementId);
-        if (!el) return;
+        if (!el) return traceRequestId;
         const isTreePromptNode =
           resolveWorkspaceTreeNodeKind(el, nodeInteractionMode) === "prompt";
         const isTreeImageNode =
@@ -951,7 +953,7 @@ export function useWorkspaceElementImageGeneration(
               ) || null
             : null;
         const sourceElement = parentPromptElement || el;
-        if (!sourceElement.genPrompt) return;
+        if (!sourceElement.genPrompt) return traceRequestId;
         shouldTrackSourceElementState = !isTreePromptNode;
         if (shouldTrackSourceElementState) {
           setElementGeneratingState(elementId, true);
@@ -1785,7 +1787,7 @@ export function useWorkspaceElementImageGeneration(
           if (shouldTrackSourceElementState) {
             setElementGeneratingState(elementId, false);
           }
-          return;
+          return traceRequestId;
         }
         const pageGenerationPlans = await Promise.all(
           (isSetTask ? taskUnits : [primaryTaskUnit]).map((taskUnit) =>
@@ -2336,6 +2338,7 @@ export function useWorkspaceElementImageGeneration(
       } finally {
         activeRequestsRef.current.delete(requestKey);
       }
+      return traceRequestId;
     },
     [
       activeRequestsRef,

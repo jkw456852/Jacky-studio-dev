@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
   Activity,
@@ -339,6 +340,11 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   );
   const [showImageCountPicker, setShowImageCountPicker] = React.useState(false);
   const [showAgentRolePicker, setShowAgentRolePicker] = React.useState(false);
+  const agentRolePickerTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const agentRolePickerPanelRef = React.useRef<HTMLDivElement | null>(null);
+  const [agentRolePickerAnchorRect, setAgentRolePickerAnchorRect] = React.useState<DOMRect | null>(
+    null,
+  );
   const [roleInspectorAgentId, setRoleInspectorAgentId] = React.useState<AgentType | null>(null);
   const [roleInspectorDraft, setRoleInspectorDraft] = React.useState('');
   const [roleInspectorRevision, setRoleInspectorRevision] = React.useState(0);
@@ -369,6 +375,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const closeMainBrainInspector = React.useCallback(() => {
     setShowMainBrainInspector(false);
     setMainBrainDraft('');
+  }, []);
+  const syncAgentRolePickerPosition = React.useCallback(() => {
+    if (!agentRolePickerTriggerRef.current) return;
+    setAgentRolePickerAnchorRect(agentRolePickerTriggerRef.current.getBoundingClientRect());
   }, []);
   const inspectedAgentInfo = roleInspectorAgentId
     ? getAgentInfo(roleInspectorAgentId)
@@ -428,6 +438,16 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       isLive: false,
     };
   }, [currentAutoRoleMeta, latestAutoRoleDraftMeta]);
+  const assistantModeLabel =
+    creationMode === 'agent'
+      ? '主脑'
+      : creationMode === 'image'
+        ? '图片'
+        : '视频';
+  const browserChatModeLabel = browserAgent?.chatEnabled ? '主脑执行' : '主脑回答';
+  const browserChatModeTitle = browserAgent?.chatEnabled
+    ? '主脑会直接接管当前页面与节点操作'
+    : '主脑先以对话回答与判断为主，需要时再调用执行链';
   const inspectedBuiltInPrompt = roleInspectorAgentId
     ? getAgentPromptLayers(roleInspectorAgentId).systemBaselinePrompt
     : '';
@@ -456,6 +476,39 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     roleInspectorDraft.trim() !== inspectedPromptAddon.trim();
   const inspectedHasAddon =
     roleInspectorAgentId !== null && hasAgentPromptAddon(roleInspectorAgentId);
+  React.useEffect(() => {
+    if (!showAgentRolePicker) return;
+
+    syncAgentRolePickerPosition();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (agentRolePickerPanelRef.current?.contains(target)) return;
+      if (agentRolePickerTriggerRef.current?.contains(target)) return;
+      setShowAgentRolePicker(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowAgentRolePicker(false);
+      }
+    };
+    const handleViewportChange = () => {
+      syncAgentRolePickerPosition();
+    };
+
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showAgentRolePicker, syncAgentRolePickerPosition]);
   const handleSavePromptAddon = React.useCallback(() => {
     if (!roleInspectorAgentId) return;
     setAgentPromptAddon(roleInspectorAgentId, roleInspectorDraft);
@@ -509,6 +562,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           setShowModeSelector(!showModeSelector);
           setShowAgentRolePicker(false);
         }}
+        title={creationMode === 'agent' ? '统一主脑入口' : '切换到主脑、图片或视频工作流'}
         className={`flex h-9 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[13px] font-semibold transition-all ${
           creationMode === 'agent'
             ? 'border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(236,254,255,0.88))] text-slate-800 shadow-sm'
@@ -517,7 +571,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       >
         {creationMode === 'agent' && (
           <>
-            <Sparkles size={15} className="text-blue-500" /> Agent
+            <Sparkles size={15} className="text-blue-500" /> {assistantModeLabel}
           </>
         )}
         {creationMode === 'image' && (
@@ -549,7 +603,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 size={14}
                 className={creationMode === 'agent' ? 'text-blue-500' : 'text-gray-400'}
               />
-              Agent
+              主脑
             </div>
             {creationMode === 'agent' && <Check size={14} strokeWidth={2.5} />}
           </button>
@@ -1091,6 +1145,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
 
           {creationMode === 'agent' && (
             <div className="flex min-w-0 flex-1 flex-col gap-2.5 rounded-[24px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(248,250,252,0.95),rgba(255,255,255,0.98))] px-3 py-2.5 shadow-[0_10px_32px_-24px_rgba(15,23,42,0.42),inset_0_1px_0_rgba(255,255,255,0.78)]">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">
+                  统一主脑入口
+                </span>
+                <span>
+                  先判断任务，再决定回答、执行页面操作或调用工作流
+                </span>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {modeSelectorControl}
 
@@ -1137,8 +1199,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
 
                 <div className="relative min-w-0 max-w-full">
                   <button
+                    ref={agentRolePickerTriggerRef}
                     type="button"
-                    onClick={() => {
+                    onClick={(event) => {
+                      setAgentRolePickerAnchorRect(event.currentTarget.getBoundingClientRect());
                       setShowAgentRolePicker(!showAgentRolePicker);
                       setShowModeSelector(false);
                       setShowModelPicker(false);
@@ -1162,15 +1226,31 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   </button>
                   <button
                     type="button"
-                    onClick={openMainBrainInspector}
+                    onClick={() => {
+                      setShowAgentRolePicker(false);
+                      openMainBrainInspector();
+                    }}
                     className="ml-2 inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
-                    title="Edit durable main-brain preferences"
+                    title="编辑全局偏好"
                   >
                     <Lightbulb size={13} className="text-amber-500" />
-                    <span>Main Brain</span>
+                    <span>全局偏好</span>
                   </button>
-                  {showAgentRolePicker && (
-                    <div className="absolute bottom-full right-0 z-[80] mb-3 w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.35)]">
+                  {showAgentRolePicker &&
+                    agentRolePickerAnchorRect &&
+                    typeof document !== 'undefined' &&
+                    createPortal(
+                      <div
+                        ref={agentRolePickerPanelRef}
+                        className="fixed z-[320] w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.35)] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200"
+                        style={{
+                          right: Math.max(12, window.innerWidth - agentRolePickerAnchorRect.right),
+                          bottom: Math.max(
+                            12,
+                            window.innerHeight - agentRolePickerAnchorRect.top + 12,
+                          ),
+                        }}
+                      >
                       <div className="px-3 pb-3 pt-2">
                         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                           角色选择
@@ -1180,11 +1260,19 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         </div>
                       </div>
 
-                      <button
-                        type="button"
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setAgentSelectionMode('auto');
                           setShowAgentRolePicker(false);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setAgentSelectionMode('auto');
+                            setShowAgentRolePicker(false);
+                          }
                         }}
                         className={`mb-2 flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
                           agentSelectionMode === 'auto'
@@ -1265,7 +1353,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         {agentSelectionMode === 'auto' && (
                           <Check size={14} className="mt-0.5 shrink-0 text-blue-500" />
                         )}
-                      </button>
+                      </div>
 
                       <div className="max-h-[min(52vh,360px)] space-y-2 overflow-y-auto pr-1">
                         {availableAgentInfos.map((agent) => {
@@ -1298,7 +1386,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                     </span>
                                     {isCustomized && (
                                       <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                                        Custom rules
+                                        自定义规则
                                       </span>
                                     )}
                                   </div>
@@ -1326,7 +1414,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                                   >
                                     <PencilLine size={12} />
-                                    View / Edit prompt
+                                    查看 / 编辑提示词
                                   </button>
                                 </div>
                               </div>
@@ -1337,8 +1425,9 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                           );
                         })}
                       </div>
-                    </div>
-                  )}
+                      </div>,
+                      document.body,
+                    )}
                 </div>
 
                 {browserAgent && (
@@ -1351,12 +1440,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
                     }`}
                     title={
-                      browserAgent.chatEnabled
-                        ? '当前由执行代理接管侧边栏聊天'
-                        : '当前仍使用普通侧边栏聊天'
+                      browserChatModeTitle
                     }
                   >
-                    {browserAgent.chatEnabled ? '执行代理' : '普通聊天'}
+                    {browserChatModeLabel}
                   </button>
                 )}
               </div>
@@ -1625,16 +1712,16 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xl leading-none">{inspectedAgentInfo.avatar}</span>
                   <h3 className="text-[18px] font-bold text-slate-900">
-                    {inspectedAgentInfo.name} role prompt
+                    {inspectedAgentInfo.name} 角色提示词
                   </h3>
                   {inspectedHasAddon && (
                     <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600">
-                      Custom addon active
+                      已启用自定义补充
                     </span>
                   )}
                 </div>
                 <p className="mt-2 text-[13px] leading-6 text-slate-500">
-                  Built-in prompt is readable here. Custom rules are appended on top of it at runtime, so the role stays visible and stable.
+                  这里可以查看角色内置提示词，运行时会在其后叠加你的长期补充规则，方便保持角色边界清晰稳定。
                 </p>
               </div>
               <button
@@ -1652,19 +1739,19 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   <section className="rounded-3xl border border-slate-200 bg-white">
                     <div className="border-b border-slate-200 px-5 py-4">
                       <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                        Role fit guide
+                        角色适配说明
                       </div>
                       <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                        Use this to judge whether this role should be reused directly, augmented for the task, or replaced by a new temporary role brain.
+                        用来判断这个角色该直接复用、临时增强，还是替换成新的任务型角色。
                       </p>
                     </div>
                     <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
                       <div>
-                        <div className="font-semibold text-slate-900">Purpose</div>
+                        <div className="font-semibold text-slate-900">用途</div>
                         <div className="mt-1 text-slate-600">{inspectedRoleProfile.purpose}</div>
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900">Use when</div>
+                        <div className="font-semibold text-slate-900">适用场景</div>
                         <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                           {inspectedRoleProfile.useWhen.map((item) => (
                             <li key={`use-${item}`}>{item}</li>
@@ -1672,7 +1759,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         </ul>
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900">Avoid when</div>
+                        <div className="font-semibold text-slate-900">不适用场景</div>
                         <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                           {inspectedRoleProfile.avoidWhen.map((item) => (
                             <li key={`avoid-${item}`}>{item}</li>
@@ -1680,7 +1767,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         </ul>
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900">Adapt when</div>
+                        <div className="font-semibold text-slate-900">需要调整时机</div>
                         <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                           {inspectedRoleProfile.adaptWhen.map((item) => (
                             <li key={`adapt-${item}`}>{item}</li>
@@ -1688,7 +1775,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         </ul>
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900">Dynamic role policy</div>
+                        <div className="font-semibold text-slate-900">动态角色策略</div>
                         <div className="mt-1 text-slate-600">
                           {inspectedRoleProfile.dynamicRolePolicy}
                         </div>
@@ -1701,22 +1788,22 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   <section className="rounded-3xl border border-slate-200 bg-white">
                     <div className="border-b border-slate-200 px-5 py-4">
                       <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                        Latest auto draft
+                        最近自动草案
                       </div>
                       <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                        This is the most recent temporary role draft that auto-role generated for this specialist.
+                        这是自动角色最近一次为该专家角色生成的临时草案。
                       </p>
                     </div>
                     <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
                       <div>
-                        <div className="font-semibold text-slate-900">Strategy</div>
+                        <div className="font-semibold text-slate-900">策略</div>
                         <div className="mt-1 text-slate-600">
                           {inspectedLatestRoleDraft.roleStrategy || 'reuse'}
                         </div>
                       </div>
                       {inspectedLatestRoleDraft.roleStrategyReason && (
                         <div>
-                          <div className="font-semibold text-slate-900">Why</div>
+                          <div className="font-semibold text-slate-900">原因</div>
                           <div className="mt-1 text-slate-600">
                             {inspectedLatestRoleDraft.roleStrategyReason}
                           </div>
@@ -1724,7 +1811,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       )}
                       {inspectedLatestRoleDraft.title && (
                         <div>
-                          <div className="font-semibold text-slate-900">Title</div>
+                          <div className="font-semibold text-slate-900">标题</div>
                           <div className="mt-1 text-slate-600">
                             {inspectedLatestRoleDraft.title}
                           </div>
@@ -1732,7 +1819,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       )}
                       {inspectedLatestRoleDraft.summary && (
                         <div>
-                          <div className="font-semibold text-slate-900">Summary</div>
+                          <div className="font-semibold text-slate-900">摘要</div>
                           <div className="mt-1 text-slate-600">
                             {inspectedLatestRoleDraft.summary}
                           </div>
@@ -1740,7 +1827,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       )}
                       {inspectedLatestRoleDraft.instructions.length > 0 && (
                         <div>
-                          <div className="font-semibold text-slate-900">Instructions</div>
+                          <div className="font-semibold text-slate-900">指令</div>
                           <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                             {inspectedLatestRoleDraft.instructions.map((item) => (
                               <li key={`draft-${item}`}>{item}</li>
@@ -1754,21 +1841,21 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                           onClick={handleApplyLatestRoleDraft}
                           className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
                         >
-                          Apply to addon
+                          应用到补充层
                         </button>
                         <button
                           type="button"
                           onClick={handleSaveLatestRoleDraftAsFormalRole}
                           className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                         >
-                          Save as formal role
+                          保存为正式角色
                         </button>
                         <button
                           type="button"
                           onClick={handleClearLatestRoleDraft}
                           className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                         >
-                          Clear auto draft
+                          清空自动草案
                         </button>
                       </div>
                     </div>
@@ -1778,10 +1865,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
                   <div className="border-b border-slate-200 px-5 py-4">
                     <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Built-in prompt
+                      内置提示词
                     </div>
                     <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      This is the system-owned role definition, including behavior style, tool constraints, and response rules.
+                      这是系统内置的角色定义，包含行为风格、工具约束和回复规则。
                     </p>
                   </div>
                   <pre className="min-h-[280px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
@@ -1792,14 +1879,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
                   <div className="border-b border-slate-200 px-5 py-4">
                     <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Main brain layer
+                      主脑全局层
                     </div>
                     <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      This durable shared layer comes from the main brain and is injected before any role-specific user addon.
+                      这层是主脑共享的长期规则，会先于角色自己的用户补充层注入。
                     </p>
                   </div>
                   <pre className="min-h-[180px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
-                    {inspectedMainBrainBlock || 'No extra main brain preferences are active beyond the built-in baseline.'}
+                    {inspectedMainBrainBlock || '当前没有额外的主脑长期偏好，只有系统基础规则在生效。'}
                   </pre>
                 </section>
               </div>
@@ -1808,22 +1895,22 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <section className="rounded-3xl border border-slate-200 bg-white">
                   <div className="border-b border-slate-200 px-5 py-4">
                     <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Custom addon rules
+                      自定义补充规则
                     </div>
                     <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      Add durable preferences here, such as cleanup rules, anti-legacy checks, or communication style constraints.
+                      这里写角色自己的长期补充规则，比如清理旧链路、避免回退、沟通风格约束等。
                     </p>
                   </div>
                   <div className="px-5 py-4">
                     <textarea
                       value={roleInspectorDraft}
                       onChange={(event) => setRoleInspectorDraft(event.target.value)}
-                      placeholder="Example: Before editing, check whether the flow falls back to any legacy module. Delete old modules when safe; otherwise explain why they must stay and what replaces them."
+                      placeholder="例如：改动前先确认是否回退到旧模块；能删旧链路就删，不能删就说明保留原因和替代关系。"
                       className="min-h-[220px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
                     />
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                       <div className="text-[11px] leading-5 text-slate-400">
-                        This is the durable role layer. Runtime temporary role overlays are still attached later per task.
+                        这里保存的是角色长期层；具体任务执行时仍然可以额外叠加临时角色覆盖。
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1833,7 +1920,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                           className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <RotateCcw size={12} />
-                          Clear addon
+                          清空补充
                         </button>
                         <button
                           type="button"
@@ -1841,7 +1928,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                           disabled={!inspectedPromptDirty}
                           className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Save addon
+                          保存补充
                         </button>
                       </div>
                     </div>
@@ -1851,10 +1938,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
                   <div className="border-b border-slate-200 px-5 py-4">
                     <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Effective prompt preview
+                      最终提示词预览
                     </div>
                     <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      Preview order: built-in baseline, main brain durable layer, role durable addon. Runtime temporary role overlays are appended only when a task is executed.
+                      预览顺序是内置基线、主脑长期层、角色长期补充层；临时任务覆盖只会在执行时追加。
                     </p>
                   </div>
                   <pre className="min-h-[180px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
@@ -1878,7 +1965,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         <div className="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/40 p-4">
           <button
             type="button"
-            aria-label="close main brain inspector"
+            aria-label="关闭全局偏好"
             onClick={closeMainBrainInspector}
             className="absolute inset-0"
           />
@@ -1888,11 +1975,11 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 <div className="flex flex-wrap items-center gap-2">
                   <Lightbulb size={18} className="text-amber-500" />
                   <h3 className="text-[18px] font-bold text-slate-900">
-                    Main brain preferences
+                    全局偏好
                   </h3>
                 </div>
                 <p className="mt-2 text-[13px] leading-6 text-slate-500">
-                  These are durable user-level rules for the shared main brain. They affect planning, routing, and refactor behavior across roles.
+                  这里配置的是全局长期偏好，所有角色都会继承，会影响规划、分工和执行方式。
                 </p>
               </div>
               <button
@@ -1907,10 +1994,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               <section className="rounded-3xl border border-slate-200 bg-slate-50/70">
                 <div className="border-b border-slate-200 px-5 py-4">
                   <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    Built-in baseline
+                    内置基线
                   </div>
                   <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    These defaults stay active as the system baseline.
+                    这些是系统默认长期生效的基础规则。
                   </p>
                 </div>
                 <pre className="min-h-[180px] overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
@@ -1920,22 +2007,22 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               <section className="rounded-3xl border border-slate-200 bg-white">
                 <div className="border-b border-slate-200 px-5 py-4">
                   <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    User durable preferences
+                    用户长期偏好
                   </div>
                   <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    One rule per line. Use this for long-term habits you want every role to inherit.
+                    一行一条，适合填写你希望所有角色长期继承的工作习惯或约束。
                   </p>
                 </div>
                 <div className="px-5 py-4">
                   <textarea
                     value={mainBrainDraft}
                     onChange={(event) => setMainBrainDraft(event.target.value)}
-                    placeholder="Example: Before changing code, check whether the flow falls back to any legacy module chain."
+                    placeholder="例如：改代码前先检查是否仍然走到了旧链路。"
                     className="min-h-[260px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
                   />
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="text-[11px] leading-5 text-slate-400">
-                      Saved here means saved into the unified user asset layer, not a page-only setting.
+                      这里保存的是全局用户层配置，不是当前页面的临时设置。
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -1945,7 +2032,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <RotateCcw size={12} />
-                        Clear user prefs
+                        清空偏好
                       </button>
                       <button
                         type="button"
@@ -1953,7 +2040,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         disabled={!mainBrainDirty}
                         className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        Save prefs
+                        保存偏好
                       </button>
                     </div>
                   </div>

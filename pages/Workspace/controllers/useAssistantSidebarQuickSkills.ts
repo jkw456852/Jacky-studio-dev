@@ -113,9 +113,9 @@ const ECOMMERCE_ONE_CLICK_WORKFLOW_SKILL: AssistantSkillData = {
 };
 
 const ONE_CLICK_SKILL: AssistantSkillData = {
-  id: "xcai-oneclick",
+  id: "jkai-oneclick",
   pluginId: "quick-skills",
-  name: "SKYSPER视觉",
+  name: "JKAI视觉",
   iconName: "Compass",
   config: {
     mode: "standard",
