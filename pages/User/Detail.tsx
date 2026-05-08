@@ -12,6 +12,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { useAuthSession } from '../../hooks/useAuthSession';
+import { syncAccountSecretsWithAccount } from '../../services/account-secrets';
 import { syncLocalStudioUserAssetsToAccount } from '../../services/runtime-assets/account-sync';
 import { getStudioUserAssetApi } from '../../services/runtime-assets/api';
 import {
@@ -50,6 +51,20 @@ const formatProjectRiskSummary = (risk: ProjectLocalRiskItem): string => {
   const updatedAt = formatDateTime(risk.updatedAt);
   const sampleRef = risk.sampleRefs[0] ? `，示例资源：${risk.sampleRefs[0]}` : '';
   return `${title}（${risk.localAssetCount} 个本地资源，最近更新 ${updatedAt}${sampleRef}）`;
+};
+
+const describeSensitiveConfigSyncMode = (
+  mode: 'restored_remote' | 'pushed_local' | 'noop',
+): string => {
+  if (mode === 'restored_remote') {
+    return '已从账号恢复服务商配置、图床与三方密钥';
+  }
+
+  if (mode === 'pushed_local') {
+    return '已将当前设备的服务商配置、图床与三方密钥同步到账号';
+  }
+
+  return '当前没有需要同步的敏感配置变更';
 };
 
 const buildSignOutConfirmationMessage = (args: {
@@ -204,16 +219,26 @@ const UserDetailPage: React.FC = () => {
     setError('');
     setSyncMessage('');
 
+    let assetResult: Awaited<ReturnType<typeof syncLocalStudioUserAssetsToAccount>> | null = null;
+
     try {
-      const result = await syncLocalStudioUserAssetsToAccount({
+      assetResult = await syncLocalStudioUserAssetsToAccount({
+        accessToken,
+      });
+      const secretsResult = await syncAccountSecretsWithAccount({
         accessToken,
       });
 
       setSyncMessage(
-        `同步完成：已合并本地与账号资产，远端审计记录 ${result.remoteAuditCount} 条，合并决策 ${result.decisions.length} 项。`,
+        `同步完成：已合并本地与账号资产，远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`,
       );
     } catch (syncError) {
       console.error('Failed to sync account assets', syncError);
+      if (assetResult) {
+        setSyncMessage(
+          `普通账号资产已同步：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项。`,
+        );
+      }
       setError(syncError instanceof Error ? syncError.message : '账号资产同步失败，请稍后重试');
     } finally {
       setSyncing(false);
@@ -232,16 +257,27 @@ const UserDetailPage: React.FC = () => {
     try {
       if (accessToken) {
         setSyncing(true);
+        let assetResult: Awaited<ReturnType<typeof syncLocalStudioUserAssetsToAccount>> | null = null;
         try {
-          const result = await syncLocalStudioUserAssetsToAccount({
+          assetResult = await syncLocalStudioUserAssetsToAccount({
             accessToken,
           });
-          autoSyncMessage = `退出前已自动同步账号资产：远端审计记录 ${result.remoteAuditCount} 条，合并决策 ${result.decisions.length} 项。`;
+          const secretsResult = await syncAccountSecretsWithAccount({
+            accessToken,
+          });
+          autoSyncMessage = `退出前已自动同步账号资产：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`;
         } catch (syncError) {
           console.error('Failed to auto sync account assets before sign out', syncError);
-          autoSyncError = syncError instanceof Error
-            ? syncError.message
-            : '退出前自动同步账号资产失败，请稍后重试';
+          if (assetResult) {
+            autoSyncMessage = `退出前已同步普通账号资产：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项。`;
+            autoSyncError = syncError instanceof Error
+              ? `敏感配置同步失败：${syncError.message}`
+              : '敏感配置同步失败，请稍后重试';
+          } else {
+            autoSyncError = syncError instanceof Error
+              ? syncError.message
+              : '退出前自动同步账号资产失败，请稍后重试';
+          }
         } finally {
           setSyncing(false);
         }
@@ -434,13 +470,13 @@ const UserDetailPage: React.FC = () => {
             )}
 
             <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm leading-6 text-blue-800">
-              当前“账号同步”第一批会同步用户资产层：模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好，以及头像这类用户资料字段；
+              当前“账号同步”会同时处理两层数据：一层是模型偏好、工作台偏好、主脑长期偏好、风格库、角色草稿、插件/技能偏好，以及头像这类用户资料字段；另一层是服务商配置、图床与三方密钥等账号敏感配置。
               项目内容与项目图片资源仍保留在当前设备。退出登录时会先尝试自动同步账号资产，再提示确认是否清除本地项目缓存与仅本地资源。
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-gray-500">
-                当前页面已经接入统一认证状态层，并补了头像资料保存与第一批账号资产手动同步入口；退出登录时会自动检查本地项目是否仍含仅本地资源，并在确认后清理当前设备数据。
+                当前页面已经接入统一认证状态层，并补了头像资料保存、普通账号资产同步，以及服务商配置/图床敏感配置恢复入口；退出登录时会自动检查本地项目是否仍含仅本地资源，并在确认后清理当前设备数据。
               </p>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
