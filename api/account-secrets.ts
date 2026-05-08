@@ -3,8 +3,8 @@ import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:
 import {
   createEmptyAccountSecretsSnapshot,
   normalizeAccountSecretsSnapshot,
-  type StudioAccountSecretsSnapshot,
-} from '../services/account-secrets.ts';
+} from '../services/account-secrets.js';
+import type { StudioAccountSecretsSnapshot } from '../services/account-secrets.js';
 
 type AccountSecretsCipherEnvelope = {
   version: 1;
