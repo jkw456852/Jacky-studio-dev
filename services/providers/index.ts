@@ -153,14 +153,15 @@ export async function generateImageWithProvider(
   request: ImageGenerationRequest,
   model: string,
 ): Promise<string | null> {
-  const resolvedModel = resolveImageModel(model);
+  const requestedModel = String(model || "").trim();
+  const resolvedModel = resolveImageModel(requestedModel);
   const matchedProviderId = modelToImageProvider[resolvedModel];
   if (!matchedProviderId && shouldUseStrictModelRouting()) {
-    throw createModelNotFoundError("image", model, resolvedModel);
+    throw createModelNotFoundError("image", requestedModel, resolvedModel);
   }
   const providerId = matchedProviderId || "gemini"; // 默认回落到 Gemini / 云雾中转大管家
   if (!matchedProviderId) {
-    warnModelFallback("image", model, resolvedModel, providerId);
+    warnModelFallback("image", requestedModel, resolvedModel, providerId);
   }
   const provider = imageProviders.get(providerId);
 
@@ -175,7 +176,7 @@ export async function generateImageWithProvider(
     });
   }
 
-  return provider.generateImage(request, resolvedModel);
+  return provider.generateImage(request, requestedModel || resolvedModel);
 }
 
 export async function generateVideoWithProvider(

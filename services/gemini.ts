@@ -3293,6 +3293,9 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     const requestedModel = (config.model || '').trim();
     const normalizedRequestedModel = normalizeOpenAICompatibleImageModelId(requestedModel);
     const provider = getProviderConfigById(config.providerId);
+    const preserveOpenAICompatibleRawModel =
+        requestedModel.toLowerCase() === 'gpt-image-2-all'
+        || requestedModel.toLowerCase() === 'gpt image 2 all';
 
     // Seedream 使用 dall-e-3 格式，走单独的路径
     if (
@@ -3329,6 +3332,8 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
         } else if (requestedModel.includes('1.5-flash')) {
             // 强制防止回退到云雾不支持的旧 ID
             targetModelId = IMAGE_PRO_MODEL;
+        } else if (preserveOpenAICompatibleRawModel) {
+            targetModelId = requestedModel;
         } else if (normalizedRequestedModel) {
             targetModelId = normalizedRequestedModel;
         } else {
@@ -3451,7 +3456,7 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     if (useOpenAIImageRoute) {
         return requestOpenAICompatibleImage({
             contextTag: `generateImage.${targetModelId}`,
-            model: normalizeOpenAICompatibleImageModelId(targetModelId) || targetModelId,
+            model: targetModelId,
             prompt: finalPrompt,
             aspectRatio: validAspectRatio,
             imageSize: config.imageSize,

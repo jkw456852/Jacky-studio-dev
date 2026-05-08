@@ -103,6 +103,8 @@ const IMAGE_MODEL_ALIASES: Record<string, string> = {
   'doubao-seedream-5-0-260128': 'doubao-seedream-5-0-260128',
   'GPT Image 2': 'gpt-image-2',
   'gpt-image-2': 'gpt-image-2',
+  'GPT Image 2 All': 'gpt-image-2-all',
+  'gpt-image-2-all': 'gpt-image-2-all',
   'GPT Image 1.5': 'gpt-image-1.5-all',
   'gpt-image-1.5-all': 'gpt-image-1.5-all',
   'Flux.2 Max': 'flux-pro-max',
@@ -133,6 +135,7 @@ const MODEL_DISPLAY_LABELS: Record<string, string> = {
   'gemini-3.1-flash-image-preview': 'Nano Banana 2',
   'doubao-seedream-5-0-260128': 'Seedream 5.0',
   'gpt-image-2': 'GPT Image 2',
+  'gpt-image-2-all': 'GPT Image 2 All',
   'gpt-image-1.5-all': 'GPT Image 1.5',
   'flux-pro-max': 'Flux.2 Max',
   'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast',
@@ -248,7 +251,14 @@ const getDefaultImageModelPostPaths = (
     };
   }
 
-  if (normalizedModelId === 'gpt-image-2' || normalizedModelId === 'gpt-image-1.5-all') {
+  if (normalizedProviderId === 'plato' && normalizedModelId === 'gpt-image-2-all') {
+    return {
+      withReferences: '/v1/images/edits',
+      withoutReferences: '/v1/images/generations',
+    };
+  }
+
+  if (normalizedModelId === 'gpt-image-2' || normalizedModelId === 'gpt-image-2-all' || normalizedModelId === 'gpt-image-1.5-all') {
     return {
       withReferences: '/v1/images/edits',
       withoutReferences: '/v1/images/generations',
