@@ -154,20 +154,23 @@ const normalizeImageHostProvider = (value: unknown): ImageHostProvider => {
 const DEFAULT_PROVIDERS_SIGNATURE = JSON.stringify(getDefaultProviders());
 const DEFAULT_IMAGE_HOST_SIGNATURE = JSON.stringify(DEFAULT_IMAGE_HOST_STATE);
 
+const hasMeaningfulImageHostConfig = (
+  imageHost: StudioAccountSecretsSnapshot['imageHost'],
+): boolean => JSON.stringify(imageHost) !== DEFAULT_IMAGE_HOST_SIGNATURE;
+
 const hasMeaningfulAccountSecretsSnapshot = (
   snapshot: StudioAccountSecretsSnapshot,
 ): boolean => {
   const normalized = normalizeAccountSecretsSnapshot(snapshot);
   const providersChanged = JSON.stringify(normalized.providers) !== DEFAULT_PROVIDERS_SIGNATURE;
   const activeProviderChanged = normalized.activeProviderId !== DEFAULT_ACTIVE_PROVIDER_ID;
-  const imageHostChanged = JSON.stringify(normalized.imageHost) !== DEFAULT_IMAGE_HOST_SIGNATURE;
 
   return (
     providersChanged
     || activeProviderChanged
     || Boolean(normalized.replicateKey)
     || Boolean(normalized.klingKey)
-    || imageHostChanged
+    || hasMeaningfulImageHostConfig(normalized.imageHost)
   );
 };
 
@@ -428,8 +431,30 @@ export const syncAccountSecretsWithAccount = async (
   options: Omit<PushAccountSecretsToAccountOptions, 'snapshot'>,
 ): Promise<SyncAccountSecretsWithAccountResult> => {
   const remoteSnapshot = await pullAccountSecretsFromAccount(options);
+  const localSnapshot = collectLocalAccountSecretsSnapshot();
 
   if (remoteSnapshot.updatedAt > 0) {
+    const localHasImageHost = hasMeaningfulImageHostConfig(localSnapshot.imageHost);
+    const remoteHasImageHost = hasMeaningfulImageHostConfig(remoteSnapshot.imageHost);
+
+    if (localHasImageHost && !remoteHasImageHost) {
+      const storedSnapshot = await pushAccountSecretsToAccount({
+        ...options,
+        snapshot: {
+          ...remoteSnapshot,
+          updatedAt: Date.now(),
+          imageHost: clone(localSnapshot.imageHost),
+        },
+        baseUpdatedAt: remoteSnapshot.updatedAt,
+      });
+      const applied = applyLocalAccountSecretsSnapshot(storedSnapshot);
+      writeStoredRemoteVersion(applied.updatedAt);
+      return {
+        mode: 'pushed_local',
+        snapshot: applied,
+      };
+    }
+
     const applied = applyLocalAccountSecretsSnapshot(remoteSnapshot);
     writeStoredRemoteVersion(applied.updatedAt);
     return {
@@ -438,7 +463,6 @@ export const syncAccountSecretsWithAccount = async (
     };
   }
 
-  const localSnapshot = collectLocalAccountSecretsSnapshot();
   if (!hasMeaningfulAccountSecretsSnapshot(localSnapshot)) {
     writeStoredRemoteVersion(remoteSnapshot.updatedAt);
     return {
