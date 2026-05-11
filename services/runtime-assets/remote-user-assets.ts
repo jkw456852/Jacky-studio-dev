@@ -4,6 +4,12 @@ import type { StudioUserAssetApi } from "./api.ts";
 import type {
   StudioEvolutionApprovalStatus,
   StudioEvolutionRecord,
+  StudioMainBrainBootstrapAsset,
+  StudioMainBrainHeartbeatAsset,
+  StudioMainBrainMemoryAsset,
+  StudioMainBrainSoulAsset,
+  StudioMainBrainUserAsset,
+  StudioMainBrainWorkflowAsset,
   StudioPluginPreferencesAsset,
   StudioSkillPreferencesAsset,
   StudioStoredRoleDraft,
@@ -25,16 +31,87 @@ type RemoteEnvelope = {
 };
 
 const createEmptyState = (): StudioUserAssetState => ({
-  version: 3,
+  version: 5,
   updatedAt: Date.now(),
   mainBrainPreferences: {
     schemaVersion: 1,
     updatedAt: Date.now(),
     lines: [],
   },
+  mainBrainSoul: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    persona: "",
+    tone: [],
+    workingStyle: [],
+    restraintRules: [],
+    selfCheckRules: [],
+    riskPreference: "balanced",
+  },
+  mainBrainUser: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    goals: [],
+    workingHabits: [],
+    businessContext: [],
+    aestheticPreferences: [],
+    communicationStyle: [],
+    permanentNotes: [],
+    memoryBlacklist: [],
+  },
+  mainBrainWorkflow: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    defaultAnalysisDepth: "balanced",
+    searchPolicy: "auto",
+    clarifyBeforeExecution: false,
+    toolUseGuidelines: [],
+    failureRecoveryRules: [],
+    roleGovernanceDefaults: {
+      mode: "approval_required",
+      allowDraft: true,
+      allowAutoPromote: false,
+      allowAutoArchive: false,
+    },
+  },
+  mainBrainMemory: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    memoryIndex: [],
+    memoryRecords: {},
+    pendingMemoryCandidates: [],
+    memoryBlacklists: [],
+    retentionPolicy: {
+      maxActiveMemories: 200,
+      maxCandidateMemories: 50,
+      autoPromoteSimilarCount: 3,
+    },
+    dailySummary: [],
+  },
+  mainBrainHeartbeat: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    enabled: false,
+    cadence: "manual",
+    scope: [],
+    heartbeatTasks: {},
+    recentRunSummary: [],
+    lastRunAt: null,
+    nextRunAt: null,
+  },
+  mainBrainBootstrap: {
+    schemaVersion: 1,
+    updatedAt: Date.now(),
+    initialized: false,
+    initializedAt: null,
+    sourceTemplate: "",
+    completedSteps: [],
+    lastRebootstrapAt: null,
+  },
   userProfile: {
     schemaVersion: 1,
     updatedAt: Date.now(),
+    avatarUrl: "",
     preferenceNotes: [],
     commonTasks: [],
     aestheticPreferences: [],
@@ -79,6 +156,10 @@ const createEmptyState = (): StudioUserAssetState => ({
   },
   agentPromptAddons: {},
   latestRoleDrafts: {},
+  roles: {},
+  temporaryRoleDrafts: {},
+  roleVersions: {},
+  roleAuditEntries: {},
   styleLibraries: {},
   evolutionRecords: {},
 });
@@ -302,13 +383,69 @@ export const createRemoteStudioUserAssetApi = (
     getMainBrainPreferences: () => {
       throw new Error("Remote StudioUserAssetApi does not support sync reads.");
     },
-
+ 
     setMainBrainPreferences: (lines) => {
       throw new Error(
         `Remote StudioUserAssetApi does not support sync writes. Use replaceSnapshot after async orchestration. Requested lines=${lines.length}.`,
       );
     },
-
+ 
+    getMainBrainSoul: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainSoul: (_patch: Partial<Omit<StudioMainBrainSoulAsset, "schemaVersion" | "updatedAt">>) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
+    getMainBrainUser: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainUser: (_patch: Partial<Omit<StudioMainBrainUserAsset, "schemaVersion" | "updatedAt">>) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
+    getMainBrainWorkflow: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainWorkflow: (
+      _patch: Partial<Omit<StudioMainBrainWorkflowAsset, "schemaVersion" | "updatedAt">>,
+    ) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
+    getMainBrainMemory: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainMemory: (
+      _patch: Partial<Omit<StudioMainBrainMemoryAsset, "schemaVersion" | "updatedAt">>,
+    ) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
+    getMainBrainHeartbeat: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainHeartbeat: (
+      _patch: Partial<Omit<StudioMainBrainHeartbeatAsset, "schemaVersion" | "updatedAt">>,
+    ) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
+    getMainBrainBootstrap: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+ 
+    setMainBrainBootstrap: (
+      _patch: Partial<Omit<StudioMainBrainBootstrapAsset, "schemaVersion" | "updatedAt">>,
+    ) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+ 
     getUserProfile: () => {
       throw new Error("Remote StudioUserAssetApi does not support sync reads.");
     },
@@ -365,6 +502,50 @@ export const createRemoteStudioUserAssetApi = (
 
     clearLatestRoleDraft: (_agentId) => {
       throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+
+    listRoles: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+
+    getRoleById: (_roleId) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+
+    saveRole: (role, roleOptions) => {
+      throw new Error(
+        `Remote StudioUserAssetApi does not support sync writes. Persist role entity via replaceSnapshot or a remote orchestration layer. Requested role=${String(roleOptions?.preferredId || role.id || role.slug || role.title || "unknown").trim() || "unknown"}.`,
+      );
+    },
+
+    archiveRole: (_roleId) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+
+    duplicateRole: (_roleId) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+
+    saveTemporaryRoleDraft: (draft) => {
+      throw new Error(
+        `Remote StudioUserAssetApi does not support sync writes. Persist temporary role draft via replaceSnapshot or a remote orchestration layer. Requested draft=${String(draft.id || draft.title || "unknown").trim() || "unknown"}.`,
+      );
+    },
+
+    promoteTemporaryRole: (draftId, options) => {
+      throw new Error(
+        `Remote StudioUserAssetApi does not support sync writes. Promote temporary role via replaceSnapshot or a remote orchestration layer. Requested draft=${String(draftId || "").trim() || "unknown"}, targetRole=${String(options?.targetRoleId || "").trim() || "new-role"}.`,
+      );
+    },
+
+    listRoleVersions: (_roleId) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+
+    rollbackRoleVersion: (roleId, version) => {
+      throw new Error(
+        `Remote StudioUserAssetApi does not support sync writes. Roll back role versions via replaceSnapshot or a remote orchestration layer. Requested role=${String(roleId || "").trim() || "unknown"}, version=${Number(version || 0)}.`,
+      );
     },
 
     listStyleLibraries: () => {

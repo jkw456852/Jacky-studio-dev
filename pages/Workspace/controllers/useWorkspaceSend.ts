@@ -11,6 +11,10 @@ import { useAgentStore } from "../../../stores/agent.store";
 import { buildUserChatMessagePayloadFromInputBlocks } from "../chatMessageContent";
 import type { SearchResponse } from "../../../services/research/search.service";
 import {
+  captureMainBrainMemoryFromExchange,
+  recordMainBrainHeartbeatFromExchange,
+} from "../../../services/runtime-assets/main-brain-auto-memory";
+import {
   collectCanvasSelectionReferenceUrls,
   collectDerivedImageUrlsFromTask,
   EMPTY_WORKSPACE_SEND_INPUT_BLOCKS,
@@ -36,12 +40,20 @@ type WorkspaceSendOptions = {
   webEnabled: boolean;
   agentSelectionMode: "auto" | "manual";
   pinnedAgentId: AgentType;
+  selectedRoleId: string | null;
+  selectedRoleSource: AgentTaskMetadata["selectedRoleSource"] | null;
+  baseAgentId: AgentType;
+  roleGovernanceMode: NonNullable<AgentTaskMetadata["roleGovernanceMode"]>;
+  allowMainBrainRoleMutation: boolean;
+  allowMainBrainRolePromotion: boolean;
   creationMode: WorkspaceSendCreationMode;
   researchMode: WorkspaceSendResearchMode;
   imageGenRatio: string;
   imageGenRes: '1K' | '2K' | '4K';
   imageGenCount: 1 | 2 | 3 | 4;
   videoGenRatio: string;
+  preferredImageModel: string;
+  preferredImageProviderId: string | null;
   translatePromptToEnglish: boolean;
   enforceChineseTextInImage: boolean;
   requiredChineseCopy: string;
@@ -71,11 +83,19 @@ type BuildRequestMetadataParams = {
   isWeb: boolean;
   agentSelectionMode: "auto" | "manual";
   pinnedAgentId: AgentType;
+  selectedRoleId: string | null;
+  selectedRoleSource: AgentTaskMetadata["selectedRoleSource"] | null;
+  baseAgentId: AgentType;
+  roleGovernanceMode: NonNullable<AgentTaskMetadata["roleGovernanceMode"]>;
+  allowMainBrainRoleMutation: boolean;
+  allowMainBrainRolePromotion: boolean;
   creationMode: WorkspaceSendCreationMode;
   imageGenRatio: string;
   imageGenRes: '1K' | '2K' | '4K';
   imageGenCount: 1 | 2 | 3 | 4;
   videoGenRatio: string;
+  preferredImageModel: string;
+  preferredImageProviderId: string | null;
   translatePromptToEnglish: boolean;
   enforceChineseTextInImage: boolean;
   requiredChineseCopy: string;
@@ -84,6 +104,8 @@ type BuildRequestMetadataParams = {
   researchPayload: SearchResponse | null;
   researchReferenceImageUrls: string[];
   researchWebPages: WorkspaceSendReferenceWebPage[];
+  researchStatus: "skipped" | "success" | "failed";
+  researchErrorMessage?: string;
 };
 
 const buildResearchSummary = (
@@ -96,6 +118,64 @@ const buildResearchSummary = (
   return `本次研究包含 ${researchReferenceImageUrls.length} 张参考图片。`;
 };
 
+const buildResearchProviderLabel = (researchPayload: SearchResponse | null) => {
+  if (!researchPayload?.provider) return undefined;
+  const labels = [researchPayload.provider.web, researchPayload.provider.images].filter(
+    Boolean,
+  );
+  return labels.length > 0 ? labels.join(' / ') : undefined;
+};
+
+const buildResearchHost = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '');
+  } catch {
+    return undefined;
+  }
+};
+
+const buildAgentResearchPayload = ({
+  researchPayload,
+  researchReferenceImageUrls,
+  researchWebPages,
+}: {
+  researchPayload: SearchResponse | null;
+  researchReferenceImageUrls: string[];
+  researchWebPages: WorkspaceSendReferenceWebPage[];
+}) => {
+  if (!researchPayload) return undefined;
+
+  return {
+    status: 'completed' as const,
+    mode: researchPayload.mode,
+    query: researchPayload.query,
+    summary: buildResearchSummary(
+      researchWebPages,
+      researchReferenceImageUrls,
+    ),
+    providerLabel: buildResearchProviderLabel(researchPayload),
+    fallback: Boolean(researchPayload.provider?.fallback),
+    webCount: Array.isArray(researchPayload.web) ? researchPayload.web.length : 0,
+    imageCount: Array.isArray(researchPayload.images) ? researchPayload.images.length : 0,
+    extractedCount: researchWebPages.length,
+    citations: researchWebPages.map((page) => ({
+      title: page.title,
+      url: page.url,
+      host: buildResearchHost(page.url),
+      siteName: page.siteName,
+      snippet: page.snippet,
+      excerpt: page.snippet,
+    })),
+    extractedPages: researchWebPages.map((page) => ({
+      title: page.title,
+      url: page.url,
+      excerpt: page.snippet,
+      cleanedTextExcerpt: page.snippet,
+    })),
+    suggestedQueries: researchPayload.hints?.suggestedQueries || [],
+  };
+};
+
 const isTransientAttachmentPreviewUrl = (value: string | null | undefined) =>
   /^blob:/i.test(String(value || "").trim());
 
@@ -105,11 +185,19 @@ const buildRequestMetadata = ({
   isWeb,
   agentSelectionMode,
   pinnedAgentId,
+  selectedRoleId,
+  selectedRoleSource,
+  baseAgentId,
+  roleGovernanceMode,
+  allowMainBrainRoleMutation,
+  allowMainBrainRolePromotion,
   creationMode,
   imageGenRatio,
   imageGenRes,
   imageGenCount,
   videoGenRatio,
+  preferredImageModel,
+  preferredImageProviderId,
   translatePromptToEnglish,
   enforceChineseTextInImage,
   requiredChineseCopy,
@@ -118,6 +206,8 @@ const buildRequestMetadata = ({
   researchPayload,
   researchReferenceImageUrls,
   researchWebPages,
+  researchStatus,
+  researchErrorMessage,
 }: BuildRequestMetadataParams): AgentTaskMetadata => {
   const allowAutonomousRouting =
     skillData?.config &&
@@ -127,12 +217,27 @@ const buildRequestMetadata = ({
 
   return {
     topicId,
-    enableWebSearch: isWeb,
+    enableWebSearch: isWeb && researchStatus !== "failed",
+    webResearchStatus: researchStatus,
+    webResearchError:
+      researchStatus === "failed"
+        ? researchErrorMessage || "检索失败，请稍后重试"
+        : undefined,
     agentSelectionMode,
     pinnedAgentId: agentSelectionMode === "manual" ? pinnedAgentId : undefined,
+    selectedRoleId: selectedRoleId || undefined,
+    selectedRoleSource: selectedRoleSource || undefined,
+    baseAgentId,
+    roleGovernanceMode,
+    allowMainBrainRoleMutation,
+    allowMainBrainRolePromotion,
     creationMode: effectiveCreationMode,
     preferredAspectRatio:
       effectiveCreationMode === "video" ? videoGenRatio : imageGenRatio,
+    preferredImageModel:
+      effectiveCreationMode === "video" ? undefined : preferredImageModel,
+    preferredImageProviderId:
+      effectiveCreationMode === "video" ? undefined : preferredImageProviderId,
     preferredImageSize: imageGenRes,
     preferredImageCount: effectiveCreationMode === "image" ? imageGenCount : 1,
     promptLanguagePolicy: translatePromptToEnglish
@@ -191,12 +296,20 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
     webEnabled,
     agentSelectionMode,
     pinnedAgentId,
+    selectedRoleId,
+    selectedRoleSource,
+    baseAgentId,
+    roleGovernanceMode,
+    allowMainBrainRoleMutation,
+    allowMainBrainRolePromotion,
     creationMode,
     researchMode,
     imageGenRatio,
     imageGenRes,
     imageGenCount,
     videoGenRatio,
+    preferredImageModel,
+    preferredImageProviderId,
     translatePromptToEnglish,
     enforceChineseTextInImage,
     requiredChineseCopy,
@@ -334,6 +447,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           researchPayload,
           researchReferenceImageUrls,
           researchWebPages,
+          researchStatus,
+          researchErrorMessage,
         } = await gatherWorkspaceResearchContext(text, researchMode);
 
         const requestMetadata = buildRequestMetadata({
@@ -341,11 +456,19 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           isWeb,
           agentSelectionMode,
           pinnedAgentId,
+          selectedRoleId,
+          selectedRoleSource,
+          baseAgentId,
+          roleGovernanceMode,
+          allowMainBrainRoleMutation,
+          allowMainBrainRolePromotion,
           creationMode,
           imageGenRatio,
           imageGenRes,
           imageGenCount,
           videoGenRatio,
+          preferredImageModel,
+          preferredImageProviderId,
           translatePromptToEnglish,
           enforceChineseTextInImage,
           requiredChineseCopy,
@@ -354,6 +477,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           researchPayload,
           researchReferenceImageUrls,
           researchWebPages,
+          researchStatus,
+          researchErrorMessage,
         });
         if (requestMetadata.multimodalContext) {
           requestMetadata.multimodalContext.uploadedAttachmentCount =
@@ -365,6 +490,16 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
               requestMetadata.multimodalContext.isolateVisualQa = true;
             }
           }
+        }
+
+        if (researchStatus === "failed") {
+          addMessage({
+            id: `research-unavailable-${Date.now()}`,
+            role: "model",
+            text: `本轮联网检索未成功：${researchErrorMessage || "检索失败，请稍后重试"}。如果继续回答，只能基于已有知识，不能视为实时查询结果。`,
+            timestamp: Date.now(),
+            error: true,
+          });
         }
 
         console.log(
@@ -403,9 +538,28 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
               preGenerationMessage: result.output.preGenerationMessage,
               postGenerationSummary: result.output.postGenerationSummary,
               suggestions: result.output.adjustments || [],
+              research: buildAgentResearchPayload({
+                researchPayload,
+                researchReferenceImageUrls,
+                researchWebPages,
+              }),
             },
           };
           addMessage(agentMsg);
+
+          if (result.status === "completed") {
+            const memoryCapture = captureMainBrainMemoryFromExchange({
+              topicId: effectiveTopicId,
+              userMessage: text,
+              assistantMessage: result.output.message || "",
+              assistantSummary: result.output.postGenerationSummary,
+              task: result,
+            });
+            recordMainBrainHeartbeatFromExchange({
+              capturedMemorySummaries: memoryCapture.createdSummaries,
+              task: result,
+            });
+          }
         }
       } catch (error) {
         console.error("[Workspace] handleSend failed:", error);
@@ -439,6 +593,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
       imageGenCount,
       isTyping,
       isUploadingAttachments,
+      preferredImageModel,
+      preferredImageProviderId,
       processMessage,
       requiredChineseCopy,
       researchMode,

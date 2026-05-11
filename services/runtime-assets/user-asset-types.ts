@@ -1,8 +1,20 @@
-import type { AgentRoleDraft, AgentType } from "../../types/agent.types";
+import type {
+  AgentRoleDraft,
+  AgentType,
+  StudioRoleEntity,
+  StudioRoleVersionRecord,
+  StudioTemporaryRoleDraft,
+} from "../../types/agent.types";
 import type { WorkspaceStyleLibrary } from "../../types/common";
 
-export const STUDIO_USER_ASSET_STATE_VERSION = 3;
+export const STUDIO_USER_ASSET_STATE_VERSION = 5;
 export const STUDIO_MAIN_BRAIN_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_SOUL_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_USER_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_WORKFLOW_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_MEMORY_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_HEARTBEAT_ASSET_VERSION = 1;
+export const STUDIO_MAIN_BRAIN_BOOTSTRAP_ASSET_VERSION = 1;
 export const STUDIO_ROLE_ADDON_ASSET_VERSION = 1;
 export const STUDIO_ROLE_DRAFT_ASSET_VERSION = 1;
 export const STUDIO_STYLE_LIBRARY_ASSET_VERSION = 1;
@@ -59,6 +71,156 @@ export interface StudioUserProfileAsset {
   aestheticPreferences: string[];
   brandContextNotes: string[];
   memoryNotes: string[];
+}
+
+export interface StudioMainBrainSoulAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  persona: string;
+  tone: string[];
+  workingStyle: string[];
+  restraintRules: string[];
+  selfCheckRules: string[];
+  riskPreference: "balanced" | "conservative" | "aggressive";
+}
+
+export interface StudioMainBrainUserAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  goals: string[];
+  workingHabits: string[];
+  businessContext: string[];
+  aestheticPreferences: string[];
+  communicationStyle: string[];
+  permanentNotes: string[];
+  memoryBlacklist: string[];
+}
+
+export type StudioMainBrainAnalysisDepth =
+  | "light"
+  | "balanced"
+  | "deep";
+
+export type StudioMainBrainSearchPolicy =
+  | "never"
+  | "auto"
+  | "prefer";
+
+export interface StudioMainBrainWorkflowRoleGovernanceDefaults {
+  mode: "manual_only" | "approval_required" | "auto_manage";
+  allowDraft: boolean;
+  allowAutoPromote: boolean;
+  allowAutoArchive: boolean;
+}
+
+export interface StudioMainBrainWorkflowAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  defaultAnalysisDepth: StudioMainBrainAnalysisDepth;
+  searchPolicy: StudioMainBrainSearchPolicy;
+  clarifyBeforeExecution: boolean;
+  toolUseGuidelines: string[];
+  failureRecoveryRules: string[];
+  roleGovernanceDefaults: StudioMainBrainWorkflowRoleGovernanceDefaults;
+}
+
+export type StudioMainBrainMemoryCategory =
+  | "preference"
+  | "background"
+  | "aesthetic"
+  | "boundary"
+  | "project_fact"
+  | "workflow"
+  | "governance";
+
+export type StudioMainBrainMemorySource =
+  | "conversation"
+  | "user_explicit"
+  | "task_summary"
+  | "heartbeat"
+  | "manual";
+
+export type StudioMainBrainMemoryStatus =
+  | "candidate"
+  | "active"
+  | "dismissed";
+
+export interface StudioMainBrainMemoryRecord {
+  id: string;
+  schemaVersion: StudioAssetVersion;
+  createdAt: number;
+  updatedAt: number;
+  category: StudioMainBrainMemoryCategory;
+  source: StudioMainBrainMemorySource;
+  status: StudioMainBrainMemoryStatus;
+  summary: string;
+  detail: string;
+  evidence: string[];
+  tags: string[];
+  topicId?: string;
+}
+
+export interface StudioMainBrainMemoryRetentionPolicy {
+  maxActiveMemories: number;
+  maxCandidateMemories: number;
+  autoPromoteSimilarCount: number;
+}
+
+export interface StudioMainBrainMemoryAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  memoryIndex: string[];
+  memoryRecords: Record<string, StudioMainBrainMemoryRecord>;
+  pendingMemoryCandidates: string[];
+  memoryBlacklists: string[];
+  retentionPolicy: StudioMainBrainMemoryRetentionPolicy;
+  dailySummary: string[];
+}
+
+export type StudioMainBrainHeartbeatCadence =
+  | "manual"
+  | "daily"
+  | "weekly";
+
+export type StudioMainBrainHeartbeatTaskType =
+  | "preference_compaction"
+  | "failure_summary"
+  | "memory_review_reminder"
+  | "role_staleness_check"
+  | "rule_conflict_check";
+
+export interface StudioMainBrainHeartbeatTask {
+  id: string;
+  type: StudioMainBrainHeartbeatTaskType;
+  title: string;
+  enabled: boolean;
+  cadence: StudioMainBrainHeartbeatCadence;
+  scope: string[];
+  lastRunAt: number | null;
+  nextRunAt: number | null;
+  lastSummary: string;
+}
+
+export interface StudioMainBrainHeartbeatAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  enabled: boolean;
+  cadence: StudioMainBrainHeartbeatCadence;
+  scope: string[];
+  heartbeatTasks: Record<string, StudioMainBrainHeartbeatTask>;
+  recentRunSummary: string[];
+  lastRunAt: number | null;
+  nextRunAt: number | null;
+}
+
+export interface StudioMainBrainBootstrapAsset {
+  schemaVersion: StudioAssetVersion;
+  updatedAt: number;
+  initialized: boolean;
+  initializedAt: number | null;
+  sourceTemplate: string;
+  completedSteps: string[];
+  lastRebootstrapAt: number | null;
 }
 
 export interface StudioImageModelPostPathConfig {
@@ -147,15 +309,25 @@ export interface StudioEvolutionRecord {
 }
 
 export interface StudioUserAssetState {
-  version: 3;
+  version: 5;
   updatedAt: number;
   mainBrainPreferences: StudioMainBrainPreferencesAsset;
+  mainBrainSoul: StudioMainBrainSoulAsset;
+  mainBrainUser: StudioMainBrainUserAsset;
+  mainBrainWorkflow: StudioMainBrainWorkflowAsset;
+  mainBrainMemory: StudioMainBrainMemoryAsset;
+  mainBrainHeartbeat: StudioMainBrainHeartbeatAsset;
+  mainBrainBootstrap: StudioMainBrainBootstrapAsset;
   userProfile: StudioUserProfileAsset;
   workspacePreferences: StudioWorkspacePreferencesAsset;
   skillPreferences: StudioSkillPreferencesAsset;
   pluginPreferences: StudioPluginPreferencesAsset;
   agentPromptAddons: StudioUserPromptAddonMap;
   latestRoleDrafts: StudioUserRoleDraftMap;
+  roles: Record<string, StudioRoleEntity>;
+  temporaryRoleDrafts: Record<string, StudioTemporaryRoleDraft>;
+  roleVersions: Record<string, StudioRoleVersionRecord[]>;
+  roleAuditEntries: Record<string, StudioRoleVersionRecord[]>;
   styleLibraries: Record<string, StudioStoredStyleLibrary>;
   evolutionRecords: Record<string, StudioEvolutionRecord>;
 }
@@ -168,12 +340,21 @@ export type StudioUserAssetAuditAction =
 
 export type StudioUserAssetAuditTargetKind =
   | "main-brain"
+  | "main-brain-soul"
+  | "main-brain-user"
+  | "main-brain-workflow"
+  | "main-brain-memory"
+  | "main-brain-heartbeat"
+  | "main-brain-bootstrap"
   | "user-profile"
   | "workspace-preference"
   | "skill-preference"
   | "plugin-preference"
   | "agent-role-addon"
   | "role-draft"
+  | "role-entity"
+  | "temporary-role-draft"
+  | "role-version"
   | "style-library"
   | "evolution-record"
   | "rollback";

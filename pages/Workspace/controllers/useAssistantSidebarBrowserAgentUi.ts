@@ -16,6 +16,12 @@ import {
 import { compressImage, createImagePreviewDataUrl } from "../workspaceShared";
 import type { ChatMessage, WorkspaceInputFile } from "../../../types";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
+import { useAgentStore } from "../../../stores/agent.store";
+import {
+  buildSidebarBrowserAgentTaskMetadata,
+  getPreparedPlanContinuationStatus,
+  type SidebarBrowserAgentTaskMetadata,
+} from "./assistantSidebarBrowserAgentMetadata.ts";
 
 type UseAssistantSidebarBrowserAgentUiArgs = {
   selectedElementId: string | null;
@@ -187,6 +193,7 @@ type PreparedGoalSessionPlan = {
   referenceImages: string[];
   referenceImageCount: number;
   skillData?: ChatMessage["skillData"];
+  metadata: SidebarBrowserAgentTaskMetadata;
   plan: BrowserAgentGoalSessionPlan;
   repairNotes: string[];
   controlSummary: {
@@ -228,7 +235,6 @@ const normalizeStringArray = (value: unknown): string[] =>
         .map((item) => String(item || "").trim())
         .filter(Boolean)
     : [];
-
 
 const repairGoalPlanForPresentation = (args: {
   goal: string;
@@ -362,6 +368,18 @@ export const useAssistantSidebarBrowserAgentUi = ({
   const autoContinuationSessionIdRef = React.useRef<string | null>(null);
   const autoContinuationSignatureRef = React.useRef<string | null>(null);
   const autoRepairSignatureRef = React.useRef<string | null>(null);
+  const agentSelectionMode = useAgentStore((state) => state.agentSelectionMode);
+  const pinnedAgentId = useAgentStore((state) => state.pinnedAgentId);
+  const selectedRoleId = useAgentStore((state) => state.selectedRoleId);
+  const selectedRoleSource = useAgentStore((state) => state.selectedRoleSource);
+  const baseAgentId = useAgentStore((state) => state.baseAgentId);
+  const roleGovernanceMode = useAgentStore((state) => state.roleGovernanceMode);
+  const allowMainBrainRoleMutation = useAgentStore(
+    (state) => state.allowMainBrainRoleMutation,
+  );
+  const allowMainBrainRolePromotion = useAgentStore(
+    (state) => state.allowMainBrainRolePromotion,
+  );
 
   const chatEnabled = chatEnabledState;
   const setChatEnabled = React.useCallback((value: boolean) => {
@@ -916,6 +934,17 @@ export const useAssistantSidebarBrowserAgentUi = ({
               report?: WorkspaceElementControlsReport | null;
             })
           : null;
+        const browserAgentTaskMetadata = buildSidebarBrowserAgentTaskMetadata({
+          skillData,
+          agentSelectionMode,
+          pinnedAgentId,
+          selectedRoleId,
+          selectedRoleSource,
+          baseAgentId,
+          roleGovernanceMode,
+          allowMainBrainRoleMutation,
+          allowMainBrainRolePromotion,
+        });
         const result = (await invokeBrowserAgentTool("browser.plan_goal_session", {
           goal: normalizedGoal,
           hostId: WORKSPACE_BROWSER_AGENT_HOST_ID,
@@ -924,11 +953,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
           recentConsoleLimit: 8,
           recentSession: currentSession || undefined,
           referenceImages,
-          metadata: {
-            skillData: skillData || undefined,
-            allowAutonomousRouting:
-              Boolean(skillData && (skillData as any).config?.allowAutonomousRouting),
-          },
+          metadata: browserAgentTaskMetadata,
         })) as {
           plan?: BrowserAgentGoalSessionPlan | null;
         };
@@ -956,6 +981,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
           referenceImages,
           referenceImageCount: referenceImages.length,
           skillData: skillData || undefined,
+          metadata: browserAgentTaskMetadata,
           plan: repairedPresentationPlan.plan,
           repairNotes: repairedPresentationPlan.repairNotes,
           controlSummary: extractPreparedPlanControlSummary(
@@ -983,9 +1009,17 @@ export const useAssistantSidebarBrowserAgentUi = ({
       }
     },
     [
+      agentSelectionMode,
+      allowMainBrainRoleMutation,
+      allowMainBrainRolePromotion,
+      baseAgentId,
       buildReferenceImagesFromAttachments,
       currentSession,
+      pinnedAgentId,
       resolveGoalTargetElementId,
+      roleGovernanceMode,
+      selectedRoleId,
+      selectedRoleSource,
     ],
   );
 
@@ -1108,6 +1142,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
         title: preparedPlan.plan.title,
         description: preparedPlan.plan.description,
         metadata: {
+          ...preparedPlan.metadata,
           goal: preparedPlan.goal,
           planner: "goal-session-approved-plan",
           plannerModel: preparedPlan.plan.plannerModel,
@@ -1116,7 +1151,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
           taskProfile: preparedPlan.plan.taskProfile || null,
           researchNotes: preparedPlan.plan.researchNotes || null,
           executionStrategy: preparedPlan.plan.executionStrategy || null,
-          continuationStatus: "done",
+          continuationStatus: getPreparedPlanContinuationStatus(preparedPlan.plan),
           continuationCount: 0,
           targetHostId: preparedPlan.plan.targetHostId,
           targetElementId,
@@ -1124,12 +1159,6 @@ export const useAssistantSidebarBrowserAgentUi = ({
           inputReferenceImages: preparedPlan.referenceImages,
           approvedFromPlan: true,
           approvedRepairNotes: preparedPlan.repairNotes,
-          skillData: preparedPlan.skillData || null,
-          allowAutonomousRouting:
-            Boolean(
-              preparedPlan.skillData &&
-                (preparedPlan.skillData as any).config?.allowAutonomousRouting,
-            ),
         },
         autoStart: true,
         steps: normalizedSteps,

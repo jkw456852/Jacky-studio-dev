@@ -2,14 +2,14 @@
 import { GoogleGenAI, Chat, GenerateContentResponse, Part, Content, Type } from "@google/genai";
 import { ProviderError } from '../utils/provider-error';
 import { fetchWithResilience } from './http/api-client';
-import { safeLocalStorageSetItem } from '../utils/safe-storage';
+import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
 import { getApiKey, getApiKeyByProviderId, getProviderConfig, getProviderConfigById } from './provider-config';
 import {
     normalizeReferenceToDataUrl,
     normalizeReferenceToModelInputDataUrl,
 } from './image-reference-resolver';
 import { parseMappedModelStorageEntry, resolveImageModelPostPath } from './provider-settings';
-import { getStudioUserAssetApi } from './runtime-assets/api';
+import { getStudioUserAssetApi } from './runtime-assets/api.ts';
 
 const isNetworkFetchError = (error: unknown): boolean => {
     const msg = ((error as any)?.message || '').toLowerCase();

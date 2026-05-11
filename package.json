@@ -16,6 +16,8 @@
     "sync:studio-assets": "node scripts/sync-studio-assets.mjs",
     "build": "npm run sync:studio-assets && vite build",
     "preview": "vite preview",
+    "main-brain:capabilities:check": "node --experimental-strip-types scripts/main-brain-capability-tooling.mjs check",
+    "main-brain:capabilities:scaffold": "node --experimental-strip-types scripts/main-brain-capability-tooling.mjs scaffold",
     "test:optimizer": "node --experimental-strip-types --test services/agents/prompt-optimizer/*.test.ts services/agents/utils/*.test.ts services/agents/main-brain-*.test.ts services/agents/agent-task-output.test.ts services/agents/agent-response-normalizer.test.ts services/agents/orchestrator-result-handlers.test.ts services/agents/orchestrator-proposal-execution.test.ts services/agents/orchestrator-routing-execution.test.ts services/agents/orchestrator-preparation.test.ts services/agents/environment-input-protocol.test.ts services/agents/skill-execution-preprocessor.test.ts services/agents/skill-call-normalizer.test.ts services/agents/skill-execution-runtime.test.ts services/agents/timeout-utils.test.ts services/skills/index.test.ts services/skills/skill-runtime.test.ts",
     "test:assets": "node --experimental-strip-types --test services/runtime-assets/*.test.ts",
     "test": "npm run test:optimizer && npm run test:assets"

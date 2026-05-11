@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import { motion } from "framer-motion";
+import { Maximize2 } from "lucide-react";
 import { useAgentStore } from "../../../stores/agent.store";
 import type { BrowserAgentSessionRecord } from "../../../services/browser-agent";
 import { getBrowserAgentModelLabel } from "../../../services/provider-settings";
@@ -12,14 +13,12 @@ import { createImagePreviewDataUrl } from "../workspaceShared";
 import { useAssistantSidebarConversationUi } from "../controllers/useAssistantSidebarConversationUi";
 import { useAssistantSidebarBrowserAgentUi } from "../controllers/useAssistantSidebarBrowserAgentUi";
 import { useAssistantSidebarPanelUi } from "../controllers/useAssistantSidebarPanelUi";
-import { useAssistantSidebarQuickSkills } from "../controllers/useAssistantSidebarQuickSkills";
 import { AssistantSidebarHeader } from "./AssistantSidebarHeader";
+import { AssistantSidebarHistoryPanel } from "./AssistantSidebarHistoryPanel";
 import { AssistantSidebarPlanCard } from "./AssistantSidebarPlanCard";
-import { AssistantSidebarQuickSkills } from "./AssistantSidebarQuickSkills";
 import { AssistantSidebarStatusBanner } from "./AssistantSidebarStatusBanner";
 import { MessageList } from "./MessageList";
 import { InputArea } from "./InputArea";
-import { EcommerceWorkflowSummaryCard } from "./workflow/EcommerceWorkflowSummaryCard";
 import { isEcommerceWorkflowChatMessage } from "./workflow/ecommerceWorkflowUi";
 import type {
   InputAreaComposerProps,
@@ -198,6 +197,9 @@ type AssistantSidebarPanelUiProps = {
   setShowAssistant: (show: boolean) => void;
   setPreviewUrl: (url: string) => void;
   onOpenEcommerceWorkflow: () => void;
+  isFullscreen?: boolean;
+  setIsFullscreen?: (value: boolean) => void;
+  onToggleFullscreen?: () => void;
 };
 
 type AssistantSidebarMessageActionsProps = {
@@ -332,7 +334,14 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     activeConversationId,
     setActiveConversationId,
   } = session;
-  const { setShowAssistant, setPreviewUrl, onOpenEcommerceWorkflow } = panelUi;
+  const {
+    setShowAssistant,
+    setPreviewUrl,
+    onOpenEcommerceWorkflow,
+    isFullscreen = false,
+    setIsFullscreen = () => {},
+    onToggleFullscreen,
+  } = panelUi;
   const { handleSend, handleSmartGenerate } = messageActions;
   const {
     chatEnabled,
@@ -384,20 +393,6 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     toggleFileListModal,
   } = useAssistantSidebarPanelUi();
   const {
-    activeQuickSkill,
-    handleSendWithQuickSkill,
-    clearActiveQuickSkill,
-    quickSkillsProps,
-  } = useAssistantSidebarQuickSkills({
-    conversations,
-    setConversations,
-    activeConversationId,
-    creationMode: composer.creationMode,
-    onOpenEcommerceWorkflow,
-    handleSend,
-  });
-
-  const {
     handleCreateConversation,
     handleSelectConversation,
     handleDeleteConversation,
@@ -413,7 +408,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     setMessages,
     setPrompt: composer.setPrompt,
     setCreationMode: composer.setCreationMode,
-    resetActiveQuickSkill: clearActiveQuickSkill,
+    resetActiveQuickSkill: () => {},
     closeHistoryPopover,
   });
 
@@ -1152,7 +1147,6 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       composer.creationMode,
       buildBrowserAgentMessagePayload,
       buildUserAttachmentPayload,
-      handleSendWithQuickSkill,
       handleStartGoalSession,
       setInputBlocks,
       setIsTyping,
@@ -1202,72 +1196,42 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     updateMessage,
   ]);
 
-  return (
-    <motion.div
-      initial={{ x: 400, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 400, opacity: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="absolute top-0 right-0 w-[480px] h-full min-h-0 bg-[#f8f9fc] border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-50 flex flex-col overflow-hidden"
-    >
-      <AssistantSidebarHeader
-        title={activeConversationTitle}
-        historyOpen={showHistoryPopover}
-        historySearch={historySearch}
-        setHistorySearch={setHistorySearch}
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        filesOpen={showFileListModal}
-        messages={messages}
-        onPreview={setPreviewUrl}
-        onToggleHistory={toggleHistoryPopover}
-        onCreateConversation={handleCreateConversation}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onToggleFiles={toggleFileListModal}
-        onClose={() => setShowAssistant(false)}
-      />
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 no-scrollbar relative">
-        <div className="space-y-4">
-          <EcommerceWorkflowSummaryCard
-            onOpen={onOpenEcommerceWorkflow}
-            compact
+  const messageThreadNode = (
+    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 no-scrollbar relative">
+      <div className="space-y-4">
+        {visibleMessages.length > 0 ? (
+          <MessageList
+            onSend={handleSidebarSend}
+            onSmartGenerate={handleSmartGenerate}
+            onPreview={setPreviewUrl}
+            clothingActions={clothingActions}
+            ecommerceActions={ecommerceActions}
           />
-          {visibleMessages.length === 0 ? (
-            <AssistantSidebarQuickSkills {...quickSkillsProps} />
-          ) : (
-            <MessageList
-              onSend={handleSidebarSend}
-              onSmartGenerate={handleSmartGenerate}
-              onPreview={setPreviewUrl}
-              clothingActions={clothingActions}
-              ecommerceActions={ecommerceActions}
-            />
-          )}
-          {preparedPlan ? (
-            <AssistantSidebarPlanCard
-              goal={preparedPlan.goal}
-              plan={preparedPlan.plan}
-              targetElementId={preparedPlan.targetElementId}
-              targetElementPendingCreation={
-                preparedPlan.targetElementPendingCreation
-              }
-              referenceImageCount={preparedPlan.referenceImageCount}
-              controlSummary={preparedPlan.controlSummary}
-              repairNotes={preparedPlan.repairNotes}
-              isExecuting={isStarting}
-              onApprove={() => {
-                void handleApprovePreparedPlan();
-              }}
-              onDismiss={() => {
-                void handleCancelSession();
-              }}
-            />
-          ) : null}
-        </div>
+        ) : null}
+        {preparedPlan ? (
+          <AssistantSidebarPlanCard
+            goal={preparedPlan.goal}
+            plan={preparedPlan.plan}
+            targetElementId={preparedPlan.targetElementId}
+            targetElementPendingCreation={preparedPlan.targetElementPendingCreation}
+            referenceImageCount={preparedPlan.referenceImageCount}
+            controlSummary={preparedPlan.controlSummary}
+            repairNotes={preparedPlan.repairNotes}
+            isExecuting={isStarting}
+            onApprove={() => {
+              void handleApprovePreparedPlan();
+            }}
+            onDismiss={() => {
+              void handleCancelSession();
+            }}
+          />
+        ) : null}
       </div>
+    </div>
+  );
 
+  const composerNode = (
+    <>
       <AssistantSidebarStatusBanner
         label={currentTaskLabel}
         statusKey={currentTask?.status}
@@ -1305,11 +1269,82 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           }}
           markers={markers}
           onSaveMarkerLabel={onSaveMarkerLabel}
-          activeQuickSkill={activeQuickSkill}
-          onClearQuickSkill={clearActiveQuickSkill}
-          persistQuickSkillOnSend={false}
         />
       </div>
+    </>
+  );
+
+  return (
+    <motion.div
+      initial={{ x: 400, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 400, opacity: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className={`absolute right-0 top-0 z-50 flex h-full min-h-0 flex-col overflow-hidden bg-[#f8f9fc] ${
+        isFullscreen
+          ? "inset-0 w-full border-l-0 shadow-none"
+          : "w-[480px] border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.03)]"
+      }`}
+    >
+      {!isFullscreen ? (
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          className="absolute left-0 top-1/2 z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+          title="全屏聊天"
+          aria-label="全屏聊天"
+        >
+          <Maximize2 size={16} strokeWidth={1.8} />
+        </button>
+      ) : null}
+
+      <AssistantSidebarHeader
+        title={activeConversationTitle}
+        historyOpen={showHistoryPopover}
+        historySearch={historySearch}
+        setHistorySearch={setHistorySearch}
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        filesOpen={showFileListModal}
+        messages={messages}
+        onPreview={setPreviewUrl}
+        onToggleHistory={toggleHistoryPopover}
+        onCreateConversation={handleCreateConversation}
+        onSelectConversation={handleSelectConversation}
+        onDeleteConversation={handleDeleteConversation}
+        onToggleFiles={toggleFileListModal}
+        onClose={() => {
+          setIsFullscreen(false);
+          setShowAssistant(false);
+        }}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={onToggleFullscreen}
+      />
+
+      {isFullscreen ? (
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="w-[292px] shrink-0">
+            <AssistantSidebarHistoryPanel
+              historySearch={historySearch}
+              setHistorySearch={setHistorySearch}
+              conversations={conversations}
+              activeConversationId={activeConversationId}
+              onCreateConversation={handleCreateConversation}
+              onSelectConversation={handleSelectConversation}
+              onDeleteConversation={handleDeleteConversation}
+            />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col bg-[#f8f9fc]">
+            {messageThreadNode}
+            {composerNode}
+          </div>
+        </div>
+      ) : (
+        <>
+          {messageThreadNode}
+          {composerNode}
+        </>
+      )}
     </motion.div>
   );
 });

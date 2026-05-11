@@ -1,16 +1,11 @@
 import React, { useState } from 'react';
-import {
-  Image as ImageIcon,
-  Loader2,
-  Square,
-} from 'lucide-react';
+import { Image as ImageIcon } from 'lucide-react';
 import { useAgentStore } from '../../../stores/agent.store';
 import { useInputAreaFileHandling } from '../controllers/useInputAreaFileHandling';
 import { InputAreaBottomToolbar } from './InputAreaBottomToolbar';
 import { InputAreaEditor } from './InputAreaEditor';
 import { InputAreaMarkerEditPopover } from './InputAreaMarkerEditPopover';
 import { InputAreaMediaUploadPanel } from './InputAreaMediaUploadPanel';
-import { InputAreaQuickSkillBadge } from './InputAreaQuickSkillBadge';
 import { ImageModel, Marker, VideoModel } from '../../../types';
 import type { ChatMessage } from '../../../types';
 import type { AgentType } from '../../../types/agent.types';
@@ -95,9 +90,6 @@ interface InputAreaProps {
   browserAgent?: InputAreaBrowserAgentProps;
   markers: Marker[];
   onSaveMarkerLabel?: (markerId: string, label: string) => void;
-  activeQuickSkill?: ChatMessage['skillData'] | null;
-  onClearQuickSkill?: () => void;
-  persistQuickSkillOnSend?: boolean;
 }
 
 export const InputArea: React.FC<InputAreaProps> = ({
@@ -143,9 +135,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
   browserAgent,
   markers,
   onSaveMarkerLabel,
-  activeQuickSkill,
-  onClearQuickSkill,
-  persistQuickSkillOnSend = true,
 }) => {
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editingMarkerLabel, setEditingMarkerLabel] = useState('');
@@ -204,44 +193,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
     setImageGenCount,
   } = useAgentStore((state) => state.actions);
 
-  const sendSkill =
-    creationMode === 'agent' && persistQuickSkillOnSend
-      ? activeQuickSkill || undefined
-      : undefined;
   const isSoraVideoModel = isSora2Model(videoGenModel);
-  const agentTargetLabel = browserAgent?.selectedElementLabel || '当前节点';
-  const shouldShowAgentStatus =
-    creationMode === 'agent' &&
-    Boolean(
-      browserAgent &&
-        (browserAgent.chatEnabled ||
-          browserAgent.hasPendingPlan ||
-          browserAgent.isPlanning ||
-          browserAgent.isRunning ||
-          browserAgent.isStarting ||
-          browserAgent.isContinuing ||
-          browserAgent.isRefreshing ||
-          browserAgent.error),
-    );
-  const agentStatusText = browserAgent?.error
-    ? browserAgent.error
-    : browserAgent?.hasPendingPlan
-      ? '\u5df2\u6574\u7406\u6267\u884c\u8ba1\u5212\uff0c\u7b49\u5f85\u4f60\u786e\u8ba4'
-      : browserAgent?.isPlanning
-        ? '\u6b63\u5728\u6574\u7406\u6267\u884c\u8ba1\u5212'
-        : browserAgent?.isRefreshing
-          ? '\u6b63\u5728\u540c\u6b65\u6700\u65b0\u6267\u884c\u72b6\u6001'
-          : browserAgent?.isContinuing
-            ? '\u6b63\u5728\u89c4\u5212\u4e0b\u4e00\u8f6e\u52a8\u4f5c'
-            : browserAgent?.isStarting
-              ? '\u6b63\u5728\u5efa\u7acb\u6267\u884c\u4f1a\u8bdd'
-              : browserAgent?.currentStepTitle
-                ? browserAgent.currentStepTitle
-                : browserAgent?.isRunning
-                  ? '\u6b63\u5728\u7b49\u5f85\u4e0b\u4e00\u6b65\u6267\u884c\u53cd\u9988'
-                  : browserAgent?.chatEnabled
-                    ? `\u6267\u884c\u4ee3\u7406\u5df2\u63a5\u7ba1\u5f53\u524d\u804a\u5929\uff0c\u76ee\u6807\uff1a${agentTargetLabel}`
-                    : '\u5f53\u524d\u4ecd\u4f7f\u7528\u666e\u901a\u4fa7\u8fb9\u680f\u804a\u5929';
 
   const {
     getObjectUrl,
@@ -324,59 +276,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
           setVideoMultiRefs={setVideoMultiRefs}
         />
 
-        {shouldShowAgentStatus && browserAgent && (
-          <div className="px-3 pt-2">
-            <div className="flex items-center gap-2 rounded-xl bg-gray-50/90 px-3 py-2">
-              <div className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-500">
-                {(
-                  browserAgent.isPlanning ||
-                  browserAgent.isStarting ||
-                  browserAgent.isRefreshing ||
-                  browserAgent.isContinuing
-                ) ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      browserAgent.error
-                        ? 'bg-red-400'
-                        : browserAgent.isRunning || browserAgent.chatEnabled
-                          ? 'bg-emerald-400'
-                          : 'bg-gray-300'
-                    }`}
-                  />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] font-medium text-gray-800">
-                  {agentStatusText}
-                </div>
-                <div className="truncate text-[10px] text-gray-500">
-                  {browserAgent.plannerModelLabel} · {agentTargetLabel}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => browserAgent.onRefresh()}
-                disabled={browserAgent.isRefreshing || browserAgent.hasPendingPlan}
-                className="shrink-0 rounded-full border border-gray-200 px-2 py-1 text-[10px] font-medium text-gray-500 transition hover:border-gray-300 hover:text-gray-800 disabled:opacity-50"
-                title="刷新执行状态"
-              >
-                刷新
-              </button>
-              <button
-                type="button"
-                onClick={() => browserAgent.onCancel()}
-                disabled={!browserAgent.isRunning && !browserAgent.hasPendingPlan}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:border-gray-300 hover:text-gray-800 disabled:opacity-40"
-                title="停止当前执行"
-              >
-                <Square size={12} />
-              </button>
-            </div>
-          </div>
-        )}
-
         <InputAreaEditor
           creationMode={creationMode}
           agentPlaceholder={
@@ -404,7 +303,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
           setActiveBlockId={setActiveBlockId}
           setInputBlocks={setInputBlocks}
           handleSend={handleSend}
-          sendSkill={sendSkill}
           removeInputBlock={removeInputBlock}
           removePendingAttachment={removePendingAttachment}
           setEditingMarkerId={setEditingMarkerId}
@@ -444,14 +342,14 @@ export const InputArea: React.FC<InputAreaProps> = ({
           imageGenRatio={imageGenRatio}
           setImageGenRatio={setImageGenRatio}
           imageGenRes={imageGenRes}
-          setImageGenRes={setImageGenRes}
+          setImageGenRes={(value) => setImageGenRes(value as '1K' | '2K' | '4K')}
           imageGenCount={imageGenCount}
           setImageGenCount={setImageGenCount}
           imageGenUploads={imageGenUploads}
           videoGenRatio={videoGenRatio}
           setVideoGenRatio={setVideoGenRatio}
           videoGenDuration={videoGenDuration}
-          setVideoGenDuration={setVideoGenDuration}
+          setVideoGenDuration={(value) => setVideoGenDuration(value as typeof videoGenDuration)}
           videoGenModel={videoGenModel}
           setVideoGenModel={setVideoGenModel}
           videoGenMode={videoGenMode}
@@ -472,15 +370,8 @@ export const InputArea: React.FC<InputAreaProps> = ({
           setRequiredChineseCopy={setRequiredChineseCopy}
           inputBlocks={inputBlocks}
           browserAgent={browserAgent}
-          sendSkill={sendSkill}
           isSoraVideoModel={isSoraVideoModel}
           handlePickedFiles={handlePickedFiles}
-        />
-
-        <InputAreaQuickSkillBadge
-          creationMode={creationMode}
-          activeQuickSkill={activeQuickSkill}
-          onClearQuickSkill={onClearQuickSkill}
         />
 
         <InputAreaMarkerEditPopover

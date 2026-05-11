@@ -155,6 +155,16 @@ export const buildAutoRoleSessionState = (
   updatedAt: Date.now(),
 });
 
+export const shouldUseImmediateResponseShortcut = (
+  decision: Pick<AgentRoutingDecision, 'action'>,
+  metadata?: AgentTaskMetadata,
+): boolean => {
+  if (decision.action !== 'respond' && decision.action !== 'clarify') {
+    return false;
+  }
+  return metadata?.allowAutonomousRouting !== true;
+};
+
 export const buildImmediateResponseTask = ({
   decision,
   messageForExecution,

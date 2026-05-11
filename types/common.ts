@@ -246,6 +246,34 @@ export interface ChatMessage {
     postGenerationSummary?: string;
     suggestions?: string[]; // 可点击的建议按钮（如"温馨日常故事"、"科技感风格"）
     isGenerating?: boolean;
+    research?: {
+      status: 'searching' | 'completed' | 'failed';
+      mode?: 'web' | 'images' | 'web+images';
+      query?: string;
+      summary?: string;
+      providerLabel?: string;
+      fallback?: boolean;
+      webCount?: number;
+      imageCount?: number;
+      extractedCount?: number;
+      citations?: Array<{
+        title: string;
+        url: string;
+        host?: string;
+        siteName?: string;
+        snippet?: string;
+        excerpt?: string;
+      }>;
+      extractedPages?: Array<{
+        title: string;
+        url: string;
+        excerpt?: string;
+        cleanedTextExcerpt?: string;
+        length?: number;
+        error?: string;
+      }>;
+      suggestedQueries?: string[];
+    };
     browserSession?: {
       sessionId: string;
       status: string;

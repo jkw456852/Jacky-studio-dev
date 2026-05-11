@@ -28,6 +28,141 @@ export interface AgentRoleDraft {
   instructions: string[];
 }
 
+export type RoleSource = 'system' | 'user' | 'temporary' | 'promoted';
+
+export type RoleStatus = 'draft' | 'active' | 'archived';
+
+export type RoleGovernanceMode =
+  | 'manual_only'
+  | 'draft_only'
+  | 'approval_required'
+  | 'auto_manage';
+
+export interface StudioRoleEntity {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  baseAgentId: AgentType;
+  source: RoleSource;
+  status: RoleStatus;
+  tags: string[];
+  useWhen: string[];
+  avoidWhen: string[];
+  toolPolicy: {
+    allowedSkills?: string[];
+    blockedSkills?: string[];
+    canRouteSubtasks: boolean;
+    canUseNetworkResearch: boolean;
+  };
+  routingPolicy: {
+    priority: number;
+    keywords: string[];
+    preferredTaskModes: string[];
+    autoRouteEligible: boolean;
+  };
+  promptLayers: {
+    systemBaseline: string;
+    mainBrainShared: string;
+    durableRoleAddon: string;
+  };
+  governance: {
+    mode: RoleGovernanceMode;
+    requiresHumanApproval: boolean;
+    allowMainBrainPromotion: boolean;
+    allowMainBrainArchive: boolean;
+    allowMainBrainMutation: boolean;
+  };
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioTemporaryRoleDraft {
+  id: string;
+  targetRoleId?: string | null;
+  targetBaseAgentId: AgentType;
+  title: string;
+  summary: string;
+  instructions: string[];
+  roleStrategy: 'reuse' | 'augment' | 'create';
+  roleStrategyReason: string;
+  sourceTaskId?: string;
+  sourceConversationId?: string;
+  promotionSuggested: boolean;
+  promotedRoleId?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioRoleVersionRecord {
+  id: string;
+  roleId: string;
+  version: number;
+  changeType: 'create' | 'update' | 'promote' | 'archive' | 'rollback';
+  summary: string;
+  diffPreview?: string;
+  snapshot: StudioRoleEntity;
+  actor: 'user' | 'main_brain' | 'system';
+  createdAt: number;
+}
+
+export type MainBrainMutationResource =
+  | 'role'
+  | 'role-addon'
+  | 'main-brain-soul'
+  | 'main-brain-user'
+  | 'main-brain-workflow'
+  | 'main-brain-memory'
+  | 'main-brain-heartbeat'
+  | 'main-brain-bootstrap';
+
+export type MainBrainMutationOperation =
+  | 'read'
+  | 'create'
+  | 'update'
+  | 'archive'
+  | 'promote'
+  | 'delete'
+  | 'bind'
+  | 'suggest';
+
+export interface MainBrainMutationEnvelope {
+  resource: MainBrainMutationResource;
+  operation: MainBrainMutationOperation;
+  targetId?: string;
+  targetBaseAgentId?: AgentType;
+  payload?: Record<string, unknown>;
+  governanceMode?: RoleGovernanceMode;
+  requiresHumanApproval?: boolean;
+  reason: string;
+}
+
+export interface MainBrainRoleGovernanceAction {
+  action:
+    | 'read'
+    | 'bind'
+    | 'draft_create'
+    | 'draft_update'
+    | 'promote'
+    | 'archive'
+    | 'addon_update'
+    | 'suggest_replacement';
+  capabilityId?: string;
+  mutation?: MainBrainMutationEnvelope;
+  targetRoleId?: string;
+  targetBaseAgentId?: AgentType;
+  governanceMode?: RoleGovernanceMode;
+  requiresHumanApproval?: boolean;
+  promptAddonText?: string;
+  reason: string;
+}
+
+export interface MainBrainRoleGovernanceAudit {
+  summary?: string;
+  actions: MainBrainRoleGovernanceAction[];
+}
+
 export interface AgentResearchCitation {
   title: string;
   url: string;
@@ -64,9 +199,17 @@ export interface AgentMultimodalContext {
 export interface AgentTaskMetadata {
   topicId?: string;
   enableWebSearch?: boolean;
+  webResearchStatus?: 'skipped' | 'success' | 'failed';
+  webResearchError?: string;
   allowAutonomousRouting?: boolean;
   agentSelectionMode?: 'auto' | 'manual';
   pinnedAgentId?: AgentType;
+  selectedRoleId?: string;
+  selectedRoleSource?: RoleSource;
+  baseAgentId?: AgentType;
+  roleGovernanceMode?: RoleGovernanceMode;
+  allowMainBrainRoleMutation?: boolean;
+  allowMainBrainRolePromotion?: boolean;
   roleStrategy?: 'reuse' | 'augment' | 'create';
   roleStrategyReason?: string;
   roleDraft?: AgentRoleDraft;
@@ -79,6 +222,8 @@ export interface AgentTaskMetadata {
   creationMode?: 'agent' | 'image' | 'video';
   workflowMode?: 'fast' | 'designer';
   preferredAspectRatio?: string;
+  preferredImageModel?: string;
+  preferredImageProviderId?: string | null;
   preferredImageSize?: '1K' | '2K' | '4K';
   preferredImageCount?: 1 | 2 | 3 | 4;
   promptLanguagePolicy?: PromptLanguagePolicy;
@@ -149,6 +294,7 @@ export interface AgentTask {
     imageUrls?: string[];
     skillCalls?: SkillCall[];
     adjustments?: string[];
+    roleGovernanceAudit?: MainBrainRoleGovernanceAudit;
     runtime?: AgentTaskRuntimeEnvelope;
     error?: { message: string; code?: string; details?: unknown };
   };
@@ -206,7 +352,14 @@ export interface SkillCall {
 export type MainBrainCapabilityKind =
   | 'skill'
   | 'internal-module'
-  | 'specialist-agent';
+  | 'specialist-agent'
+  | 'governance-skill';
+
+export type MainBrainCapabilityAuditChannel =
+  | 'skillCalls'
+  | 'roleGovernanceAudit'
+  | 'routing-only'
+  | 'awareness-only';
 
 export interface MainBrainCapabilityField {
   name: string;
@@ -214,11 +367,19 @@ export interface MainBrainCapabilityField {
   required?: boolean;
 }
 
+export interface MainBrainCapabilityPermissionPolicy {
+  governanceModes?: RoleGovernanceMode[];
+  requiresRoleMutation?: boolean;
+  requiresRolePromotion?: boolean;
+  requireHumanApprovalByDefault?: boolean;
+}
+
 export interface MainBrainCapabilityDefinition {
   id: string;
   kind: MainBrainCapabilityKind;
   label: string;
   purpose: string;
+  plannerSummary?: string;
   useWhen: string[];
   avoidWhen?: string[];
   inputs?: MainBrainCapabilityField[];
@@ -226,4 +387,12 @@ export interface MainBrainCapabilityDefinition {
   sideEffects?: string[];
   aliases?: string[];
   tags?: string[];
+  auditChannel?: MainBrainCapabilityAuditChannel;
+  executorKey?: string;
+  mutation?: {
+    resource: MainBrainMutationResource;
+    operation: MainBrainMutationOperation;
+  };
+  permissionPolicy?: MainBrainCapabilityPermissionPolicy;
+  exampleAction?: Record<string, unknown>;
 }

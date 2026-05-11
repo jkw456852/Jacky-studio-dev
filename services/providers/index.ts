@@ -58,6 +58,31 @@ const VIDEO_MODEL_ALIASES: Record<string, string> = {
   "kling 3.0": "Kling Pro",
 };
 
+const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  auto: "NanoBanana2",
+  nanobanana2: "NanoBanana2",
+  "nanobanana 2": "NanoBanana2",
+  "nano banana 2": "NanoBanana2",
+  "nano banana pro": "Nano Banana Pro",
+  "nanobanana pro": "Nano Banana Pro",
+  "gemini-3-pro-image-preview": "Nano Banana Pro",
+  "gemini-3.1-flash-image-preview": "NanoBanana2",
+  "doubao-seedream-5-0-260128": "Seedream5.0",
+  "seedream5.0": "Seedream5.0",
+  "seedream 5.0": "Seedream5.0",
+  "seedream 4": "Seedream5.0",
+  "gpt image 2": "gpt-image-2",
+  "gpt-image-2": "gpt-image-2",
+  gptimage2: "gpt-image-2",
+  image2: "gpt-image-2",
+  "image 2": "gpt-image-2",
+  "gpt image2": "gpt-image-2",
+  "gpt-image-2-all": "gpt-image-2-all",
+  "gpt image 2 all": "gpt-image-2-all",
+  "gpt image 1.5": "gpt-image-1.5-all",
+  "gpt-image-1.5-all": "gpt-image-1.5-all",
+};
+
 const resolveVideoModel = (model: string): string => {
   const normalized = (model || "").trim();
   if (!normalized) return "Veo 3.1 Fast";
@@ -67,36 +92,12 @@ const resolveVideoModel = (model: string): string => {
 const resolveImageModel = (model: string): string => {
   // 兜底修复：历史错误模型名会触发代理 "No available channels"
   // Default model should be NanoBanana2 (alias: nanobanana2)
-  if (!model || model === "Auto") return "NanoBanana2";
-  const lower = model.toLowerCase();
-  if (
-    lower === "nanobanana2" ||
-    lower === "nanobanana 2" ||
-    lower === "nano banana 2"
-  ) {
-    return "NanoBanana2";
-  }
-  if (lower === "nano banana pro" || lower === "nanobanana pro") {
-    return "Nano Banana Pro";
-  }
-  if (lower === "gemini-3-pro-image-preview") return "Nano Banana Pro";
-  if (lower === "gemini-3.1-flash-image-preview") return "NanoBanana2";
-  if (
-    lower === "doubao-seedream-5-0-260128" ||
-    lower === "seedream5.0" ||
-    lower === "seedream 5.0" ||
-    lower === "seedream 4"
-  ) {
-    return "Seedream5.0";
-  }
-  if (lower === "gpt image 2" || lower === "gpt-image-2") {
-    return "gpt-image-2";
-  }
-  if (lower === "gpt-image-2-all" || lower === "gpt image 2 all") {
-    return "gpt-image-2";
-  }
-  if (lower === "gpt image 1.5" || lower === "gpt-image-1.5-all") {
-    return "gpt-image-1.5-all";
+  const normalized = String(model || "").trim();
+  if (!normalized) return "NanoBanana2";
+  const lower = normalized.toLowerCase();
+  const aliasedModel = IMAGE_MODEL_ALIASES[lower];
+  if (aliasedModel) {
+    return aliasedModel;
   }
   if (lower.includes("gemini-1.5-pro-image-preview-tok"))
     return "Nano Banana Pro";
@@ -105,7 +106,7 @@ const resolveImageModel = (model: string): string => {
     lower.includes("1.5-flash-image-preview")
   )
     return "Nano Banana Pro";
-  return model;
+  return normalized;
 };
 
 const warnModelFallback = (
@@ -176,7 +177,7 @@ export async function generateImageWithProvider(
     });
   }
 
-  return provider.generateImage(request, requestedModel || resolvedModel);
+  return provider.generateImage(request, resolvedModel);
 }
 
 export async function generateVideoWithProvider(

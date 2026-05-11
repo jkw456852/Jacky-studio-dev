@@ -1,4 +1,10 @@
-import type { AgentRoleDraft, AgentType } from "../../types/agent.types";
+import type {
+  AgentRoleDraft,
+  AgentType,
+  StudioRoleEntity,
+  StudioRoleVersionRecord,
+  StudioTemporaryRoleDraft,
+} from "../../types/agent.types";
 import type { ChatMessage, WorkspaceStyleLibrary } from "../../types/common";
 import {
   safeLocalStorageRemoveItem,
@@ -7,6 +13,14 @@ import {
 import type { StudioUserAssetApi } from "./api.ts";
 import type {
   StudioEvolutionRecord,
+  StudioMainBrainBootstrapAsset,
+  StudioMainBrainHeartbeatAsset,
+  StudioMainBrainHeartbeatTask,
+  StudioMainBrainMemoryAsset,
+  StudioMainBrainMemoryRecord,
+  StudioMainBrainSoulAsset,
+  StudioMainBrainUserAsset,
+  StudioMainBrainWorkflowAsset,
   StudioUserAssetAuditAction,
   StudioUserAssetAuditEntry,
   StudioUserAssetAuditTargetKind,
@@ -26,6 +40,12 @@ import type {
 import {
   STUDIO_EVOLUTION_ASSET_VERSION as EVOLUTION_VERSION,
   STUDIO_MAIN_BRAIN_ASSET_VERSION as MAIN_BRAIN_VERSION,
+  STUDIO_MAIN_BRAIN_BOOTSTRAP_ASSET_VERSION as MAIN_BRAIN_BOOTSTRAP_VERSION,
+  STUDIO_MAIN_BRAIN_HEARTBEAT_ASSET_VERSION as MAIN_BRAIN_HEARTBEAT_VERSION,
+  STUDIO_MAIN_BRAIN_MEMORY_ASSET_VERSION as MAIN_BRAIN_MEMORY_VERSION,
+  STUDIO_MAIN_BRAIN_SOUL_ASSET_VERSION as MAIN_BRAIN_SOUL_VERSION,
+  STUDIO_MAIN_BRAIN_USER_ASSET_VERSION as MAIN_BRAIN_USER_VERSION,
+  STUDIO_MAIN_BRAIN_WORKFLOW_ASSET_VERSION as MAIN_BRAIN_WORKFLOW_VERSION,
   STUDIO_PLUGIN_PREFERENCES_ASSET_VERSION as PLUGIN_PREFERENCES_VERSION,
   STUDIO_ROLE_ADDON_ASSET_VERSION as ROLE_ADDON_VERSION,
   STUDIO_ROLE_DRAFT_ASSET_VERSION as ROLE_DRAFT_VERSION,
@@ -317,6 +337,272 @@ const normalizeUserProfile = (raw: unknown): StudioUserProfileAsset => {
     ),
     brandContextNotes: normalizeStringArray(value.brandContextNotes, 24, 180),
     memoryNotes: normalizeStringArray(value.memoryNotes, 24, 180),
+  };
+};
+
+const normalizeMainBrainSoulAsset = (raw: unknown): StudioMainBrainSoulAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const riskPreference = String(value.riskPreference || "").trim();
+  return {
+    schemaVersion: MAIN_BRAIN_SOUL_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    persona: String(value.persona || "").trim().slice(0, 120),
+    tone: normalizeStringArray(value.tone, 12, 120),
+    workingStyle: normalizeStringArray(value.workingStyle, 12, 160),
+    restraintRules: normalizeStringArray(value.restraintRules, 12, 180),
+    selfCheckRules: normalizeStringArray(value.selfCheckRules, 12, 180),
+    riskPreference:
+      riskPreference === "conservative" || riskPreference === "aggressive"
+        ? riskPreference
+        : "balanced",
+  };
+};
+
+const normalizeMainBrainUserAsset = (raw: unknown): StudioMainBrainUserAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  return {
+    schemaVersion: MAIN_BRAIN_USER_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    goals: normalizeStringArray(value.goals, 24, 180),
+    workingHabits: normalizeStringArray(value.workingHabits, 24, 180),
+    businessContext: normalizeStringArray(value.businessContext, 24, 180),
+    aestheticPreferences: normalizeStringArray(value.aestheticPreferences, 24, 160),
+    communicationStyle: normalizeStringArray(value.communicationStyle, 24, 160),
+    permanentNotes: normalizeStringArray(value.permanentNotes, 24, 180),
+    memoryBlacklist: normalizeStringArray(value.memoryBlacklist, 24, 160),
+  };
+};
+
+const normalizeMainBrainWorkflowAsset = (
+  raw: unknown,
+): StudioMainBrainWorkflowAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const defaultAnalysisDepth = String(value.defaultAnalysisDepth || "").trim();
+  const searchPolicy = String(value.searchPolicy || "").trim();
+  const governanceRaw =
+    value.roleGovernanceDefaults &&
+    typeof value.roleGovernanceDefaults === "object"
+      ? (value.roleGovernanceDefaults as Record<string, unknown>)
+      : {};
+  const governanceMode = String(governanceRaw.mode || "").trim();
+  return {
+    schemaVersion: MAIN_BRAIN_WORKFLOW_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    defaultAnalysisDepth:
+      defaultAnalysisDepth === "light" || defaultAnalysisDepth === "deep"
+        ? defaultAnalysisDepth
+        : "balanced",
+    searchPolicy:
+      searchPolicy === "never" || searchPolicy === "prefer"
+        ? searchPolicy
+        : "auto",
+    clarifyBeforeExecution: readBoolean(value.clarifyBeforeExecution, false),
+    toolUseGuidelines: normalizeStringArray(value.toolUseGuidelines, 16, 180),
+    failureRecoveryRules: normalizeStringArray(value.failureRecoveryRules, 16, 180),
+    roleGovernanceDefaults: {
+      mode:
+        governanceMode === "manual_only" || governanceMode === "auto_manage"
+          ? governanceMode
+          : "approval_required",
+      allowDraft: readBoolean(governanceRaw.allowDraft, true),
+      allowAutoPromote: readBoolean(governanceRaw.allowAutoPromote, false),
+      allowAutoArchive: readBoolean(governanceRaw.allowAutoArchive, false),
+    },
+  };
+};
+
+const normalizeMainBrainMemoryRecord = (
+  raw: unknown,
+): StudioMainBrainMemoryRecord | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const id = String(value.id || "").trim() || `memory-${Date.now()}`;
+  const summary = String(value.summary || "").trim().slice(0, 180);
+  const detail = String(value.detail || "").trim().slice(0, 600);
+  if (!summary && !detail) return null;
+  const category = String(value.category || "").trim();
+  const source = String(value.source || "").trim();
+  const status = String(value.status || "").trim();
+  const createdAt = Number(value.createdAt || Date.now());
+  const updatedAt = Number(value.updatedAt || Date.now());
+  return {
+    id,
+    schemaVersion: MAIN_BRAIN_MEMORY_VERSION,
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    category:
+      category === "background" ||
+      category === "aesthetic" ||
+      category === "boundary" ||
+      category === "project_fact" ||
+      category === "workflow" ||
+      category === "governance"
+        ? category
+        : "preference",
+    source:
+      source === "user_explicit" ||
+      source === "task_summary" ||
+      source === "heartbeat" ||
+      source === "manual"
+        ? source
+        : "conversation",
+    status:
+      status === "active" || status === "dismissed" ? status : "candidate",
+    summary,
+    detail,
+    evidence: normalizeStringArray(value.evidence, 12, 220),
+    tags: normalizeStringArray(value.tags, 12, 80),
+    ...(String(value.topicId || "").trim()
+      ? { topicId: String(value.topicId || "").trim() }
+      : {}),
+  };
+};
+
+const normalizeMainBrainMemoryAsset = (raw: unknown): StudioMainBrainMemoryAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const recordsSource =
+    value.memoryRecords && typeof value.memoryRecords === "object"
+      ? (value.memoryRecords as Record<string, unknown>)
+      : {};
+  const memoryRecords = Object.values(recordsSource).reduce<
+    Record<string, StudioMainBrainMemoryRecord>
+  >((acc, item) => {
+    const normalized = normalizeMainBrainMemoryRecord(item);
+    if (!normalized) return acc;
+    acc[normalized.id] = normalized;
+    return acc;
+  }, {});
+  const availableIds = new Set(Object.keys(memoryRecords));
+  const memoryIndex = normalizeStringArray(value.memoryIndex, 200, 120).filter((id) =>
+    availableIds.has(id),
+  );
+  const pendingMemoryCandidates = normalizeStringArray(
+    value.pendingMemoryCandidates,
+    120,
+    120,
+  ).filter((id) => availableIds.has(id));
+  const retentionRaw =
+    value.retentionPolicy && typeof value.retentionPolicy === "object"
+      ? (value.retentionPolicy as Record<string, unknown>)
+      : {};
+  return {
+    schemaVersion: MAIN_BRAIN_MEMORY_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    memoryIndex: memoryIndex.length > 0 ? memoryIndex : Object.keys(memoryRecords),
+    memoryRecords,
+    pendingMemoryCandidates,
+    memoryBlacklists: normalizeStringArray(value.memoryBlacklists, 32, 160),
+    retentionPolicy: {
+      maxActiveMemories: clampInteger(retentionRaw.maxActiveMemories, 200, 10, 1000),
+      maxCandidateMemories: clampInteger(
+        retentionRaw.maxCandidateMemories,
+        50,
+        10,
+        500,
+      ),
+      autoPromoteSimilarCount: clampInteger(
+        retentionRaw.autoPromoteSimilarCount,
+        3,
+        1,
+        10,
+      ),
+    },
+    dailySummary: normalizeStringArray(value.dailySummary, 16, 220),
+  };
+};
+
+const normalizeMainBrainHeartbeatTask = (
+  raw: unknown,
+): StudioMainBrainHeartbeatTask | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const id = String(value.id || "").trim();
+  if (!id) return null;
+  const type = String(value.type || "").trim();
+  const cadence = String(value.cadence || "").trim();
+  const lastRunAt = Number(value.lastRunAt);
+  const nextRunAt = Number(value.nextRunAt);
+  return {
+    id,
+    type:
+      type === "failure_summary" ||
+      type === "memory_review_reminder" ||
+      type === "role_staleness_check" ||
+      type === "rule_conflict_check"
+        ? type
+        : "preference_compaction",
+    title: String(value.title || "").trim().slice(0, 120) || id,
+    enabled: readBoolean(value.enabled, false),
+    cadence:
+      cadence === "daily" || cadence === "weekly" ? cadence : "manual",
+    scope: normalizeStringArray(value.scope, 12, 80),
+    lastRunAt: Number.isFinite(lastRunAt) ? lastRunAt : null,
+    nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : null,
+    lastSummary: String(value.lastSummary || "").trim().slice(0, 280),
+  };
+};
+
+const normalizeMainBrainHeartbeatAsset = (
+  raw: unknown,
+): StudioMainBrainHeartbeatAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const cadence = String(value.cadence || "").trim();
+  const tasksSource =
+    value.heartbeatTasks && typeof value.heartbeatTasks === "object"
+      ? (value.heartbeatTasks as Record<string, unknown>)
+      : {};
+  const heartbeatTasks = Object.values(tasksSource).reduce<
+    Record<string, StudioMainBrainHeartbeatTask>
+  >((acc, item) => {
+    const normalized = normalizeMainBrainHeartbeatTask(item);
+    if (!normalized) return acc;
+    acc[normalized.id] = normalized;
+    return acc;
+  }, {});
+  const lastRunAt = Number(value.lastRunAt);
+  const nextRunAt = Number(value.nextRunAt);
+  return {
+    schemaVersion: MAIN_BRAIN_HEARTBEAT_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    enabled: readBoolean(value.enabled, false),
+    cadence:
+      cadence === "daily" || cadence === "weekly" ? cadence : "manual",
+    scope: normalizeStringArray(value.scope, 12, 80),
+    heartbeatTasks,
+    recentRunSummary: normalizeStringArray(value.recentRunSummary, 12, 220),
+    lastRunAt: Number.isFinite(lastRunAt) ? lastRunAt : null,
+    nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : null,
+  };
+};
+
+const normalizeMainBrainBootstrapAsset = (
+  raw: unknown,
+): StudioMainBrainBootstrapAsset => {
+  const value =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const initializedAt = Number(value.initializedAt);
+  const lastRebootstrapAt = Number(value.lastRebootstrapAt);
+  return {
+    schemaVersion: MAIN_BRAIN_BOOTSTRAP_VERSION,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    initialized: readBoolean(value.initialized, false),
+    initializedAt: Number.isFinite(initializedAt) ? initializedAt : null,
+    sourceTemplate: String(value.sourceTemplate || "").trim().slice(0, 120),
+    completedSteps: normalizeStringArray(value.completedSteps, 16, 80),
+    lastRebootstrapAt: Number.isFinite(lastRebootstrapAt)
+      ? lastRebootstrapAt
+      : null,
   };
 };
 
@@ -629,6 +915,278 @@ const normalizeStyleLibraryMap = (
   }, {});
 };
 
+const normalizeRoleEntity = (raw: unknown): StudioRoleEntity | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const title = String(value.title || "").trim().slice(0, 80);
+  if (!title) return null;
+  const summary = String(value.summary || "").trim().slice(0, 240);
+  const id = String(value.id || "").trim() || `role-${Date.now()}`;
+  const slug = String(value.slug || "").trim() || slugify(title);
+  const baseAgentIdRaw = String(value.baseAgentId || "").trim();
+  const sourceRaw = String(value.source || "").trim();
+  const statusRaw = String(value.status || "").trim();
+  const toolPolicy =
+    value.toolPolicy && typeof value.toolPolicy === "object"
+      ? (value.toolPolicy as Record<string, unknown>)
+      : {};
+  const routingPolicy =
+    value.routingPolicy && typeof value.routingPolicy === "object"
+      ? (value.routingPolicy as Record<string, unknown>)
+      : {};
+  const promptLayers =
+    value.promptLayers && typeof value.promptLayers === "object"
+      ? (value.promptLayers as Record<string, unknown>)
+      : {};
+  const governance =
+    value.governance && typeof value.governance === "object"
+      ? (value.governance as Record<string, unknown>)
+      : {};
+  const createdAt = Number(value.createdAt || Date.now());
+  const updatedAt = Number(value.updatedAt || Date.now());
+
+  return {
+    id,
+    slug,
+    title,
+    summary,
+    baseAgentId: isKnownAgentId(baseAgentIdRaw) ? baseAgentIdRaw : "coco",
+    source:
+      sourceRaw === "system" ||
+      sourceRaw === "temporary" ||
+      sourceRaw === "promoted"
+        ? sourceRaw
+        : "user",
+    status:
+      statusRaw === "active" || statusRaw === "archived"
+        ? statusRaw
+        : "draft",
+    tags: normalizeStringArray(value.tags, 8, 40),
+    useWhen: normalizeStringArray(value.useWhen, 8, 180),
+    avoidWhen: normalizeStringArray(value.avoidWhen, 8, 180),
+    toolPolicy: {
+      allowedSkills: normalizeStringArray(toolPolicy.allowedSkills, 24, 80),
+      blockedSkills: normalizeStringArray(toolPolicy.blockedSkills, 24, 80),
+      canRouteSubtasks: readBoolean(toolPolicy.canRouteSubtasks, true),
+      canUseNetworkResearch: readBoolean(toolPolicy.canUseNetworkResearch, true),
+    },
+    routingPolicy: {
+      priority: clampInteger(routingPolicy.priority, 100, 0, 10000),
+      keywords: normalizeStringArray(routingPolicy.keywords, 24, 80),
+      preferredTaskModes: normalizeStringArray(
+        routingPolicy.preferredTaskModes,
+        12,
+        80,
+      ),
+      autoRouteEligible: readBoolean(routingPolicy.autoRouteEligible, true),
+    },
+    promptLayers: {
+      systemBaseline: String(promptLayers.systemBaseline || "").trim(),
+      mainBrainShared: String(promptLayers.mainBrainShared || "").trim(),
+      durableRoleAddon: String(promptLayers.durableRoleAddon || "").trim(),
+    },
+    governance: {
+      mode:
+        governance.mode === "manual_only" ||
+        governance.mode === "draft_only" ||
+        governance.mode === "auto_manage"
+          ? governance.mode
+          : "approval_required",
+      requiresHumanApproval: readBoolean(
+        governance.requiresHumanApproval,
+        true,
+      ),
+      allowMainBrainPromotion: readBoolean(
+        governance.allowMainBrainPromotion,
+        false,
+      ),
+      allowMainBrainArchive: readBoolean(
+        governance.allowMainBrainArchive,
+        false,
+      ),
+      allowMainBrainMutation: readBoolean(
+        governance.allowMainBrainMutation,
+        false,
+      ),
+    },
+    version: clampInteger(value.version, 1, 1, 100000),
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+  };
+};
+
+const normalizeRoleEntityMap = (
+  raw: unknown,
+): Record<string, StudioRoleEntity> => {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.values(raw as Record<string, unknown>).reduce<
+    Record<string, StudioRoleEntity>
+  >((acc, item) => {
+    const normalized = normalizeRoleEntity(item);
+    if (!normalized) return acc;
+    acc[normalized.id] = normalized;
+    return acc;
+  }, {});
+};
+
+const normalizeTemporaryRoleDraft = (
+  raw: unknown,
+): StudioTemporaryRoleDraft | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const title = String(value.title || "").trim().slice(0, 80);
+  const summary = String(value.summary || "").trim().slice(0, 240);
+  const instructions = Array.isArray(value.instructions)
+    ? value.instructions
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+  if (!title && !summary && instructions.length === 0) return null;
+  const targetBaseAgentIdRaw = String(value.targetBaseAgentId || "").trim();
+  const roleStrategy = String(value.roleStrategy || "").trim();
+  const createdAt = Number(value.createdAt || Date.now());
+  const updatedAt = Number(value.updatedAt || Date.now());
+  const targetRoleId = String(value.targetRoleId || "").trim();
+  const promotedRoleId = String(value.promotedRoleId || "").trim();
+
+  return {
+    id: String(value.id || "").trim() || `temp-role-${Date.now()}`,
+    ...(targetRoleId ? { targetRoleId } : {}),
+    targetBaseAgentId: isKnownAgentId(targetBaseAgentIdRaw)
+      ? targetBaseAgentIdRaw
+      : "coco",
+    title,
+    summary,
+    instructions,
+    roleStrategy:
+      roleStrategy === "augment" || roleStrategy === "create"
+        ? roleStrategy
+        : "reuse",
+    roleStrategyReason: String(value.roleStrategyReason || "").trim(),
+    sourceTaskId: String(value.sourceTaskId || "").trim() || undefined,
+    sourceConversationId:
+      String(value.sourceConversationId || "").trim() || undefined,
+    promotionSuggested: readBoolean(value.promotionSuggested, false),
+    ...(promotedRoleId ? { promotedRoleId } : {}),
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+  };
+};
+
+const normalizeTemporaryRoleDraftMap = (
+  raw: unknown,
+): Record<string, StudioTemporaryRoleDraft> => {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.values(raw as Record<string, unknown>).reduce<
+    Record<string, StudioTemporaryRoleDraft>
+  >((acc, item) => {
+    const normalized = normalizeTemporaryRoleDraft(item);
+    if (!normalized) return acc;
+    acc[normalized.id] = normalized;
+    return acc;
+  }, {});
+};
+
+const normalizeRoleVersionRecord = (
+  raw: unknown,
+): StudioRoleVersionRecord | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const snapshot = normalizeRoleEntity(value.snapshot);
+  const roleId = String(value.roleId || snapshot?.id || "").trim();
+  if (!snapshot || !roleId) return null;
+  const changeTypeRaw = String(value.changeType || "").trim();
+  const actorRaw = String(value.actor || "").trim();
+  const createdAt = Number(value.createdAt || Date.now());
+  return {
+    id: String(value.id || "").trim() || `role-version-${Date.now()}`,
+    roleId,
+    version: clampInteger(value.version || snapshot.version, 1, 1, 100000),
+    changeType:
+      changeTypeRaw === "create" ||
+      changeTypeRaw === "promote" ||
+      changeTypeRaw === "archive" ||
+      changeTypeRaw === "rollback"
+        ? changeTypeRaw
+        : "update",
+    summary:
+      String(value.summary || "").trim().slice(0, 280) ||
+      `Version ${snapshot.version}`,
+    diffPreview: String(value.diffPreview || "").trim() || undefined,
+    snapshot,
+    actor:
+      actorRaw === "main_brain" || actorRaw === "system"
+        ? actorRaw
+        : "user",
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+  };
+};
+
+const normalizeRoleVersionRecordList = (
+  raw: unknown,
+): StudioRoleVersionRecord[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => normalizeRoleVersionRecord(item))
+    .filter(Boolean)
+    .sort((left, right) => left!.version - right!.version) as StudioRoleVersionRecord[];
+};
+
+const normalizeRoleVersionMap = (
+  raw: unknown,
+): Record<string, StudioRoleVersionRecord[]> => {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.entries(raw as Record<string, unknown>).reduce<
+    Record<string, StudioRoleVersionRecord[]>
+  >((acc, [key, value]) => {
+    const normalizedId = String(key || "").trim();
+    if (!normalizedId) return acc;
+    const normalized = normalizeRoleVersionRecordList(value);
+    if (normalized.length === 0) return acc;
+    acc[normalizedId] = normalized.map((item) => ({
+      ...item,
+      roleId: normalizedId,
+    }));
+    return acc;
+  }, {});
+};
+
+const createRoleVersionRecord = (
+  role: StudioRoleEntity,
+  options: {
+    changeType: StudioRoleVersionRecord["changeType"];
+    summary: string;
+    actor?: StudioRoleVersionRecord["actor"];
+    diffPreview?: string;
+  },
+): StudioRoleVersionRecord => ({
+  id: `role-version-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  roleId: role.id,
+  version: role.version,
+  changeType: options.changeType,
+  summary: options.summary,
+  diffPreview: options.diffPreview,
+  snapshot: role,
+  actor: options.actor || "user",
+  createdAt: Date.now(),
+});
+
+const appendRoleVersionRecord = (
+  state: StudioUserAssetState,
+  record: StudioRoleVersionRecord,
+): void => {
+  const currentVersions = state.roleVersions[record.roleId] || [];
+  state.roleVersions[record.roleId] = [...currentVersions, record].sort(
+    (left, right) => left.version - right.version,
+  );
+  const currentAuditEntries = state.roleAuditEntries[record.roleId] || [];
+  state.roleAuditEntries[record.roleId] = [record, ...currentAuditEntries].slice(
+    0,
+    50,
+  );
+};
+
 const createEmptyState = (): StudioUserAssetState => ({
   version: USER_ASSET_STATE_VERSION,
   updatedAt: Date.now(),
@@ -637,6 +1195,12 @@ const createEmptyState = (): StudioUserAssetState => ({
     updatedAt: Date.now(),
     lines: [],
   },
+  mainBrainSoul: normalizeMainBrainSoulAsset({}),
+  mainBrainUser: normalizeMainBrainUserAsset({}),
+  mainBrainWorkflow: normalizeMainBrainWorkflowAsset({}),
+  mainBrainMemory: normalizeMainBrainMemoryAsset({}),
+  mainBrainHeartbeat: normalizeMainBrainHeartbeatAsset({}),
+  mainBrainBootstrap: normalizeMainBrainBootstrapAsset({}),
   userProfile: {
     schemaVersion: USER_PROFILE_VERSION,
     updatedAt: Date.now(),
@@ -652,6 +1216,10 @@ const createEmptyState = (): StudioUserAssetState => ({
   pluginPreferences: normalizePluginPreferences({}),
   agentPromptAddons: {},
   latestRoleDrafts: {},
+  roles: {},
+  temporaryRoleDrafts: {},
+  roleVersions: {},
+  roleAuditEntries: {},
   styleLibraries: {},
   evolutionRecords: {},
 });
@@ -679,6 +1247,16 @@ const parseUnifiedState = (raw: string | null): StudioUserAssetState => {
           : Date.now(),
         lines: normalizeMainBrainPreferences(mainBrainRaw?.lines),
       },
+      mainBrainSoul: normalizeMainBrainSoulAsset(parsed.mainBrainSoul),
+      mainBrainUser: normalizeMainBrainUserAsset(parsed.mainBrainUser),
+      mainBrainWorkflow: normalizeMainBrainWorkflowAsset(parsed.mainBrainWorkflow),
+      mainBrainMemory: normalizeMainBrainMemoryAsset(parsed.mainBrainMemory),
+      mainBrainHeartbeat: normalizeMainBrainHeartbeatAsset(
+        parsed.mainBrainHeartbeat,
+      ),
+      mainBrainBootstrap: normalizeMainBrainBootstrapAsset(
+        parsed.mainBrainBootstrap,
+      ),
       userProfile: normalizeUserProfile(parsed.userProfile),
       workspacePreferences: normalizeWorkspacePreferences(
         parsed.workspacePreferences,
@@ -687,6 +1265,12 @@ const parseUnifiedState = (raw: string | null): StudioUserAssetState => {
       pluginPreferences: normalizePluginPreferences(parsed.pluginPreferences),
       agentPromptAddons: normalizePromptAddonMap(parsed.agentPromptAddons),
       latestRoleDrafts: normalizeRoleDraftMap(parsed.latestRoleDrafts),
+      roles: normalizeRoleEntityMap(parsed.roles),
+      temporaryRoleDrafts: normalizeTemporaryRoleDraftMap(
+        parsed.temporaryRoleDrafts,
+      ),
+      roleVersions: normalizeRoleVersionMap(parsed.roleVersions),
+      roleAuditEntries: normalizeRoleVersionMap(parsed.roleAuditEntries),
       styleLibraries: normalizeStyleLibraryMap(parsed.styleLibraries),
       evolutionRecords: normalizeEvolutionRecordMap(parsed.evolutionRecords),
     };
@@ -1014,6 +1598,41 @@ const mergePluginPreferences = (
 
 const hasAnyStateValue = (state: StudioUserAssetState): boolean =>
   state.mainBrainPreferences.lines.length > 0 ||
+  Boolean(state.mainBrainSoul.persona) ||
+  state.mainBrainSoul.tone.length > 0 ||
+  state.mainBrainSoul.workingStyle.length > 0 ||
+  state.mainBrainSoul.restraintRules.length > 0 ||
+  state.mainBrainSoul.selfCheckRules.length > 0 ||
+  state.mainBrainSoul.riskPreference !== "balanced" ||
+  state.mainBrainUser.goals.length > 0 ||
+  state.mainBrainUser.workingHabits.length > 0 ||
+  state.mainBrainUser.businessContext.length > 0 ||
+  state.mainBrainUser.aestheticPreferences.length > 0 ||
+  state.mainBrainUser.communicationStyle.length > 0 ||
+  state.mainBrainUser.permanentNotes.length > 0 ||
+  state.mainBrainUser.memoryBlacklist.length > 0 ||
+  state.mainBrainWorkflow.defaultAnalysisDepth !== "balanced" ||
+  state.mainBrainWorkflow.searchPolicy !== "auto" ||
+  state.mainBrainWorkflow.clarifyBeforeExecution ||
+  state.mainBrainWorkflow.toolUseGuidelines.length > 0 ||
+  state.mainBrainWorkflow.failureRecoveryRules.length > 0 ||
+  state.mainBrainWorkflow.roleGovernanceDefaults.mode !== "approval_required" ||
+  state.mainBrainWorkflow.roleGovernanceDefaults.allowDraft !== true ||
+  state.mainBrainWorkflow.roleGovernanceDefaults.allowAutoPromote ||
+  state.mainBrainWorkflow.roleGovernanceDefaults.allowAutoArchive ||
+  state.mainBrainMemory.memoryIndex.length > 0 ||
+  Object.keys(state.mainBrainMemory.memoryRecords).length > 0 ||
+  state.mainBrainMemory.pendingMemoryCandidates.length > 0 ||
+  state.mainBrainMemory.memoryBlacklists.length > 0 ||
+  state.mainBrainMemory.dailySummary.length > 0 ||
+  state.mainBrainHeartbeat.enabled ||
+  state.mainBrainHeartbeat.cadence !== "manual" ||
+  state.mainBrainHeartbeat.scope.length > 0 ||
+  Object.keys(state.mainBrainHeartbeat.heartbeatTasks).length > 0 ||
+  state.mainBrainHeartbeat.recentRunSummary.length > 0 ||
+  state.mainBrainBootstrap.initialized ||
+  Boolean(state.mainBrainBootstrap.sourceTemplate) ||
+  state.mainBrainBootstrap.completedSteps.length > 0 ||
   state.userProfile.preferenceNotes.length > 0 ||
   state.userProfile.commonTasks.length > 0 ||
   state.userProfile.aestheticPreferences.length > 0 ||
@@ -1030,6 +1649,10 @@ const hasAnyStateValue = (state: StudioUserAssetState): boolean =>
   Object.keys(state.pluginPreferences.records).length > 0 ||
   Object.keys(state.agentPromptAddons).length > 0 ||
   Object.keys(state.latestRoleDrafts).length > 0 ||
+  Object.keys(state.roles).length > 0 ||
+  Object.keys(state.temporaryRoleDrafts).length > 0 ||
+  Object.keys(state.roleVersions).length > 0 ||
+  Object.keys(state.roleAuditEntries).length > 0 ||
   Object.keys(state.styleLibraries).length > 0 ||
   Object.keys(state.evolutionRecords).length > 0;
 
@@ -1171,6 +1794,12 @@ const writeUnifiedState = (state: StudioUserAssetState): void => {
       updatedAt: Date.now(),
       lines: normalizeMainBrainPreferences(state.mainBrainPreferences.lines),
     },
+    mainBrainSoul: normalizeMainBrainSoulAsset(state.mainBrainSoul),
+    mainBrainUser: normalizeMainBrainUserAsset(state.mainBrainUser),
+    mainBrainWorkflow: normalizeMainBrainWorkflowAsset(state.mainBrainWorkflow),
+    mainBrainMemory: normalizeMainBrainMemoryAsset(state.mainBrainMemory),
+    mainBrainHeartbeat: normalizeMainBrainHeartbeatAsset(state.mainBrainHeartbeat),
+    mainBrainBootstrap: normalizeMainBrainBootstrapAsset(state.mainBrainBootstrap),
     userProfile: normalizeUserProfile(state.userProfile),
     workspacePreferences: normalizeWorkspacePreferences(
       state.workspacePreferences,
@@ -1179,6 +1808,12 @@ const writeUnifiedState = (state: StudioUserAssetState): void => {
     pluginPreferences: normalizePluginPreferences(state.pluginPreferences),
     agentPromptAddons: normalizePromptAddonMap(state.agentPromptAddons),
     latestRoleDrafts: normalizeRoleDraftMap(state.latestRoleDrafts),
+    roles: normalizeRoleEntityMap(state.roles),
+    temporaryRoleDrafts: normalizeTemporaryRoleDraftMap(
+      state.temporaryRoleDrafts,
+    ),
+    roleVersions: normalizeRoleVersionMap(state.roleVersions),
+    roleAuditEntries: normalizeRoleVersionMap(state.roleAuditEntries),
     styleLibraries: normalizeStyleLibraryMap(state.styleLibraries),
     evolutionRecords: normalizeEvolutionRecordMap(state.evolutionRecords),
   };
@@ -1320,6 +1955,16 @@ const readState = (): StudioUserAssetState => {
       updatedAt: unified.mainBrainPreferences.updatedAt || Date.now(),
       lines: normalizeMainBrainPreferences(unified.mainBrainPreferences.lines),
     },
+    mainBrainSoul: normalizeMainBrainSoulAsset(unified.mainBrainSoul),
+    mainBrainUser: normalizeMainBrainUserAsset(unified.mainBrainUser),
+    mainBrainWorkflow: normalizeMainBrainWorkflowAsset(unified.mainBrainWorkflow),
+    mainBrainMemory: normalizeMainBrainMemoryAsset(unified.mainBrainMemory),
+    mainBrainHeartbeat: normalizeMainBrainHeartbeatAsset(
+      unified.mainBrainHeartbeat,
+    ),
+    mainBrainBootstrap: normalizeMainBrainBootstrapAsset(
+      unified.mainBrainBootstrap,
+    ),
     userProfile: normalizeUserProfile(unified.userProfile),
     workspacePreferences: mergeWorkspacePreferences(
       unified.workspacePreferences,
@@ -1331,6 +1976,12 @@ const readState = (): StudioUserAssetState => {
     pluginPreferences: mergePluginPreferences(unified.pluginPreferences, {}),
     agentPromptAddons: mergePromptAddons(unified.agentPromptAddons, legacyAddons),
     latestRoleDrafts: mergeRoleDrafts(unified.latestRoleDrafts, legacyDrafts),
+    roles: normalizeRoleEntityMap(unified.roles),
+    temporaryRoleDrafts: normalizeTemporaryRoleDraftMap(
+      unified.temporaryRoleDrafts,
+    ),
+    roleVersions: normalizeRoleVersionMap(unified.roleVersions),
+    roleAuditEntries: normalizeRoleVersionMap(unified.roleAuditEntries),
     styleLibraries: normalizeStyleLibraryMap(unified.styleLibraries),
     evolutionRecords: normalizeEvolutionRecordMap(unified.evolutionRecords),
   };
@@ -1352,7 +2003,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
   getSnapshot: () => readState(),
 
   getMainBrainPreferences: () => [...readState().mainBrainPreferences.lines],
-
+ 
   setMainBrainPreferences: (lines) => {
     const state = readState();
     state.mainBrainPreferences = {
@@ -1366,7 +2017,106 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
       summary: "Updated durable main-brain preferences.",
     });
   },
-
+ 
+  getMainBrainSoul: () => normalizeMainBrainSoulAsset(readState().mainBrainSoul),
+ 
+  setMainBrainSoul: (patch) => {
+    const state = readState();
+    state.mainBrainSoul = normalizeMainBrainSoulAsset({
+      ...state.mainBrainSoul,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-soul",
+      summary: "Updated main-brain soul configuration.",
+    });
+  },
+ 
+  getMainBrainUser: () => normalizeMainBrainUserAsset(readState().mainBrainUser),
+ 
+  setMainBrainUser: (patch) => {
+    const state = readState();
+    state.mainBrainUser = normalizeMainBrainUserAsset({
+      ...state.mainBrainUser,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-user",
+      summary: "Updated main-brain user configuration.",
+    });
+  },
+ 
+  getMainBrainWorkflow: () =>
+    normalizeMainBrainWorkflowAsset(readState().mainBrainWorkflow),
+ 
+  setMainBrainWorkflow: (patch) => {
+    const state = readState();
+    state.mainBrainWorkflow = normalizeMainBrainWorkflowAsset({
+      ...state.mainBrainWorkflow,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-workflow",
+      summary: "Updated main-brain workflow configuration.",
+    });
+  },
+ 
+  getMainBrainMemory: () => normalizeMainBrainMemoryAsset(readState().mainBrainMemory),
+ 
+  setMainBrainMemory: (patch) => {
+    const state = readState();
+    state.mainBrainMemory = normalizeMainBrainMemoryAsset({
+      ...state.mainBrainMemory,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-memory",
+      summary: "Updated main-brain memory configuration.",
+    });
+  },
+ 
+  getMainBrainHeartbeat: () =>
+    normalizeMainBrainHeartbeatAsset(readState().mainBrainHeartbeat),
+ 
+  setMainBrainHeartbeat: (patch) => {
+    const state = readState();
+    state.mainBrainHeartbeat = normalizeMainBrainHeartbeatAsset({
+      ...state.mainBrainHeartbeat,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-heartbeat",
+      summary: "Updated main-brain heartbeat configuration.",
+    });
+  },
+ 
+  getMainBrainBootstrap: () =>
+    normalizeMainBrainBootstrapAsset(readState().mainBrainBootstrap),
+ 
+  setMainBrainBootstrap: (patch) => {
+    const state = readState();
+    state.mainBrainBootstrap = normalizeMainBrainBootstrapAsset({
+      ...state.mainBrainBootstrap,
+      ...patch,
+      updatedAt: Date.now(),
+    });
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "main-brain-bootstrap",
+      summary: "Updated main-brain bootstrap configuration.",
+    });
+  },
+ 
   getUserProfile: () => normalizeUserProfile(readState().userProfile),
 
   setUserProfile: (patch) => {
@@ -1513,6 +2263,276 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
       targetId: agentId,
       summary: `Cleared latest role draft for ${agentId}.`,
     });
+  },
+
+  listRoles: () =>
+    Object.values(readState().roles).sort(
+      (left, right) => (right.updatedAt || 0) - (left.updatedAt || 0),
+    ),
+
+  getRoleById: (roleId) => {
+    const normalizedId = String(roleId || "").trim();
+    if (!normalizedId) return null;
+    return readState().roles[normalizedId] || null;
+  },
+
+  saveRole: (role, options) => {
+    const state = readState();
+    const preferredId = String(options?.preferredId || role.id || "").trim();
+    const existing = preferredId ? state.roles[preferredId] || null : null;
+    const normalized = normalizeRoleEntity({
+      ...existing,
+      ...role,
+      id:
+        preferredId ||
+        existing?.id ||
+        `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      slug:
+        String(role.slug || existing?.slug || "").trim() ||
+        slugify(String(role.title || existing?.title || "自定义角色")),
+      source: role.source || existing?.source || "user",
+      status: role.status || existing?.status || "draft",
+      baseAgentId: role.baseAgentId || existing?.baseAgentId || "coco",
+      version: existing ? existing.version + 1 : 1,
+      createdAt: existing?.createdAt || Number(role.createdAt || Date.now()),
+      updatedAt: Date.now(),
+    });
+    if (!normalized) return null;
+    state.roles[normalized.id] = normalized;
+    appendRoleVersionRecord(
+      state,
+      createRoleVersionRecord(normalized, {
+        changeType: existing ? "update" : "create",
+        summary: existing
+          ? `Updated role ${normalized.title}.`
+          : `Created role ${normalized.title}.`,
+      }),
+    );
+    return (
+      commitUnifiedState(state, {
+        action: "update",
+        targetKind: "role-entity",
+        targetId: normalized.id,
+        summary: existing
+          ? `Updated role entity ${normalized.title}.`
+          : `Created role entity ${normalized.title}.`,
+      }).roles[normalized.id] || null
+    );
+  },
+
+  archiveRole: (roleId) => {
+    const normalizedId = String(roleId || "").trim();
+    const state = readState();
+    const current = state.roles[normalizedId];
+    if (!current) return state;
+    const archived = normalizeRoleEntity({
+      ...current,
+      status: "archived",
+      version: current.version + 1,
+      updatedAt: Date.now(),
+    });
+    if (!archived) return state;
+    state.roles[normalizedId] = archived;
+    appendRoleVersionRecord(
+      state,
+      createRoleVersionRecord(archived, {
+        changeType: "archive",
+        summary: `Archived role ${archived.title}.`,
+      }),
+    );
+    return commitUnifiedState(state, {
+      action: "update",
+      targetKind: "role-entity",
+      targetId: normalizedId,
+      summary: `Archived role ${normalizedId}.`,
+    });
+  },
+
+  duplicateRole: (roleId) => {
+    const normalizedId = String(roleId || "").trim();
+    const state = readState();
+    const source = state.roles[normalizedId];
+    if (!source) return null;
+    const duplicated = normalizeRoleEntity({
+      ...source,
+      id: `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      slug: slugify(`${source.title}-copy`),
+      title: `${source.title} 副本`,
+      source: "user",
+      status: "draft",
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    if (!duplicated) return null;
+    state.roles[duplicated.id] = duplicated;
+    appendRoleVersionRecord(
+      state,
+      createRoleVersionRecord(duplicated, {
+        changeType: "create",
+        summary: `Duplicated role ${source.title}.`,
+      }),
+    );
+    return (
+      commitUnifiedState(state, {
+        action: "update",
+        targetKind: "role-entity",
+        targetId: duplicated.id,
+        summary: `Duplicated role ${source.title}.`,
+      }).roles[duplicated.id] || null
+    );
+  },
+
+  saveTemporaryRoleDraft: (draft) => {
+    const state = readState();
+    const existingId = String(draft.id || "").trim();
+    const existing = existingId ? state.temporaryRoleDrafts[existingId] || null : null;
+    const normalized = normalizeTemporaryRoleDraft({
+      ...existing,
+      ...draft,
+      id:
+        existingId ||
+        existing?.id ||
+        `temp-role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: existing?.createdAt || Number(draft.createdAt || Date.now()),
+      updatedAt: Date.now(),
+    });
+    if (!normalized) return null;
+    state.temporaryRoleDrafts[normalized.id] = normalized;
+    return (
+      commitUnifiedState(state, {
+        action: "update",
+        targetKind: "temporary-role-draft",
+        targetId: normalized.id,
+        summary: `Saved temporary role draft ${normalized.title || normalized.id}.`,
+      }).temporaryRoleDrafts[normalized.id] || null
+    );
+  },
+
+  promoteTemporaryRole: (draftId, options) => {
+    const normalizedDraftId = String(draftId || "").trim();
+    const state = readState();
+    const draft = state.temporaryRoleDrafts[normalizedDraftId] || null;
+    if (!draft) return null;
+    const targetRoleId = String(
+      options?.targetRoleId || draft.targetRoleId || "",
+    ).trim();
+    const existing = targetRoleId ? state.roles[targetRoleId] || null : null;
+    const promoted = normalizeRoleEntity({
+      ...existing,
+      id:
+        targetRoleId ||
+        existing?.id ||
+        `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      slug:
+        String(existing?.slug || "").trim() ||
+        slugify(draft.title || `role-${draft.targetBaseAgentId}`),
+      title: draft.title || existing?.title || "临时角色升级",
+      summary: draft.summary || existing?.summary || "",
+      baseAgentId: draft.targetBaseAgentId || existing?.baseAgentId || "coco",
+      source: existing?.source || "promoted",
+      status: "active",
+      tags: existing?.tags || [],
+      useWhen: existing?.useWhen || [],
+      avoidWhen: existing?.avoidWhen || [],
+      toolPolicy: existing?.toolPolicy || {
+        allowedSkills: [],
+        blockedSkills: [],
+        canRouteSubtasks: true,
+        canUseNetworkResearch: true,
+      },
+      routingPolicy: existing?.routingPolicy || {
+        priority: 100,
+        keywords: [],
+        preferredTaskModes: [],
+        autoRouteEligible: true,
+      },
+      promptLayers: {
+        systemBaseline: existing?.promptLayers.systemBaseline || "",
+        mainBrainShared: existing?.promptLayers.mainBrainShared || "",
+        durableRoleAddon: [
+          existing?.promptLayers.durableRoleAddon || "",
+          draft.instructions.join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .trim(),
+      },
+      governance: existing?.governance || {
+        mode: "approval_required",
+        requiresHumanApproval: true,
+        allowMainBrainPromotion: false,
+        allowMainBrainArchive: false,
+        allowMainBrainMutation: false,
+      },
+      version: existing ? existing.version + 1 : 1,
+      createdAt: existing?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    });
+    if (!promoted) return null;
+    state.roles[promoted.id] = promoted;
+    state.temporaryRoleDrafts[normalizedDraftId] = {
+      ...draft,
+      promotedRoleId: promoted.id,
+      promotionSuggested: false,
+      updatedAt: Date.now(),
+    };
+    appendRoleVersionRecord(
+      state,
+      createRoleVersionRecord(promoted, {
+        changeType: existing ? "promote" : "create",
+        summary: `Promoted temporary role draft ${normalizedDraftId}.`,
+      }),
+    );
+    return (
+      commitUnifiedState(state, {
+        action: "update",
+        targetKind: "role-entity",
+        targetId: promoted.id,
+        summary: `Promoted temporary role draft ${normalizedDraftId} to ${promoted.title}.`,
+      }).roles[promoted.id] || null
+    );
+  },
+
+  listRoleVersions: (roleId) => {
+    const normalizedId = String(roleId || "").trim();
+    if (!normalizedId) return [];
+    return [...(readState().roleVersions[normalizedId] || [])].sort(
+      (left, right) => right.version - left.version,
+    );
+  },
+
+  rollbackRoleVersion: (roleId, version) => {
+    const normalizedId = String(roleId || "").trim();
+    const targetVersion = Number(version || 0);
+    const state = readState();
+    const current = state.roles[normalizedId] || null;
+    const history = state.roleVersions[normalizedId] || [];
+    const match = history.find((item) => item.version === targetVersion) || null;
+    if (!match) return null;
+    const restored = normalizeRoleEntity({
+      ...match.snapshot,
+      id: normalizedId,
+      version: Math.max(current?.version || 1, match.snapshot.version) + 1,
+      updatedAt: Date.now(),
+    });
+    if (!restored) return null;
+    state.roles[normalizedId] = restored;
+    appendRoleVersionRecord(
+      state,
+      createRoleVersionRecord(restored, {
+        changeType: "rollback",
+        summary: `Rolled back role ${normalizedId} to version ${targetVersion}.`,
+      }),
+    );
+    return (
+      commitUnifiedState(state, {
+        action: "rollback",
+        targetKind: "role-version",
+        targetId: normalizedId,
+        summary: `Rolled back role ${normalizedId} to version ${targetVersion}.`,
+      }).roles[normalizedId] || null
+    );
   },
 
   listStyleLibraries: () =>

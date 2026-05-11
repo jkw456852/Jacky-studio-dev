@@ -1,4 +1,5 @@
 type SearchMode = "web+images" | "web" | "images";
+type SearchProviderType = "bing" | "searxng" | "tavily" | "exa" | "custom";
 
 type SearchRequest = {
   query: string;
@@ -10,6 +11,14 @@ type SearchRequest = {
   };
   safeSearch?: "off" | "moderate" | "strict";
   timeRange?: "day" | "week" | "month" | "year" | "any";
+  blockedDomains?: string[];
+  provider?: {
+    id?: string;
+    catalogId?: string;
+    providerType?: SearchProviderType;
+    apiKey?: string;
+    baseUrl?: string;
+  };
 };
 
 type SearchProviderMeta = {
@@ -84,6 +93,59 @@ function hostFromUrl(rawUrl: string): string {
   } catch {
     return "";
   }
+}
+
+function normalizeBaseUrl(rawUrl: string): string {
+  return String(rawUrl || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeSearchProviderType(value: unknown): SearchProviderType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (
+    normalized === "searxng" ||
+    normalized === "tavily" ||
+    normalized === "exa" ||
+    normalized === "custom"
+  ) {
+    return normalized;
+  }
+  return "bing";
+}
+
+function normalizeBlockedDomains(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 50);
+}
+
+function shouldBlockHost(host: string, blockedDomains: string[]): boolean {
+  const normalizedHost = String(host || "").trim().toLowerCase();
+  if (!normalizedHost || blockedDomains.length === 0) return false;
+  return blockedDomains.some((rule) => {
+    const normalizedRule = String(rule || "").trim().toLowerCase();
+    if (!normalizedRule) return false;
+    return (
+      normalizedHost === normalizedRule ||
+      normalizedHost.endsWith(`.${normalizedRule}`)
+    );
+  });
+}
+
+function applyBlockedDomains<T extends { url?: string; sourcePageUrl?: string }>(
+  items: T[],
+  blockedDomains: string[],
+): T[] {
+  if (blockedDomains.length === 0) return items;
+  return items.filter((item) => {
+    const primaryHost = hostFromUrl(String(item.url || item.sourcePageUrl || ""));
+    const secondaryHost = hostFromUrl(String(item.sourcePageUrl || item.url || ""));
+    return (
+      !shouldBlockHost(primaryHost, blockedDomains) &&
+      !shouldBlockHost(secondaryHost, blockedDomains)
+    );
+  });
 }
 
 async function fetchJson(url: string, init?: RequestInit): Promise<any> {
@@ -172,7 +234,7 @@ async function searchBing(
         : "",
       siteName: item?.hostPageDomainFriendlyName || "",
     }))
-    .filter((item) => /^https?:\/\//i.test(item.imageUrl));
+    .filter((item: NormalizedImageItem) => /^https?:\/\//i.test(item.imageUrl));
 
   const suggestedQueries = [
     ...(webRaw?.relatedSearches?.value || [])
@@ -325,12 +387,364 @@ async function searchFree(
   };
 }
 
+type SearchExecutionResult = {
+  provider: SearchProviderMeta;
+  web: NormalizedWebItem[];
+  images: NormalizedImageItem[];
+  suggestedQueries: string[];
+};
+
+async function searchSearxng(
+  query: string,
+  locale: string,
+  mode: SearchMode,
+  webCount: number,
+  imageCount: number,
+  safeSearch: "Off" | "Moderate" | "Strict",
+  baseUrl: string,
+  apiKey?: string,
+): Promise<SearchExecutionResult> {
+  const rootUrl = normalizeBaseUrl(baseUrl);
+  if (!rootUrl) {
+    throw new Error("missing_search_base_url");
+  }
+
+  const headers: Record<string, string> = {};
+  const normalizedKey = String(apiKey || "").trim();
+  if (normalizedKey) {
+    headers["Authorization"] = `Bearer ${normalizedKey}`;
+    headers["X-API-Key"] = normalizedKey;
+  }
+
+  const lang = locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  const safeSearchLevel =
+    safeSearch === "Off" ? "0" : safeSearch === "Strict" ? "2" : "1";
+
+  const buildSearchUrl = (category: "general" | "images", count: number) =>
+    `${rootUrl}${rootUrl.endsWith("/search") ? "" : "/search"}`
+    + `?format=json&q=${encodeURIComponent(query)}`
+    + `&language=${encodeURIComponent(lang)}`
+    + `&categories=${encodeURIComponent(category)}`
+    + `&safesearch=${encodeURIComponent(safeSearchLevel)}`
+    + `&pageno=1`;
+
+  const webRaw =
+    mode === "images"
+      ? null
+      : await fetchJson(buildSearchUrl("general", webCount), { headers });
+  const imageRaw =
+    mode === "web"
+      ? null
+      : await fetchJson(buildSearchUrl("images", imageCount), { headers });
+
+  const web: NormalizedWebItem[] = (webRaw?.results || [])
+    .map((item: any, idx: number) => ({
+      id: `w_sx_${idx + 1}`,
+      title: String(item?.title || ""),
+      url: String(item?.url || ""),
+      displayUrl: hostFromUrl(String(item?.url || "")),
+      snippet: String(item?.content || item?.snippet || ""),
+      publishedTime: String(item?.publishedDate || item?.published_date || ""),
+      siteName: String(item?.engine || item?.parsed_url?.[1] || hostFromUrl(String(item?.url || "")) || ""),
+    }))
+    .filter((item: NormalizedWebItem) => /^https?:\/\//i.test(item.url))
+    .slice(0, webCount);
+
+  const images: NormalizedImageItem[] = (imageRaw?.results || [])
+    .map((item: any, idx: number) => ({
+      id: `i_sx_${idx + 1}`,
+      title: String(item?.title || item?.alt || ""),
+      imageUrl: String(item?.img_src || item?.image || item?.thumbnail || ""),
+      thumbnailUrl: String(item?.thumbnail_src || item?.thumbnail || item?.img_src || ""),
+      sourcePageUrl: String(item?.url || item?.source_url || ""),
+      width: Number(item?.width || 0),
+      height: Number(item?.height || 0),
+      contentType: String(item?.content_type || ""),
+      siteName: String(item?.engine || hostFromUrl(String(item?.url || "")) || ""),
+    }))
+    .filter((item: NormalizedImageItem) => /^https?:\/\//i.test(item.imageUrl))
+    .slice(0, imageCount);
+
+  const suggestedQueries = Array.from(
+    new Set([...(webRaw?.suggestions || []), ...(imageRaw?.suggestions || [])]),
+  )
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    provider: {
+      web: mode === "images" ? "none" : "searxng",
+      images: mode === "web" ? "none" : "searxng",
+    },
+    web,
+    images,
+    suggestedQueries,
+  };
+}
+
+async function searchTavily(
+  query: string,
+  mode: SearchMode,
+  webCount: number,
+  baseUrl: string,
+  apiKey: string,
+): Promise<SearchExecutionResult> {
+  const rootUrl = normalizeBaseUrl(baseUrl) || "https://api.tavily.com";
+  const normalizedKey = String(apiKey || "").trim();
+  if (!normalizedKey) {
+    throw new Error("missing_search_api_key");
+  }
+
+  const raw = await fetchJson(
+    `${rootUrl}${rootUrl.endsWith("/search") ? "" : "/search"}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api_key: normalizedKey,
+        query,
+        search_depth: "advanced",
+        topic: "general",
+        max_results: Math.max(1, Math.min(20, webCount)),
+        include_images: mode !== "web",
+        include_image_descriptions: false,
+      }),
+    },
+  );
+
+  const web: NormalizedWebItem[] = (raw?.results || [])
+    .map((item: any, idx: number) => ({
+      id: `w_tv_${idx + 1}`,
+      title: String(item?.title || item?.url || ""),
+      url: String(item?.url || ""),
+      displayUrl: hostFromUrl(String(item?.url || "")),
+      snippet: String(item?.content || ""),
+      publishedTime: String(item?.published_date || ""),
+      siteName: hostFromUrl(String(item?.url || "")),
+    }))
+    .filter((item: NormalizedWebItem) => /^https?:\/\//i.test(item.url))
+    .slice(0, webCount);
+
+  const images: NormalizedImageItem[] = mode === "web"
+    ? []
+    : ((raw?.images || []) as any[])
+        .map((item: any, idx: number) => {
+          const imageUrl = typeof item === "string"
+            ? item
+            : String(item?.url || item?.image_url || item?.src || "");
+          return {
+            id: `i_tv_${idx + 1}`,
+            title: query,
+            imageUrl,
+            thumbnailUrl: imageUrl,
+            sourcePageUrl: web[idx]?.url || "",
+            width: 0,
+            height: 0,
+            contentType: "",
+            siteName: hostFromUrl(web[idx]?.url || ""),
+          };
+        })
+        .filter((item: NormalizedImageItem) => /^https?:\/\//i.test(item.imageUrl))
+        .slice(0, DEFAULT_IMAGE_COUNT);
+
+  const suggestedQueries = Array.from(new Set([
+    ...web.map((item) => item.title).filter(Boolean),
+    String(raw?.answer || "").trim(),
+  ]))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    provider: {
+      web: mode === "images" ? "none" : "tavily",
+      images: mode === "web" ? "none" : images.length > 0 ? "tavily" : "none",
+    },
+    web,
+    images,
+    suggestedQueries,
+  };
+}
+
+async function searchExa(
+  query: string,
+  webCount: number,
+  baseUrl: string,
+  apiKey: string,
+): Promise<SearchExecutionResult> {
+  const rootUrl = normalizeBaseUrl(baseUrl) || "https://api.exa.ai";
+  const normalizedKey = String(apiKey || "").trim();
+  if (!normalizedKey) {
+    throw new Error("missing_search_api_key");
+  }
+
+  const raw = await fetchJson(
+    `${rootUrl}${rootUrl.endsWith("/search") ? "" : "/search"}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": normalizedKey,
+      },
+      body: JSON.stringify({
+        query,
+        numResults: Math.max(1, Math.min(20, webCount)),
+        type: "auto",
+        contents: {
+          text: true,
+          highlights: {
+            numSentences: 2,
+            highlightsPerUrl: 2,
+          },
+        },
+      }),
+    },
+  );
+
+  const web: NormalizedWebItem[] = (raw?.results || [])
+    .map((item: any, idx: number) => ({
+      id: `w_ex_${idx + 1}`,
+      title: String(item?.title || item?.url || ""),
+      url: String(item?.url || ""),
+      displayUrl: hostFromUrl(String(item?.url || "")),
+      snippet: Array.isArray(item?.highlights)
+        ? item.highlights.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).join(" ")
+        : String(item?.text || item?.summary || ""),
+      publishedTime: String(item?.publishedDate || item?.published_date || ""),
+      siteName: hostFromUrl(String(item?.url || "")),
+    }))
+    .filter((item: NormalizedWebItem) => /^https?:\/\//i.test(item.url))
+    .slice(0, webCount);
+
+  const suggestedQueries = web
+    .map((item) => item.title)
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    provider: {
+      web: "exa",
+      images: "none",
+    },
+    web,
+    images: [],
+    suggestedQueries,
+  };
+}
+
+const SEARCH_ADAPTERS: Record<
+  SearchProviderType,
+  (args: {
+    query: string;
+    locale: string;
+    mode: SearchMode;
+    webCount: number;
+    imageCount: number;
+    safeSearch: "Off" | "Moderate" | "Strict";
+    freshness: string;
+    apiKey: string;
+    baseUrl: string;
+    envBingKey: string;
+    mkt: string;
+  }) => Promise<SearchExecutionResult>
+> = {
+  bing: async ({
+    query,
+    mode,
+    webCount,
+    imageCount,
+    safeSearch,
+    freshness,
+    apiKey,
+    envBingKey,
+    mkt,
+    locale,
+  }) => {
+    void locale;
+    const effectiveKey = apiKey || envBingKey;
+    if (!effectiveKey) {
+      return searchFree(query, "zh-CN", mode, webCount, imageCount);
+    }
+    return searchBing(
+      query,
+      mkt,
+      mode,
+      webCount,
+      imageCount,
+      safeSearch,
+      freshness,
+      effectiveKey,
+    );
+  },
+  searxng: async ({
+    query,
+    locale,
+    mode,
+    webCount,
+    imageCount,
+    safeSearch,
+    apiKey,
+    baseUrl,
+  }) => {
+    if (!baseUrl) {
+      return searchFree(query, locale, mode, webCount, imageCount);
+    }
+    return searchSearxng(
+      query,
+      locale,
+      mode,
+      webCount,
+      imageCount,
+      safeSearch,
+      baseUrl,
+      apiKey,
+    );
+  },
+  tavily: async ({ query, locale, mode, webCount, imageCount, apiKey, baseUrl }) => {
+    void locale;
+    void imageCount;
+    return searchTavily(query, mode, webCount, baseUrl, apiKey);
+  },
+  exa: async ({ query, locale, mode, webCount, imageCount, apiKey, baseUrl }) => {
+    void locale;
+    void mode;
+    void imageCount;
+    return searchExa(query, webCount, baseUrl, apiKey);
+  },
+  custom: async ({
+    query,
+    locale,
+    mode,
+    webCount,
+    imageCount,
+    safeSearch,
+    apiKey,
+    baseUrl,
+  }) => {
+    if (!baseUrl) {
+      return searchFree(query, locale, mode, webCount, imageCount);
+    }
+    return searchSearxng(
+      query,
+      locale,
+      mode,
+      webCount,
+      imageCount,
+      safeSearch,
+      baseUrl,
+      apiKey,
+    );
+  },
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const key = process.env.BING_SEARCH_API_KEY;
+  const envBingKey = process.env.BING_SEARCH_API_KEY;
 
   const body = asJson(req.body);
   const query = String(body.query || "").trim();
@@ -346,37 +760,55 @@ export default async function handler(req: any, res: any) {
   const imageCount = toCount(body.count?.images, DEFAULT_IMAGE_COUNT, 50);
   const safeSearch = toSafeSearch(body.safeSearch);
   const freshness = mapWebTimeFilter(body.timeRange);
+  const blockedDomains = normalizeBlockedDomains(body.blockedDomains);
+  const providerType = normalizeSearchProviderType(
+    body.provider?.providerType || body.provider?.catalogId,
+  );
+  const providerApiKey = String(body.provider?.apiKey || "").trim();
+  const providerBaseUrl = String(body.provider?.baseUrl || "").trim();
 
   const requestId = `srch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   try {
-    const searchResult = key
-      ? await searchBing(
-          query,
-          mkt,
-          mode,
-          webCount,
-          imageCount,
-          safeSearch,
-          freshness,
-          key,
-        )
-      : await searchFree(query, locale, mode, webCount, imageCount);
+    const adapter = SEARCH_ADAPTERS[providerType] || SEARCH_ADAPTERS.bing;
+    const searchResult = await adapter({
+      query,
+      locale,
+      mode,
+      webCount,
+      imageCount,
+      safeSearch,
+      freshness,
+      apiKey: providerApiKey,
+      baseUrl: providerBaseUrl,
+      envBingKey: String(envBingKey || "").trim(),
+      mkt,
+    });
+
+    const filteredWeb = applyBlockedDomains(searchResult.web, blockedDomains);
+    const filteredImages = applyBlockedDomains(searchResult.images, blockedDomains);
 
     return res.status(200).json({
       requestId,
       query,
       mode,
-      provider: searchResult.provider,
-      web: searchResult.web,
-      images: searchResult.images,
+      provider: {
+        ...searchResult.provider,
+        fallback:
+          Boolean(searchResult.provider.fallback) ||
+          ((providerType === "searxng" || providerType === "custom") && !providerBaseUrl) ||
+          ((providerType === "tavily" || providerType === "exa") && !providerApiKey) ||
+          (providerType === "bing" && !(providerApiKey || envBingKey)),
+      },
+      web: filteredWeb,
+      images: filteredImages,
       hints: {
         suggestedQueries: searchResult.suggestedQueries,
         groups: [],
       },
       limits: {
-        webReturned: searchResult.web.length,
-        imagesReturned: searchResult.images.length,
+        webReturned: filteredWeb.length,
+        imagesReturned: filteredImages.length,
       },
     });
   } catch (error: any) {
@@ -386,7 +818,7 @@ export default async function handler(req: any, res: any) {
       provider: {
         web: "none",
         images: "none",
-        fallback: Boolean(key),
+        fallback: Boolean(envBingKey),
       },
     });
   }

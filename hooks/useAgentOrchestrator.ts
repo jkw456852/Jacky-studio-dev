@@ -17,6 +17,7 @@ import {
   buildAutoRoleSessionState,
   buildImmediateResponseTask,
   buildRolePromptAddonFromDecision,
+  shouldUseImmediateResponseShortcut,
 } from '../services/agents/orchestrator-task-assembly';
 import {
   maybeResolvePipeline,
@@ -278,15 +279,16 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         withTimeout,
       });
 
-      console.log('[useAgentOrchestrator] Routed to:', decision.targetAgent);
+      const executionAgentId = decision.targetAgent || 'coco';
+      console.log('[useAgentOrchestrator] Routed to:', executionAgentId);
 
-      if (metadata?.agentSelectionMode === 'auto') {
+      if (metadata?.agentSelectionMode === 'auto' && decision.targetAgent) {
         setCurrentAutoRoleSession(buildAutoRoleSessionState(decision));
       } else {
         setCurrentAutoRoleSession(null);
       }
 
-      if (decision.roleDraft) {
+      if (decision.roleDraft && decision.targetAgent) {
         saveLatestAgentRoleDraft(decision.targetAgent, decision.roleDraft, {
           roleStrategy: decision.roleStrategy,
           roleStrategyReason: decision.roleStrategyReason,
@@ -298,7 +300,7 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         messageForExecution,
       );
 
-      if (decision.action === 'respond' || decision.action === 'clarify') {
+      if (shouldUseImmediateResponseShortcut(decision, metadata)) {
         const responseTask = buildImmediateResponseTask({
           decision,
           messageForExecution,
@@ -311,9 +313,20 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         return responseTask;
       }
 
+      if (decision.action === 'respond' || decision.action === 'clarify') {
+        console.warn(
+          '[useAgentOrchestrator] Autonomous routing request returned a direct-response decision; bypassing immediate shortcut and forcing agent execution.',
+          {
+            action: decision.action,
+            targetAgent: decision.targetAgent,
+            allowAutonomousRouting: metadata?.allowAutonomousRouting === true,
+          },
+        );
+      }
+
       const lastTask = useAgentStore.getState().currentTask;
       const { task, inheritedReferenceUrls } = await prepareAgentExecutionTask({
-        agentId: decision.targetAgent,
+        agentId: executionAgentId,
         message,
         messageForExecution,
         attachments,
@@ -379,7 +392,7 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       await finalizeExecutionSuccess({
         result,
         topicId,
-        decisionLabel: `Agent output was adopted as a downstream design anchor: ${decision.targetAgent}`,
+        decisionLabel: `Agent output was adopted as a downstream design anchor: ${executionAgentId}`,
         addAssetsToCanvas,
         updateDesignSession: projectActions.updateDesignSession,
         getCurrentApprovedAssetIds: () =>

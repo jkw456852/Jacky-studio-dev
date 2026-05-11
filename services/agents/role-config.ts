@@ -1,8 +1,8 @@
 import type { AgentType } from "../../types/agent.types";
-import type { StudioStoredRoleDraft } from "../runtime-assets/user-asset-types";
-import { getMainBrainPreferenceBlock } from "../runtime-assets/main-brain";
-import { getStudioAgentSystemPrompt } from "../runtime-assets/studio-registry";
-import { getStudioUserAssetApi } from "../runtime-assets/api";
+import type { StudioStoredRoleDraft } from "../runtime-assets/user-asset-types.ts";
+import { getMainBrainPreferenceBlock } from "../runtime-assets/main-brain.ts";
+import { getStudioAgentSystemPrompt } from "../runtime-assets/studio-registry.ts";
+import { getStudioUserAssetApi } from "../runtime-assets/api.ts";
 
 export const getBuiltInAgentPrompt = (agentId: AgentType): string =>
   getStudioAgentSystemPrompt(agentId);
@@ -69,9 +69,14 @@ export const mergePromptAddonWithRoleDraft = (args: {
   return `${currentAddon}\n\n${nextDraft}`.trim();
 };
 
-export const getAgentPromptLayers = (agentId: AgentType) => {
+type MainBrainPromptOptions = Parameters<typeof getMainBrainPreferenceBlock>[0];
+
+export const getAgentPromptLayers = (
+  agentId: AgentType,
+  options?: MainBrainPromptOptions,
+) => {
   const systemBaselinePrompt = getBuiltInAgentPrompt(agentId);
-  const mainBrainPreferenceBlock = getMainBrainPreferenceBlock();
+  const mainBrainPreferenceBlock = getMainBrainPreferenceBlock(options);
   const promptAddon = getAgentPromptAddon(agentId);
   const userAddonBlock = buildUserCustomRoleAddonBlock(promptAddon);
 
@@ -90,6 +95,9 @@ export const getAgentPromptLayers = (agentId: AgentType) => {
   };
 };
 
-export const getEffectiveAgentPrompt = (agentId: AgentType): string => {
-  return getAgentPromptLayers(agentId).effectivePrompt;
+export const getEffectiveAgentPrompt = (
+  agentId: AgentType,
+  options?: MainBrainPromptOptions,
+): string => {
+  return getAgentPromptLayers(agentId, options).effectivePrompt;
 };

@@ -121,3 +121,91 @@ test('prepareAgentExecutionTask assembles task metadata, syncs state, and valida
   assert.equal(validations[0].originalAttachmentCount, 1);
   assert.equal(validations[0].originalUploadedCount, 1);
 });
+
+test('prepareAgentExecutionTask preserves selected durable role governance metadata into execution task', async () => {
+  const result = await prepareAgentExecutionTask({
+    agentId: 'coco',
+    message: '沿用当前长期角色执行',
+    messageForExecution: '沿用当前长期角色执行',
+    attachments: [],
+    metadata: {
+      agentSelectionMode: 'manual',
+      pinnedAgentId: 'coco',
+      selectedRoleId: 'role-coco-pro',
+      selectedRoleSource: 'user',
+      baseAgentId: 'coco',
+      roleGovernanceMode: 'approval_required',
+      allowMainBrainRoleMutation: false,
+      allowMainBrainRolePromotion: true,
+      multimodalContext: {
+        referenceImageUrls: [],
+      },
+    } as any,
+    uploadedUrls: [],
+    updatedContext: {
+      projectId: 'project-2',
+      designSession: {
+        taskMode: 'respond',
+        brand: { name: 'Brand' },
+        styleHints: [],
+        subjectAnchors: [],
+        constraints: [],
+        forbiddenChanges: [],
+        approvedAssetIds: [],
+        referenceWebPages: [],
+      },
+      conversationHistory: [],
+      existingAssets: [],
+    } as any,
+    projectActions: {
+      updateDesignSession: () => {},
+    },
+    existingDesignSession: {
+      taskMode: 'respond',
+      brand: { name: 'Brand' },
+      styleHints: [],
+      subjectAnchors: [],
+      constraints: [],
+      forbiddenChanges: [],
+      approvedAssetIds: [],
+      referenceWebPages: [],
+    },
+    hostProvider: 'mock-host',
+    topicId: 'topic-role',
+    topicPinnedContext: '',
+    topicPinnedRefs: [],
+    inferredTaskMode: 'chat',
+    optimizerUsed: false,
+    optimizerStatus: 'skipped',
+    originalMessage: '沿用当前长期角色执行',
+    shouldPreferUploadedReferences: false,
+    currentTaskAssetUrls: [],
+    sessionApprovedUrls: [],
+    recentHistoryAttachmentUrls: [],
+    isAttachmentValidationStrict: true,
+    dependencies: {
+      collectInheritedReferenceUrlsFn: () => [],
+      resolveMultimodalReferencesFn: () => ({
+        directReferenceUrls: [],
+        mergedReferenceUrls: [],
+        inheritedReferenceUrls: [],
+        effectiveReferenceUrls: [],
+        isolateVisualQa: false,
+        referenceSummary: 'no refs',
+      }) as any,
+      syncDesignSessionStateFn: () => {},
+      syncTopicSnapshotStateFn: async () => {},
+      validateAttachmentPassthroughFn: () => {},
+    },
+  });
+
+  assert.equal(result.taskMetadata.selectedRoleId, 'role-coco-pro');
+  assert.equal(result.taskMetadata.selectedRoleSource, 'user');
+  assert.equal(result.taskMetadata.baseAgentId, 'coco');
+  assert.equal(result.taskMetadata.roleGovernanceMode, 'approval_required');
+  assert.equal(result.taskMetadata.allowMainBrainRoleMutation, false);
+  assert.equal(result.taskMetadata.allowMainBrainRolePromotion, true);
+  assert.equal(result.task.input.metadata?.selectedRoleId, 'role-coco-pro');
+  assert.equal(result.task.input.metadata?.baseAgentId, 'coco');
+  assert.equal(result.task.input.metadata?.roleGovernanceMode, 'approval_required');
+});

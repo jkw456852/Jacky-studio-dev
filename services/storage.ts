@@ -1,5 +1,5 @@
 import type { Project } from '../types/index.ts';
-import { safeLocalStorageRemoveItem } from '../utils/safe-storage';
+import { safeLocalStorageRemoveItem } from '../utils/safe-storage.ts';
 
 export const DB_NAME = 'XcStudioDB';
 export const STORE_NAME = 'projects';

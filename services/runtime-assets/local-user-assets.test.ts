@@ -123,3 +123,59 @@ test("local asset api can rollback to previous audit checkpoint", () => {
     ]);
   });
 });
+
+test("local asset api can promote temporary role draft and rollback to an earlier role version", () => {
+  const storage = createStorageMock();
+  withMockWindow(storage, () => {
+    const api = createLocalStudioUserAssetApi();
+    const draft = api.saveTemporaryRoleDraft({
+      targetBaseAgentId: "coco",
+      title: "新品转化角色",
+      summary: "负责新品图文转化策略",
+      instructions: ["先给结构化分析", "再给可执行建议"],
+      roleStrategy: "create",
+      roleStrategyReason: "来自主脑治理建议",
+      promotionSuggested: true,
+    });
+
+    assert.equal(Boolean(draft?.id), true);
+
+    const promoted = api.promoteTemporaryRole(draft?.id || "");
+    assert.equal(promoted?.status, "active");
+    assert.equal(promoted?.source, "promoted");
+    assert.equal(
+      promoted?.promptLayers.durableRoleAddon.includes("先给结构化分析"),
+      true,
+    );
+
+    const promotedDraft = api.getSnapshot().temporaryRoleDrafts[draft?.id || ""];
+    assert.equal(promotedDraft?.promotedRoleId, promoted?.id);
+    assert.equal(promotedDraft?.promotionSuggested, false);
+
+    const updated = api.saveRole({
+      ...promoted,
+      title: "新品转化角色 v2",
+      summary: "加入更强的投放归因视角",
+      promptLayers: {
+        ...promoted?.promptLayers,
+        durableRoleAddon: "手工修订后的长期角色补充提示词",
+      },
+    });
+    assert.equal(updated?.version, 2);
+
+    const rolledBack = api.rollbackRoleVersion(promoted?.id || "", 1);
+    assert.equal(rolledBack?.title, "新品转化角色");
+    assert.equal(rolledBack?.version, 3);
+    assert.equal(
+      rolledBack?.promptLayers.durableRoleAddon.includes("先给结构化分析"),
+      true,
+    );
+
+    assert.deepEqual(
+      api.listRoleVersions(promoted?.id || "").map((item) => item.version),
+      [3, 2, 1],
+    );
+    assert.equal(api.listAuditEntries()[0]?.targetKind, "role-version");
+    assert.equal(api.listAuditEntries()[0]?.action, "rollback");
+  });
+});

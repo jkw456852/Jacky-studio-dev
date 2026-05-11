@@ -37,6 +37,7 @@ import {
   buildMainBrainTaskOutput,
   buildSkillExecutionRuntimeEnvelope,
 } from "./agent-task-output";
+import { finalizeRoleGovernancePlan } from "./main-brain-role-governance";
 import {
   normalizeSkillCalls,
 } from "./skill-call-normalizer";
@@ -50,6 +51,7 @@ import {
   resolveSkillTimeoutMs,
 } from "./skill-execution-runtime";
 import { runWithTimeout, withTimeout } from "./timeout-utils";
+import { resolveAnalyzePlanSystemPrompt } from "./analyze-plan-system-prompt.ts";
 
 // 闄愭祦骞跺彂鎵ц鍣細闄愬埗鏈€澶?concurrency 涓换鍔″悓鏃舵墽琛?
 const runWithConcurrency = async <T>(
@@ -132,24 +134,57 @@ const MULTI_IMAGE_REQUEST_RE = /(\d+)\s*寮爘(\d+)\s*images?|涓€濂梶涓€
 const ECOM_SET_RE = /浜氶┈閫妡amazon|listing|鍓浘|鐢靛晢|涓诲浘|璇︽儏鍥緗濂楀浘/i;
 const BANNED_MULTI_FRAME_TERMS_RE =
   /\b(collage|set of images|multiple views|listing template|contact sheet|mosaic|grid panel)\b/gi;
-const fileToInlinePart = async (
-  file: File,
-): Promise<{ inlineData: { mimeType: string; data: string } } | null> => {
+type InlineImagePart = { inlineData: { mimeType: string; data: string } };
+
+const dataUrlToInlinePart = (dataUrl: string): InlineImagePart | null => {
+  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+  if (!match || !match[1] || !match[2]) return null;
+  return {
+    inlineData: {
+      mimeType: match[1],
+      data: match[2],
+    },
+  };
+};
+
+const blobToInlinePart = async (blob: Blob): Promise<InlineImagePart | null> => {
   try {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(String(reader.result || ""));
       reader.onerror = () => reject(new Error("image read failed"));
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(blob);
     });
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (!match || !match[1] || !match[2]) return null;
-    return {
-      inlineData: {
-        mimeType: match[1],
-        data: match[2],
-      },
-    };
+    return dataUrlToInlinePart(dataUrl);
+  } catch {
+    return null;
+  }
+};
+
+const fileToInlinePart = async (file: File): Promise<InlineImagePart | null> => {
+  try {
+    return await blobToInlinePart(file);
+  } catch {
+    return null;
+  }
+};
+
+const urlToInlinePart = async (url: string): Promise<InlineImagePart | null> => {
+  try {
+    const normalizedUrl = String(url || "").trim();
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      return null;
+    }
+    const response = await fetch(normalizedUrl);
+    if (!response.ok) {
+      return null;
+    }
+    const blob = await response.blob();
+    const mimeType = String(blob.type || "").toLowerCase();
+    if (mimeType && !mimeType.startsWith("image/")) {
+      return null;
+    }
+    return blobToInlinePart(blob);
   } catch {
     return null;
   }
@@ -1079,6 +1114,16 @@ export abstract class EnhancedBaseAgent {
       .replace(/```json:generation\s*[\s\S]*?```/g, "")
       .trim();
 
+    const effectivePlan = finalizeRoleGovernancePlan({
+      task,
+      finalPlan: plan,
+    });
+    const roleGovernanceAudit =
+      effectivePlan?.roleGovernanceAudit &&
+      Array.isArray(effectivePlan.roleGovernanceAudit.actions)
+        ? effectivePlan.roleGovernanceAudit
+        : undefined;
+
     store.actions.setCurrentTask(null);
 
     return {
@@ -1086,8 +1131,8 @@ export abstract class EnhancedBaseAgent {
       status: "completed",
       output: buildAgentTaskOutput({
         message: finalMessage,
-        analysis: plan.analysis,
-        preGenerationMessage: plan.preGenerationMessage,
+        analysis: effectivePlan.analysis,
+        preGenerationMessage: effectivePlan.preGenerationMessage,
         postGenerationSummary,
         proposals: [],
         assets,
@@ -1095,7 +1140,8 @@ export abstract class EnhancedBaseAgent {
         adjustments:
           assets.length > 0
             ? this.getAdjustments(message, [])
-            : plan.suggestions || [],
+            : effectivePlan.suggestions || [],
+        roleGovernanceAudit,
         runtime: buildSkillExecutionRuntimeEnvelope({
           assets,
           skillResults,
@@ -1141,10 +1187,14 @@ export abstract class EnhancedBaseAgent {
 
     const finalPlan = runtimeResult.finalPlan || {};
     const assets = runtimeResult.allAssets;
+    const effectiveFinalPlan = finalizeRoleGovernancePlan({
+      task,
+      finalPlan,
+    });
     const resolvedOutput = resolveMainBrainOutput({
       task,
       runtimeResult,
-      finalPlan,
+      finalPlan: effectiveFinalPlan,
       assets,
       getAdjustments: (message, proposals) =>
         this.getAdjustments(message, proposals),
@@ -1158,7 +1208,7 @@ export abstract class EnhancedBaseAgent {
       ...task,
       status: "completed",
       output: buildMainBrainTaskOutput({
-        finalPlan,
+        finalPlan: effectiveFinalPlan,
         assets,
         runtimeResult,
         resolvedOutput,
@@ -1186,7 +1236,11 @@ export abstract class EnhancedBaseAgent {
 
       const promptBuild = buildAnalyzePlanPrompt({
         agentId: this.agentInfo.id,
-        systemPrompt: this.systemPrompt,
+        systemPrompt: resolveAnalyzePlanSystemPrompt({
+          agentId: this.agentInfo.id,
+          fallbackSystemPrompt: this.systemPrompt,
+          metadata,
+        }),
         preferredSkills: this.preferredSkills,
         message,
         context,
@@ -1200,8 +1254,29 @@ export abstract class EnhancedBaseAgent {
 
       const attachmentInlineParts = (
         await Promise.all((attachments || []).map((file) => fileToInlinePart(file)))
-      ).filter(Boolean) as Array<{ inlineData: { mimeType: string; data: string } }>;
-      const parts: any[] = [{ text: fullPrompt }, ...attachmentInlineParts];
+      ).filter(Boolean) as InlineImagePart[];
+      const inheritedReferenceInlineParts =
+        attachmentInlineParts.length === 0 &&
+        metadata?.multimodalContext?.isolateVisualQa !== true
+          ? (
+              await Promise.all(
+                (metadata?.multimodalContext?.referenceImageUrls || [])
+                  .filter((url: string) => /^https?:\/\//i.test(String(url || "")))
+                  .filter(
+                    (url: string, index: number, list: string[]) =>
+                      list.indexOf(url) === index &&
+                      !(uploadedAttachments || []).includes(url),
+                  )
+                  .slice(0, 3)
+                  .map((url: string) => urlToInlinePart(url)),
+              )
+            ).filter(Boolean) as InlineImagePart[]
+          : [];
+      const parts: any[] = [
+        { text: fullPrompt },
+        ...attachmentInlineParts,
+        ...inheritedReferenceInlineParts,
+      ];
 
       const selectedMode = useAgentStore.getState().modelMode || 'fast';
       const bestModel = getBestModelSelection(
@@ -1214,7 +1289,9 @@ export abstract class EnhancedBaseAgent {
         historyUsed: promptBuild.historyCount,
         attachmentCount: attachments?.length || 0,
         uploadedAttachmentCount: metadata?.multimodalContext?.uploadedAttachmentCount || 0,
-        includesInlineImages: attachmentInlineParts.length > 0,
+        inheritedReferenceInlineImageCount: inheritedReferenceInlineParts.length,
+        includesInlineImages:
+          attachmentInlineParts.length > 0 || inheritedReferenceInlineParts.length > 0,
         estimatedPayloadChars: JSON.stringify({ prompt: fullPrompt }).length,
         model: bestModel.modelId,
         providerId: bestModel.providerId || null,

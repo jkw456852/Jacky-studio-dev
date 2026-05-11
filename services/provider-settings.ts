@@ -1,6 +1,6 @@
 ﻿import { fetchAvailableModels } from './gemini';
-import { safeLocalStorageSetItem } from '../utils/safe-storage';
-import { getStudioUserAssetApi } from './runtime-assets/api';
+import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
+import { getStudioUserAssetApi } from './runtime-assets/api.ts';
 
 export type ModelCategory = 'script' | 'image' | 'video';
 export type ModelBrand =

@@ -89,6 +89,8 @@ export const assertSkillExists = (call: any) => {
 
 export const injectExecutionPreferences = (call: any, task: AgentTask) => {
   const preferredAspectRatio = task.input.metadata?.preferredAspectRatio;
+  const preferredImageModel = task.input.metadata?.preferredImageModel;
+  const preferredImageProviderId = task.input.metadata?.preferredImageProviderId;
   const preferredImageSize = task.input.metadata?.preferredImageSize;
   const creationMode = task.input.metadata?.creationMode;
   const promptLanguagePolicy =
@@ -107,18 +109,33 @@ export const injectExecutionPreferences = (call: any, task: AgentTask) => {
     call.params.aspectRatio = preferredAspectRatio;
   }
 
-  if (
-    call.skillName === 'generateImage' &&
-    typeof preferredImageSize === 'string' &&
-    preferredImageSize &&
-    !call.params.imageSize
-  ) {
-    call.params = call.params || {};
-    call.params.imageSize = preferredImageSize;
-  }
-
   if (call.skillName === 'generateImage') {
     call.params = call.params || {};
+
+    if (
+      typeof preferredImageModel === 'string' &&
+      preferredImageModel.trim() &&
+      !call.params.model
+    ) {
+      call.params.model = preferredImageModel.trim();
+    }
+
+    if (
+      typeof preferredImageProviderId === 'string' &&
+      preferredImageProviderId.trim() &&
+      !call.params.providerId
+    ) {
+      call.params.providerId = preferredImageProviderId.trim();
+    }
+
+    if (
+      typeof preferredImageSize === 'string' &&
+      preferredImageSize &&
+      !call.params.imageSize
+    ) {
+      call.params.imageSize = preferredImageSize;
+    }
+
     if (!call.params.promptLanguagePolicy) {
       call.params.promptLanguagePolicy = promptLanguagePolicy;
     }

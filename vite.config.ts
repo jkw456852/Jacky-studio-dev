@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import accountSyncHandler from "./api/account-sync";
 import accountSecretsHandler from "./api/account-secrets";
+import searchHandler from "./api/search";
 import {
   clearPersonalBrowserAuthSession,
   finalizePersonalBrowserAuthSession,
@@ -138,107 +139,29 @@ function apiFetchImagePlugin(): Plugin {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 本地开发时把 /api/search 挂在 Vite dev server 上
-// 没有 Bing Key 时走免费 Wikipedia + Wikimedia + Openverse fallback
+// /api/search 本地代理：复用真实搜索 handler，避免 dev 环境固定走免费 fallback
 // ─────────────────────────────────────────────────────────────────────────────
 function apiSearchPlugin(): Plugin {
-  const REQUEST_TIMEOUT_MS = 12000;
-
-  async function fetchJson(url: string): Promise<any> {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      const r = await fetch(url, { signal: ctrl.signal });
-      if (!r.ok) throw new Error(`http_${r.status}`);
-      return r.json();
-    } finally {
-      clearTimeout(t);
-    }
-  }
-
-  async function searchWiki(query: string, locale: string, count: number) {
-    const lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
-    const data = await fetchJson(
-      `https://${lang}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=${count}`
-    ).catch(() => ({ pages: [] }));
-    return (data?.pages || []).map((item: any, i: number) => ({
-      id: `w_${i + 1}`, title: item?.title || "",
-      url: item?.key ? `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(item.key).replace(/%20/g, "_")}` : "",
-      displayUrl: `${lang}.wikipedia.org`, snippet: String(item?.excerpt || "").replace(/<[^>]+>/g, " "),
-      publishedTime: "", siteName: `${lang}.wikipedia.org`,
-    }));
-  }
-
-  async function searchImages(query: string, count: number) {
-    const [wm, ov] = await Promise.all([
-      fetchJson(`https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=${Math.min(count, 20)}&prop=imageinfo&iiprop=url|size|mime`)
-        .then((d: any) => Object.values(d?.query?.pages || {}).map((p: any, i: number) => {
-          const info = p?.imageinfo?.[0] || {};
-          return {
-            id: `i_wm_${i}`, title: p?.title || "", imageUrl: info?.url || "",
-            thumbnailUrl: info?.url || "", sourcePageUrl: "", width: Number(info?.width || 0),
-            height: Number(info?.height || 0), contentType: info?.mime || "", siteName: "wikimedia"
-          };
-        })).catch(() => []),
-      fetchJson(`https://api.openverse.org/v1/images?q=${encodeURIComponent(query)}&page_size=${Math.min(count, 16)}`)
-        .then((d: any) => (d?.results || []).map((p: any, i: number) => ({
-          id: `i_ov_${i}`, title: p?.title || "", imageUrl: p?.url || "",
-          thumbnailUrl: p?.thumbnail || "", sourcePageUrl: p?.foreign_landing_url || "",
-          width: Number(p?.width || 0), height: Number(p?.height || 0),
-          contentType: p?.mime_type || "", siteName: p?.source || "openverse"
-        })))
-        .catch(() => []),
-    ]);
-    const seen = new Set<string>();
-    return [...wm, ...ov].filter(img => {
-      if (!img.imageUrl || seen.has(img.imageUrl)) return false;
-      seen.add(img.imageUrl); return true;
-    }).slice(0, count);
-  }
-
   return {
     name: "vite-plugin-api-search",
     configureServer(server) {
       server.middlewares.use("/api/search", async (req, res) => {
-        if (req.method !== "POST") {
-          res.writeHead(405, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Method not allowed" }));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
-        let body: any = {};
-        try { body = JSON.parse(Buffer.concat(chunks).toString("utf-8")); } catch { /* ignore */ }
-
-        const query = String(body.query || "").trim();
-        if (!query) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "query is required" }));
-          return;
+        if (req.method === "POST") {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          (req as any).body = Buffer.concat(chunks).toString("utf-8");
         }
 
-        const mode = body.mode === "images" ? "images" : body.mode === "web" ? "web" : "web+images";
-        const locale = String(body.locale || "zh-CN");
-        const webCount = Math.min(Number(body.count?.web) || 8, 20);
-        const imageCount = Math.min(Number(body.count?.images) || 16, 50);
-        const requestId = `srch_${Date.now()}`;
+        const adaptedRes = createAdaptedApiResponse(res);
 
         try {
-          const [web, images] = await Promise.all([
-            mode === "images" ? [] : searchWiki(query, locale, webCount),
-            mode === "web" ? [] : searchImages(query, imageCount),
-          ]);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            requestId, query, mode,
-            provider: { web: mode === "images" ? "none" : "wikipedia", images: mode === "web" ? "none" : "wikimedia+openverse", fallback: true },
-            web, images,
-            hints: { suggestedQueries: [`${query} 风格参考`, `${query} 构图`], groups: [] },
-            limits: { webReturned: web.length, imagesReturned: images.length },
-          }));
+          await searchHandler(req as any, adaptedRes);
         } catch (error: any) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: error?.message || "search_failed", requestId }));
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_search_failed",
+            });
+          }
         }
       });
     },

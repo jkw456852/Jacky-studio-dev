@@ -13,11 +13,15 @@ export const WorkspaceSidebarLayer: React.FC<WorkspaceSidebarLayerProps> = memo(
   leftPanel,
   assistant,
   showAssistant,
-}) => (
-  <>
-    <WorkspaceLeftPanel {...leftPanel} />
-    <AnimatePresence>
-      {showAssistant && <AssistantSidebar {...assistant} />}
-    </AnimatePresence>
-  </>
-));
+}) => {
+  const isAssistantFullscreen = showAssistant && Boolean(assistant.panelUi.isFullscreen);
+
+  return (
+    <>
+      {!isAssistantFullscreen ? <WorkspaceLeftPanel {...leftPanel} /> : null}
+      <AnimatePresence>
+        {showAssistant && <AssistantSidebar {...assistant} />}
+      </AnimatePresence>
+    </>
+  );
+});

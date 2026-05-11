@@ -6,6 +6,7 @@ import { copyGenSkill } from './copy-gen.skill';
 import { smartEditSkill } from './smart-edit.skill';
 import { exportSkill } from './export.skill';
 import { touchEditSkill } from './touch-edit.skill';
+import { workspaceSearchSkill } from './workspace-search.skill';
 import { runJkAiOneclick, formatJkaiOneclickResult } from './xcai-oneclick.skill';
 import { generateModelSkill } from './generate-model.skill';
 import { analyzeClothingProductSkill } from './analyze-clothing-product.skill';
@@ -28,7 +29,7 @@ import {
 import { REGISTERED_SKILL_NAMES } from './skill-manifest.ts';
 import { formatSkillExecutionResult, resolveSkillHandler } from './skill-runtime.ts';
 
-export { imageGenSkill, videoGenSkill, textExtractSkill, regionAnalyzeSkill, copyGenSkill, smartEditSkill, exportSkill, touchEditSkill, runJkAiOneclick, generateModelSkill, analyzeClothingProductSkill, clothingStudioSkill, clothingStudioWorkflowSkill, analyzeListingProductSkill, amazonListingSkill, cnDetailPageSkill, ecomAnalyzeProductSkill, ecomSupplementQuestionsSkill, ecomAutofillSupplementsSkill, ecomAutofillImageAnalysesSkill, ecomAutofillPlansSkill, ecomAnalyzeImagesSkill, ecomGeneratePlansSkill, ecomRewritePromptSkill, ecomReviewGeneratedResultSkill };
+export { imageGenSkill, videoGenSkill, textExtractSkill, regionAnalyzeSkill, copyGenSkill, smartEditSkill, exportSkill, touchEditSkill, workspaceSearchSkill, runJkAiOneclick, generateModelSkill, analyzeClothingProductSkill, clothingStudioSkill, clothingStudioWorkflowSkill, analyzeListingProductSkill, amazonListingSkill, cnDetailPageSkill, ecomAnalyzeProductSkill, ecomSupplementQuestionsSkill, ecomAutofillSupplementsSkill, ecomAutofillImageAnalysesSkill, ecomAutofillPlansSkill, ecomAnalyzeImagesSkill, ecomGeneratePlansSkill, ecomRewritePromptSkill, ecomReviewGeneratedResultSkill };
 
 export const AVAILABLE_SKILLS = {
   generateImage: imageGenSkill,
@@ -39,6 +40,7 @@ export const AVAILABLE_SKILLS = {
   smartEdit: smartEditSkill,
   export: exportSkill,
   touchEdit: touchEditSkill,
+  workspaceSearch: workspaceSearchSkill,
   jkaiOneclick: runJkAiOneclick,
   xcaiOneclick: runJkAiOneclick,
   generateModel: generateModelSkill,

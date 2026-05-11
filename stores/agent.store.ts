@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import { AgentRoleDraft, AgentTask, AgentType } from '../types/agent.types';
+import {
+  AgentRoleDraft,
+  AgentTask,
+  AgentType,
+  RoleGovernanceMode,
+  RoleSource,
+} from '../types/agent.types';
 import { CanvasElement, ChatMessage, InputBlock, ImageModel, VideoModel, WorkspaceInputFile } from '../types';
 
 type VideoGenDuration = NonNullable<CanvasElement['genDuration']>;
@@ -159,8 +165,15 @@ interface AgentState {
   webEnabled: boolean;
   agentSelectionMode: 'auto' | 'manual';
   pinnedAgentId: AgentType;
+  selectedRoleId: string | null;
+  selectedRoleSource: RoleSource | null;
+  baseAgentId: AgentType;
+  roleGovernanceMode: RoleGovernanceMode;
+  allowMainBrainRoleMutation: boolean;
+  allowMainBrainRolePromotion: boolean;
   currentAutoRoleSession: {
     targetAgent: AgentType;
+    targetRoleId?: string | null;
     roleStrategy: 'reuse' | 'augment' | 'create';
     roleStrategyReason: string;
     roleDraft: AgentRoleDraft | null;
@@ -218,6 +231,15 @@ interface AgentState {
     setWebEnabled: (enabled: boolean) => void;
     setAgentSelectionMode: (mode: 'auto' | 'manual') => void;
     setPinnedAgentId: (agentId: AgentType) => void;
+    setSelectedRoleSelection: (selection: {
+      roleId: string | null;
+      roleSource?: RoleSource | null;
+      baseAgentId?: AgentType;
+      governanceMode?: RoleGovernanceMode;
+      allowMainBrainRoleMutation?: boolean;
+      allowMainBrainRolePromotion?: boolean;
+    }) => void;
+    clearSelectedRoleSelection: () => void;
     setCurrentAutoRoleSession: (
       session: AgentState['currentAutoRoleSession'],
     ) => void;
@@ -275,6 +297,12 @@ const initialState: Omit<AgentState, 'actions'> = {
   webEnabled: false,
   agentSelectionMode: 'auto' as const,
   pinnedAgentId: 'coco' as AgentType,
+  selectedRoleId: null,
+  selectedRoleSource: null,
+  baseAgentId: 'coco' as AgentType,
+  roleGovernanceMode: 'manual_only' as RoleGovernanceMode,
+  allowMainBrainRoleMutation: false,
+  allowMainBrainRolePromotion: false,
   currentAutoRoleSession: null,
   imageModelEnabled: false,
   translatePromptToEnglish: false,
@@ -527,7 +555,28 @@ export const useAgentStore = create<AgentState>()(
         setModelMode: (mode) => set({ modelMode: mode }),
         setWebEnabled: (enabled) => set({ webEnabled: enabled }),
         setAgentSelectionMode: (mode) => set({ agentSelectionMode: mode }),
-        setPinnedAgentId: (agentId) => set({ pinnedAgentId: agentId }),
+        setPinnedAgentId: (agentId) => set((state) => {
+          state.pinnedAgentId = agentId;
+          if (!state.selectedRoleId) {
+            state.baseAgentId = agentId;
+          }
+        }),
+        setSelectedRoleSelection: (selection) => set((state) => {
+          state.selectedRoleId = selection.roleId;
+          state.selectedRoleSource = selection.roleSource ?? null;
+          state.baseAgentId = selection.baseAgentId || state.pinnedAgentId;
+          state.roleGovernanceMode = selection.governanceMode || 'manual_only';
+          state.allowMainBrainRoleMutation = selection.allowMainBrainRoleMutation === true;
+          state.allowMainBrainRolePromotion = selection.allowMainBrainRolePromotion === true;
+        }),
+        clearSelectedRoleSelection: () => set((state) => {
+          state.selectedRoleId = null;
+          state.selectedRoleSource = null;
+          state.baseAgentId = state.pinnedAgentId;
+          state.roleGovernanceMode = 'manual_only';
+          state.allowMainBrainRoleMutation = false;
+          state.allowMainBrainRolePromotion = false;
+        }),
         setCurrentAutoRoleSession: (session) => set({ currentAutoRoleSession: session }),
         setImageModelEnabled: (enabled) => set({ imageModelEnabled: enabled }),
         setTranslatePromptToEnglish: (enabled) => set({ translatePromptToEnglish: enabled }),

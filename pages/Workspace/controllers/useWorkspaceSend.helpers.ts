@@ -18,10 +18,14 @@ export type WorkspaceSendReferenceWebPage = {
   siteName?: string;
 };
 
+export type WorkspaceSendResearchStatus = "skipped" | "success" | "failed";
+
 export type WorkspaceSendResearchContextResult = {
   researchPayload: SearchResponse | null;
   researchReferenceImageUrls: string[];
   researchWebPages: WorkspaceSendReferenceWebPage[];
+  researchStatus: WorkspaceSendResearchStatus;
+  researchErrorMessage?: string;
 };
 
 const executeWorkspaceResearchContext = async (
@@ -88,10 +92,28 @@ const executeWorkspaceResearchContext = async (
       siteName: item.siteName,
     }));
 
+  const hasUsableSearchResult =
+    researchReferenceImageUrls.length > 0 ||
+    researchWebPages.length > 0 ||
+    (researchPayload.web || []).length > 0 ||
+    (researchPayload.images || []).length > 0;
+
+  if (researchPayload.provider?.fallback && !hasUsableSearchResult) {
+    return {
+      researchPayload,
+      researchReferenceImageUrls,
+      researchWebPages,
+      researchStatus: "failed",
+      researchErrorMessage:
+        "当前搜索源回退到免费模式后未返回可用结果，请配置可用联网搜索服务商或补充有效 Key。",
+    };
+  }
+
   return {
     researchPayload,
     researchReferenceImageUrls,
     researchWebPages,
+    researchStatus: "success",
   };
 };
 
@@ -116,7 +138,13 @@ type CollectCanvasReferenceUrlsParams = {
 };
 
 const SHOULD_RESEARCH_PATTERN =
-  /campaign|poster|style|landmark|route|event|video|cover|marketing|research|investigate|study|look up|reference|调查|调研|研究|查资料|查一下|搜集|搜一下|了解一下|资料|竞品|品牌信息|产品信息/i;
+  /campaign|poster|style|landmark|route|event|video|cover|marketing|research|investigate|study|look up|reference|调查|调研|研究|查资料|查一下|搜集|搜一下|了解一下|资料|竞品|品牌信息|产品信息|活动信息|演出信息|官方公告|时间安排|阵容信息/i;
+
+const SHOULD_FORCE_RESEARCH_PATTERN =
+  /天气|气温|温度|下雨|降雨|空气质量|AQI|实时|现在|今天|明天|新闻|热搜|汇率|股价|油价|金价|路况|航班|高铁|日期|时间|几点|台风|什么时候|何时|哪天|几号|今年|本周|本月|举办|开幕|闭幕|活动|演出|音乐节|发布会|峰会|论坛|阵容|嘉宾|压轴|门票|票价|开票|地点|场馆/i;
+
+const SHOULD_CONTINUE_RESEARCH_PATTERN =
+  /^(查|查一下|搜|搜一下|继续查|继续搜|是的[，, ]?查|是的[，, ]?搜)$/i;
 
 export const IMAGE_ERROR_PATTERN =
   /image|upload|base64|attachment|mime|format/i;
@@ -208,9 +236,20 @@ export const shouldRunWorkspaceResearch = (
     typeof skillData.config === "object" &&
     (skillData.config as Record<string, unknown>).allowAutonomousRouting === true;
   if (allowAutonomousRouting) {
-    return SHOULD_RESEARCH_PATTERN.test(normalized);
+    return (
+      SHOULD_RESEARCH_PATTERN.test(normalized) ||
+      SHOULD_FORCE_RESEARCH_PATTERN.test(normalized) ||
+      SHOULD_CONTINUE_RESEARCH_PATTERN.test(normalized)
+    );
   }
-  return !skillData && SHOULD_RESEARCH_PATTERN.test(normalized);
+  return (
+    !skillData &&
+    (
+      SHOULD_RESEARCH_PATTERN.test(normalized) ||
+      SHOULD_FORCE_RESEARCH_PATTERN.test(normalized) ||
+      SHOULD_CONTINUE_RESEARCH_PATTERN.test(normalized)
+    )
+  );
 };
 
 export const gatherWorkspaceResearchContext = async (
@@ -222,6 +261,7 @@ export const gatherWorkspaceResearchContext = async (
       researchPayload: null,
       researchReferenceImageUrls: [],
       researchWebPages: [],
+      researchStatus: "skipped",
     };
   }
 
@@ -235,11 +275,16 @@ export const gatherWorkspaceResearchContext = async (
       "[Workspace] research search failed, fallback to direct generation",
       researchError,
     );
-  }
 
-  return {
-    researchPayload: null,
-    researchReferenceImageUrls: [],
-    researchWebPages: [],
-  };
+    return {
+      researchPayload: null,
+      researchReferenceImageUrls: [],
+      researchWebPages: [],
+      researchStatus: "failed",
+      researchErrorMessage:
+        researchError instanceof Error
+          ? researchError.message
+          : String(researchError || "检索失败，请稍后重试"),
+    };
+  }
 };

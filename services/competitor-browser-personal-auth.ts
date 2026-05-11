@@ -1,4 +1,4 @@
-import { safeLocalStorageSetItem } from "../utils/safe-storage";
+import { safeLocalStorageSetItem } from "../utils/safe-storage.ts";
 
 export type PersonalCompetitorBrowserAuthStatus = {
   clientId: string;

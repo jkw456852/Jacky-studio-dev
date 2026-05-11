@@ -1,17 +1,88 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { StudioRoleEntity } from "../../types/agent.types.ts";
 import type { StudioUserAssetState } from "./user-asset-types.ts";
 import { mergeStudioUserAssetStates } from "./sync-merge.ts";
 
 const createState = (
   patch: Partial<StudioUserAssetState> = {},
 ): StudioUserAssetState => ({
-  version: 3,
+  version: 5,
   updatedAt: 1,
   mainBrainPreferences: {
     schemaVersion: 1,
     updatedAt: 1,
     lines: [],
+  },
+  mainBrainSoul: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    persona: "",
+    tone: [],
+    workingStyle: [],
+    restraintRules: [],
+    selfCheckRules: [],
+    riskPreference: "balanced",
+  },
+  mainBrainUser: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    goals: [],
+    workingHabits: [],
+    businessContext: [],
+    aestheticPreferences: [],
+    communicationStyle: [],
+    permanentNotes: [],
+    memoryBlacklist: [],
+  },
+  mainBrainWorkflow: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    defaultAnalysisDepth: "balanced",
+    searchPolicy: "auto",
+    clarifyBeforeExecution: false,
+    toolUseGuidelines: [],
+    failureRecoveryRules: [],
+    roleGovernanceDefaults: {
+      mode: "approval_required",
+      allowDraft: true,
+      allowAutoPromote: false,
+      allowAutoArchive: false,
+    },
+  },
+  mainBrainMemory: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    memoryIndex: [],
+    memoryRecords: {},
+    pendingMemoryCandidates: [],
+    memoryBlacklists: [],
+    retentionPolicy: {
+      maxActiveMemories: 200,
+      maxCandidateMemories: 50,
+      autoPromoteSimilarCount: 3,
+    },
+    dailySummary: [],
+  },
+  mainBrainHeartbeat: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    enabled: false,
+    cadence: "manual",
+    scope: [],
+    heartbeatTasks: {},
+    recentRunSummary: [],
+    lastRunAt: null,
+    nextRunAt: null,
+  },
+  mainBrainBootstrap: {
+    schemaVersion: 1,
+    updatedAt: 1,
+    initialized: false,
+    initializedAt: null,
+    sourceTemplate: "",
+    completedSteps: [],
+    lastRebootstrapAt: null,
   },
   userProfile: {
     schemaVersion: 1,
@@ -61,6 +132,10 @@ const createState = (
   },
   agentPromptAddons: {},
   latestRoleDrafts: {},
+  roles: {},
+  temporaryRoleDrafts: {},
+  roleVersions: {},
+  roleAuditEntries: {},
   styleLibraries: {},
   evolutionRecords: {},
   ...patch,
@@ -409,6 +484,248 @@ test("mergeStudioUserAssetStates manual-merge keeps newer remote style library a
   assert.equal(result.merged.styleLibraries.shared.title, "Remote Style");
   assert.equal(result.merged.evolutionRecords.evo.title, "Remote Evo");
   assert.equal(result.merged.evolutionRecords.evo.approvalStatus, "approved");
+});
+
+test("mergeStudioUserAssetStates manual-merge merges durable roles, temp drafts, versions, and audits", () => {
+  const sharedRoleLocal: StudioRoleEntity = {
+    id: "role-shared",
+    slug: "role-shared",
+    title: "Local Role",
+    summary: "local role",
+    baseAgentId: "coco",
+    source: "user",
+    status: "active",
+    tags: ["local"],
+    useWhen: ["local use"],
+    avoidWhen: ["local avoid"],
+    toolPolicy: {
+      allowedSkills: [],
+      blockedSkills: [],
+      canRouteSubtasks: true,
+      canUseNetworkResearch: true,
+    },
+    routingPolicy: {
+      priority: 100,
+      keywords: ["local"],
+      preferredTaskModes: [],
+      autoRouteEligible: true,
+    },
+    promptLayers: {
+      systemBaseline: "local baseline",
+      mainBrainShared: "local main brain",
+      durableRoleAddon: "local addon",
+    },
+    governance: {
+      mode: "approval_required",
+      requiresHumanApproval: true,
+      allowMainBrainPromotion: false,
+      allowMainBrainArchive: false,
+      allowMainBrainMutation: false,
+    },
+    version: 2,
+    createdAt: 1,
+    updatedAt: 10,
+  };
+  const sharedRoleRemote: StudioRoleEntity = {
+    ...sharedRoleLocal,
+    title: "Remote Role",
+    summary: "remote role",
+    tags: ["remote"],
+    promptLayers: {
+      systemBaseline: "remote baseline",
+      mainBrainShared: "remote main brain",
+      durableRoleAddon: "remote addon",
+    },
+    version: 3,
+    updatedAt: 20,
+  };
+
+  const local = createState({
+    agentPromptAddons: {
+      coco: {
+        agentId: "coco",
+        value: "local addon",
+        schemaVersion: 1,
+        updatedAt: 10,
+      },
+    },
+    latestRoleDrafts: {
+      coco: {
+        agentId: "coco",
+        title: "Local Draft",
+        summary: "local draft",
+        instructions: ["local instruction"],
+        schemaVersion: 1,
+        updatedAt: 10,
+        roleStrategy: "augment",
+        roleStrategyReason: "local reason",
+      },
+    },
+    roles: {
+      "role-shared": sharedRoleLocal,
+      "role-local-only": {
+        ...sharedRoleLocal,
+        id: "role-local-only",
+        slug: "role-local-only",
+        title: "Local Only Role",
+        updatedAt: 11,
+      },
+    },
+    temporaryRoleDrafts: {
+      "temp-local": {
+        id: "temp-local",
+        targetBaseAgentId: "coco",
+        title: "Temp Local",
+        summary: "temp local",
+        instructions: ["local temp"],
+        roleStrategy: "create",
+        roleStrategyReason: "local temp reason",
+        promotionSuggested: true,
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    },
+    roleVersions: {
+      "role-shared": [
+        {
+          id: "version-local-2",
+          roleId: "role-shared",
+          version: 2,
+          changeType: "update",
+          summary: "Local version 2",
+          snapshot: sharedRoleLocal,
+          actor: "user",
+          createdAt: 10,
+        },
+      ],
+    },
+    roleAuditEntries: {
+      "role-shared": [
+        {
+          id: "audit-local-2",
+          roleId: "role-shared",
+          version: 2,
+          changeType: "update",
+          summary: "Local audit 2",
+          snapshot: sharedRoleLocal,
+          actor: "user",
+          createdAt: 10,
+        },
+      ],
+    },
+  });
+
+  const remote = createState({
+    agentPromptAddons: {
+      coco: {
+        agentId: "coco",
+        value: "remote addon",
+        schemaVersion: 1,
+        updatedAt: 20,
+      },
+    },
+    latestRoleDrafts: {
+      coco: {
+        agentId: "coco",
+        title: "Remote Draft",
+        summary: "remote draft",
+        instructions: ["remote instruction"],
+        schemaVersion: 1,
+        updatedAt: 20,
+        roleStrategy: "create",
+        roleStrategyReason: "remote reason",
+      },
+    },
+    roles: {
+      "role-shared": sharedRoleRemote,
+      "role-remote-only": {
+        ...sharedRoleRemote,
+        id: "role-remote-only",
+        slug: "role-remote-only",
+        title: "Remote Only Role",
+        updatedAt: 21,
+      },
+    },
+    temporaryRoleDrafts: {
+      "temp-remote": {
+        id: "temp-remote",
+        targetBaseAgentId: "coco",
+        title: "Temp Remote",
+        summary: "temp remote",
+        instructions: ["remote temp"],
+        roleStrategy: "augment",
+        roleStrategyReason: "remote temp reason",
+        promotionSuggested: false,
+        createdAt: 2,
+        updatedAt: 20,
+      },
+    },
+    roleVersions: {
+      "role-shared": [
+        {
+          id: "version-remote-1",
+          roleId: "role-shared",
+          version: 1,
+          changeType: "create",
+          summary: "Remote version 1",
+          snapshot: { ...sharedRoleRemote, version: 1, updatedAt: 5 },
+          actor: "user",
+          createdAt: 5,
+        },
+        {
+          id: "version-remote-3",
+          roleId: "role-shared",
+          version: 3,
+          changeType: "update",
+          summary: "Remote version 3",
+          snapshot: sharedRoleRemote,
+          actor: "user",
+          createdAt: 20,
+        },
+      ],
+    },
+    roleAuditEntries: {
+      "role-shared": [
+        {
+          id: "audit-remote-3",
+          roleId: "role-shared",
+          version: 3,
+          changeType: "update",
+          summary: "Remote audit 3",
+          snapshot: sharedRoleRemote,
+          actor: "user",
+          createdAt: 20,
+        },
+      ],
+    },
+  });
+
+  const result = mergeStudioUserAssetStates({
+    local,
+    remote,
+    policy: {
+      defaultPolicy: "prefer_local",
+      perAssetKind: {
+        role: "manual_merge",
+      },
+    },
+  });
+
+  assert.equal(result.merged.agentPromptAddons.coco?.value, "remote addon");
+  assert.equal(result.merged.latestRoleDrafts.coco?.title, "Remote Draft");
+  assert.equal(result.merged.roles["role-shared"]?.title, "Remote Role");
+  assert.equal(Boolean(result.merged.roles["role-local-only"]), true);
+  assert.equal(Boolean(result.merged.roles["role-remote-only"]), true);
+  assert.equal(Boolean(result.merged.temporaryRoleDrafts["temp-local"]), true);
+  assert.equal(Boolean(result.merged.temporaryRoleDrafts["temp-remote"]), true);
+  assert.deepEqual(
+    result.merged.roleVersions["role-shared"]?.map((item) => item.version),
+    [1, 2, 3],
+  );
+  assert.deepEqual(
+    result.merged.roleAuditEntries["role-shared"]?.map((item) => item.version),
+    [2, 3],
+  );
 });
 
 test("mergeStudioUserAssetStates manual-merge restores non-default remote workspace preferences when local is default", () => {

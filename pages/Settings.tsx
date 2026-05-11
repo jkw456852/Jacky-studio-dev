@@ -15,6 +15,15 @@ import Sidebar from '../components/Sidebar';
 import {
     syncLocalAccountSecretsToAccount,
 } from '../services/account-secrets';
+import type {
+    SearchDefaultsConfig,
+    SearchProviderConfig,
+} from '../services/account-secrets-shared';
+import {
+    getSearchProviderCatalogItem,
+    getSearchProvidersByGroup,
+    type SearchProviderCatalogItem,
+} from '../services/search-provider-catalog';
 import {
     ApiProviderConfig,
     ImageModelPostPathConfig,
@@ -30,10 +39,14 @@ import {
     refreshAllProviderModels,
     saveProviderSettings,
 } from '../services/provider-settings';
+import {
+    loadSearchSettings,
+    saveSearchSettings,
+} from '../services/search-settings';
 
 type ApiProvider = 'gemini' | 'yunwu' | 'plato' | 'custom';
 type MappingCategory = 'script' | 'image' | 'video';
-type SettingsTab = 'api' | 'mapping' | 'hosting' | 'advanced' | 'about';
+type SettingsTab = 'api' | 'mapping' | 'search' | 'hosting' | 'advanced' | 'about';
 const AUTO_IMAGE_OPTION_ID = 'Auto';
 
 const DEFAULT_MODEL_WHITELIST = [
@@ -114,6 +127,11 @@ const SettingsPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('api');
     const [providers, setProviders] = useState<ApiProviderConfig[]>(getDefaultProviders());
     const [activeProviderId, setActiveProviderId] = useState('yunwu');
+    const searchSettingsBootstrap = useMemo(() => loadSearchSettings(), []);
+    const [searchProviders, setSearchProviders] = useState<SearchProviderConfig[]>(searchSettingsBootstrap.providers);
+    const [activeSearchProviderId, setActiveSearchProviderId] = useState(searchSettingsBootstrap.activeProviderId);
+    const [selectedSearchProviderId, setSelectedSearchProviderId] = useState(searchSettingsBootstrap.activeProviderId);
+    const [searchDefaults, setSearchDefaults] = useState<SearchDefaultsConfig>(searchSettingsBootstrap.defaults);
 
     const [replicateKey, setReplicateKey] = useState('');
     const [klingKey, setKlingKey] = useState('');
@@ -140,6 +158,7 @@ const SettingsPage: React.FC = () => {
     const [manualProviderId, setManualProviderId] = useState('yunwu');
     const [showImgBBKeys, setShowImgBBKeys] = useState(false);
     const [showCustomHostKeys, setShowCustomHostKeys] = useState(false);
+    const [showSearchProviderKeys, setShowSearchProviderKeys] = useState(false);
     const [accountSecretsStatus, setAccountSecretsStatus] = useState<'idle' | 'syncing' | 'restoring' | 'success' | 'error'>('idle');
     const [accountSecretsMessage, setAccountSecretsMessage] = useState('');
 
@@ -198,6 +217,12 @@ const SettingsPage: React.FC = () => {
         setSystemModeration(loaded.systemModeration);
         setAutoSave(loaded.autoSave);
         setConcurrentCount(loaded.concurrentCount);
+
+        const loadedSearchSettings = loadSearchSettings();
+        setSearchProviders(loadedSearchSettings.providers);
+        setActiveSearchProviderId(loadedSearchSettings.activeProviderId);
+        setSelectedSearchProviderId(loadedSearchSettings.activeProviderId);
+        setSearchDefaults(loadedSearchSettings.defaults);
     };
 
     useEffect(() => {
@@ -338,6 +363,11 @@ const SettingsPage: React.FC = () => {
                 autoSave,
                 concurrentCount,
             });
+            saveSearchSettings({
+                providers: searchProviders,
+                activeProviderId: activeSearchProviderId,
+                defaults: searchDefaults,
+            });
 
             const accessToken = String(session?.access_token || '').trim();
             if (accessToken) {
@@ -367,6 +397,113 @@ const SettingsPage: React.FC = () => {
         setProviders((prev) => prev.filter((p) => p.id !== id));
         if (activeProviderId === id) setActiveProviderId('');
     };
+
+    const activeSearchProvider = searchProviders.find((provider) => provider.id === selectedSearchProviderId)
+        || searchProviders.find((provider) => provider.id === activeSearchProviderId)
+        || searchProviders[0];
+
+    const persistSearchSettings = (next: {
+        providers?: SearchProviderConfig[];
+        activeProviderId?: string;
+        defaults?: SearchDefaultsConfig;
+        selectedProviderId?: string;
+    }) => {
+        const normalized = saveSearchSettings({
+            providers: next.providers || searchProviders,
+            activeProviderId: next.activeProviderId || activeSearchProviderId,
+            defaults: next.defaults || searchDefaults,
+        });
+
+        setSearchProviders(normalized.providers);
+        setActiveSearchProviderId(normalized.activeProviderId);
+        setSearchDefaults(normalized.defaults);
+        setSelectedSearchProviderId(
+            next.selectedProviderId
+            || (normalized.providers.some((provider) => provider.id === selectedSearchProviderId)
+                ? selectedSearchProviderId
+                : normalized.activeProviderId),
+        );
+
+        return normalized;
+    };
+
+    const updateSearchProvider = (providerId: string, updater: (provider: SearchProviderConfig) => SearchProviderConfig) => {
+        const nextProviders = searchProviders.map((provider) => (
+            provider.id === providerId ? updater(provider) : provider
+        ));
+        persistSearchSettings({
+            providers: nextProviders,
+            selectedProviderId: providerId,
+        });
+    };
+
+    const updateSearchDefaults = <K extends keyof SearchDefaultsConfig>(key: K, value: SearchDefaultsConfig[K]) => {
+        persistSearchSettings({
+            defaults: {
+                ...searchDefaults,
+                [key]: value,
+            },
+        });
+    };
+
+    const getSearchProviderMeta = (
+        provider: SearchProviderConfig | undefined,
+        catalog: SearchProviderCatalogItem | null,
+    ) => {
+        if (!provider || !catalog) {
+            return {
+                endpointLabel: '未选择搜索服务商',
+                endpointHint: '请先选择一个网络搜索服务商',
+                docsHref: 'https://www.microsoft.com/bing',
+                docsLabel: '打开官网',
+                apiKeyPlaceholder: '请输入 API Key',
+                baseUrlPlaceholder: 'https://your-search-host.example.com',
+                baseUrlLabel: '搜索入口地址',
+                baseUrlDescription: '留空使用默认地址。',
+                baseUrlRequired: false,
+                supportsBaseUrl: true,
+            };
+        }
+
+        const apiKeyField = catalog.fields.find((field: SearchProviderCatalogItem['fields'][number]) => field.key === 'apiKey');
+        const baseUrlField = catalog.fields.find((field: SearchProviderCatalogItem['fields'][number]) => field.key === 'baseUrl');
+
+        return {
+            endpointLabel: catalog.label,
+            endpointHint: catalog.description,
+            docsHref: catalog.id === 'bing' ? catalog.websiteUrl : catalog.docsUrl,
+            docsLabel: catalog.id === 'bing' ? '打开官网' : '打开文档',
+            apiKeyPlaceholder: apiKeyField?.placeholder || '请输入 API Key',
+            baseUrlPlaceholder: baseUrlField?.placeholder || 'https://your-search-host.example.com',
+            baseUrlLabel: baseUrlField?.label || '搜索入口地址',
+            baseUrlDescription: baseUrlField
+                ? (baseUrlField.required ? '请输入完整地址。' : '留空使用默认地址。')
+                : '留空使用默认地址。',
+            baseUrlRequired: Boolean(baseUrlField?.required),
+            supportsBaseUrl: Boolean(baseUrlField),
+        };
+    };
+
+    const getSearchProviderBadge = (provider: SearchProviderConfig) => {
+        const catalog = getSearchProviderCatalogItem(provider.catalogId || provider.id);
+        return catalog?.badges?.[0] || '搜索服务';
+    };
+
+    const getSearchProviderIcon = (provider: SearchProviderConfig) => {
+        if (provider.providerType === 'bing') return <Search size={18} />;
+        if (provider.providerType === 'searxng' || provider.providerType === 'custom') return <Globe size={18} />;
+        if (provider.providerType === 'tavily') return <Zap size={18} />;
+        if (provider.providerType === 'exa') return <Bot size={18} />;
+        return <Sliders size={18} />;
+    };
+
+    const searchProviderGroups = getSearchProvidersByGroup().map((group) => ({
+        ...group,
+        items: group.items.filter((catalog: SearchProviderCatalogItem) => searchProviders.some((provider) => provider.id === catalog.id || provider.catalogId === catalog.id)),
+    })).filter((group: { id: string; label: string; items: SearchProviderCatalogItem[] }) => group.items.length > 0);
+    const activeSearchCatalog = getSearchProviderCatalogItem(activeSearchProvider?.catalogId || activeSearchProvider?.id);
+    const searchProviderMeta = getSearchProviderMeta(activeSearchProvider, activeSearchCatalog);
+    const blockedDomainsText = searchDefaults.blockedDomains.join('\n');
 
     const getSelectedModels = (category: MappingCategory): string[] => {
         if (category === 'script') return selectedScriptModels;
@@ -564,6 +701,7 @@ const SettingsPage: React.FC = () => {
     const tabs: { id: SettingsTab; label: string; icon: any }[] = [
         { id: 'api', label: '服务商配置', icon: Key },
         { id: 'mapping', label: '模型映射', icon: Bot },
+        { id: 'search', label: '网络搜索', icon: Search },
         { id: 'hosting', label: '图床设置', icon: ImageIcon },
         { id: 'advanced', label: '高级设置', icon: Sliders },
         { id: 'about', label: '关于', icon: Info },
@@ -1181,6 +1319,353 @@ const SettingsPage: React.FC = () => {
                                                         加载更多
                                                     </button>
                                                 )}
+                                            </div>
+                                        </SettingsCard>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'search' && (
+                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                    <div>
+                                        <h4 className="text-xl font-display font-bold text-gray-900">网络搜索</h4>
+                                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">User-owned Search Providers</p>
+                                    </div>
+                                    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-xs leading-6 text-gray-500 max-w-2xl">
+                                        密钥仅保存在本机；登录后可随账号加密同步。
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-8">
+                                    <SettingsCard
+                                        title="搜索服务商"
+                                        icon={<Search size={18} />}
+                                        description="先支持 5 个常用服务商。"
+                                    >
+                                        <div className="space-y-5 pt-4">
+                                            {searchProviderGroups.map((group: { id: string; label: string; items: SearchProviderCatalogItem[] }) => (
+                                                <div key={group.id} className="space-y-3">
+                                                    <div className="px-1 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                                                        {group.label}
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        {group.items.map((catalog: SearchProviderCatalogItem) => {
+                                                            const provider = searchProviders.find((item) => item.id === catalog.id || item.catalogId === catalog.id);
+                                                            if (!provider) return null;
+                                                            const isSelected = provider.id === selectedSearchProviderId;
+                                                            const isDefault = provider.id === activeSearchProviderId;
+                                                            const capabilityText = catalog.supports.includes('images')
+                                                                ? '网页 / 图片'
+                                                                : '网页';
+                                                            return (
+                                                                <button
+                                                                    key={provider.id}
+                                                                    type="button"
+                                                                    onClick={() => setSelectedSearchProviderId(provider.id)}
+                                                                    className={`w-full rounded-2xl border p-4 text-left transition-all ${
+                                                                        isSelected
+                                                                            ? 'bg-black text-white border-black shadow-lg shadow-black/10'
+                                                                            : 'bg-white border-gray-200 hover:border-gray-400'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-start justify-between gap-4">
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+                                                                                    isSelected
+                                                                                        ? 'border-white/15 bg-white/10 text-white'
+                                                                                        : 'border-gray-200 bg-gray-50 text-gray-500'
+                                                                                }`}>
+                                                                                    {getSearchProviderIcon(provider)}
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <div className="truncate text-sm font-bold tracking-tight">{catalog.shortLabel || catalog.label}</div>
+                                                                                    <div className={`mt-1 text-[11px] leading-5 ${isSelected ? 'text-white/70' : 'text-gray-500'}`}>
+                                                                                        {catalog.description}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex shrink-0 flex-col items-end gap-2">
+                                                                            <div className="flex flex-wrap justify-end gap-2">
+                                                                                {isDefault && (
+                                                                                    <div className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                                                                                        isSelected ? 'bg-white text-black' : 'bg-black text-white'
+                                                                                    }`}>
+                                                                                        默认
+                                                                                    </div>
+                                                                                )}
+                                                                                <div className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                                                                                    isSelected ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-600'
+                                                                                }`}>
+                                                                                    {getSearchProviderBadge(provider)}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className={`text-[10px] ${isSelected ? 'text-white/60' : 'text-gray-400'}`}>
+                                                                                {capabilityText}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </SettingsCard>
+
+                                    <div className="space-y-6">
+                                        <SettingsCard
+                                            title="当前服务商配置"
+                                            icon={<Key size={18} />}
+                                            description="填写当前服务商需要的 Key 和地址。"
+                                        >
+                                            <div className="pt-4 space-y-5">
+                                                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-gray-900">{searchProviderMeta.endpointLabel}</div>
+                                                            <div className="mt-1 text-xs leading-6 text-gray-500">{searchProviderMeta.endpointHint}</div>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (!activeSearchProvider) return;
+                                                                    persistSearchSettings({
+                                                                        activeProviderId: activeSearchProvider.id,
+                                                                        selectedProviderId: activeSearchProvider.id,
+                                                                    });
+                                                                }}
+                                                                disabled={activeSearchProvider?.id === activeSearchProviderId}
+                                                                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                                                                    activeSearchProvider?.id === activeSearchProviderId
+                                                                        ? 'border border-black bg-black text-white cursor-default'
+                                                                        : 'border border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                                                                }`}
+                                                            >
+                                                                <Check size={14} />
+                                                                {activeSearchProvider?.id === activeSearchProviderId ? '当前默认服务' : '设为默认服务'}
+                                                            </button>
+                                                            <a
+                                                                href={searchProviderMeta.docsHref}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:border-gray-400 transition-all"
+                                                            >
+                                                                <Globe size={14} />
+                                                                {searchProviderMeta.docsLabel}
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_180px] gap-4 items-start">
+                                                    <div className="space-y-2 min-w-0">
+                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">API Key / Token</label>
+                                                        <div className="relative">
+                                                            <textarea
+                                                                value={activeSearchProvider?.apiKey || ''}
+                                                                onChange={(event) => {
+                                                                    if (!activeSearchProvider) return;
+                                                                    updateSearchProvider(activeSearchProvider.id, (provider) => ({
+                                                                        ...provider,
+                                                                        apiKey: event.target.value,
+                                                                    }));
+                                                                }}
+                                                                placeholder={searchProviderMeta.apiKeyPlaceholder}
+                                                                rows={4}
+                                                                className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-4 focus:ring-black/5 focus:border-gray-400 block px-4 py-3 pr-12 outline-none transition-all placeholder:text-gray-400 resize-y min-h-[104px]"
+                                                                style={{ WebkitTextSecurity: showSearchProviderKeys ? 'none' : 'disc' } as any}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowSearchProviderKeys((value) => !value)}
+                                                                className="absolute top-2.5 right-2.5 w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-black hover:bg-gray-100 transition"
+                                                                title={showSearchProviderKeys ? '隐藏密钥' : '显示密钥'}
+                                                            >
+                                                                {showSearchProviderKeys ? <EyeOff size={16} /> : <Eye size={16} />}
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[11px] leading-5 text-gray-500 px-1">
+                                                            支持粘贴完整 Key 或 Token。
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="space-y-2 min-w-0">
+                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">能力概览</label>
+                                                        <div className="flex min-h-[104px] flex-wrap content-start gap-2 rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3">
+                                                            {(activeSearchCatalog?.badges || [getSearchProviderBadge(activeSearchProvider)]).map((badge: string) => (
+                                                                <span
+                                                                    key={badge}
+                                                                    className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-700 border border-gray-200"
+                                                                >
+                                                                    {badge}
+                                                                </span>
+                                                            ))}
+                                                            {activeSearchCatalog?.supports.includes('web') && (
+                                                                <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-700 border border-gray-200">
+                                                                    网页搜索
+                                                                </span>
+                                                            )}
+                                                            {activeSearchCatalog?.supports.includes('images') && (
+                                                                <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-700 border border-gray-200">
+                                                                    图片搜索
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[11px] leading-5 text-gray-500 px-1">
+                                                            这里只展示这个服务商当前可用的能力。
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {searchProviderMeta.supportsBaseUrl && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">
+                                                            {searchProviderMeta.baseUrlLabel}
+                                                            {searchProviderMeta.baseUrlRequired ? ' *' : ''}
+                                                        </label>
+                                                        <SettingsInput
+                                                            value={activeSearchProvider?.baseUrl || ''}
+                                                            onChange={(event) => {
+                                                                if (!activeSearchProvider) return;
+                                                                updateSearchProvider(activeSearchProvider.id, (provider) => ({
+                                                                    ...provider,
+                                                                    baseUrl: event.target.value,
+                                                                }));
+                                                            }}
+                                                            placeholder={searchProviderMeta.baseUrlPlaceholder}
+                                                        />
+                                                        <p className="text-[11px] leading-5 text-gray-500 px-1">
+                                                            {searchProviderMeta.baseUrlDescription}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </SettingsCard>
+
+                                        <SettingsCard
+                                            title="默认搜索行为"
+                                            icon={<Sliders size={18} />}
+                                            description="设置默认联网搜索选项。"
+                                        >
+                                            <div className="space-y-2 mt-4">
+                                                <SettingsControl label="默认启用联网搜索" description="后续任务默认可调用联网搜索。">
+                                                    <SettingsToggle
+                                                        active={searchDefaults.enabledByDefault}
+                                                        onClick={() => updateSearchDefaults('enabledByDefault', !searchDefaults.enabledByDefault)}
+                                                    />
+                                                </SettingsControl>
+                                                <SettingsControl label="搜索模式" description="默认搜索网页、图片或两者。">
+                                                    <div className="w-[220px] max-w-full">
+                                                        <SettingsSelect
+                                                            value={searchDefaults.mode}
+                                                            onChange={(event) => updateSearchDefaults('mode', event.target.value as SearchDefaultsConfig['mode'])}
+                                                        >
+                                                            <option value="web+images">网页 + 图片</option>
+                                                            <option value="web">仅网页</option>
+                                                            <option value="images">仅图片</option>
+                                                        </SettingsSelect>
+                                                    </div>
+                                                </SettingsControl>
+                                                <SettingsControl label="安全过滤" description="过滤敏感内容。">
+                                                    <div className="w-[220px] max-w-full">
+                                                        <SettingsSelect
+                                                            value={searchDefaults.safeSearch}
+                                                            onChange={(event) => updateSearchDefaults('safeSearch', event.target.value as SearchDefaultsConfig['safeSearch'])}
+                                                        >
+                                                            <option value="off">关闭</option>
+                                                            <option value="moderate">适中</option>
+                                                            <option value="strict">严格</option>
+                                                        </SettingsSelect>
+                                                    </div>
+                                                </SettingsControl>
+                                                <SettingsControl label="时间范围" description="限制网页结果时间范围。">
+                                                    <div className="w-[220px] max-w-full">
+                                                        <SettingsSelect
+                                                            value={searchDefaults.timeRange}
+                                                            onChange={(event) => updateSearchDefaults('timeRange', event.target.value as SearchDefaultsConfig['timeRange'])}
+                                                        >
+                                                            <option value="any">不限</option>
+                                                            <option value="day">最近 1 天</option>
+                                                            <option value="week">最近 1 周</option>
+                                                            <option value="month">最近 1 月</option>
+                                                            <option value="year">最近 1 年</option>
+                                                        </SettingsSelect>
+                                                    </div>
+                                                </SettingsControl>
+                                                <SettingsControl label="结果压缩策略" description="控制后续摘要压缩方式。">
+                                                    <div className="w-[220px] max-w-full">
+                                                        <SettingsSelect
+                                                            value={searchDefaults.compressionMode}
+                                                            onChange={(event) => updateSearchDefaults('compressionMode', event.target.value as SearchDefaultsConfig['compressionMode'])}
+                                                        >
+                                                            <option value="balanced">Balanced</option>
+                                                            <option value="none">None</option>
+                                                        </SettingsSelect>
+                                                    </div>
+                                                </SettingsControl>
+                                                <SettingsControl label="结果附带日期" description="在结果中保留日期信息。">
+                                                    <SettingsToggle
+                                                        active={searchDefaults.includeDate}
+                                                        onClick={() => updateSearchDefaults('includeDate', !searchDefaults.includeDate)}
+                                                    />
+                                                </SettingsControl>
+                                            </div>
+                                        </SettingsCard>
+
+                                        <SettingsCard
+                                            title="结果规模与过滤"
+                                            icon={<Box size={18} />}
+                                            description="控制返回数量和屏蔽站点。"
+                                        >
+                                            <div className="pt-4 space-y-5">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">网页结果数</label>
+                                                        <SettingsInput
+                                                            type="number"
+                                                            min={1}
+                                                            max={20}
+                                                            value={searchDefaults.webCount}
+                                                            onChange={(event) => updateSearchDefaults('webCount', Math.max(1, Math.min(20, Number.parseInt(event.target.value || '8', 10) || 8)))}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">图片结果数</label>
+                                                        <SettingsInput
+                                                            type="number"
+                                                            min={1}
+                                                            max={50}
+                                                            value={searchDefaults.imageCount}
+                                                            onChange={(event) => updateSearchDefaults('imageCount', Math.max(1, Math.min(50, Number.parseInt(event.target.value || '16', 10) || 16)))}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest ml-1">屏蔽域名（每行一个）</label>
+                                                    <textarea
+                                                        value={blockedDomainsText}
+                                                        onChange={(event) => {
+                                                            const nextBlockedDomains = event.target.value
+                                                                .split(/\r?\n/)
+                                                                .map((item) => item.trim())
+                                                                .filter(Boolean);
+                                                            updateSearchDefaults('blockedDomains', Array.from(new Set(nextBlockedDomains)));
+                                                        }}
+                                                        placeholder={'example.com\nsubdomain.example.org'}
+                                                        rows={5}
+                                                        className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-4 focus:ring-black/5 focus:border-gray-400 block px-4 py-3 outline-none transition-all placeholder:text-gray-400 resize-y min-h-[120px]"
+                                                    />
+                                                    <p className="text-[11px] leading-5 text-gray-500 px-1">
+                                                        每行一个域名，例如 <span className="font-mono">pinterest.com</span>。
+                                                    </p>
+                                                </div>
                                             </div>
                                         </SettingsCard>
                                     </div>

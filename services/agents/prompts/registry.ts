@@ -4,8 +4,8 @@ import {
   getStudioAgentSystemPrompt,
   getStudioSharedInstructions,
   getStudioSystemAsset,
-} from "../../runtime-assets/studio-registry";
-import { getMainBrainPreferenceBlock } from "../../runtime-assets/main-brain";
+} from "../../runtime-assets/studio-registry.ts";
+import { getMainBrainPreferenceBlock } from "../../runtime-assets/main-brain.ts";
 
 export const getRegistryAgentPrompt = (agentId: AgentType): string =>
   [getStudioAgentSystemPrompt(agentId), getMainBrainPreferenceBlock()]

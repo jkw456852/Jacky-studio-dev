@@ -1,11 +1,11 @@
-import { SKYSPER_CORE_SYSTEM } from './prompts/skysper-core.system';
-import { STARTUP_PACK } from './prompts/packs/startup.pack';
-import { P0_PACK } from './prompts/packs/p0.pack';
-import { P1_PACK } from './prompts/packs/p1.pack';
-import { P2_PACK } from './prompts/packs/p2.pack';
-import { P3_PACK } from './prompts/packs/p3.pack';
-import { P4_PACK } from './prompts/packs/p4.pack';
-import { P5_PACK } from './prompts/packs/p5.pack';
+import { getRegistrySystemPrompt } from './prompts/registry.ts';
+import { STARTUP_PACK } from './prompts/packs/startup.pack.ts';
+import { P0_PACK } from './prompts/packs/p0.pack.ts';
+import { P1_PACK } from './prompts/packs/p1.pack.ts';
+import { P2_PACK } from './prompts/packs/p2.pack.ts';
+import { P3_PACK } from './prompts/packs/p3.pack.ts';
+import { P4_PACK } from './prompts/packs/p4.pack.ts';
+import { P5_PACK } from './prompts/packs/p5.pack.ts';
 
 export type JkaiPackName =
   | 'STARTUP_PACK'
@@ -15,6 +15,11 @@ export type JkaiPackName =
   | 'P3_PACK'
   | 'P4_PACK'
   | 'P5_PACK';
+
+type AgentRegistryEntry = {
+  readonly core: string;
+  readonly packs: Record<JkaiPackName, string>;
+};
 
 const jkaiOneclickPacks: Record<JkaiPackName, string> = {
   STARTUP_PACK,
@@ -26,15 +31,16 @@ const jkaiOneclickPacks: Record<JkaiPackName, string> = {
   P5_PACK,
 };
 
+const createOneclickRegistryEntry = (): AgentRegistryEntry => ({
+  get core() {
+    return getRegistrySystemPrompt('skysper-core');
+  },
+  packs: jkaiOneclickPacks,
+});
+
 export const AgentRegistry = {
-  'jkai-oneclick': {
-    core: SKYSPER_CORE_SYSTEM,
-    packs: jkaiOneclickPacks,
-  },
-  'xcai-oneclick': {
-    core: SKYSPER_CORE_SYSTEM,
-    packs: jkaiOneclickPacks,
-  },
+  'jkai-oneclick': createOneclickRegistryEntry(),
+  'xcai-oneclick': createOneclickRegistryEntry(),
 };
 
 export type AgentRegistryId = keyof typeof AgentRegistry;

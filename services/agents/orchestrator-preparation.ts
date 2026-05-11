@@ -265,14 +265,19 @@ export const prepareOrchestratorContext = async ({
     }
   }
 
+  const manualPinnedAgentCandidate =
+    metadata?.selectedRoleId && metadata?.baseAgentId
+      ? metadata.baseAgentId
+      : metadata?.pinnedAgentId;
+
   if (
     metadata?.agentSelectionMode === 'manual' &&
-    metadata?.pinnedAgentId &&
+    manualPinnedAgentCandidate &&
     ['coco', 'vireo', 'cameron', 'poster', 'package', 'motion', 'campaign', 'prompt-optimizer'].includes(
-      metadata.pinnedAgentId,
+      manualPinnedAgentCandidate,
     )
   ) {
-    pinnedAgent = metadata.pinnedAgentId;
+    pinnedAgent = manualPinnedAgentCandidate;
   }
 
   return {

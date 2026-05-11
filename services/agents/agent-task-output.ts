@@ -1,6 +1,7 @@
 import type {
   AgentTaskRuntimeEnvelope,
   GeneratedAsset,
+  MainBrainRoleGovernanceAudit,
   SkillCall,
 } from '../../types/agent.types';
 import type { MainBrainRuntimeResult } from './main-brain-runtime';
@@ -17,6 +18,7 @@ export interface BuildAgentTaskOutputOptions {
   skillCalls?: SkillCall[] | any[];
   adjustments?: string[];
   runtime?: AgentTaskRuntimeEnvelope;
+  roleGovernanceAudit?: MainBrainRoleGovernanceAudit;
 }
 
 export const getTaskOutputAssets = (taskLike: {
@@ -108,6 +110,11 @@ export const buildMainBrainTaskOutput = ({
     assets,
     skillCalls: runtimeResult.allSkillResults,
     adjustments: resolvedOutput.adjustments,
+    roleGovernanceAudit:
+      finalPlan?.roleGovernanceAudit &&
+      Array.isArray(finalPlan.roleGovernanceAudit.actions)
+        ? finalPlan.roleGovernanceAudit
+        : undefined,
     runtime: buildMainBrainRuntimeEnvelope(
       runtimeResult,
       resolvedOutput.stopReasonLabel,
@@ -126,6 +133,7 @@ export const buildAgentTaskOutput = ({
   skillCalls = [],
   adjustments = [],
   runtime,
+  roleGovernanceAudit,
 }: BuildAgentTaskOutputOptions) => {
   const normalizedProposals = Array.isArray(proposals) ? proposals : [];
   const normalizedSkillCalls = Array.isArray(skillCalls) ? skillCalls : [];
@@ -146,6 +154,7 @@ export const buildAgentTaskOutput = ({
     imageUrls: normalizedAssets.map((asset) => asset.url),
     skillCalls: normalizedSkillCalls,
     adjustments: normalizedAdjustments,
+    roleGovernanceAudit,
     runtime,
   };
 };

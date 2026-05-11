@@ -98,6 +98,8 @@ test('injectExecutionPreferences injects image generation preferences without ov
         metadata: {
           creationMode: 'image',
           preferredAspectRatio: '3:4',
+          preferredImageModel: 'GPT Image 2',
+          preferredImageProviderId: 'openai-like',
           preferredImageSize: '2K',
           promptLanguagePolicy: 'translate-en',
           textRenderPolicy: {
@@ -110,6 +112,8 @@ test('injectExecutionPreferences injects image generation preferences without ov
   );
 
   assert.equal(call.params.aspectRatio, '3:4');
+  assert.equal(call.params.model, 'GPT Image 2');
+  assert.equal(call.params.providerId, 'openai-like');
   assert.equal(call.params.imageSize, '2K');
   assert.equal(call.params.promptLanguagePolicy, 'translate-en');
   assert.deepEqual(call.params.textPolicy, {
@@ -131,12 +135,16 @@ test('injectExecutionPreferences scopes aspect ratio to matching creation mode',
         metadata: {
           creationMode: 'video',
           preferredAspectRatio: '16:9',
+          preferredImageModel: 'GPT Image 2',
+          preferredImageProviderId: 'openai-like',
         },
       },
     } as any,
   );
 
   assert.equal(call.params.aspectRatio, '16:9');
+  assert.equal(call.params.model, undefined);
+  assert.equal(call.params.providerId, undefined);
 });
 
 test('skill registry helpers expose expected canonical coverage', () => {

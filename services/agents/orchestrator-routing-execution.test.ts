@@ -4,6 +4,8 @@ import {
   maybeResolvePipeline,
   resolveRoutingDecision,
 } from './orchestrator-routing-execution.ts';
+import { buildUnifiedSidebarRoutingDecision } from './orchestrator-routing.ts';
+import { shouldUseImmediateResponseShortcut } from './orchestrator-task-assembly.ts';
 
 test('maybeResolvePipeline executes detected pipeline through injected dependencies', async () => {
   const stepUpdates: any[] = [];
@@ -113,5 +115,69 @@ test('resolveRoutingDecision prefers autonomous visual chat mode before remote r
 
   assert.equal(result.targetAgent, 'coco');
   assert.equal(result.taskType, 'autonomous-visual-chat');
+});
+
+test('resolveRoutingDecision keeps unified sidebar requests on routed agent execution path', async () => {
+  const result = await resolveRoutingDecision({
+    message: '直接改写当前专家的长期设定并落库',
+    metadata: { allowAutonomousRouting: true } as any,
+    attachments: [],
+    updatedContext: { projectId: 'p1' } as any,
+    pinnedAgent: 'poster',
+    isUnifiedSidebarAgent: true,
+    shouldPreferAutonomousChatFallback: false,
+    optimizerUsed: false,
+    withTimeout: async (promise) => promise,
+    dependencies: {
+      localPreRoute: () => 'cameron' as any,
+      routeToAgent: async () => ({
+        action: 'respond',
+        targetAgent: 'poster',
+      }) as any,
+    },
+  });
+
+  assert.equal(result.action, 'route');
+  assert.equal(result.targetAgent, 'coco');
+  assert.equal(result.taskType, 'unified-sidebar-agent');
+});
+
+test('buildUnifiedSidebarRoutingDecision never degrades into direct response actions', () => {
+  const result = buildUnifiedSidebarRoutingDecision('请直接修改当前专家长期设定');
+
+  assert.equal(result.action, 'route');
+  assert.equal(result.targetAgent, 'coco');
+  assert.equal(result.taskType, 'unified-sidebar-agent');
+});
+
+test('shouldUseImmediateResponseShortcut is disabled for autonomous routing requests', () => {
+  assert.equal(
+    shouldUseImmediateResponseShortcut(
+      { action: 'respond' } as any,
+      { allowAutonomousRouting: true } as any,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldUseImmediateResponseShortcut(
+      { action: 'clarify' } as any,
+      { allowAutonomousRouting: true } as any,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldUseImmediateResponseShortcut(
+      { action: 'respond' } as any,
+      { allowAutonomousRouting: false } as any,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldUseImmediateResponseShortcut(
+      { action: 'route' } as any,
+      { allowAutonomousRouting: false } as any,
+    ),
+    false,
+  );
 });
 

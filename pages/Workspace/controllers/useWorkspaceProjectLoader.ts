@@ -409,34 +409,58 @@ const trimLoadText = (value: unknown, maxLength: number): string => {
   return value.slice(0, maxLength);
 };
 
-const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => ({
-  id: message.id,
-  role: message.role,
-  text: trimLoadText(message.text, SAFE_LOAD_TEXT_LIMIT),
-  kind: message.kind,
-  timestamp: message.timestamp,
-  error: message.error,
-  relatedMarkerId: message.relatedMarkerId,
-  agentData: message.agentData
-    ? {
-        model: message.agentData.model,
-        title: trimLoadText(message.agentData.title, 120) || undefined,
-        description: trimLoadText(message.agentData.description, 240) || undefined,
-        analysis: trimLoadText(message.agentData.analysis, 800) || undefined,
-        preGenerationMessage:
-          trimLoadText(message.agentData.preGenerationMessage, 600) || undefined,
-        postGenerationSummary:
-          trimLoadText(message.agentData.postGenerationSummary, 600) || undefined,
-        suggestions: Array.isArray(message.agentData.suggestions)
-          ? message.agentData.suggestions
-              .filter((item): item is string => typeof item === "string")
-              .slice(0, 4)
-              .map((item) => trimLoadText(item, 80))
-          : [],
-        isGenerating: false,
-      }
-    : undefined,
-});
+const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, 12)
+    : undefined;
+  const attachmentMetadata = Array.isArray(message.attachmentMetadata)
+    ? message.attachmentMetadata.slice(0, 12)
+    : undefined;
+  const imageUrls = Array.isArray(message.agentData?.imageUrls)
+    ? message.agentData.imageUrls
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, 12)
+    : [];
+  const videoUrls = Array.isArray(message.agentData?.videoUrls)
+    ? message.agentData.videoUrls
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, 8)
+    : [];
+
+  return {
+    ...message,
+    text: trimLoadText(message.text, SAFE_LOAD_TEXT_LIMIT),
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
+    attachmentMetadata:
+      attachmentMetadata && attachmentMetadata.length > 0
+        ? attachmentMetadata
+        : undefined,
+    inlineParts: message.inlineParts,
+    agentData: message.agentData
+      ? {
+          model: message.agentData.model,
+          title: trimLoadText(message.agentData.title, 120) || undefined,
+          description: trimLoadText(message.agentData.description, 240) || undefined,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+          videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
+          analysis: trimLoadText(message.agentData.analysis, 800) || undefined,
+          preGenerationMessage:
+            trimLoadText(message.agentData.preGenerationMessage, 600) || undefined,
+          postGenerationSummary:
+            trimLoadText(message.agentData.postGenerationSummary, 600) || undefined,
+          suggestions: Array.isArray(message.agentData.suggestions)
+            ? message.agentData.suggestions
+                .filter((item): item is string => typeof item === "string")
+                .slice(0, 4)
+                .map((item) => trimLoadText(item, 80))
+            : [],
+          isGenerating: false,
+        }
+      : undefined,
+  };
+};
 
 const clearLoadedMessageGeneratingState = (
   message: ChatMessage,
@@ -638,12 +662,9 @@ const buildLoadedConversations = (
     .slice(0, SAFE_LOAD_CONVERSATION_LIMIT)
     .map((conversation) => ({
       ...conversation,
-      messages:
-        conversation.id === activeConversationId
-          ? conversation.messages
-              .slice(-SAFE_LOAD_ACTIVE_MESSAGE_LIMIT)
-              .map(sanitizeLoadedMessage)
-          : [],
+      messages: (conversation.messages || [])
+        .slice(-SAFE_LOAD_ACTIVE_MESSAGE_LIMIT)
+        .map(sanitizeLoadedMessage),
     }));
 
   return {

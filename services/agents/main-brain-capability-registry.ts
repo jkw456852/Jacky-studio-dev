@@ -1,373 +1,77 @@
-import type { MainBrainCapabilityDefinition } from '../../types/agent.types';
+import type {
+  MainBrainCapabilityDefinition,
+  MainBrainCapabilityKind,
+  RoleGovernanceMode,
+  RoleSource,
+} from '../../types/agent.types';
+import { REGISTERED_SKILL_NAMES } from '../skills/skill-manifest.ts';
+import {
+  GOVERNANCE_CAPABILITIES,
+  INTERNAL_MODULE_CAPABILITIES,
+  MAIN_BRAIN_CAPABILITY_MANIFEST,
+  SKILL_CAPABILITIES,
+  SPECIALIST_AGENT_CAPABILITIES,
+} from './main-brain-capability-manifest.ts';
 
-const INTERNAL_MODULE_CAPABILITIES: MainBrainCapabilityDefinition[] = [
-  {
-    id: 'prepareOrchestratorContext',
-    kind: 'internal-module',
-    label: 'Prepare Orchestrator Context',
-    purpose:
-      'Prepare attachments, project state, topic memory, inferred mode, and pinned routing state for the current turn.',
-    useWhen: [
-      'Before routing or execution when the current turn needs normalized workspace context.',
-    ],
-    inputs: [
-      { name: 'message', description: 'Raw user request.', required: true },
-      {
-        name: 'attachments',
-        description: 'Fresh files uploaded with the current turn.',
-      },
-      {
-        name: 'projectContext',
-        description: 'Workspace project context and conversation state.',
-        required: true,
-      },
-      { name: 'metadata', description: 'Routing and orchestration hints.' },
-    ],
-    outputs: [
-      'uploadedUrls',
-      'updatedContext',
-      'topicId',
-      'topicPinnedContext',
-      'inferredTaskMode',
-      'messageForExecution',
-      'pinnedAgent',
-    ],
-    sideEffects: [
-      'May upload attachments.',
-      'May write topic memory hints for the active topic.',
-    ],
-    tags: ['prepare', 'context', 'attachments', 'memory'],
-  },
-  {
-    id: 'resolveRoutingDecision',
-    kind: 'internal-module',
-    label: 'Resolve Routing Decision',
-    purpose:
-      'Choose whether the turn should respond directly, stay autonomous, or hand off to a specialist agent.',
-    useWhen: [
-      'After context preparation and before building an execution task.',
-    ],
-    inputs: [
-      { name: 'message', description: 'Current user request.', required: true },
-      {
-        name: 'context',
-        description: 'Prepared project context for this turn.',
-        required: true,
-      },
-      {
-        name: 'metadata',
-        description: 'Pinned agent, autonomous mode, and routing hints.',
-      },
-    ],
-    outputs: ['targetAgent', 'action', 'taskType', 'complexity', 'handoffMessage'],
-    tags: ['route', 'decide'],
-  },
-  {
-    id: 'buildExecutionTaskMetadata',
-    kind: 'internal-module',
-    label: 'Build Execution Task Metadata',
-    purpose:
-      'Normalize multimodal references, uploaded attachments, and topic context into downstream execution metadata.',
-    useWhen: [
-      'When execution or specialist handoff needs clean multimodal metadata.',
-    ],
-    inputs: [
-      { name: 'message', description: 'Current user request.', required: true },
-      {
-        name: 'attachments',
-        description: 'Resolved current-turn files.',
-      },
-      {
-        name: 'uploadedUrls',
-        description: 'Hosted attachment URLs when available.',
-      },
-      {
-        name: 'context',
-        description: 'Prepared project context.',
-        required: true,
-      },
-    ],
-    outputs: ['multimodalContext', 'topicPinnedContext', 'taskMode'],
-    tags: ['multimodal', 'metadata', 'normalize'],
-  },
-  {
-    id: 'buildExecutionTask',
-    kind: 'internal-module',
-    label: 'Build Execution Task',
-    purpose:
-      'Assemble the downstream AgentTask with role overlays, metadata, attachments, and execution payload.',
-    useWhen: ['After routing is decided and execution should begin.'],
-    inputs: [
-      { name: 'routingDecision', description: 'Resolved routing result.', required: true },
-      { name: 'preparedContext', description: 'Prepared orchestration context.', required: true },
-      { name: 'metadata', description: 'Normalized execution metadata.' },
-    ],
-    outputs: ['AgentTask'],
-    tags: ['task', 'assembly', 'execution'],
-  },
-  {
-    id: 'runMainBrainRuntime',
-    kind: 'internal-module',
-    label: 'Run Main Brain Runtime',
-    purpose:
-      'Run the bounded decide-act-observe loop so the main brain can continue after tool results instead of stopping after one pass.',
-    useWhen: ['When autonomous main-brain mode is active.'],
-    inputs: [
-      { name: 'task', description: 'Current AgentTask.', required: true },
-      {
-        name: 'analyzeAndPlan',
-        description: 'Planner function that returns JSON plan output.',
-        required: true,
-      },
-      {
-        name: 'executeSkills',
-        description: 'Skill execution function.',
-        required: true,
-      },
-      {
-        name: 'extractAssets',
-        description: 'Asset extraction function.',
-        required: true,
-      },
-    ],
-    outputs: ['turns', 'observations', 'finalPlan', 'allSkillResults', 'allAssets'],
-    sideEffects: ['May execute multiple bounded skill rounds.'],
-    tags: ['runtime', 'loop', 'observe', 'replan'],
-  },
-  {
-    id: 'syncDesignSessionState',
-    kind: 'internal-module',
-    label: 'Sync Design Session State',
-    purpose:
-      'Write approved outcomes, subject anchors, and session-level constraints back into design session memory.',
-    useWhen: ['After successful execution or proposal approval.'],
-    inputs: [
-      { name: 'task', description: 'Completed task state.', required: true },
-      { name: 'assets', description: 'Generated or approved assets.' },
-    ],
-    outputs: ['updatedDesignSession'],
-    sideEffects: ['Updates design-session memory.'],
-    tags: ['persist', 'session', 'memory'],
-  },
-  {
-    id: 'syncTopicSnapshotState',
-    kind: 'internal-module',
-    label: 'Sync Topic Snapshot State',
-    purpose:
-      'Persist turn-level conclusions, summaries, constraints, and approved assets into topic memory.',
-    useWhen: ['After answer, execution, or proposal completion.'],
-    inputs: [
-      { name: 'topicId', description: 'Active topic identifier.', required: true },
-      { name: 'task', description: 'Completed task state.', required: true },
-    ],
-    outputs: ['updatedTopicSnapshot'],
-    sideEffects: ['Updates topic memory.'],
-    tags: ['persist', 'topic', 'memory'],
-  },
-];
-
-const SKILL_CAPABILITIES: MainBrainCapabilityDefinition[] = [
-  {
-    id: 'generateImage',
-    kind: 'skill',
-    label: 'Generate Image',
-    purpose: 'Create new images from prompt and optional references.',
-    useWhen: ['The user explicitly wants a new image, visual direction, or generated variant.'],
-    avoidWhen: ['The user is only asking what an image is or how something works.'],
-    inputs: [
-      { name: 'prompt', description: 'Image generation prompt.', required: true },
-      { name: 'referenceImage', description: 'Single reference image URL or attachment marker.' },
-      { name: 'referenceImages', description: 'Multiple reference images for subject consistency.' },
-      { name: 'aspectRatio', description: 'Target aspect ratio such as 1:1 or 4:5.' },
-      { name: 'model', description: 'Chosen image model.' },
-    ],
-    outputs: ['imageUrls', 'assets'],
-    sideEffects: ['Consumes image generation quota or provider calls.'],
-    tags: ['visual', 'generate', 'image'],
-  },
-  {
-    id: 'generateVideo',
-    kind: 'skill',
-    label: 'Generate Video',
-    purpose: 'Create a video clip from prompt and optional frame references.',
-    useWhen: ['The user explicitly asks for motion content or video generation.'],
-    inputs: [
-      { name: 'prompt', description: 'Video generation prompt.', required: true },
-      { name: 'startFrame', description: 'Optional start frame.' },
-      { name: 'endFrame', description: 'Optional end frame.' },
-      { name: 'duration', description: 'Target duration.' },
-    ],
-    outputs: ['videoUrls', 'assets'],
-    sideEffects: ['Consumes video generation quota or provider calls.'],
-    tags: ['visual', 'generate', 'video'],
-  },
-  {
-    id: 'extractText',
-    kind: 'skill',
-    label: 'Extract Text',
-    purpose: 'Read text from uploaded images or regions.',
-    useWhen: ['The user asks what text appears in an image or screenshot.'],
-    inputs: [
-      { name: 'sourceUrl', description: 'Attachment marker or image URL.', required: true },
-    ],
-    outputs: ['recognizedText'],
-    tags: ['ocr', 'image-understanding', 'analysis'],
-  },
-  {
-    id: 'analyzeRegion',
-    kind: 'skill',
-    label: 'Analyze Region',
-    purpose: 'Inspect a marked or cropped region inside an image.',
-    useWhen: ['The user points at a specific area and asks what it contains or what is wrong there.'],
-    inputs: [
-      { name: 'sourceUrl', description: 'Attachment marker or image URL.', required: true },
-      { name: 'region', description: 'Crop or region coordinates.' },
-    ],
-    outputs: ['analysis'],
-    tags: ['analysis', 'image-understanding', 'region'],
-  },
-  {
-    id: 'generateCopy',
-    kind: 'skill',
-    label: 'Generate Copy',
-    purpose: 'Produce product, campaign, or marketing copy.',
-    useWhen: ['The user wants wording, headlines, selling points, or script text.'],
-    inputs: [
-      { name: 'prompt', description: 'Copywriting request.', required: true },
-    ],
-    outputs: ['copy', 'variants'],
-    tags: ['text', 'copywriting'],
-  },
-  {
-    id: 'smartEdit',
-    kind: 'skill',
-    label: 'Smart Edit',
-    purpose: 'Edit an existing image by removing, replacing, recoloring, or refining content.',
-    useWhen: ['The user wants to change an existing image rather than generate a new one from scratch.'],
-    inputs: [
-      { name: 'sourceUrl', description: 'Attachment marker or image URL.', required: true },
-      { name: 'instruction', description: 'Edit instruction.', required: true },
-    ],
-    outputs: ['imageUrls', 'assets'],
-    sideEffects: ['Consumes image editing quota or provider calls.'],
-    tags: ['edit', 'image'],
-  },
-  {
-    id: 'touchEdit',
-    kind: 'skill',
-    label: 'Touch Edit',
-    purpose: 'Apply local or manual-feeling image edits to existing content.',
-    useWhen: ['The request is a small visual correction, local adjustment, or touch-up.'],
-    inputs: [
-      { name: 'sourceUrl', description: 'Attachment marker or image URL.', required: true },
-      { name: 'instruction', description: 'Touch edit request.', required: true },
-    ],
-    outputs: ['imageUrls', 'assets'],
-    sideEffects: ['Consumes image editing quota or provider calls.'],
-    tags: ['edit', 'retouch', 'image'],
-  },
-  {
-    id: 'export',
-    kind: 'skill',
-    label: 'Export',
-    purpose: 'Export completed results into a deliverable output format.',
-    useWhen: ['The user asks to export, package, or deliver a finished artifact.'],
-    inputs: [
-      { name: 'assets', description: 'Assets or content to export.', required: true },
-      { name: 'format', description: 'Requested export format.' },
-    ],
-    outputs: ['downloadUrl', 'exportArtifact'],
-    tags: ['delivery', 'export'],
-  },
-  {
-    id: 'jkaiOneclick',
-    kind: 'skill',
-    label: 'JKAI OneClick Workflow',
-    purpose: 'Run the legacy one-click orchestrated workflow through a compatibility adapter.',
-    useWhen: ['A bundled legacy one-click workflow is explicitly needed.'],
-    inputs: [
-      { name: 'request', description: 'Workflow request payload.', required: true },
-    ],
-    outputs: ['workflowSummary', 'assets', 'structuredResult'],
-    aliases: ['xcaiOneclick'],
-    tags: ['workflow', 'compatibility', 'legacy'],
-  },
-];
-
-const SPECIALIST_AGENT_CAPABILITIES: MainBrainCapabilityDefinition[] = [
-  {
-    id: 'coco',
-    kind: 'specialist-agent',
-    label: 'Coco',
-    purpose: 'Generalist visual copilot for broad multimodal understanding and lightweight execution.',
-    useWhen: ['The task is mixed, ambiguous, or better handled by the default visual generalist.'],
-    tags: ['generalist', 'default'],
-  },
-  {
-    id: 'poster',
-    kind: 'specialist-agent',
-    label: 'Poster Agent',
-    purpose: 'Poster, layout, and campaign visual composition specialist.',
-    useWhen: ['The task is primarily poster design, key visual layout, or campaign composition.'],
-    tags: ['design', 'poster', 'layout'],
-  },
-  {
-    id: 'package',
-    kind: 'specialist-agent',
-    label: 'Package Agent',
-    purpose: 'Packaging and physical product presentation specialist.',
-    useWhen: ['The task concerns product packaging, box design, or physical presentation.'],
-    tags: ['packaging', 'product'],
-  },
-  {
-    id: 'motion',
-    kind: 'specialist-agent',
-    label: 'Motion Agent',
-    purpose: 'Motion, animation, and video-focused specialist.',
-    useWhen: ['The task requires motion storytelling, short clips, or animated presentation.'],
-    tags: ['motion', 'video'],
-  },
-  {
-    id: 'campaign',
-    kind: 'specialist-agent',
-    label: 'Campaign Agent',
-    purpose: 'Campaign strategy, market framing, and commerce-oriented creative specialist.',
-    useWhen: ['The task mixes creative direction with market, audience, or commerce goals.'],
-    tags: ['campaign', 'marketing', 'commerce'],
-  },
-  {
-    id: 'cameron',
-    kind: 'specialist-agent',
-    label: 'Cameron',
-    purpose: 'Photography-oriented specialist for framing, shot logic, and visual realism.',
-    useWhen: ['The task is photo-centric and needs shot planning or photographic realism.'],
-    tags: ['photo', 'camera'],
-  },
-  {
-    id: 'vireo',
-    kind: 'specialist-agent',
-    label: 'Vireo',
-    purpose: 'Concept and style exploration specialist for visual direction work.',
-    useWhen: ['The task is exploratory, style-seeking, or concept-heavy.'],
-    tags: ['concept', 'style'],
-  },
-  {
-    id: 'prompt-optimizer',
-    kind: 'specialist-agent',
-    label: 'Prompt Optimizer',
-    purpose: 'Prompt rewriting and clarification specialist before downstream execution.',
-    useWhen: ['The user explicitly wants prompt optimization or the route is optimizer-first.'],
-    tags: ['prompt', 'rewrite', 'clarify'],
-  },
-];
+export {
+  GOVERNANCE_CAPABILITIES,
+  INTERNAL_MODULE_CAPABILITIES,
+  SKILL_CAPABILITIES,
+  SPECIALIST_AGENT_CAPABILITIES,
+};
 
 export const MAIN_BRAIN_CAPABILITY_REGISTRY: MainBrainCapabilityDefinition[] = [
-  ...INTERNAL_MODULE_CAPABILITIES,
-  ...SKILL_CAPABILITIES,
-  ...SPECIALIST_AGENT_CAPABILITIES,
+  ...MAIN_BRAIN_CAPABILITY_MANIFEST,
 ];
 
 const normalizeCapabilityId = (value: string) => value.trim().toLowerCase();
+
+const REGISTERED_SKILL_NAME_SET = new Set(
+  REGISTERED_SKILL_NAMES.map((item) => normalizeCapabilityId(item)),
+);
+
+const prioritizeSkillCapabilities = (preferredSkills: string[]) => {
+  const preferredSet = new Set(preferredSkills.map((item) => normalizeCapabilityId(item)));
+  return [
+    ...SKILL_CAPABILITIES.filter(
+      (capability) =>
+        preferredSet.has(normalizeCapabilityId(capability.id)) ||
+        (capability.aliases || []).some((alias) => preferredSet.has(normalizeCapabilityId(alias))),
+    ),
+    ...SKILL_CAPABILITIES.filter(
+      (capability) =>
+        !preferredSet.has(normalizeCapabilityId(capability.id)) &&
+        !(capability.aliases || []).some((alias) => preferredSet.has(normalizeCapabilityId(alias))),
+    ),
+  ];
+};
+
+const isRegisteredExecutableSkill = (capability: MainBrainCapabilityDefinition): boolean => {
+  if (capability.kind !== 'skill') return false;
+  const capabilityId = normalizeCapabilityId(capability.id);
+  const executorKey = normalizeCapabilityId(capability.executorKey || capability.id);
+  return (
+    REGISTERED_SKILL_NAME_SET.has(capabilityId) ||
+    REGISTERED_SKILL_NAME_SET.has(executorKey)
+  );
+};
+
+const summarizeCapabilityInputs = (capability: MainBrainCapabilityDefinition) => {
+  const inputs = capability.inputs || [];
+  if (inputs.length === 0) {
+    return 'no explicit inputs';
+  }
+  return inputs
+    .slice(0, 3)
+    .map((field) => `${field.name}${field.required ? '*' : ''}`)
+    .join(', ');
+};
+
+const summarizeCapabilityPurpose = (capability: MainBrainCapabilityDefinition) =>
+  capability.plannerSummary || capability.purpose;
+
+const listCapabilitiesByKind = (kind: MainBrainCapabilityKind) =>
+  MAIN_BRAIN_CAPABILITY_REGISTRY.filter((item) => item.kind === kind);
 
 export const listMainBrainCapabilities = (
   kinds?: MainBrainCapabilityDefinition['kind'][],
@@ -389,50 +93,213 @@ export const findMainBrainCapability = (
   });
 };
 
-const summarizeCapabilityInputs = (capability: MainBrainCapabilityDefinition) => {
-  const inputs = capability.inputs || [];
-  if (inputs.length === 0) {
-    return 'no explicit inputs';
+export const listGovernanceCapabilities = (): MainBrainCapabilityDefinition[] =>
+  listCapabilitiesByKind('governance-skill');
+
+export const getGovernanceCapabilityIds = (): string[] =>
+  listGovernanceCapabilities().map((item) => item.id);
+
+export const listGovernanceCapabilityExecutorKeys = (): string[] =>
+  listGovernanceCapabilities()
+    .map((item) => item.executorKey || '')
+    .filter(Boolean);
+
+export const findGovernanceCapabilityByExecutorKey = (
+  executorKey: string,
+): MainBrainCapabilityDefinition | undefined => {
+  const target = normalizeCapabilityId(executorKey);
+  return listGovernanceCapabilities().find(
+    (item) => normalizeCapabilityId(item.executorKey || '') === target,
+  );
+};
+
+export const buildGovernanceCapabilityIdList = (): string =>
+  getGovernanceCapabilityIds().join(', ');
+
+export interface BuildRoleGovernancePromptContractInput {
+  selectedRoleId?: string;
+  selectedRoleSource?: RoleSource | string;
+  baseAgentId?: string;
+  roleGovernanceMode?: RoleGovernanceMode;
+  allowMainBrainRoleMutation?: boolean;
+  allowMainBrainRolePromotion?: boolean;
+}
+
+export const buildRoleGovernancePromptContract = ({
+  selectedRoleId = '',
+  selectedRoleSource = '',
+  baseAgentId = '',
+  roleGovernanceMode = 'manual_only',
+  allowMainBrainRoleMutation = false,
+  allowMainBrainRolePromotion = false,
+}: BuildRoleGovernancePromptContractInput): string => {
+  const governanceCapabilityIdList = buildGovernanceCapabilityIdList();
+  return `
+[Role Governance]
+- selectedRoleId: ${selectedRoleId || 'none'}
+- selectedRoleSource: ${selectedRoleSource || 'none'}
+- baseAgentId: ${baseAgentId || 'none'}
+- roleGovernanceMode: ${roleGovernanceMode}
+- allowMainBrainRoleMutation: ${allowMainBrainRoleMutation ? 'true' : 'false'}
+- allowMainBrainRolePromotion: ${allowMainBrainRolePromotion ? 'true' : 'false'}
+- Governance capabilities are planner-side decisions only. Never place ${governanceCapabilityIdList} into skillCalls.
+- If you choose any role governance action, record it in roleGovernanceAudit.actions instead.
+- When roleGovernanceMode is manual_only, you may read and bind roles, but must not propose mutation, addon rewrite, or promotion as completed actions.
+- When roleGovernanceMode is draft_only, you may propose temporary or durable drafts, but do not claim they are already published.
+- When roleGovernanceMode is approval_required, you may propose durable changes, addon rewrites, or promotions, but they must be marked requiresHumanApproval=true.
+- Only when roleGovernanceMode is auto_manage and the corresponding allowMainBrainRoleMutation / allowMainBrainRolePromotion flag is true may you describe a durable role mutation, addon rewrite, or promotion as auto-executable.
+- If the user explicitly asks to directly rewrite the current expert long-term setting, prefer roleGovernanceAudit.actions with action="addon_update", targetBaseAgentId, and the full promptAddonText instead of only describing suggested wording in message.
+- If a durable selected role exists, prefer aligning execution with its baseAgentId instead of ignoring the selected role context.
+`;
+};
+
+export interface BuildMainBrainCapabilityTruthSnapshotInput {
+  preferredSkills?: string[];
+  networkResearchEnabled?: boolean;
+  hasResearchContext?: boolean;
+  roleGovernanceMode?: RoleGovernanceMode;
+  allowMainBrainRoleMutation?: boolean;
+  allowMainBrainRolePromotion?: boolean;
+}
+
+const describeGovernanceTruth = ({
+  capability,
+  roleGovernanceMode,
+  allowMainBrainRoleMutation,
+  allowMainBrainRolePromotion,
+}: {
+  capability: MainBrainCapabilityDefinition;
+  roleGovernanceMode: RoleGovernanceMode;
+  allowMainBrainRoleMutation: boolean;
+  allowMainBrainRolePromotion: boolean;
+}): string => {
+  const base = 'planner/audit capability, never a direct skillCall';
+
+  if (capability.permissionPolicy?.requiresRolePromotion) {
+    if (roleGovernanceMode === 'auto_manage' && allowMainBrainRolePromotion) {
+      return `${base}; current mode auto_manage + promotion flag on, so it may auto-execute if runtime audit confirms it.`;
+    }
+    if (roleGovernanceMode === 'approval_required') {
+      return `${base}; current mode approval_required, so promotion may be proposed but must require human approval.`;
+    }
+    return `${base}; current mode ${roleGovernanceMode} does not allow automatic promotion right now.`;
   }
-  return inputs
-    .slice(0, 3)
-    .map((field) => `${field.name}${field.required ? '*' : ''}`)
-    .join(', ');
+
+  if (capability.permissionPolicy?.requiresRoleMutation) {
+    if (roleGovernanceMode === 'auto_manage' && allowMainBrainRoleMutation) {
+      return `${base}; current mode auto_manage + mutation flag on, so it may auto-execute if runtime audit confirms it.`;
+    }
+    if (roleGovernanceMode === 'approval_required') {
+      return `${base}; current mode approval_required, so durable mutation may be proposed but must require human approval.`;
+    }
+    if (roleGovernanceMode === 'draft_only') {
+      return `${base}; current mode draft_only, so it may draft changes but must not claim durable publish completion.`;
+    }
+    return `${base}; current mode ${roleGovernanceMode} only allows reasoning or binding, not durable mutation completion.`;
+  }
+
+  if (roleGovernanceMode === 'manual_only') {
+    return `${base}; current mode manual_only, so keep it at analysis/binding level only.`;
+  }
+
+  if (roleGovernanceMode === 'draft_only') {
+    return `${base}; current mode draft_only, so draft actions may be proposed without claiming publish completion.`;
+  }
+
+  if (roleGovernanceMode === 'approval_required') {
+    return `${base}; current mode approval_required, so durable actions may be proposed but need approval evidence before claiming completion.`;
+  }
+
+  return `${base}; current mode auto_manage, so execution claims must still stay aligned with runtime audit evidence.`;
+};
+
+export const buildMainBrainCapabilityTruthSnapshot = ({
+  preferredSkills = [],
+  networkResearchEnabled = false,
+  hasResearchContext = false,
+  roleGovernanceMode = 'manual_only',
+  allowMainBrainRoleMutation = false,
+  allowMainBrainRolePromotion = false,
+}: BuildMainBrainCapabilityTruthSnapshotInput = {}): string => {
+  const prioritizedSkills = prioritizeSkillCapabilities(preferredSkills);
+  const directSkills = prioritizedSkills.filter(
+    (capability) =>
+      isRegisteredExecutableSkill(capability) &&
+      capability.id !== 'workspaceSearch' &&
+      capability.id !== 'export',
+  );
+
+  return [
+    '[Capability Truth Snapshot: use this when the user asks what you can/cannot do]',
+    '- Read this section before giving any capability boundary answer.',
+    '- Distinguish directly executable, turn-gated, governance-gated, and partial capabilities.',
+    '- Never collapse a gated capability into "I cannot do that" when the capability is registered.',
+    '[Directly Executable Now]',
+    ...directSkills.map(
+      (capability) =>
+        `- ${capability.id}: registered executable skill. Use when: ${capability.useWhen[0]}.`,
+    ),
+    '[Turn-Gated Capability]',
+    networkResearchEnabled
+      ? `- workspaceSearch: registered executable skill and enabled for this turn${hasResearchContext ? '; attached research context is already present.' : '; it may be triggered when online verification is needed.'}`
+      : '- workspaceSearch: registered executable skill, but this turn does not currently expose network research. Describe it as conditional instead of unavailable.',
+    '[Governance-Gated Capability]',
+    ...GOVERNANCE_CAPABILITIES.map(
+      (capability) =>
+        `- ${capability.id}: ${describeGovernanceTruth({
+          capability,
+          roleGovernanceMode,
+          allowMainBrainRoleMutation,
+          allowMainBrainRolePromotion,
+        })}`,
+    ),
+    '[Partial Productization]',
+    '- export: registered executable export base exists, but if the user expects a polished file-download or delivery workflow, describe it conservatively as only partially productized.',
+  ].join('\n');
 };
 
 export const buildMainBrainCapabilityPromptSummary = ({
   preferredSkills = [],
   includeInternalModules = true,
   includeSpecialists = true,
+  networkResearchEnabled = false,
+  hasResearchContext = false,
 }: {
   preferredSkills?: string[];
   includeInternalModules?: boolean;
   includeSpecialists?: boolean;
+  networkResearchEnabled?: boolean;
+  hasResearchContext?: boolean;
 } = {}): string => {
   const sections: string[] = [];
-  const preferredSet = new Set(preferredSkills.map((item) => normalizeCapabilityId(item)));
+
+  if (networkResearchEnabled) {
+    sections.push(
+      '[Turn-Level System Capabilities: available for this turn]',
+      `- networkResearch: The workspace can perform network-backed research through the search pipeline. Use when the user asks for facts, comparison, investigation, or recent information. Access pattern: ${hasResearchContext ? 'research context is already attached to this turn; use it before asking for more search.' : 'search may be provided through the executable workspaceSearch skill, turn-level research support, or model-side search augmentation.'}`,
+    );
+  }
 
   if (includeInternalModules) {
     sections.push(
       '[Coordinator Modules: awareness only, not valid skillCalls]',
       ...INTERNAL_MODULE_CAPABILITIES.map(
         (capability) =>
-          `- ${capability.id}: ${capability.purpose} Inputs: ${summarizeCapabilityInputs(capability)}.`,
+          `- ${capability.id}: ${summarizeCapabilityPurpose(capability)} Inputs: ${summarizeCapabilityInputs(capability)}.`,
       ),
     );
   }
 
-  const prioritizedSkills = [
-    ...SKILL_CAPABILITIES.filter((capability) =>
-      preferredSet.has(normalizeCapabilityId(capability.id)) ||
-      (capability.aliases || []).some((alias) => preferredSet.has(normalizeCapabilityId(alias))),
-    ),
-    ...SKILL_CAPABILITIES.filter(
+  sections.push(
+    '[Role Governance Capabilities: planning and audit actions, never direct skillCalls]',
+    ...GOVERNANCE_CAPABILITIES.map(
       (capability) =>
-        !preferredSet.has(normalizeCapabilityId(capability.id)) &&
-        !(capability.aliases || []).some((alias) => preferredSet.has(normalizeCapabilityId(alias))),
+        `- ${capability.id}: ${summarizeCapabilityPurpose(capability)} Use when: ${capability.useWhen[0]} Inputs: ${summarizeCapabilityInputs(capability)}. Record any intended action inside roleGovernanceAudit instead of putting this capability into skillCalls.`,
     ),
-  ];
+    '- Governance rule: specialist agents are routing targets, executable skills are runtime tools, and governance capabilities are planner-side decisions plus audit records.',
+  );
+
+  const prioritizedSkills = prioritizeSkillCapabilities(preferredSkills);
 
   sections.push(
     '[Executable Skills: these are the only items that may appear in skillCalls]',
@@ -441,7 +308,7 @@ export const buildMainBrainCapabilityPromptSummary = ({
         capability.aliases && capability.aliases.length > 0
           ? ` Aliases: ${capability.aliases.join(', ')}.`
           : '';
-      return `- ${capability.id}: ${capability.purpose} Use when: ${capability.useWhen[0]} Inputs: ${summarizeCapabilityInputs(capability)}.${aliases}`;
+      return `- ${capability.id}: ${summarizeCapabilityPurpose(capability)} Use when: ${capability.useWhen[0]} Inputs: ${summarizeCapabilityInputs(capability)}.${aliases}`;
     }),
   );
 
@@ -450,8 +317,9 @@ export const buildMainBrainCapabilityPromptSummary = ({
       '[Specialist Agents: routing targets, not skillCalls]',
       ...SPECIALIST_AGENT_CAPABILITIES.map(
         (capability) =>
-          `- ${capability.id}: ${capability.purpose} Use when: ${capability.useWhen[0]}.`,
+          `- ${capability.id}: ${summarizeCapabilityPurpose(capability)} Use when: ${capability.useWhen[0]}.`,
       ),
+      '- If a durable selected role exists, prefer keeping its baseAgentId aligned with the routed specialist shell instead of ignoring the selected role context.',
     );
   }
 

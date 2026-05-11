@@ -58,6 +58,13 @@ type UseWorkspaceSidebarPropsArgs = {
   setShowAssistant: React.ComponentProps<
     typeof AssistantSidebar
   >["panelUi"]["setShowAssistant"];
+  isAssistantFullscreen: boolean;
+  setIsAssistantFullscreen: NonNullable<
+    React.ComponentProps<typeof AssistantSidebar>["panelUi"]["setIsFullscreen"]
+  >;
+  onToggleAssistantFullscreen: NonNullable<
+    React.ComponentProps<typeof AssistantSidebar>["panelUi"]["onToggleFullscreen"]
+  >;
   onOpenEcommerceWorkflow: React.ComponentProps<
     typeof AssistantSidebar
   >["panelUi"]["onOpenEcommerceWorkflow"];
@@ -339,6 +346,9 @@ export const useWorkspaceSidebarProps = ({
   setActiveConversationId,
   showAssistant,
   setShowAssistant,
+  isAssistantFullscreen,
+  setIsAssistantFullscreen,
+  onToggleAssistantFullscreen,
   onOpenEcommerceWorkflow,
   handleSend,
   handleSmartGenerate,
@@ -519,6 +529,9 @@ export const useWorkspaceSidebarProps = ({
         showAssistant,
         setShowAssistant,
         setPreviewUrl,
+        isFullscreen: isAssistantFullscreen,
+        setIsFullscreen: setIsAssistantFullscreen,
+        onToggleFullscreen: onToggleAssistantFullscreen,
         onOpenEcommerceWorkflow,
       },
       messageActions: {
@@ -700,6 +713,8 @@ export const useWorkspaceSidebarProps = ({
       markers,
       modelPreferences,
       onOpenEcommerceWorkflow,
+      onToggleAssistantFullscreen,
+      isAssistantFullscreen,
       selectedChipId,
       setActiveConversationId,
       setConversations,
@@ -712,6 +727,7 @@ export const useWorkspaceSidebarProps = ({
       setPrompt,
       setSelectedChipId,
       setShowAssistant,
+      setIsAssistantFullscreen,
       setShowModeSelector,
       setShowModelPicker,
       setShowRatioPicker,

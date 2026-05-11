@@ -13,7 +13,6 @@ import {
   Lightbulb,
   Paperclip,
   PencilLine,
-  RotateCcw,
   Sparkles,
   Video,
   X,
@@ -22,7 +21,7 @@ import {
   Cloud,
 } from 'lucide-react';
 import type { ChatMessage, InputBlock, ImageModel, VideoModel } from '../../../types';
-import type { AgentType } from '../../../types/agent.types';
+import type { AgentType, RoleGovernanceMode } from '../../../types/agent.types';
 import {
   getMappedModelConfigs,
   getMappedModelDisplaySummary,
@@ -48,6 +47,8 @@ import {
   normalizeMainBrainPreferences,
 } from '../../../services/runtime-assets/main-brain';
 import { useAgentStore } from '../../../stores/agent.store';
+import { RoleManagementPanel } from './RoleManagementPanel';
+import { MainBrainConfigCenter } from './MainBrainConfigCenter';
 
 const MODEL_OPTIONS: Record<
   string,
@@ -186,6 +187,27 @@ type InputAreaBottomToolbarProps = {
   sendSkill?: ChatMessage['skillData'];
   isSoraVideoModel: boolean;
   handlePickedFiles: (files: File[]) => void;
+};
+
+type RoleEntityEditorDraft = {
+  title: string;
+  summary: string;
+  tagsText: string;
+  useWhenText: string;
+  avoidWhenText: string;
+  durableRoleAddon: string;
+  governanceMode: RoleGovernanceMode;
+  allowMainBrainMutation: boolean;
+  allowMainBrainPromotion: boolean;
+  allowMainBrainArchive: boolean;
+};
+
+const normalizeRoleEditorTextList = (
+  value: string,
+  mode: 'line' | 'tag' = 'line',
+): string[] => {
+  const segments = mode === 'tag' ? value.split(/[\n,，]/) : value.split(/\r?\n/);
+  return segments.map((item) => item.trim()).filter(Boolean);
 };
 
 export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
@@ -346,26 +368,68 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     null,
   );
   const [roleInspectorAgentId, setRoleInspectorAgentId] = React.useState<AgentType | null>(null);
+  const [roleInspectorRoleId, setRoleInspectorRoleId] = React.useState<string | null>(null);
+  const [showRoleManagementPanel, setShowRoleManagementPanel] = React.useState(false);
   const [roleInspectorDraft, setRoleInspectorDraft] = React.useState('');
+  const [roleEntityDraft, setRoleEntityDraft] = React.useState<RoleEntityEditorDraft | null>(null);
+  const [roleEntityBaseline, setRoleEntityBaseline] = React.useState<RoleEntityEditorDraft | null>(null);
   const [roleInspectorRevision, setRoleInspectorRevision] = React.useState(0);
   const [showMainBrainInspector, setShowMainBrainInspector] = React.useState(false);
   const [mainBrainDraft, setMainBrainDraft] = React.useState('');
   const currentAutoRoleSession = useAgentStore((state) => state.currentAutoRoleSession);
+  const selectedRoleId = useAgentStore((state) => state.selectedRoleId);
+  const selectedRoleSource = useAgentStore((state) => state.selectedRoleSource);
+  const setSelectedRoleSelection = useAgentStore(
+    (state) => state.actions.setSelectedRoleSelection,
+  );
+  const clearSelectedRoleSelection = useAgentStore(
+    (state) => state.actions.clearSelectedRoleSelection,
+  );
   const availableAgentInfos = React.useMemo(() => listAgentInfos(), []);
   const userAssetApi = React.useMemo(() => getStudioUserAssetApi(), []);
-  const pinnedAgentInfo = getAgentInfo(pinnedAgentId);
+  const availableDurableRoles = React.useMemo(
+    () => userAssetApi.listRoles(),
+    [roleInspectorRevision, userAssetApi],
+  );
+  const selectedDurableRole = React.useMemo(
+    () => (selectedRoleId ? userAssetApi.getRoleById(selectedRoleId) : null),
+    [roleInspectorRevision, selectedRoleId, userAssetApi],
+  );
+  const resolvedPinnedAgentId = selectedDurableRole?.baseAgentId || pinnedAgentId;
+  const pinnedAgentInfo = getAgentInfo(resolvedPinnedAgentId);
   const agentRoleLabel =
-    agentSelectionMode === 'manual' ? pinnedAgentInfo.name : '自动角色';
+    agentSelectionMode === 'manual'
+      ? selectedDurableRole?.title || pinnedAgentInfo.name
+      : '自动角色';
   const agentRoleDescription =
     agentSelectionMode === 'manual'
-      ? pinnedAgentInfo.description
+      ? selectedDurableRole?.summary ||
+        `绑定到 ${pinnedAgentInfo.name} 专家壳${
+          selectedRoleSource ? ` · 来源 ${selectedRoleSource}` : ''
+        }`
       : '由 Coco 先判断，再交给最合适的角色';
-  const openRoleInspector = React.useCallback((agentId: AgentType) => {
-    setRoleInspectorAgentId(agentId);
-    setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(agentId));
-  }, [userAssetApi]);
+  const openRoleInspector = React.useCallback(
+    (agentId: AgentType, roleId?: string | null) => {
+      setRoleInspectorAgentId(agentId);
+      setRoleInspectorRoleId(roleId || null);
+      setShowRoleManagementPanel(false);
+      setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(agentId));
+    },
+    [userAssetApi],
+  );
+  const openRoleManagementPanel = React.useCallback(
+    (agentId: AgentType, roleId?: string | null) => {
+      setRoleInspectorAgentId(agentId);
+      setRoleInspectorRoleId(roleId || null);
+      setShowRoleManagementPanel(true);
+      setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(agentId));
+    },
+    [userAssetApi],
+  );
   const closeRoleInspector = React.useCallback(() => {
     setRoleInspectorAgentId(null);
+    setRoleInspectorRoleId(null);
+    setShowRoleManagementPanel(false);
     setRoleInspectorDraft('');
   }, []);
   const openMainBrainInspector = React.useCallback(() => {
@@ -383,6 +447,27 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const inspectedAgentInfo = roleInspectorAgentId
     ? getAgentInfo(roleInspectorAgentId)
     : null;
+  const inspectedDurableRole = roleInspectorRoleId
+    ? userAssetApi.getRoleById(roleInspectorRoleId)
+    : null;
+  const inspectedRoleVersions = React.useMemo(
+    () =>
+      inspectedDurableRole ? userAssetApi.listRoleVersions(inspectedDurableRole.id) : [],
+    [inspectedDurableRole?.id, roleInspectorRevision, userAssetApi],
+  );
+  const inspectedRoleAuditEntries = React.useMemo(
+    () =>
+      inspectedDurableRole
+        ? userAssetApi
+            .listAuditEntries()
+            .filter(
+              (entry) =>
+                entry.targetId === inspectedDurableRole.id &&
+                (entry.targetKind === 'role-entity' || entry.targetKind === 'role-version'),
+            )
+        : [],
+    [inspectedDurableRole?.id, roleInspectorRevision, userAssetApi],
+  );
   const inspectedRoleProfile = roleInspectorAgentId
     ? getAgentRoleProfile(roleInspectorAgentId)
     : null;
@@ -444,10 +529,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       : creationMode === 'image'
         ? '图片'
         : '视频';
-  const browserChatModeLabel = browserAgent?.chatEnabled ? '主脑执行' : '主脑回答';
-  const browserChatModeTitle = browserAgent?.chatEnabled
-    ? '主脑会直接接管当前页面与节点操作'
-    : '主脑先以对话回答与判断为主，需要时再调用执行链';
   const inspectedBuiltInPrompt = roleInspectorAgentId
     ? getAgentPromptLayers(roleInspectorAgentId).systemBaselinePrompt
     : '';
@@ -476,6 +557,53 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     roleInspectorDraft.trim() !== inspectedPromptAddon.trim();
   const inspectedHasAddon =
     roleInspectorAgentId !== null && hasAgentPromptAddon(roleInspectorAgentId);
+  const buildRoleEntityEditorDraft = (): RoleEntityEditorDraft | null => {
+    if (!roleInspectorAgentId || !inspectedAgentInfo) return null;
+    return {
+      title:
+        inspectedDurableRole?.title ||
+        inspectedLatestRoleDraft?.title ||
+        `${inspectedAgentInfo.name} 自定义角色`,
+      summary:
+        inspectedDurableRole?.summary ||
+        inspectedLatestRoleDraft?.summary ||
+        inspectedRoleProfile?.purpose ||
+        '',
+      tagsText: inspectedDurableRole?.tags.join('，') || '',
+      useWhenText:
+        inspectedDurableRole?.useWhen.join('\n') || inspectedRoleProfile?.useWhen.join('\n') || '',
+      avoidWhenText:
+        inspectedDurableRole?.avoidWhen.join('\n') ||
+        inspectedRoleProfile?.avoidWhen.join('\n') ||
+        '',
+      durableRoleAddon:
+        inspectedDurableRole?.promptLayers.durableRoleAddon ||
+        roleInspectorDraft.trim() ||
+        (inspectedLatestRoleDraft ? buildRoleDraftAddonText(inspectedLatestRoleDraft) : ''),
+      governanceMode: inspectedDurableRole?.governance.mode || 'approval_required',
+      allowMainBrainMutation: inspectedDurableRole?.governance.allowMainBrainMutation || false,
+      allowMainBrainPromotion: inspectedDurableRole?.governance.allowMainBrainPromotion || false,
+      allowMainBrainArchive: inspectedDurableRole?.governance.allowMainBrainArchive || false,
+    };
+  };
+  const roleEntityDirty = React.useMemo(
+    () =>
+      Boolean(roleEntityDraft) &&
+      Boolean(roleEntityBaseline) &&
+      JSON.stringify(roleEntityDraft) !== JSON.stringify(roleEntityBaseline),
+    [roleEntityBaseline, roleEntityDraft],
+  );
+  const roleEntityCanSubmit = Boolean(roleEntityDraft?.title.trim());
+  React.useEffect(() => {
+    if (!showRoleManagementPanel) {
+      setRoleEntityDraft(null);
+      setRoleEntityBaseline(null);
+      return;
+    }
+    const nextDraft = buildRoleEntityEditorDraft();
+    setRoleEntityDraft(nextDraft);
+    setRoleEntityBaseline(nextDraft);
+  }, [showRoleManagementPanel, roleInspectorAgentId, roleInspectorRoleId, roleInspectorRevision]);
   React.useEffect(() => {
     if (!showAgentRolePicker) return;
 
@@ -532,19 +660,186 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   }, [inspectedLatestRoleDraft]);
   const handleSaveLatestRoleDraftAsFormalRole = React.useCallback(() => {
     if (!roleInspectorAgentId || !inspectedLatestRoleDraft) return;
-    const mergedAddon = mergePromptAddonWithRoleDraft({
-      currentAddon: userAssetApi.getAgentPromptAddon(roleInspectorAgentId),
-      draft: inspectedLatestRoleDraft,
+    const persistedDraft = userAssetApi.saveTemporaryRoleDraft({
+      targetRoleId: roleInspectorRoleId || selectedRoleId || null,
+      targetBaseAgentId: roleInspectorAgentId,
+      title: inspectedLatestRoleDraft.title,
+      summary: inspectedLatestRoleDraft.summary,
+      instructions: inspectedLatestRoleDraft.instructions,
+      roleStrategy: inspectedLatestRoleDraft.roleStrategy || 'augment',
+      roleStrategyReason:
+        inspectedLatestRoleDraft.roleStrategyReason || '从专家壳最近自动草案提升为长期角色。',
+      promotionSuggested: true,
     });
-    userAssetApi.setAgentPromptAddon(roleInspectorAgentId, mergedAddon);
-    setRoleInspectorDraft(mergedAddon);
+    if (!persistedDraft) return;
+    const promotedRole = userAssetApi.promoteTemporaryRole(persistedDraft.id, {
+      targetRoleId: roleInspectorRoleId || selectedRoleId || null,
+    });
+    if (!promotedRole) return;
+    setPinnedAgentId(promotedRole.baseAgentId);
+    setSelectedRoleSelection({
+      roleId: promotedRole.id,
+      roleSource: promotedRole.source,
+      baseAgentId: promotedRole.baseAgentId,
+      governanceMode: promotedRole.governance.mode,
+      allowMainBrainRoleMutation: promotedRole.governance.allowMainBrainMutation,
+      allowMainBrainRolePromotion: promotedRole.governance.allowMainBrainPromotion,
+    });
+    setRoleInspectorRoleId(promotedRole.id);
     setRoleInspectorRevision((value) => value + 1);
-  }, [inspectedLatestRoleDraft, roleInspectorAgentId, userAssetApi]);
+  }, [
+    inspectedLatestRoleDraft,
+    roleInspectorAgentId,
+    roleInspectorRoleId,
+    selectedRoleId,
+    setPinnedAgentId,
+    setSelectedRoleSelection,
+    userAssetApi,
+  ]);
   const handleClearLatestRoleDraft = React.useCallback(() => {
     if (!roleInspectorAgentId) return;
     userAssetApi.clearLatestRoleDraft(roleInspectorAgentId);
     setRoleInspectorRevision((value) => value + 1);
   }, [roleInspectorAgentId, userAssetApi]);
+  const handleRoleEntityDraftChange = React.useCallback((patch: Partial<RoleEntityEditorDraft>) => {
+    setRoleEntityDraft((current) => (current ? { ...current, ...patch } : current));
+  }, []);
+  const handleResetRoleEntityDraft = React.useCallback(() => {
+    setRoleEntityDraft(roleEntityBaseline ? { ...roleEntityBaseline } : null);
+  }, [roleEntityBaseline]);
+  const handleSaveRoleEntity = React.useCallback(() => {
+    if (!roleInspectorAgentId || !roleEntityDraft) return;
+    const savedRole = userAssetApi.saveRole(
+      {
+        ...(inspectedDurableRole ? { id: inspectedDurableRole.id } : {}),
+        title: roleEntityDraft.title,
+        summary: roleEntityDraft.summary,
+        baseAgentId: roleInspectorAgentId,
+        source: inspectedDurableRole?.source || 'user',
+        status: inspectedDurableRole?.status || 'active',
+        tags: normalizeRoleEditorTextList(roleEntityDraft.tagsText, 'tag'),
+        useWhen: normalizeRoleEditorTextList(roleEntityDraft.useWhenText, 'line'),
+        avoidWhen: normalizeRoleEditorTextList(roleEntityDraft.avoidWhenText, 'line'),
+        toolPolicy: inspectedDurableRole?.toolPolicy || {
+          allowedSkills: [],
+          blockedSkills: [],
+          canRouteSubtasks: true,
+          canUseNetworkResearch: true,
+        },
+        routingPolicy: inspectedDurableRole?.routingPolicy || {
+          priority: 100,
+          keywords: [],
+          preferredTaskModes: [],
+          autoRouteEligible: true,
+        },
+        promptLayers: {
+          systemBaseline: inspectedDurableRole?.promptLayers.systemBaseline || inspectedBuiltInPrompt,
+          mainBrainShared: inspectedDurableRole?.promptLayers.mainBrainShared || inspectedMainBrainBlock,
+          durableRoleAddon: roleEntityDraft.durableRoleAddon.trim(),
+        },
+        governance: {
+          mode: roleEntityDraft.governanceMode,
+          requiresHumanApproval: roleEntityDraft.governanceMode !== 'auto_manage',
+          allowMainBrainMutation: roleEntityDraft.allowMainBrainMutation,
+          allowMainBrainPromotion: roleEntityDraft.allowMainBrainPromotion,
+          allowMainBrainArchive: roleEntityDraft.allowMainBrainArchive,
+        },
+      },
+      {
+        preferredId: inspectedDurableRole?.id,
+      },
+    );
+    if (!savedRole) return;
+    setAgentSelectionMode('manual');
+    setPinnedAgentId(savedRole.baseAgentId);
+    setSelectedRoleSelection({
+      roleId: savedRole.id,
+      roleSource: savedRole.source,
+      baseAgentId: savedRole.baseAgentId,
+      governanceMode: savedRole.governance.mode,
+      allowMainBrainRoleMutation: savedRole.governance.allowMainBrainMutation,
+      allowMainBrainRolePromotion: savedRole.governance.allowMainBrainPromotion,
+    });
+    setRoleInspectorRoleId(savedRole.id);
+    setRoleInspectorRevision((value) => value + 1);
+  }, [
+    inspectedBuiltInPrompt,
+    inspectedDurableRole,
+    inspectedMainBrainBlock,
+    roleEntityDraft,
+    roleInspectorAgentId,
+    setAgentSelectionMode,
+    setPinnedAgentId,
+    setSelectedRoleSelection,
+    userAssetApi,
+  ]);
+  const handlePublishRole = React.useCallback(() => {
+    if (!inspectedDurableRole) return;
+    const publishedRole = userAssetApi.saveRole(
+      {
+        ...inspectedDurableRole,
+        status: 'active',
+      },
+      {
+        preferredId: inspectedDurableRole.id,
+      },
+    );
+    if (!publishedRole) return;
+    if (selectedRoleId === publishedRole.id) {
+      setPinnedAgentId(publishedRole.baseAgentId);
+      setSelectedRoleSelection({
+        roleId: publishedRole.id,
+        roleSource: publishedRole.source,
+        baseAgentId: publishedRole.baseAgentId,
+        governanceMode: publishedRole.governance.mode,
+        allowMainBrainRoleMutation: publishedRole.governance.allowMainBrainMutation,
+        allowMainBrainRolePromotion: publishedRole.governance.allowMainBrainPromotion,
+      });
+    }
+    setRoleInspectorRoleId(publishedRole.id);
+    setRoleInspectorRevision((value) => value + 1);
+  }, [inspectedDurableRole, selectedRoleId, setPinnedAgentId, setSelectedRoleSelection, userAssetApi]);
+  const handleArchiveRole = React.useCallback(() => {
+    if (!inspectedDurableRole) return;
+    userAssetApi.archiveRole(inspectedDurableRole.id);
+    const archivedRole = userAssetApi.getRoleById(inspectedDurableRole.id);
+    if (!archivedRole) return;
+    if (selectedRoleId === archivedRole.id) {
+      setPinnedAgentId(archivedRole.baseAgentId);
+      clearSelectedRoleSelection();
+      setAgentSelectionMode('manual');
+    }
+    setRoleInspectorRoleId(archivedRole.id);
+    setRoleInspectorRevision((value) => value + 1);
+  }, [
+    clearSelectedRoleSelection,
+    inspectedDurableRole,
+    selectedRoleId,
+    setAgentSelectionMode,
+    setPinnedAgentId,
+    userAssetApi,
+  ]);
+  const handleRollbackRoleVersion = React.useCallback(
+    (version: number) => {
+      if (!inspectedDurableRole) return;
+      const restoredRole = userAssetApi.rollbackRoleVersion(inspectedDurableRole.id, version);
+      if (!restoredRole) return;
+      if (selectedRoleId === restoredRole.id) {
+        setPinnedAgentId(restoredRole.baseAgentId);
+        setSelectedRoleSelection({
+          roleId: restoredRole.id,
+          roleSource: restoredRole.source,
+          baseAgentId: restoredRole.baseAgentId,
+          governanceMode: restoredRole.governance.mode,
+          allowMainBrainRoleMutation: restoredRole.governance.allowMainBrainMutation,
+          allowMainBrainRolePromotion: restoredRole.governance.allowMainBrainPromotion,
+        });
+      }
+      setRoleInspectorRoleId(restoredRole.id);
+      setRoleInspectorRevision((value) => value + 1);
+    },
+    [inspectedDurableRole, selectedRoleId, setPinnedAgentId, setSelectedRoleSelection, userAssetApi],
+  );
   const handleSaveMainBrainPreferences = React.useCallback(() => {
     userAssetApi.setMainBrainPreferences(normalizeMainBrainPreferences(mainBrainDraft));
     setMainBrainDraft(userAssetApi.getMainBrainPreferences().join('\n'));
@@ -1144,15 +1439,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           )}
 
           {creationMode === 'agent' && (
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5 rounded-[24px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(248,250,252,0.95),rgba(255,255,255,0.98))] px-3 py-2.5 shadow-[0_10px_32px_-24px_rgba(15,23,42,0.42),inset_0_1px_0_rgba(255,255,255,0.78)]">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">
-                  统一主脑入口
-                </span>
-                <span>
-                  先判断任务，再决定回答、执行页面操作或调用工作流
-                </span>
-              </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-[24px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(248,250,252,0.95),rgba(255,255,255,0.98))] px-3 py-2.5 shadow-[0_10px_32px_-24px_rgba(15,23,42,0.42),inset_0_1px_0_rgba(255,255,255,0.78)]">
               <div className="flex flex-wrap items-center gap-2">
                 {modeSelectorControl}
 
@@ -1197,7 +1484,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   <span>联网</span>
                 </button>
 
-                <div className="relative min-w-0 max-w-full">
+                <div className="flex min-w-0 max-w-full items-center gap-2">
                   <button
                     ref={agentRolePickerTriggerRef}
                     type="button"
@@ -1230,7 +1517,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       setShowAgentRolePicker(false);
                       openMainBrainInspector();
                     }}
-                    className="ml-2 inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
                     title="编辑全局偏好"
                   >
                     <Lightbulb size={13} className="text-amber-500" />
@@ -1264,12 +1551,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         role="button"
                         tabIndex={0}
                         onClick={() => {
+                          clearSelectedRoleSelection();
                           setAgentSelectionMode('auto');
                           setShowAgentRolePicker(false);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
+                            clearSelectedRoleSelection();
                             setAgentSelectionMode('auto');
                             setShowAgentRolePicker(false);
                           }
@@ -1336,17 +1625,30 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                     ))}
                                 </div>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openRoleInspector(visibleAutoRoleMeta.agent.id);
-                                }}
-                                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                              >
-                                <PencilLine size={12} />
-                                {visibleAutoRoleMeta.isLive ? '查看本轮角色脑' : '查看临时脑'}
-                              </button>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openRoleInspector(visibleAutoRoleMeta.agent.id);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                                >
+                                  <PencilLine size={12} />
+                                  {visibleAutoRoleMeta.isLive ? '快速查看' : '查看临时脑'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openRoleManagementPanel(visibleAutoRoleMeta.agent.id);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
+                                >
+                                  <Sparkles size={12} />
+                                  角色管理
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1355,100 +1657,216 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         )}
                       </div>
 
-                      <div className="max-h-[min(52vh,360px)] space-y-2 overflow-y-auto pr-1">
-                        {availableAgentInfos.map((agent) => {
-                          const isActive =
-                            agentSelectionMode === 'manual' && pinnedAgentId === agent.id;
-                          const isCustomized = hasAgentPromptAddon(agent.id);
-                          return (
-                            <div
-                              key={agent.id}
-                              className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
-                                isActive
-                                  ? 'border-amber-200 bg-amber-50/80'
-                                  : 'border-slate-200 bg-white hover:bg-slate-50'
-                              }`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAgentSelectionMode('manual');
-                                    setPinnedAgentId(agent.id);
-                                    setShowAgentRolePicker(false);
-                                  }}
-                                  className="w-full text-left"
-                                >
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <span className="text-base leading-none">{agent.avatar}</span>
-                                    <span className="truncate text-[13px] font-semibold text-slate-800">
-                                      {agent.name}
-                                    </span>
-                                    {isCustomized && (
-                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                                        自定义规则
-                                      </span>
+                      <div className="space-y-3">
+                        {availableDurableRoles.length > 0 && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                            <div className="px-1">
+                              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                长期角色库
+                              </div>
+                              <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                                这里展示真实可持久化的角色实体，绑定后会一并带上治理模式、版本和审计语义。
+                              </div>
+                            </div>
+                            <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
+                              {availableDurableRoles.map((role) => {
+                                const isActive =
+                                  agentSelectionMode === 'manual' && selectedRoleId === role.id;
+                                const roleAgentInfo = getAgentInfo(role.baseAgentId);
+                                return (
+                                  <div
+                                    key={role.id}
+                                    className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                                      isActive
+                                        ? 'border-amber-200 bg-amber-50/80'
+                                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAgentSelectionMode('manual');
+                                          setPinnedAgentId(role.baseAgentId);
+                                          setSelectedRoleSelection({
+                                            roleId: role.id,
+                                            roleSource: role.source,
+                                            baseAgentId: role.baseAgentId,
+                                            governanceMode: role.governance.mode,
+                                            allowMainBrainRoleMutation:
+                                              role.governance.allowMainBrainMutation,
+                                            allowMainBrainRolePromotion:
+                                              role.governance.allowMainBrainPromotion,
+                                          });
+                                          setShowAgentRolePicker(false);
+                                        }}
+                                        className="w-full text-left"
+                                      >
+                                        <div className="flex min-w-0 items-center gap-2">
+                                          <span className="text-base leading-none">
+                                            {roleAgentInfo.avatar}
+                                          </span>
+                                          <span className="truncate text-[13px] font-semibold text-slate-800">
+                                            {role.title}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                            {role.status === 'active'
+                                              ? '已启用'
+                                              : role.status === 'archived'
+                                                ? '已归档'
+                                                : '草稿'}
+                                          </span>
+                                        </div>
+                                        <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                                          {role.summary || `绑定到 ${roleAgentInfo.name} 专家壳`}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                                            {roleAgentInfo.name}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                                            {role.source}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                                            {role.governance.mode}
+                                          </span>
+                                        </div>
+                                      </button>
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            openRoleInspector(role.baseAgentId, role.id);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                                        >
+                                          <PencilLine size={12} />
+                                          快速查看
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            openRoleManagementPanel(role.baseAgentId, role.id);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
+                                        >
+                                          <Sparkles size={12} />
+                                          角色管理
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {isActive && (
+                                      <Check size={14} className="mt-0.5 shrink-0 text-amber-500" />
                                     )}
                                   </div>
-                                  <div className="mt-1 text-[12px] leading-5 text-slate-500">
-                                    {agent.description}
-                                  </div>
-                                  <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {agent.capabilities.slice(0, 3).map((capability) => (
-                                      <span
-                                        key={`${agent.id}-${capability}`}
-                                        className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500"
-                                      >
-                                        {capability}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </button>
-                                <div className="mt-3 flex flex-wrap gap-2">
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="px-1">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                            内置专家壳
+                          </div>
+                          <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                            直接选择专家壳时，不会绑定 durable role，只会使用该专家的内置定义和用户补充层。
+                          </div>
+                        </div>
+
+                        <div className="max-h-[min(40vh,300px)] space-y-2 overflow-y-auto pr-1">
+                          {availableAgentInfos.map((agent) => {
+                            const isActive =
+                              agentSelectionMode === 'manual' && !selectedRoleId && pinnedAgentId === agent.id;
+                            const isCustomized = hasAgentPromptAddon(agent.id);
+                            return (
+                              <div
+                                key={agent.id}
+                                className={`flex w-full items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                                  isActive
+                                    ? 'border-amber-200 bg-amber-50/80'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
                                   <button
                                     type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openRoleInspector(agent.id);
+                                    onClick={() => {
+                                      clearSelectedRoleSelection();
+                                      setAgentSelectionMode('manual');
+                                      setPinnedAgentId(agent.id);
+                                      setShowAgentRolePicker(false);
                                     }}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                                    className="w-full text-left"
                                   >
-                                    <PencilLine size={12} />
-                                    查看 / 编辑提示词
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <span className="text-base leading-none">{agent.avatar}</span>
+                                      <span className="truncate text-[13px] font-semibold text-slate-800">
+                                        {agent.name}
+                                      </span>
+                                      {isCustomized && (
+                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+                                          自定义规则
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                                      {agent.description}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {agent.capabilities.slice(0, 3).map((capability) => (
+                                        <span
+                                          key={`${agent.id}-${capability}`}
+                                          className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500"
+                                        >
+                                          {capability}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </button>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openRoleInspector(agent.id);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                                    >
+                                      <PencilLine size={12} />
+                                      快速查看
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openRoleManagementPanel(agent.id);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
+                                    >
+                                      <Sparkles size={12} />
+                                      角色管理
+                                    </button>
+                                  </div>
                                 </div>
+                                {isActive && (
+                                  <Check size={14} className="mt-0.5 shrink-0 text-amber-500" />
+                                )}
                               </div>
-                              {isActive && (
-                                <Check size={14} className="mt-0.5 shrink-0 text-amber-500" />
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                       </div>,
                       document.body,
                     )}
                 </div>
 
-                {browserAgent && (
-                  <button
-                    type="button"
-                    onClick={() => browserAgent.setChatEnabled(!browserAgent.chatEnabled)}
-                    className={`inline-flex h-9 items-center rounded-full border px-3 text-[11px] font-bold transition ${
-                      browserAgent.chatEnabled
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                    }`}
-                    title={
-                      browserChatModeTitle
-                    }
-                  >
-                    {browserChatModeLabel}
-                  </button>
-                )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
@@ -1458,7 +1876,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   <Paperclip size={17} strokeWidth={1.8} />
                 </button>
 
-                <div className="ml-auto flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <div className="relative shrink-0">
                     <button
                       onClick={() => setShowModelPreference(!showModelPreference)}
@@ -1687,10 +2105,11 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       )
                     }
                     disabled={inputBlocks.every((block) => block.type === 'text' && !block.text)}
-                    className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-slate-900 pl-3 pr-4 text-[13px] font-bold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-800 disabled:opacity-50"
+                    title="发送"
+                    aria-label="发送"
                   >
-                    <ArrowUp size={14} strokeWidth={2.4} className="text-white" />
-                    <span>发送</span>
+                    <ArrowUp size={15} strokeWidth={2.4} className="text-white" />
                   </button>
                 </div>
               </div>
@@ -1698,143 +2117,119 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           )}
         </div>
       </div>
-      {roleInspectorAgentId && inspectedAgentInfo && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/40 p-4">
+      {roleInspectorAgentId && inspectedAgentInfo && !showRoleManagementPanel && (
+        <div className="fixed inset-0 z-[138] flex items-center justify-center bg-slate-950/32 p-4 backdrop-blur-[3px]">
           <button
             type="button"
-            aria-label="close role inspector"
+            aria-label="close role quick inspector"
             onClick={closeRoleInspector}
             className="absolute inset-0"
           />
-          <div className="relative z-[141] flex max-h-[min(88vh,920px)] w-[min(980px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-28px_rgba(15,23,42,0.45)]">
+          <div className="relative z-[139] flex max-h-[min(74vh,720px)] w-[min(760px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_72px_-24px_rgba(15,23,42,0.42)]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xl leading-none">{inspectedAgentInfo.avatar}</span>
                   <h3 className="text-[18px] font-bold text-slate-900">
-                    {inspectedAgentInfo.name} 角色提示词
+                    {inspectedDurableRole ? inspectedDurableRole.title : `${inspectedAgentInfo.name} 快速查看`}
                   </h3>
-                  {inspectedHasAddon && (
-                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600">
-                      已启用自定义补充
+                  {inspectedDurableRole ? (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                      durable role
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <p className="mt-2 text-[13px] leading-6 text-slate-500">
-                  这里可以查看角色内置提示词，运行时会在其后叠加你的长期补充规则，方便保持角色边界清晰稳定。
+                  输入区只保留轻交互；完整版本、发布、回滚和审计流请进入独立角色管理面板。
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={closeRoleInspector}
-                className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openRoleManagementPanel(roleInspectorAgentId, roleInspectorRoleId)
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-slate-800"
+                >
+                  <Sparkles size={13} />
+                  打开角色管理
+                </button>
+                <button
+                  type="button"
+                  onClick={closeRoleInspector}
+                  className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
-
-            <div className="grid gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-[1.05fr_0.95fr]">
-              <div className="flex min-h-0 flex-col gap-4">
-                {inspectedRoleProfile && (
-                  <section className="rounded-3xl border border-slate-200 bg-white">
-                    <div className="border-b border-slate-200 px-5 py-4">
-                      <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                        角色适配说明
-                      </div>
-                      <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                        用来判断这个角色该直接复用、临时增强，还是替换成新的任务型角色。
-                      </p>
-                    </div>
-                    <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
+            <div className="grid gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-[1fr_1fr]">
+              <section className="rounded-3xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-5 py-4">
+                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    当前绑定概览
+                  </div>
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    这里优先确认当前会话到底是绑定长期角色，还是只在使用专家壳。
+                  </p>
+                </div>
+                <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
+                  <div>
+                    <div className="font-semibold text-slate-900">专家壳</div>
+                    <div className="mt-1 text-slate-600">{inspectedAgentInfo.name}</div>
+                  </div>
+                  {inspectedDurableRole ? (
+                    <>
                       <div>
-                        <div className="font-semibold text-slate-900">用途</div>
-                        <div className="mt-1 text-slate-600">{inspectedRoleProfile.purpose}</div>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">适用场景</div>
-                        <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
-                          {inspectedRoleProfile.useWhen.map((item) => (
-                            <li key={`use-${item}`}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">不适用场景</div>
-                        <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
-                          {inspectedRoleProfile.avoidWhen.map((item) => (
-                            <li key={`avoid-${item}`}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">需要调整时机</div>
-                        <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
-                          {inspectedRoleProfile.adaptWhen.map((item) => (
-                            <li key={`adapt-${item}`}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">动态角色策略</div>
+                        <div className="font-semibold text-slate-900">长期角色摘要</div>
                         <div className="mt-1 text-slate-600">
-                          {inspectedRoleProfile.dynamicRolePolicy}
+                          {inspectedDurableRole.summary || '当前没有摘要。'}
                         </div>
                       </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                          来源 {inspectedDurableRole.source}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                          状态 {inspectedDurableRole.status}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                          治理 {inspectedDurableRole.governance.mode}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                          版本 v{inspectedDurableRole.version}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-slate-500">
+                      当前没有绑定 durable role，仍处于“内置专家壳 + 用户补充层”模式。
                     </div>
-                  </section>
-                )}
+                  )}
+                </div>
+              </section>
 
-                {inspectedLatestRoleDraft && (
-                  <section className="rounded-3xl border border-slate-200 bg-white">
-                    <div className="border-b border-slate-200 px-5 py-4">
-                      <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                        最近自动草案
-                      </div>
-                      <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                        这是自动角色最近一次为该专家角色生成的临时草案。
-                      </p>
-                    </div>
-                    <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
+              <section className="rounded-3xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-5 py-4">
+                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    轻交互动作
+                  </div>
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    保留最常用的会话内动作；复杂编辑、审计与回滚不再塞在输入区里。
+                  </p>
+                </div>
+                <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
+                  {inspectedLatestRoleDraft ? (
+                    <>
                       <div>
-                        <div className="font-semibold text-slate-900">策略</div>
+                        <div className="font-semibold text-slate-900">最近自动草案</div>
                         <div className="mt-1 text-slate-600">
-                          {inspectedLatestRoleDraft.roleStrategy || 'reuse'}
+                          {inspectedLatestRoleDraft.title || '未命名草案'}
+                          {inspectedLatestRoleDraft.summary
+                            ? ` · ${inspectedLatestRoleDraft.summary}`
+                            : ''}
                         </div>
                       </div>
-                      {inspectedLatestRoleDraft.roleStrategyReason && (
-                        <div>
-                          <div className="font-semibold text-slate-900">原因</div>
-                          <div className="mt-1 text-slate-600">
-                            {inspectedLatestRoleDraft.roleStrategyReason}
-                          </div>
-                        </div>
-                      )}
-                      {inspectedLatestRoleDraft.title && (
-                        <div>
-                          <div className="font-semibold text-slate-900">标题</div>
-                          <div className="mt-1 text-slate-600">
-                            {inspectedLatestRoleDraft.title}
-                          </div>
-                        </div>
-                      )}
-                      {inspectedLatestRoleDraft.summary && (
-                        <div>
-                          <div className="font-semibold text-slate-900">摘要</div>
-                          <div className="mt-1 text-slate-600">
-                            {inspectedLatestRoleDraft.summary}
-                          </div>
-                        </div>
-                      )}
-                      {inspectedLatestRoleDraft.instructions.length > 0 && (
-                        <div>
-                          <div className="font-semibold text-slate-900">指令</div>
-                          <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-600">
-                            {inspectedLatestRoleDraft.instructions.map((item) => (
-                              <li key={`draft-${item}`}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -1848,207 +2243,72 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                           onClick={handleSaveLatestRoleDraftAsFormalRole}
                           className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                         >
-                          保存为正式角色
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleClearLatestRoleDraft}
-                          className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                        >
-                          清空自动草案
+                          升级为正式角色
                         </button>
                       </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-slate-500">
+                      当前没有可快速处理的自动草案。
                     </div>
-                  </section>
-                )}
-
-                <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
-                  <div className="border-b border-slate-200 px-5 py-4">
-                    <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      内置提示词
-                    </div>
-                    <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      这是系统内置的角色定义，包含行为风格、工具约束和回复规则。
-                    </p>
+                  )}
+                  <div className="rounded-2xl bg-slate-50/70 px-4 py-3 text-[11px] leading-5 text-slate-500">
+                    若要查看完整提示词层、版本记录、治理权限、发布和回滚，请使用上方“打开角色管理”。
                   </div>
-                  <pre className="min-h-[280px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
-                    {inspectedBuiltInPrompt}
-                  </pre>
-                </section>
-
-                <section className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
-                  <div className="border-b border-slate-200 px-5 py-4">
-                    <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      主脑全局层
-                    </div>
-                    <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      这层是主脑共享的长期规则，会先于角色自己的用户补充层注入。
-                    </p>
-                  </div>
-                  <pre className="min-h-[180px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
-                    {inspectedMainBrainBlock || '当前没有额外的主脑长期偏好，只有系统基础规则在生效。'}
-                  </pre>
-                </section>
-              </div>
-
-              <div className="flex min-h-0 flex-col gap-4">
-                <section className="rounded-3xl border border-slate-200 bg-white">
-                  <div className="border-b border-slate-200 px-5 py-4">
-                    <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      自定义补充规则
-                    </div>
-                    <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      这里写角色自己的长期补充规则，比如清理旧链路、避免回退、沟通风格约束等。
-                    </p>
-                  </div>
-                  <div className="px-5 py-4">
-                    <textarea
-                      value={roleInspectorDraft}
-                      onChange={(event) => setRoleInspectorDraft(event.target.value)}
-                      placeholder="例如：改动前先确认是否回退到旧模块；能删旧链路就删，不能删就说明保留原因和替代关系。"
-                      className="min-h-[220px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                    />
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-[11px] leading-5 text-slate-400">
-                        这里保存的是角色长期层；具体任务执行时仍然可以额外叠加临时角色覆盖。
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={handleResetPromptAddon}
-                          disabled={!inspectedHasAddon && !roleInspectorDraft.trim()}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <RotateCcw size={12} />
-                          清空补充
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSavePromptAddon}
-                          disabled={!inspectedPromptDirty}
-                          className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          保存补充
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-slate-200 bg-slate-50/60">
-                  <div className="border-b border-slate-200 px-5 py-4">
-                    <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      最终提示词预览
-                    </div>
-                    <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                      预览顺序是内置基线、主脑长期层、角色长期补充层；临时任务覆盖只会在执行时追加。
-                    </p>
-                  </div>
-                  <pre className="min-h-[180px] flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
-                    {roleInspectorDraft.trim()
-                      ? [
-                          inspectedBuiltInPrompt,
-                          inspectedMainBrainBlock,
-                          buildUserCustomRoleAddonBlock(roleInspectorDraft.trim()),
-                        ]
-                          .filter(Boolean)
-                          .join('\n\n')
-                      : inspectedEffectivePrompt}
-                  </pre>
-                </section>
-              </div>
+                </div>
+              </section>
             </div>
           </div>
         </div>
       )}
+      {showRoleManagementPanel && roleInspectorAgentId && inspectedAgentInfo && (
+        <RoleManagementPanel
+          agentId={roleInspectorAgentId}
+          roleId={roleInspectorRoleId}
+          roleInspectorDraft={roleInspectorDraft}
+          inspectedHasAddon={inspectedHasAddon}
+          inspectedPromptDirty={inspectedPromptDirty}
+          inspectedBuiltInPrompt={inspectedBuiltInPrompt}
+          inspectedMainBrainBlock={inspectedMainBrainBlock}
+          inspectedEffectivePrompt={inspectedEffectivePrompt}
+          inspectedDurableRole={inspectedDurableRole}
+          inspectedRoleVersions={inspectedRoleVersions}
+          inspectedRoleProfile={inspectedRoleProfile}
+          inspectedLatestRoleDraft={inspectedLatestRoleDraft}
+          selectedRoleId={selectedRoleId}
+          inspectedRoleAuditEntries={inspectedRoleAuditEntries}
+          roleEntityDraft={roleEntityDraft || undefined}
+          roleEntityDirty={roleEntityDirty}
+          roleEntityCanSubmit={roleEntityCanSubmit}
+          onClose={closeRoleInspector}
+          onDraftChange={setRoleInspectorDraft}
+          onResetPromptAddon={handleResetPromptAddon}
+          onSavePromptAddon={handleSavePromptAddon}
+          onApplyLatestRoleDraft={handleApplyLatestRoleDraft}
+          onSaveLatestRoleDraftAsFormalRole={handleSaveLatestRoleDraftAsFormalRole}
+          onClearLatestRoleDraft={handleClearLatestRoleDraft}
+          onRoleEntityDraftChange={handleRoleEntityDraftChange}
+          onSaveRoleEntity={handleSaveRoleEntity}
+          onResetRoleEntityDraft={handleResetRoleEntityDraft}
+          onRollbackRoleVersion={handleRollbackRoleVersion}
+          onPublishRole={handlePublishRole}
+          onArchiveRole={handleArchiveRole}
+        />
+      )}
       {showMainBrainInspector && (
-        <div className="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/40 p-4">
-          <button
-            type="button"
-            aria-label="关闭全局偏好"
-            onClick={closeMainBrainInspector}
-            className="absolute inset-0"
-          />
-          <div className="relative z-[146] flex max-h-[min(82vh,840px)] w-[min(860px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-28px_rgba(15,23,42,0.45)]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Lightbulb size={18} className="text-amber-500" />
-                  <h3 className="text-[18px] font-bold text-slate-900">
-                    全局偏好
-                  </h3>
-                </div>
-                <p className="mt-2 text-[13px] leading-6 text-slate-500">
-                  这里配置的是全局长期偏好，所有角色都会继承，会影响规划、分工和执行方式。
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeMainBrainInspector}
-                className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="grid gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-[0.9fr_1.1fr]">
-              <section className="rounded-3xl border border-slate-200 bg-slate-50/70">
-                <div className="border-b border-slate-200 px-5 py-4">
-                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    内置基线
-                  </div>
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    这些是系统默认长期生效的基础规则。
-                  </p>
-                </div>
-                <pre className="min-h-[180px] overflow-auto whitespace-pre-wrap break-words px-5 py-4 text-[12px] leading-6 text-slate-700">
-                  {mainBrainDefaultText}
-                </pre>
-              </section>
-              <section className="rounded-3xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 px-5 py-4">
-                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    用户长期偏好
-                  </div>
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    一行一条，适合填写你希望所有角色长期继承的工作习惯或约束。
-                  </p>
-                </div>
-                <div className="px-5 py-4">
-                  <textarea
-                    value={mainBrainDraft}
-                    onChange={(event) => setMainBrainDraft(event.target.value)}
-                    placeholder="例如：改代码前先检查是否仍然走到了旧链路。"
-                    className="min-h-[260px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                  />
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-[11px] leading-5 text-slate-400">
-                      这里保存的是全局用户层配置，不是当前页面的临时设置。
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={handleResetMainBrainPreferences}
-                        disabled={mainBrainStoredLines.length === 0 && !mainBrainDraft.trim()}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <RotateCcw size={12} />
-                        清空偏好
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveMainBrainPreferences}
-                        disabled={!mainBrainDirty}
-                        className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        保存偏好
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
+        <MainBrainConfigCenter
+          onClose={closeMainBrainInspector}
+          userAssetApi={userAssetApi}
+          revision={roleInspectorRevision}
+          onSaved={() => setRoleInspectorRevision((value) => value + 1)}
+          legacyPreferenceDraft={mainBrainDraft}
+          legacyPreferenceDirty={mainBrainDirty}
+          legacyPreferenceDefaultText={mainBrainDefaultText}
+          legacyPreferenceStoredCount={mainBrainStoredLines.length}
+          onLegacyPreferenceDraftChange={setMainBrainDraft}
+          onSaveLegacyPreferences={handleSaveMainBrainPreferences}
+          onResetLegacyPreferences={handleResetMainBrainPreferences}
+        />
       )}
       <input
         ref={fileInputRef}

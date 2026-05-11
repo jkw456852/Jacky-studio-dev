@@ -76,6 +76,7 @@ const LABEL_STYLE_LIBRARY_SYSTEM = "\u7cfb\u7edf\u5185\u7f6e";
 const LABEL_STYLE_LIBRARY_USER = "\u7528\u6237\u8d44\u4ea7";
 const LABEL_STYLE_LIBRARY_RUNTIME = "\u4e34\u65f6\u98ce\u683c";
 const LABEL_STYLE_LIBRARY_USAGE = "\u9002\u7528\u573a\u666f";
+const LABEL_STYLE_LIBRARY_USE = "\u4f7f\u7528\u6b64\u98ce\u683c";
 const LABEL_STYLE_LIBRARY_EMPTY =
   "\u5f53\u524d\u8fd8\u6ca1\u6709\u6b63\u5f0f\u4fdd\u5b58\u7684\u7528\u6237\u98ce\u683c\u5e93\u3002";
 const IMAGE_QUALITY_OPTIONS = ["high", "medium", "low"] as const;
@@ -433,18 +434,22 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   }, [builtInLibraries, effectiveStyleLibrary, normalizedStyleLibraryMode]);
 
   const allGalleryItems = React.useMemo<TreePromptStyleGalleryItemV2[]>(() => {
-    const modeItems = styleLibraryOptions.map((option, index) => {
+    const modeItems: TreePromptStyleGalleryItemV2[] = styleLibraryOptions.map((option, index) => {
       const builtIn = builtInLibraries.find((item) => item.mode === option.value);
       const isActive = normalizedStyleLibraryMode === option.value;
       const isCustom = option.value === "custom";
       const previewTitle =
         option.value === "none"
           ? option.label
-          : builtIn?.library.title || effectiveStyleLibrary?.title || option.label;
+          : option.value === "custom"
+            ? option.label
+            : builtIn?.library.title || option.label;
       const previewSummary =
         option.value === "none"
           ? option.hint
-          : builtIn?.library.summary || effectiveStyleLibrary?.summary || option.hint;
+          : option.value === "custom"
+            ? option.hint
+            : builtIn?.library.summary || option.hint;
       return {
         key: `mode-${option.value}`,
         title: previewTitle,
@@ -456,34 +461,49 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
               ? LABEL_STYLE_LIBRARY_RUNTIME
               : LABEL_STYLE_LIBRARY_SYSTEM,
         subBadge:
-          option.value === "poster-product" && !canUsePosterProductMode
-            ? "Need 2 refs"
-            : isActive
+          option.value === "custom"
+            ? normalizedStyleLibraryMode === "custom"
               ? "当前使用"
-              : undefined,
-        library: option.value === "none" ? undefined : builtIn?.library || effectiveStyleLibrary,
+              : undefined
+            : option.value === "poster-product" && !canUsePosterProductMode
+              ? "Need 2 refs"
+              : isActive
+                ? "当前使用"
+                : undefined,
+        library:
+          option.value === "none"
+            ? undefined
+            : option.value === "custom"
+              ? normalizedStyleLibraryMode === "custom"
+                ? effectiveStyleLibrary
+                : undefined
+              : builtIn?.library,
         mode: option.value,
-        origin: isCustom ? "runtime" : "system",
+        origin: isCustom ? "runtime" as const : "system" as const,
         disabled: option.disabled,
         isActive,
         sortOrder: index,
       };
     });
 
-    const userItems = userStyleLibraries.map((library, index) => ({
+    const userItems: TreePromptStyleGalleryItemV2[] = userStyleLibraries.map((library, index) => ({
       key: `user-${library.id || index}`,
       title: library.title,
       summary: library.summary,
       badge: LABEL_STYLE_LIBRARY_USER,
       subBadge:
-        effectiveStyleLibrary?.id && effectiveStyleLibrary.id === library.id
+        activeTab !== "gallery" &&
+        selectedUserStyleLibrary?.id &&
+        selectedUserStyleLibrary.id === library.id
           ? "当前使用"
           : library.sourceMode || "custom",
       library,
       mode: "custom" as NonNullable<CanvasElement["genReferenceRoleMode"]>,
       origin: "user" as const,
       disabled: false,
-      isActive: Boolean(effectiveStyleLibrary?.id && effectiveStyleLibrary.id === library.id),
+      isActive:
+        activeTab !== "gallery" &&
+        Boolean(selectedUserStyleLibrary?.id && selectedUserStyleLibrary.id === library.id),
       sortOrder: 100 + index,
     }));
 
@@ -536,9 +556,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
       );
     }
 
-    return items.sort(
-      (a, b) => Number(b.isActive) - Number(a.isActive) || a.sortOrder - b.sortOrder,
-    );
+    return items.sort((a, b) => a.sortOrder - b.sortOrder);
   }, [
     activeFilter,
     activeTab,
@@ -549,12 +567,12 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   ]);
 
   const detailItem =
-    visibleGalleryItems.find(
-      (item) => item.library?.id && item.library.id === selectedUserStyleLibrary?.id,
-    ) ||
+    (activeTab === "mine" && selectedUserStyleLibrary?.id
+      ? visibleGalleryItems.find((item) => item.library?.id === selectedUserStyleLibrary.id)
+      : null) ||
     visibleGalleryItems.find((item) => item.isActive) ||
-    visibleGalleryItems[0] ||
     allGalleryItems.find((item) => item.mode === normalizedStyleLibraryMode) ||
+    visibleGalleryItems[0] ||
     null;
 
   const detailLibrary = detailItem?.library || currentModeLibrary;
@@ -699,7 +717,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                   onClick={onSeedCustomStyleLibrary}
                 >
                   <Plus size={16} />
-                  鏂板缓涓€涓鏍煎簱
+                  {LABEL_STYLE_LIBRARY_CREATE}
                 </button>
               ) : null}
 
@@ -827,7 +845,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                       className="rounded-[14px] bg-[#111827] px-4 py-2.5 text-[12px] font-semibold text-white"
                       onClick={() => setShowStyleLibraryDetails((value) => !value)}
                     >
-                      {showStyleLibraryDetails ? "鏀惰捣璇︽儏" : LABEL_STYLE_LIBRARY_DETAILS}
+                      {showStyleLibraryDetails ? "收起详情" : LABEL_STYLE_LIBRARY_DETAILS}
                     </button>
                     <button
                       type="button"
@@ -1204,15 +1222,12 @@ const TreePromptToolbar: React.FC<{
     setSelectedUserStyleLibraryId((current) => {
       if (matchedLibraryId) return matchedLibraryId;
       if (current && userStyleLibraries.some((item) => item.id === current)) return current;
-      return userStyleLibraries[0]?.id || null;
+      return null;
     });
   }, [effectiveStyleLibrary?.id, userStyleLibraries]);
 
   const applyStyleLibraryDraft = React.useCallback(() => {
-    const nextLibrary = buildStyleLibraryFromDraft(
-      styleLibraryDraft,
-      normalizedStyleLibraryMode === "custom" ? "user" : "user",
-    );
+    const nextLibrary = buildStyleLibraryFromDraft(styleLibraryDraft, "user");
     if (!nextLibrary) {
       return false;
     }
@@ -1235,8 +1250,14 @@ const TreePromptToolbar: React.FC<{
     const seededLibrary =
       normalizeWorkspaceStyleLibrary(currentStyleLibrary) ||
       createStyleLibraryDraftFromMode(normalizedStyleLibraryMode, "user");
+    const seedSourceMode =
+      normalizedStyleLibraryMode === "poster-product"
+        ? "poster-product"
+        : normalizedStyleLibraryMode === "custom"
+          ? "custom"
+          : "default";
     const persistedLibrary =
-      persistUserStyleLibraryAsset(seededLibrary, normalizedStyleLibraryMode) ||
+      persistUserStyleLibraryAsset(seededLibrary, seedSourceMode) ||
       seededLibrary;
     onStyleLibrarySave(persistedLibrary);
     onStyleLibraryChange("custom");
@@ -1261,8 +1282,14 @@ const TreePromptToolbar: React.FC<{
     if (!assetCandidate) {
       return;
     }
+    const assetSourceMode =
+      normalizedStyleLibraryMode === "poster-product"
+        ? "poster-product"
+        : normalizedStyleLibraryMode === "custom"
+          ? "custom"
+          : "default";
     const persistedLibrary =
-      persistUserStyleLibraryAsset(assetCandidate, normalizedStyleLibraryMode) ||
+      persistUserStyleLibraryAsset(assetCandidate, assetSourceMode) ||
       assetCandidate;
     onStyleLibrarySave(persistedLibrary);
     onStyleLibraryChange("custom");
@@ -2041,7 +2068,9 @@ const TreePromptGenerateControls: React.FC<{
               currentResolution={currentResolution}
               onClose={() => setShowSettingsPicker(false)}
               onSelectAspectRatio={(value) => updateSelectedElement({ genAspectRatio: value })}
-              onSelectImageCount={(value) => updateSelectedElement({ genImageCount: value })}
+              onSelectImageCount={(value) =>
+                updateSelectedElement({ genImageCount: value as CanvasElement["genImageCount"] })
+              }
               onSelectQuality={(value) => updateSelectedElement({ genImageQuality: value })}
               onSelectResolution={(value) => updateSelectedElement({ genResolution: value })}
             />

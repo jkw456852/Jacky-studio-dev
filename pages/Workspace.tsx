@@ -1441,6 +1441,7 @@ const Workspace: React.FC = () => {
   const suspendAutoSaveUntilRef = useRef(0);
 
   const [showAssistant, setShowAssistant] = useState(true);
+  const [isAssistantFullscreen, setIsAssistantFullscreen] = useState(false);
   const [isEcommerceWorkflowOpen, setIsEcommerceWorkflowOpen] = useState(false);
   const showAssistantRef = useRef(true);
   const [featureNotice, setFeatureNotice] = useState<string | null>(null);
@@ -1455,6 +1456,12 @@ const Workspace: React.FC = () => {
   useEffect(() => {
     showAssistantRef.current = showAssistant;
   }, [showAssistant]);
+
+  useEffect(() => {
+    if (!showAssistant && isAssistantFullscreen) {
+      setIsAssistantFullscreen(false);
+    }
+  }, [isAssistantFullscreen, showAssistant]);
 
   useEffect(() => {
     return () => {
@@ -1487,6 +1494,16 @@ const Workspace: React.FC = () => {
   const webEnabled = useAgentStore((s) => s.webEnabled);
   const agentSelectionMode = useAgentStore((s) => s.agentSelectionMode);
   const pinnedAgentId = useAgentStore((s) => s.pinnedAgentId);
+  const selectedRoleId = useAgentStore((s) => s.selectedRoleId);
+  const selectedRoleSource = useAgentStore((s) => s.selectedRoleSource);
+  const baseAgentId = useAgentStore((s) => s.baseAgentId);
+  const roleGovernanceMode = useAgentStore((s) => s.roleGovernanceMode);
+  const allowMainBrainRoleMutation = useAgentStore(
+    (s) => s.allowMainBrainRoleMutation,
+  );
+  const allowMainBrainRolePromotion = useAgentStore(
+    (s) => s.allowMainBrainRolePromotion,
+  );
   const imageModelEnabled = useAgentStore((s) => s.imageModelEnabled);
   const translatePromptToEnglish = useAgentStore(
     (s) => s.translatePromptToEnglish,
@@ -1727,8 +1744,14 @@ const Workspace: React.FC = () => {
   const openEcommerceWorkflow = useCallback(() => {
     ensureEcommerceSession();
     setShowAssistant(true);
+    setIsAssistantFullscreen(false);
     setIsEcommerceWorkflowOpen(true);
   }, [ensureEcommerceSession]);
+
+  const toggleAssistantFullscreen = useCallback(() => {
+    setIsAssistantFullscreen((prev) => !prev);
+    setShowAssistant(true);
+  }, []);
 
   const closeEcommerceWorkflow = useCallback(() => {
     setIsEcommerceWorkflowOpen(false);
@@ -4245,12 +4268,20 @@ const Workspace: React.FC = () => {
     webEnabled,
     agentSelectionMode,
     pinnedAgentId,
+    selectedRoleId,
+    selectedRoleSource,
+    baseAgentId,
+    roleGovernanceMode,
+    allowMainBrainRoleMutation,
+    allowMainBrainRolePromotion,
     creationMode,
     researchMode,
     imageGenRatio,
     imageGenRes,
     imageGenCount,
     videoGenRatio,
+    preferredImageModel: modelPreferences.preferredImageModel,
+    preferredImageProviderId: modelPreferences.preferredImageProviderId,
     translatePromptToEnglish,
     enforceChineseTextInImage,
     requiredChineseCopy,
@@ -5219,6 +5250,9 @@ const Workspace: React.FC = () => {
       setActiveConversationId,
       showAssistant,
       setShowAssistant,
+      isAssistantFullscreen,
+      setIsAssistantFullscreen,
+      onToggleAssistantFullscreen: toggleAssistantFullscreen,
       onOpenEcommerceWorkflow: openEcommerceWorkflow,
       handleSend,
       handleSmartGenerate,
@@ -5544,7 +5578,9 @@ const Workspace: React.FC = () => {
       <div className="flex flex-1 relative overflow-hidden">
         <WorkspacePageOverlays {...workspacePageOverlaysProps} />
         <WorkspaceSidebarLayer {...workspaceSidebarLayerProps} />
-        <WorkspaceCanvasStage {...workspaceCanvasStageProps} />
+        {!(showAssistant && isAssistantFullscreen) ? (
+          <WorkspaceCanvasStage {...workspaceCanvasStageProps} />
+        ) : null}
         <EcommerceWorkflowDrawer
           open={isEcommerceWorkflowOpen}
           showAssistant={showAssistant}

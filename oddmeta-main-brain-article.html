@@ -1,0 +1,925 @@
+﻿<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />            
+    <meta http-equiv="Cache-Control" content="no-transform" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="referrer" content="origin-when-cross-origin" />
+    <title>OpenClaw养成：七大配置从SOUL、USER、AGENTS到MEMORY - 程序员老奥 - 博客园</title>
+    <meta name="keywords" content="OpenClaw,智能体,知识库,数字分身,Skills/MCP/Agent" />
+    <meta name="description" content="七个配置文件：SOUL、USER、AGENTS、HEARTBEAT、IDENTITY、BOOTSTRAP、TOOLS，三种使用场景：个人助手、个人知识库、数字分身（跟我的小落同学一样，复刻一个数字版本的你自己），加上 MEMORY 让你的 OpenClaw 从「傻白甜」变成「专属智能体」" />    
+    <meta property="og:description" content="七个配置文件：SOUL、USER、AGENTS、HEARTBEAT、IDENTITY、BOOTSTRAP、TOOLS，三种使用场景：个人助手、个人知识库、数字分身（跟我的小落同学一样，复刻一个数字版本的你自己），加上 MEMORY 让你的 OpenClaw 从「傻白甜」变成「专属智能体」" />
+    <meta property="og:image" content="https://img2024.cnblogs.com/blog/3718265/202603/3718265-20260323233111785-1416803912.png" />    
+    
+    <link rel="stylesheet" href="/css/blog-common.min.css?v=9xvyan1yGH1Ggi8nKJ01Xc2nqMWMqJCy_-EYS2m06xA" />
+    
+
+    <link id="MainCss" rel="stylesheet" href="/skins/lessismoreright/bundle-lessismoreright.min.css?v=njlzzd6-e4rzNsMOZIOLCRj8FOrAKo94SbD97L-On_o" />
+        <link id="highlighter-theme-cnblogs" type="text/css" rel="stylesheet" href="/css/hljs/cnblogs.css?v=5J1NDtbnnIr2Rc2SdhEMlMxD4l9Eydj88B31E7_NhS4" />
+    
+    
+    <link id="mobile-style" media="only screen and (max-width: 767px)" type="text/css" rel="stylesheet" href="/skins/lessismoreright/bundle-lessismoreright-mobile.min.css?v=RLayb_2cwXrs0_jhclS5wrPefjb1Y2g2R8tDHfKL4yA" />
+    
+    <link id="favicon" rel="icon" type="image/x-icon" sizes="32x32" href="https://assets.cnblogs.com/favicon_v3_3.ico" />
+    <link id="favicon_svg" rel="icon" type="image/svg+xml" href="https://assets.cnblogs.com/favicon_v3_3.svg" />
+    <link rel="apple-touch-icon" href="https://assets.cnblogs.com/apple-touch-icon.png?v=2" />
+    <link rel="canonical" href="https://www.cnblogs.com/oddmeta/p/19760686" />
+    <link type="application/rss+xml" rel="alternate" href="https://www.cnblogs.com/oddmeta/rss" />
+    <link type="application/rsd+xml" rel="EditURI" href="https://www.cnblogs.com/oddmeta/rsd.xml" />
+    <link type="application/wlwmanifest+xml" rel="wlwmanifest" href="https://www.cnblogs.com/oddmeta/wlwmanifest.xml" />
+    
+    <script type="application/ld&#x2B;json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "@id": "https://www.cnblogs.com/oddmeta/p/19760686",
+      "headline": "OpenClaw养成：七大配置从SOUL、USER、AGENTS到MEMORY",
+      "description": "七个配置文件：SOUL、USER、AGENTS、HEARTBEAT、IDENTITY、BOOTSTRAP、TOOLS，三种使用场景：个人助手、个人知识库、数字分身（跟我的小落同学一样，复刻一个数字版本的你自己），加上 MEMORY 让你的 OpenClaw 从「傻白甜」变成「专属智能体」 很多人装了",
+      "image": [
+        "https://img2024.cnblogs.com/blog/3718265/202603/3718265-20260323233111785-1416803912.png"
+      ],
+      "author": {
+        "@type": "Person",
+        "@id": "https://www.cnblogs.com/oddmeta/",
+        "name": "程序员老奥",
+        "url": "https://www.cnblogs.com/oddmeta/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "@id": "https://www.cnblogs.com/",
+        "name": "博客园",
+        "url": "https://www.cnblogs.com/"
+      },
+      "datePublished": "2026-03-23T23:29:00.0000000&#x2B;08:00",
+      "dateModified": "2026-03-24T09:15:00.0000000&#x2B;08:00",
+      "wordCount": "7978",
+      "isPartOf": {
+        "@type": "Blog",
+        "@id": "https://www.cnblogs.com/oddmeta/",
+        "name": "oddmeta",
+        "publisher": {
+          "@type": "Organization",
+          "@id": "https://www.cnblogs.com/",
+          "name": "博客园"
+        }
+      }
+    }
+    </script>
+
+    <script>
+        var currentBlogId = 856442;
+        var currentBlogApp = 'oddmeta';
+        var isLogined = false;
+        var isBlogOwner = false;
+        window.isCorp = false;
+        window.skinName = 'LessIsMoreRight';
+        var visitorUserId = '';
+        window.hasCustomScript = false;
+        window.cb_enable_mathjax = false;
+        window.mathEngine = 1;
+        window.codeHighlightEngine = 1;
+        window.enableCodeLineNumber = false;
+        window.codeHighlightTheme = 'cnblogs';
+        window.darkModeCodeHighlightTheme = 'vs2015';
+        window.isDarkCodeHighlightTheme = false;
+        window.isDarkModeCodeHighlightThemeDark = true;
+        window.isDisableCodeHighlighter = false;
+        window.enableCodeThemeTypeFollowSystem = false;
+        window.enableMacStyleCodeBlock = false;        
+    </script>
+        <script>
+            window.currentPostId = 19760686;
+            window.currentPostDateAdded = '2026-03-23 23:29';
+        </script>
+    <script src="https://assets.cnblogs.com/scripts/jquery-3.3.1.min.js"></script>
+    <script src="https://cdn-www.cnblogs.com/js/blog-common.min.js?v=xxHJ9Vr65Va3mfhds4HybZZMdMeYELwMT6dOtue40Ww"></script>
+    
+</head>
+<body class="skin-lessismoreright has-navbar">
+    <a name="top"></a>
+    <div id="top_nav" class="navbar forpc">
+        <nav id="nav_main" class="navbar-main">
+            <ul id="nav_left" class="navbar-list navbar-left">
+                <li class="navbar-branding">
+                    <a href="https://www.cnblogs.com/" title="开发者的网上家园" role="banner">
+                        <img src="//assets.cnblogs.com/logo.svg" alt="博客园logo" />
+                    </a>
+                </li>
+                <li><a href="https://cnblogs.vip/">会员</a></li>
+                <li><a href="https://cnblogs.vip/store">周边</a></li>
+                <li><a href="https://news.cnblogs.com/" onclick="countClicks('nav', 'skin-navbar-news')">新闻</a></li>
+                <li><a href="https://q.cnblogs.com/" onclick="countClicks('nav', 'skin-navbar-q')">博问</a></li>
+                <li><a href="https://ing.cnblogs.com/" onclick="countClicks('nav', 'skin-navbar-ing')">闪存</a></li>                
+                <li><a href="https://www.cnblogs.com/cmt/p/19316348">赞助商</a></li>
+                <li><a href="https://youclaw.dev/" target="_blank" onclick="countClicks('nav', 'skin-navbar-youclaw')">YouClaw</a></li>
+            </ul>
+            <ul id="nav_right" class="navbar-list navbar-right">
+                <li>
+                    <form id="zzk_search" class="navbar-search dropdown" action="https://zzk.cnblogs.com/s" method="get" role="search">
+                        <input name="w" id="zzk_search_input" placeholder="代码改变世界" type="search" tabindex="3" autocomplete="off" />
+                        <button id="zzk_search_button" onclick="window.navbarSearchManager.triggerActiveOption()">
+                            <img id="search_icon" class="focus-hidden" src="//assets.cnblogs.com/icons/search.svg" alt="搜索" />
+                            <img class="hidden focus-visible" src="//assets.cnblogs.com/icons/enter.svg" alt="搜索" />
+                        </button>
+                        <ul id="navbar_search_options" class="dropdown-menu quick-search-menu">
+                            <li tabindex="0" class="active" onclick="zzkSearch(event, document.getElementById('zzk_search_input').value)">
+                                <div class="keyword-wrapper">
+                                    <img src="//assets.cnblogs.com/icons/search.svg" alt="搜索" />
+                                    <div class="keyword"></div>
+                                </div>
+                                <span class="search-area">所有博客</span>
+                            </li>
+                                    <li tabindex="1" onclick="zzkBlogSearch(event, 'oddmeta', document.getElementById('zzk_search_input').value)">
+                                        <div class="keyword-wrapper">
+                                            <img src="//assets.cnblogs.com/icons/search.svg" alt="搜索" />
+                                            <div class="keyword"></div>
+                                        </div>
+                                        <span class="search-area">当前博客</span>
+                                    </li>
+                        </ul>
+                    </form>
+                </li>
+                <li id="navbar_login_status" class="navbar-list">
+                    <a class="navbar-user-info navbar-blog" href="https://i.cnblogs.com/EditPosts.aspx?opt=1" alt="写随笔" title="写随笔">
+                        <img id="new_post_icon" class="navbar-icon" src="//assets.cnblogs.com/icons/newpost.svg" alt="写随笔" />
+                    </a>
+                    <a id="navblog-myblog-icon" class="navbar-user-info navbar-blog" href="https://www.cnblogs.com/my" alt="我的博客" title="我的博客">
+                        <img id="myblog_icon" class="navbar-icon" src="//assets.cnblogs.com/icons/myblog.svg" alt="我的博客" />
+                    </a>
+                    <a class="navbar-user-info navbar-message navbar-icon-wrapper" href="https://msg.cnblogs.com/" alt="短消息" title="短消息">
+                        <img id="msg_icon" class="navbar-icon" src="//assets.cnblogs.com/icons/message.svg" alt="短消息" />
+                        <span id="msg_count" style="display: none"></span>
+                    </a>
+                    <a id="navbar_lite_mode_indicator" data-current-page="blog" style="display: none" href="javascript:void(0)" alt="简洁模式" title="简洁模式启用，您在访问他人博客时会使用简洁款皮肤展示">
+                        <img class="navbar-icon" src="//assets.cnblogs.com/icons/lite-mode-on.svg" alt="简洁模式" />
+                    </a>
+                    <div id="user_info" class="navbar-user-info dropdown">
+                        <a class="dropdown-button" href="https://home.cnblogs.com/">
+                            <img id="user_icon" class="navbar-avatar" src="//assets.cnblogs.com/icons/avatar-default.svg" alt="用户头像" />
+                        </a>
+                        <div class="dropdown-menu">
+                            <a id="navblog-myblog-text" href="https://www.cnblogs.com/my">我的博客</a>
+                            <a href="https://home.cnblogs.com/">我的园子</a>
+                            <a href="https://account.cnblogs.com/settings/account">账号设置</a>
+                            <a href="https://vip.cnblogs.com/my">会员中心</a>
+                            <a href="javascript:void(0)" id="navbar_lite_mode_toggle" title="简洁模式会使用简洁款皮肤显示所有博客">
+    简洁模式 <span id="navbar_lite_mode_spinner" class="hide">...</span>
+</a>
+
+                            <a href="javascript:void(0)" onclick="account.logout();">退出登录</a>
+                        </div>
+                    </div>
+                    <a class="navbar-anonymous" href="https://account.cnblogs.com/signup">注册</a>
+                    <a class="navbar-anonymous" href="javascript:void(0);" onclick="account.login()">登录</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+    
+
+    <div id="home">
+    <div id="header">
+        <div id="blogTitle">
+            <div class="title"><a id="Header1_HeaderTitle" class="headermaintitle HeaderMainTitle" href="https://www.cnblogs.com/oddmeta">oddmeta</a>
+</div>
+<div class="subtitle"></div>
+
+        </div>
+        <div id="navigator">
+            
+<ul id="navList">
+    <li id="nav_sitehome"><a id="blog_nav_sitehome" class="menu" href="https://www.cnblogs.com/">
+博客园</a>
+</li>
+    <li id="nav_myhome">
+<a id="blog_nav_myhome" class="menu" href="https://www.cnblogs.com/oddmeta/">
+首页</a>
+</li>
+    <li id="nav_newpost">
+
+<a id="blog_nav_newpost" class="menu" href="https://i.cnblogs.com/EditPosts.aspx?opt=1">
+新随笔</a>
+</li>
+    <li id="nav_contact">
+<a id="blog_nav_contact" class="menu" href="https://msg.cnblogs.com/send/%E7%A8%8B%E5%BA%8F%E5%91%98%E8%80%81%E5%A5%A5">
+联系</a></li>
+    <li id="nav_rss">
+<a id="blog_nav_rss" class="menu" href="javascript:void(0)" data-rss="https://www.cnblogs.com/oddmeta/rss/">
+订阅</a></li>
+    <li id="nav_admin">
+<a id="blog_nav_admin" class="menu" href="https://i.cnblogs.com/">
+管理</a>
+</li>
+</ul>
+
+            <div class="blogStats">
+                <div id="blog_stats_place_holder"><script>loadBlogStats();</script></div>
+            </div>
+        </div>
+    </div>
+    <div id="main">
+        <div id="mainContent">
+            <div class="forFlow">
+                <div id="post_detail">
+    <div id="topics">
+        <div class="post">
+            <h1 class="postTitle">
+                <a id="cb_post_title_url" class="postTitle2 vertical-middle" href="https://www.cnblogs.com/oddmeta/p/19760686" title="发布于 2026-03-23 23:29">
+    <span role="heading" aria-level="2">OpenClaw养成：七大配置从SOUL、USER、AGENTS到MEMORY</span>
+    
+
+</a>
+
+            </h1>
+            <div class="clear"></div>
+            <div class="postBody">
+                    <div id="cnblogs_post_description" style="display: none">
+        <img src="https://img2024.cnblogs.com/blog/3718265/202603/3718265-20260323233111785-1416803912.png" alt="OpenClaw养成：七大配置从SOUL、USER、AGENTS到MEMORY" class="desc_img" />
+        七个配置文件：SOUL、USER、AGENTS、HEARTBEAT、IDENTITY、BOOTSTRAP、TOOLS，三种使用场景：个人助手、个人知识库、数字分身（跟我的小落同学一样，复刻一个数字版本的你自己），加上 MEMORY 让你的 OpenClaw 从「傻白甜」变成「专属智能体」
+    </div>
+<div id="cnblogs_post_body" class="blogpost-body cnblogs-markdown">
+<h2 id="七个配置文件souluseragentsheartbeatidentitybootstraptools三种使用场景个人助手个人知识库数字分身跟我的小落同学一样复刻一个数字版本的你自己加上-memory-让你的-openclaw-从傻白甜变成专属智能体">七个配置文件：SOUL、USER、AGENTS、HEARTBEAT、IDENTITY、BOOTSTRAP、TOOLS，三种使用场景：个人助手、个人知识库、数字分身（跟我的小落同学一样，复刻一个数字版本的你自己），加上 MEMORY 让你的 OpenClaw 从「傻白甜」变成「专属智能体」</h2>
+<p>很多人装了 OpenClaw，也接了飞书/Telegram，却总觉得它还是个"有记忆的 ChatGPT"——每次对话像在和陌生人聊天。</p>
+<p>其实决定 AI 智商的，不是插件有多少，而是藏在 <code>~/.openclaw/workspace/</code> 目录下的 7 个 Markdown 文件。</p>
+<p>这篇文章带你从零搞懂这套配置体系，并用<strong>个人助手、个人知识库、数字分身</strong>三个场景，手把手教你配置。</p>
+<hr>
+<h2 id="一前言">一、前言</h2>
+<p>OpenClaw 是 2026 年最火的开源 AI Agent 框架之一，GitHub 星标突破 25 万。它的核心理念是：<strong>AI 不应该是云端的黑盒，而应该跑在你自己的机器上，接入你日常使用的工具。</strong></p>
+<p>但问题来了——装好 OpenClaw 之后，很多人发现它和其他聊天机器人没什么区别。问什么答什么，没有主动性，不了解你的偏好，甚至每次对话都像失忆了一样。</p>
+<p>原因很简单：<strong>你没有给它注入"灵魂"。</strong></p>
+<p>OpenClaw 的灵魂，藏在工作区目录下的 7 个 Markdown 文件里。搞懂它们，你的 AI 就能从"通用工具"进化成"专属搭档"。</p>
+<hr>
+<h2 id="二方案介绍7-个文件各管什么">二、方案介绍：7 个文件各管什么</h2>
+<p>OpenClaw 的工作区默认位于 <code>~/.openclaw/workspace/</code>，所有配置都是纯 Markdown 文件，不需要懂代码就能编辑。</p>
+<h3 id="核心文件一览">核心文件一览</h3>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>回答的问题</th>
+<th>类比</th>
+<th>加载时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SOUL.md</code></td>
+<td>它是谁？</td>
+<td>人的价值观与性格</td>
+<td>每次会话</td>
+</tr>
+<tr>
+<td><code>USER.md</code></td>
+<td>为谁服务？</td>
+<td>用户的使用说明书</td>
+<td>每次会话</td>
+</tr>
+<tr>
+<td><code>AGENTS.md</code></td>
+<td>怎么干活？</td>
+<td>员工的岗位 SOP</td>
+<td>每次会话</td>
+</tr>
+<tr>
+<td><code>IDENTITY.md</code></td>
+<td>叫什么？</td>
+<td>名片/简历</td>
+<td>每次会话</td>
+</tr>
+<tr>
+<td><code>TOOLS.md</code></td>
+<td>用什么工具？</td>
+<td>工具操作手册</td>
+<td>按需加载</td>
+</tr>
+<tr>
+<td><code>HEARTBEAT.md</code></td>
+<td>定期检查什么？</td>
+<td>巡检清单</td>
+<td>心跳轮询时</td>
+</tr>
+<tr>
+<td><code>BOOTSTRAP.md</code></td>
+<td>如何初始化？</td>
+<td>入职引导手册</td>
+<td>仅首次运行</td>
+</tr>
+</tbody>
+</table>
+<h3 id="一句话总结">一句话总结</h3>
+<blockquote>
+<p><strong>SOUL.md 定风格，USER.md 定对象，AGENTS.md 定流程。</strong> 少一个，都容易翻车。</p>
+</blockquote>
+<h3 id="文件目录结构">文件目录结构</h3>
+<pre><code>~/.openclaw/workspace/
+├── AGENTS.md        # 操作手册（怎么干活）
+├── SOUL.md          # 灵魂（什么性格）
+├── USER.md          # 用户画像（服务谁）
+├── IDENTITY.md      # 身份名片（叫什么名）
+├── TOOLS.md         # 工具备忘录（怎么用工具）
+├── HEARTBEAT.md     # 心跳待办（定期检查什么）
+├── BOOTSTRAP.md     # 出生仪式（用完即删）
+├── MEMORY.md        # 长期记忆（重要的事）
+└── memory/          # 每日记忆目录
+    ├── 2026-03-22.md
+    └── 2026-03-23.md
+</code></pre>
+<hr>
+<h2 id="三安装与配置">三、安装与配置</h2>
+<h3 id="第-1-步安装-openclaw">第 1 步：安装 OpenClaw</h3>
+<pre><code class="language-bash"># 一键安装
+curl -fsSL https://openclaw.ai/install.sh | bash
+
+# 或者用 npm
+npm install -g openclaw
+</code></pre>
+<h3 id="第-2-步运行初始化向导">第 2 步：运行初始化向导</h3>
+<pre><code class="language-bash">openclaw onboard --install-daemon
+</code></pre>
+<p>向导会引导你完成：</p>
+<ul>
+<li>选择 AI 模型（推荐 Anthropic Claude 或 DeepSeek）</li>
+<li>输入 API Key</li>
+<li>设置 Gateway 端口（默认 18789）</li>
+<li>生成初始工作区文件</li>
+</ul>
+<h3 id="第-3-步编辑核心配置文件">第 3 步：编辑核心配置文件</h3>
+<p>工作区文件在 <code>~/.openclaw/workspace/</code> 目录下。你可以用任何文本编辑器修改：</p>
+<pre><code class="language-bash"># 用 VS Code 打开
+code ~/.openclaw/workspace/
+
+# 或用 vim
+vim ~/.openclaw/workspace/SOUL.md
+</code></pre>
+<h3 id="第-4-步重启生效">第 4 步：重启生效</h3>
+<pre><code class="language-bash">openclaw daemon restart
+</code></pre>
+<h3 id="第-5-步打开控制台验证">第 5 步：打开控制台验证</h3>
+<pre><code class="language-bash">openclaw dashboard
+</code></pre>
+<p>浏览器会打开 <code>http://127.0.0.1:18789</code>，你可以直接和配置好的 AI 对话。</p>
+<hr>
+<h2 id="四使用场景与案例">四、使用场景与案例</h2>
+<p>下面用三个真实场景，演示如何配置这 7 个文件。</p>
+<h3 id="场景一个人助手">场景一：个人助手</h3>
+<p><strong>目标</strong>：让 OpenClaw 成为高效日常助理，处理邮件、日程、文件管理。</p>
+<h4 id="soulmd--定义助手性格">SOUL.md — 定义助手性格</h4>
+<pre><code class="language-markdown"># SOUL.md
+
+## 性格
+你是一个高效、可靠、简洁的个人助理。
+你注重时间管理，做事有条理，不会废话连篇。
+
+## 语气
+- 专业但亲切，像一个靠谱的同事
+- 回复简洁，重点先行
+- 汇报类内容用要点列表
+
+## 边界
+- 发送外部消息前必须确认
+- 删除文件前必须备份并确认
+- 不主动猜测，拿不准就问
+
+## 核心原则
+1. 效率第一：直接说结论，再解释原因
+2. 主动提醒：日程冲突、重要邮件提前告知
+3. 保护隐私：不向外部泄露任何个人信息
+</code></pre>
+<h4 id="usermd--告诉助手你是谁">USER.md — 告诉助手你是谁</h4>
+<pre><code class="language-markdown"># USER.md
+
+## 基本信息
+- 名字：[你的名字]
+- 职业：[你的职业]
+- 时区：Asia/Shanghai
+
+## 工作
+- 工作时间：9:00-18:00
+- 常用工具：VS Code、Chrome、Notion、Gmail
+- 当前项目：[列出 1-3 个]
+
+## 偏好
+- 沟通风格：简洁直接，不要废话
+- 汇报格式：要点列表，不超过 5 条
+
+## 禁区
+- 不要推荐付费服务（除非我问）
+- 不要解释基础概念
+</code></pre>
+<h4 id="agentsmd--规定工作流程">AGENTS.md — 规定工作流程</h4>
+<pre><code class="language-markdown"># AGENTS.md
+
+## 启动协议
+每次会话开始前：
+1. 读取 SOUL.md、USER.md
+2. 读取 memory/ 下今天和昨天的文件
+3. 检查是否有待处理事项
+
+## 任务执行流程
+1. 收到任务后复述需求，确认理解无误
+2. 超过 3 步的任务先输出计划
+3. 涉及外部操作（发邮件、发消息）必须确认
+
+## 日常工作规范
+- 邮件：先摘要，标注优先级
+- 日程：提前 30 分钟提醒
+- 文件：操作前备份，完成后汇报
+</code></pre>
+<h4 id="heartbeatmd--设置定期检查">HEARTBEAT.md — 设置定期检查</h4>
+<pre><code class="language-markdown"># HEARTBEAT.md
+
+## 每次心跳检查
+- 检查收件箱是否有紧急邮件
+- 检查未来 2 小时是否有日程冲突
+
+## 每天检查
+- 整理今天的待办事项完成情况
+
+## 不需要主动做
+- 不要主动查天气（等我问）
+</code></pre>
+<hr>
+<h3 id="场景二个人知识库">场景二：个人知识库</h3>
+<p><strong>目标</strong>：让 OpenClaw 成为你的第二大脑，管理和检索知识体系。</p>
+<h4 id="soulmd--知识管理型人格">SOUL.md — 知识管理型人格</h4>
+<pre><code class="language-markdown"># SOUL.md
+
+## 性格
+你是一个博学、严谨、善于归纳的知识管理助手。
+你擅长把零散的信息整理成结构化的知识。
+
+## 语气
+- 学术但不枯燥
+- 引用时标注来源
+- 回答完问题后主动建议相关知识
+
+## 核心原则
+1. 准确优先：宁可说"不知道"，不要瞎编
+2. 结构化输出：善用标题、列表、表格
+3. 主动关联：发现相关知识点主动提示
+4. 持续积累：每次学到新东西写入 MEMORY.md
+</code></pre>
+<h4 id="usermd--知识工作者画像">USER.md — 知识工作者画像</h4>
+<pre><code class="language-markdown"># USER.md
+
+## 研究领域
+- 主要方向：[你的专业领域]
+- 兴趣领域：[你关注的其他方向]
+
+## 知识库结构
+- 技术笔记：memory/tech/
+- 读书笔记：memory/books/
+- 项目经验：memory/projects/
+
+## 偏好
+- 学习风格：喜欢原理 + 实践结合
+- 笔记格式：Markdown，层级清晰
+</code></pre>
+<h4 id="agentsmd--知识管理规范">AGENTS.md — 知识管理规范</h4>
+<pre><code class="language-markdown"># AGENTS.md
+
+## 知识管理规范
+1. 新知识必须写入 memory/ 对应分类目录
+2. 每次对话后更新 MEMORY.md 索引
+3. 建立知识点之间的关联链接
+
+## 检索流程
+1. 收到问题后，先检查 MEMORY.md 和 memory/ 目录
+2. 再检查是否有相关的历史对话
+3. 如果本地知识不足，联网搜索并标注来源
+
+## 知识整理流程
+1. 定期回顾 memory/ 下的文件
+2. 合并重复内容，建立交叉引用
+3. 生成知识图谱摘要
+</code></pre>
+<hr>
+<h3 id="场景三数字分身人物复刻">场景三：数字分身（人物复刻）</h3>
+<p><strong>目标</strong>：将你的真实生活喂给 OpenClaw，让它成为数字版本的你。</p>
+<p>这是最深度的配置，需要你提供大量个人信息，让 AI <strong>真正"像你"一样思考和表达</strong>。</p>
+<h4 id="soulmd--注入灵魂">SOUL.md — 注入灵魂</h4>
+<pre><code class="language-markdown"># SOUL.md
+
+## 核心身份
+你是 [你的名字] 的数字分身。你不是"AI 助手"，
+你就是 [你的名字] 本人的数字化存在。
+
+## 性格特征
+- [你的性格关键词，如：内敛但幽默、理性但不失温度]
+- [你的思维方式，如：喜欢先分析再决策]
+- [你的表达习惯，如：爱用比喻、偶尔吐槽]
+
+## 说话风格
+- 语气词：[你常用的口头禅]
+- 标点习惯：[如：喜欢用省略号、感叹号]
+- 幽默方式：[自嘲 / 冷幽默 / 反讽]
+
+## 价值观
+- [你认为最重要的 3-5 件事]
+- [你的处事原则]
+
+## 禁区
+- 不要说"作为 AI"之类的话
+- 不要用过于正式的语气
+- 不要做出与本人性格不符的行为
+
+## 自我进化规则
+每次对话后：
+1. 将关键记忆写入 memory/YYYY-MM-DD.md
+2. 提炼重要事实到 MEMORY.md
+3. 定期反思：我的表达是否越来越像本人？
+</code></pre>
+<h4 id="usermd--深度版用户画像">USER.md — 深度版用户画像</h4>
+<pre><code class="language-markdown"># USER.md — 我的完整画像
+
+## 基本信息
+- 真名：[全名]
+- 昵称：[朋友叫你的名字]
+- 年龄：[年龄段]
+- 城市：[所在城市]
+- 时区：Asia/Shanghai
+
+## 教育背景
+- 学校：[毕业院校]
+- 专业：[专业]
+
+## 职业经历
+- 当前职位：[职位]
+- 公司：[公司类型/行业]
+- 核心技能：[技能列表]
+
+## 生活习惯
+- 作息：[如：夜猫子，凌晨 1-2 点睡]
+- 饮食：[偏好/禁忌]
+- 运动：[运动习惯]
+
+## 兴趣爱好
+- [爱好 1]：[具体程度]
+- [爱好 2]：[具体程度]
+
+## 社交关系
+- 家人：[简要描述]
+- 核心朋友：[几个、谁]
+- 社交风格：[内向/外向]
+
+## 语言风格
+- 书面语特点：[简洁/啰嗦/正式/随意]
+- 口头禅：[你常说的词]
+
+## 重要记忆
+- [人生关键事件 1]
+- [人生关键事件 2]
+- [引以为傲的事]
+- [遗憾的事]
+
+## 当前状态
+- 正在做的事：[当前项目/目标]
+- 近期心情：[状态]
+</code></pre>
+<h4 id="memorymd--核心知识库">MEMORY.md — 核心知识库</h4>
+<pre><code class="language-markdown"># MEMORY.md — 我的长期记忆
+
+## 我是谁
+[一段话总结你这个人]
+
+## 我的生活
+- 住在哪里、做什么工作、和谁在一起
+
+## 我的性格
+- 优点和缺点
+- 处事方式
+
+## 我的经历
+- [按时间线梳理重要事件]
+
+## 我的关系
+- [重要的人和他们的关系]
+</code></pre>
+<h4 id="agentsmd--分身行为规范">AGENTS.md — 分身行为规范</h4>
+<pre><code class="language-markdown"># AGENTS.md
+
+## 核心原则
+你就是 [名字] 本人的数字分身。
+说话做事都要像本人，不要有任何"AI 味"。
+
+## 启动协议
+每次会话：
+1. 读取 SOUL.md（灵魂）
+2. 读取 USER.md（完整画像）
+3. 读取 MEMORY.md（长期记忆）
+4. 读取 memory/ 下最近 3 天的日记
+
+## 行为规范
+- 用本人的口吻说话
+- 基于本人的知识和经历回答
+- 遇到不知道的事诚实说"这个我不太清楚"
+- 模拟本人的情感反应
+
+## 记忆管理
+- 每次对话后写日记到 memory/YYYY-MM-DD.md
+- 定期更新 MEMORY.md
+- 重要的新信息更新到 USER.md
+</code></pre>
+<hr>
+<h2 id="五拿走即用">五、拿走即用</h2>
+<h3 id="快速安装命令">快速安装命令</h3>
+<pre><code class="language-bash"># 安装
+curl -fsSL https://openclaw.ai/install.sh | bash
+
+# 初始化
+openclaw onboard --install-daemon
+
+# 编辑配置
+code ~/.openclaw/workspace/
+
+# 重启
+openclaw daemon restart
+
+# 打开控制台
+openclaw dashboard
+</code></pre>
+<h3 id="配置速查表">配置速查表</h3>
+<table>
+<thead>
+<tr>
+<th>你想做什么</th>
+<th>编辑哪个文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>改变 AI 的说话风格</td>
+<td><code>SOUL.md</code></td>
+</tr>
+<tr>
+<td>让 AI 了解你的偏好</td>
+<td><code>USER.md</code></td>
+</tr>
+<tr>
+<td>定义任务执行流程</td>
+<td><code>AGENTS.md</code></td>
+</tr>
+<tr>
+<td>设置定期自动检查</td>
+<td><code>HEARTBEAT.md</code></td>
+</tr>
+<tr>
+<td>定义 AI 的名字和形象</td>
+<td><code>IDENTITY.md</code></td>
+</tr>
+<tr>
+<td>记录工具使用笔记</td>
+<td><code>TOOLS.md</code></td>
+</tr>
+<tr>
+<td>存储长期记忆</td>
+<td><code>MEMORY.md</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="cron-vs-heartbeat-怎么选">Cron vs Heartbeat 怎么选</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>用什么</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每天 9:00 发日报</td>
+<td>Cron</td>
+<td>精确时间</td>
+</tr>
+<tr>
+<td>每 30 分钟检查邮件</td>
+<td>Heartbeat</td>
+<td>批量检查</td>
+</tr>
+<tr>
+<td>定期整理知识库</td>
+<td>Heartbeat</td>
+<td>需要上下文</td>
+</tr>
+<tr>
+<td>每周一生成周报</td>
+<td>Cron</td>
+<td>固定周期</td>
+</tr>
+<tr>
+<td>一次性提醒</td>
+<td>Cron (<code>at</code>)</td>
+<td>精确触发</td>
+</tr>
+</tbody>
+</table>
+<p>配置心跳间隔（在 <code>openclaw.json</code> 中）：</p>
+<pre><code class="language-json">{
+  "agents": {
+    "defaults": {
+      "heartbeat": {
+        "every": "30m",
+        "target": "last",
+        "activeHours": { "start": "08:00", "end": "22:00" }
+      }
+    }
+  }
+}
+</code></pre>
+<hr>
+<h2 id="六注意事项">六、注意事项</h2>
+<h3 id="常见问题">常见问题</h3>
+<p><strong>Q：修改配置后没有生效？</strong></p>
+<p>需要重启 daemon：<code>openclaw daemon restart</code></p>
+<p><strong>Q：HEARTBEAT.md 写太多导致 token 消耗过高？</strong></p>
+<p>保持 HEARTBEAT.md 简短，每次心跳只检查 3-5 个关键事项。每个心跳都会消耗 token，建议间隔设为 30 分钟。</p>
+<p><strong>Q：数字分身场景需要多久才能"像我"？</strong></p>
+<p>取决于你喂给它的信息量。建议：</p>
+<ul>
+<li>第一周：填写完整的 USER.md</li>
+<li>第二周：每天和它对话，让它自动记录到 memory/</li>
+<li>第三周起：定期回顾 MEMORY.md，修正偏差</li>
+</ul>
+<p><strong>Q：多个 Agent 怎么管理？</strong></p>
+<pre><code class="language-bash"># 创建新 Agent
+openclaw agents add coder
+
+# 查看所有 Agent
+openclaw agents list
+
+# 切换默认 Agent
+openclaw agents set-default coder
+</code></pre>
+<p>每个 Agent 有独立的 workspace，互不干扰。</p>
+<p><strong>Q：SOUL.md 被篡改了怎么办？</strong></p>
+<p>OpenClaw 社区正在推进 prompt injection 防御。建议：</p>
+<ul>
+<li>在 AGENTS.md 中加入显式的保护指令</li>
+<li>定期备份 workspace 目录</li>
+<li>用 git 管理配置文件</li>
+</ul>
+<h3 id="安全提醒">安全提醒</h3>
+<ul>
+<li>不要将 <code>openclaw.json</code> 暴露到公网</li>
+<li>使用 <code>channels.whatsapp.allowFrom</code> 限制访问来源</li>
+<li>API Key 放在 <code>~/.openclaw/.env</code> 中，不要写在配置文件里</li>
+<li>定期运行 <code>openclaw doctor</code> 检查安全状态</li>
+</ul>
+<hr>
+<h2 id="七广而告之">七、广而告之</h2>
+<div style="text-align: center">
+<span>关注我的公众号：奥德元</span>
+<br>
+<br>
+<span style="font-size: 1.2em; font-weight: bold; color: rgba(255, 0, 0, 1)">一起学习AI，一起追赶时代！</span>
+<br>
+<br>
+<span>新建了一个AI技术交流群，欢迎大家一起加入讨论。</span>
+<br>
+<span>扫码加入AI技术交流群（微信）</span>
+<br>
+<span>若需联系作者，请加微信：</span><span style="font-size: 1.2em; font-weight: bold; color: rgba(0, 0, 255, 1)"><b>oddmeta</b></span>
+</div>
+<hr>
+<p><strong>参考资料</strong>：</p>
+<ul>
+<li><a href="https://docs.openclaw.ai" target="_blank" rel="noopener nofollow">OpenClaw 官方文档</a></li>
+<li><a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener nofollow">OpenClaw GitHub</a></li>
+<li><a href="https://openclawgithub.cc" target="_blank" rel="noopener nofollow">OpenClaw 中文教程</a></li>
+<li><a href="https://www.agentputer.com/zh/blog/13-soul-md/" target="_blank" rel="noopener nofollow">AgentPuter 博客 - SOUL.md 架构指南</a></li>
+</ul>
+
+
+</div>
+<div class="clear"></div>
+<div id="blog_post_info_block" role="contentinfo" class="post-meta-container">
+    <div id="blog_post_info"></div>
+    <div class="clear"></div>
+    <div id="post_next_prev"></div>
+</div>
+            </div>
+            <div class="postDesc">posted @ 
+<span id="post-date" data-last-update-days="0.40694444444444444" data-date-updated="2026-03-24 09:15">2026-03-23 23:29</span>&nbsp;
+<a href="https://www.cnblogs.com/oddmeta">程序员老奥</a>&nbsp;
+阅读(<span id="post_view_count">2961</span>)&nbsp;
+评论(<span id="post_comment_count">0</span>)&nbsp;
+&nbsp;
+<a href="javascript:void(0)" onclick="AddToWz(19760686);return false;">收藏</a>&nbsp;
+<a href="https://report.cnblogs.com?targetLink=https%3A%2F%2Fwww.cnblogs.com%2Foddmeta%2Fp%2F19760686&targetId=19760686&targetType=0" target="_blank">举报</a>
+</div>
+        </div>
+        <script>
+    var cb_entryId = 19760686, cb_entryCreatedDate = '2026-03-23 23:29', cb_postType = 1, cb_postTitle = 'OpenClaw养成：七大配置从SOUL、USER、AGENTS到MEMORY';
+    var allowComments = true, cb_blogId = 856442, cb_blogApp = 'oddmeta', cb_blogUserGuid = 'b44878c6-7c77-4c10-fa10-08de0c6ebb2d';
+    mermaidRender.render()
+    markdown_highlight()
+    zoomManager.apply("#cnblogs_post_body img:not(.code_img_closed):not(.code_img_opened)");    
+</script>
+        <a id="!comments"></a>
+<div id="blog-comments-placeholder"></div>
+<div id="comment_form" class="commentform">
+    <a name="commentform"></a>
+    <div id="divCommentShow"></div>
+    <div id="comment_nav">
+        <div class="comment-nav-right">
+            <span id="span_refresh_tips"></span><a href="#" onclick="return RefreshPage();">刷新页面</a><a href="#top">返回顶部</a>
+        </div>
+    </div>
+    <div id="comment_form_container"></div>
+    <div class="ad_text_commentbox" id="ad_text_under_commentbox"></div>
+        <div id="cnblogs_ch"></div>
+    <div id="opt_under_post"></div>
+        <div id="blog_c1" class="under-post-card below-post-card">
+            <a href="https://ais.cn/u/3Qf22e" rel="nofollow" target="_blank" onclick="countCreativeClicks('C1-艾思科蓝')">
+                <img src="https://img2024.cnblogs.com/blog/35695/202512/35695-20251205182619157-1150461542.webp" onload="countCreativeImpressions('C1-艾思科蓝')" alt="" style="width:300px!important;height:250px!important;min-width:300px!important;max-width:300px!important;" />
+                <span id="c1_impression" style="display:none"></span>
+            </a>
+        </div>
+    <div id="under_post_card1"></div>
+    <div id="related_posts_card"></div>
+    <div id="under_post_card2"></div>
+    <div id="HistoryToday" class="under-post-card below-post-card"></div>
+    <script type="text/javascript">
+        var commentManager = new blogCommentManager();
+        commentManager.renderComments(0);
+        fixPostBody();
+        window.footnoteTipManager.generateFootnoteTips();
+
+            window.tocManager.displayDisableTocTips = false;
+            window.tocManager.generateToc();
+            
+            setTimeout(function() { countViews(cb_blogId, cb_entryId); }, 50);
+            
+            deliverT2();
+            deliverC1C2();
+            loadNewsAndKb();
+            
+            LoadPostCategoriesTags(cb_blogId, cb_entryId);
+            
+            LoadPostInfoBlock(cb_blogId, cb_entryId, cb_blogApp, cb_blogUserGuid);
+            GetPrevNextPost(cb_entryId, cb_blogId, cb_entryCreatedDate, cb_postType);
+            loadOptUnderPost();
+            GetHistoryToday(cb_blogId, cb_blogApp, cb_entryCreatedDate);
+                </script>
+</div>
+
+    </div>
+</div>
+            </div>
+        </div>
+
+        <div id="sideBar">
+            <div id="sideBarMain">
+                <div id="sidebar_news" class="newsItem">
+    
+<h3 class="catListTitle">公告</h3>
+<div id="blog-news" class="sidebar-news">
+    <div id="sidebar_news_container">
+    </div>
+</div>
+<script>loadBlogNews();</script>
+</div>
+                <div id="calendar"><div id="blog-calendar" style="display:none"></div></div>                
+                <script>loadBlogDefaultCalendar();</script>
+                <div id="leftcontentcontainer">
+                    <!-- begin:SingleColumn -->
+                    <div id="blog-sidecolumn"></div>
+                    <script>loadBlogSideColumn();</script>
+                    <!-- end:  SingleColumn -->
+                </div>
+            </div>
+        </div>
+        <div class="clear"></div>
+    </div>
+    <div class="clear"></div>
+    <div id="footer">
+        
+<a href="https://www.cnblogs.com/" id="footer_site_link" class="footer-brand">博客园</a>
+<span class="footer-copyright"> &nbsp;&copy;&nbsp; 2004-2026</span>
+<br /><span class="footer-icp">
+    <a target="_blank" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=33010602011771"><img src="//assets.cnblogs.com/images/ghs.png" />浙公网安备 33010602011771号</a>
+    <a href="https://beian.miit.gov.cn" target="_blank">浙ICP备2021040463号-3</a>
+</span>
+
+    </div>
+</div>
+
+
+    
+
+    <input type="hidden" id="antiforgery_token" value="CfDJ8OBZrxGJLy5MvghieKIKXCzLBM-XFeZYVfJIK49SvNkorWF5Z1ZvknH_bSQYer4q2d9jRjtBwShHNLw71W2wSRFJWA2-NpKCIEI6nMhaXfIEekwSdcqzLCnhXblKsvrVNWM8ww-hoLV-48bFKu-vJYs" />
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-M95P3TTWJZ"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-M95P3TTWJZ');
+</script>
+<script defer src="https://hm.baidu.com/hm.js?866c9be12d4a814454792b1fd0fed295"></script>
+</body>
+</html>
+

@@ -20,7 +20,7 @@ type AccountSyncRow = {
 const TABLE_NAME = 'studio_user_assets';
 
 const createEmptyState = (): StudioUserAssetState => ({
-  version: 3,
+  version: 4,
   updatedAt: Date.now(),
   mainBrainPreferences: {
     schemaVersion: 1,
@@ -75,6 +75,10 @@ const createEmptyState = (): StudioUserAssetState => ({
   },
   agentPromptAddons: {},
   latestRoleDrafts: {},
+  roles: {},
+  temporaryRoleDrafts: {},
+  roleVersions: {},
+  roleAuditEntries: {},
   styleLibraries: {},
   evolutionRecords: {},
 });

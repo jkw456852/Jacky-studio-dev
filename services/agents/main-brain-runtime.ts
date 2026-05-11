@@ -104,6 +104,72 @@ const truncateText = (value: unknown, maxChars = 220): string => {
   return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
 };
 
+const buildLatestSkillResultEvidence = (skillResults: any[]): string[] => {
+  const latestSuccessfulSearch = [...(skillResults || [])]
+    .reverse()
+    .find(
+      (item) =>
+        item?.success &&
+        item?.skillName === 'workspaceSearch' &&
+        item?.result &&
+        typeof item.result === 'object',
+    );
+
+  if (!latestSuccessfulSearch?.result) {
+    return [];
+  }
+
+  const result = latestSuccessfulSearch.result as {
+    query?: unknown;
+    summary?: unknown;
+    provider?: { web?: unknown; images?: unknown; fallback?: unknown };
+    citations?: Array<{ title?: unknown; url?: unknown }>;
+    extractedPages?: Array<{ title?: unknown; cleanedTextExcerpt?: unknown; excerpt?: unknown }>;
+  };
+
+  const citations = Array.isArray(result.citations) ? result.citations : [];
+  const extractedPages = Array.isArray(result.extractedPages) ? result.extractedPages : [];
+  const providerLabel = [result.provider?.web, result.provider?.images]
+    .filter(Boolean)
+    .map((item) => String(item))
+    .join(' / ');
+
+  const lines = [
+    `- workspaceSearch.query=${truncateText(result.query || '', 160)}`,
+    `- workspaceSearch.summary=${truncateText(result.summary || '', 600)}`,
+  ];
+
+  if (providerLabel) {
+    lines.push(
+      `- workspaceSearch.provider=${providerLabel}${result.provider?.fallback ? ' (fallback)' : ''}`,
+    );
+  }
+
+  if (citations.length > 0) {
+    lines.push(
+      `- workspaceSearch.citations=${citations
+        .slice(0, 4)
+        .map((item) => `${truncateText(item.title || '', 80)} ${truncateText(item.url || '', 120)}`.trim())
+        .join(' | ')}`,
+    );
+  }
+
+  if (extractedPages.length > 0) {
+    lines.push(
+      `- workspaceSearch.extractedFacts=${extractedPages
+        .slice(0, 2)
+        .map((item) => {
+          const title = truncateText(item.title || '', 80);
+          const excerpt = truncateText(item.cleanedTextExcerpt || item.excerpt || '', 180);
+          return `${title}: ${excerpt}`.trim();
+        })
+        .join(' | ')}`,
+    );
+  }
+
+  return lines.filter((line) => !/=$/.test(line));
+};
+
 const formatObservationList = (observations: MainBrainRuntimeObservation[]) =>
   observations
     .map((item) => {
@@ -162,6 +228,9 @@ export const buildRuntimeMessage = (
   const latestFailures = latestTurn
     ? buildMainBrainFailureHints(latestTurn.skillResults).slice(-2)
     : [];
+  const latestSkillEvidence = latestTurn
+    ? buildLatestSkillResultEvidence(latestTurn.skillResults)
+    : [];
 
   const parts = [
     '[Original User Request]',
@@ -202,12 +271,19 @@ export const buildRuntimeMessage = (
     }
   }
 
+  if (latestSkillEvidence.length > 0) {
+    parts.push(...latestSkillEvidence);
+  }
+
   parts.push(
     '',
     '[Decision Instruction]',
     'Decide the next best action from the latest state.',
     'If the task is complete, answer directly.',
     'If the user must respond before progress can continue, answer directly and ask only the necessary question.',
+    'If the latest tool round failed because of model alias, provider routing, invalid parameters, or other repairable configuration mistakes, prefer returning corrected skillCalls instead of pretending the task is done.',
+    'If the latest failure indicates the requested model name is not recognized, normalize it to a known configured model or explicitly ask the user to choose a valid model.',
+    'If the latest turn already contains successful workspaceSearch evidence, use that evidence in your next answer or replan instead of claiming that no search result exists.',
     'Only return skillCalls when another tool round is genuinely necessary.',
   );
 

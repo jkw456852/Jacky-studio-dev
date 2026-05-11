@@ -37,6 +37,7 @@ export const SKILL_TIMEOUTS: Record<string, number> = {
   generateCopy: 15_000,
   extractText: 15_000,
   analyzeRegion: 15_000,
+  workspaceSearch: 45_000,
   export: 30_000,
 };
 

@@ -24,15 +24,20 @@ import {
 test('skill manifest exposes canonical names and alias normalization', () => {
   assert.equal(Array.isArray(REGISTERED_SKILL_NAMES), true);
   assert.equal(REGISTERED_SKILL_NAMES.includes('generateImage'), true);
+  assert.equal(REGISTERED_SKILL_NAMES.includes('workspaceSearch'), true);
   assert.equal(SUPPORTED_SKILL_NAMES.has('generateVideo'), true);
+  assert.equal(SUPPORTED_SKILL_NAMES.has('workspaceSearch'), true);
   assert.equal(SKILL_ALIASES.imageGenSkill, 'generateImage');
   assert.equal(normalizeRegisteredSkillName(' imageGenSkill '), 'generateImage');
   assert.equal(normalizeRegisteredSkillName('generateCopy'), 'generateCopy');
   assert.equal(resolveRegisteredSkillName(' imageGenSkill '), 'generateImage');
+  assert.equal(resolveRegisteredSkillName('workspaceSearch'), 'workspaceSearch');
   assert.equal(resolveRegisteredSkillName('unknown-skill'), null);
   assert.equal(isRegisteredSkillName('generateCopy'), true);
+  assert.equal(isRegisteredSkillName('workspaceSearch'), true);
   assert.equal(isRegisteredSkillName('unknown-skill'), false);
   assert.equal(assertRegisteredSkillName('smartEditSkill'), 'smartEdit');
+  assert.equal(assertRegisteredSkillName('workspaceSearch'), 'workspaceSearch');
   assert.throws(() => assertRegisteredSkillName('unknown-skill'), /not found/);
 });
 

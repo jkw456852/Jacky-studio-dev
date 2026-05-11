@@ -7,6 +7,12 @@ import { resolveStudioAssetSyncPolicy } from "./sync-policy.ts";
 
 type MergeKind =
   | "main-brain"
+  | "main-brain-soul"
+  | "main-brain-user"
+  | "main-brain-workflow"
+  | "main-brain-memory"
+  | "main-brain-heartbeat"
+  | "main-brain-bootstrap"
   | "user-profile"
   | "role"
   | "style-library"
@@ -31,6 +37,70 @@ const cloneState = (state: StudioUserAssetState): StudioUserAssetState =>
 
 const mergeUnique = (left: string[], right: string[]): string[] =>
   Array.from(new Set([...(left || []), ...(right || [])])).filter(Boolean);
+
+const DEFAULT_MAIN_BRAIN_SOUL = {
+  persona: "",
+  tone: [] as string[],
+  workingStyle: [] as string[],
+  restraintRules: [] as string[],
+  selfCheckRules: [] as string[],
+  riskPreference: "balanced" as const,
+};
+
+const DEFAULT_MAIN_BRAIN_USER = {
+  goals: [] as string[],
+  workingHabits: [] as string[],
+  businessContext: [] as string[],
+  aestheticPreferences: [] as string[],
+  communicationStyle: [] as string[],
+  permanentNotes: [] as string[],
+  memoryBlacklist: [] as string[],
+};
+
+const DEFAULT_MAIN_BRAIN_WORKFLOW = {
+  defaultAnalysisDepth: "balanced" as const,
+  searchPolicy: "auto" as const,
+  clarifyBeforeExecution: false,
+  toolUseGuidelines: [] as string[],
+  failureRecoveryRules: [] as string[],
+  roleGovernanceDefaults: {
+    mode: "approval_required" as const,
+    allowDraft: true,
+    allowAutoPromote: false,
+    allowAutoArchive: false,
+  },
+};
+
+const DEFAULT_MAIN_BRAIN_MEMORY = {
+  memoryIndex: [] as string[],
+  memoryRecords: {} as Record<string, unknown>,
+  pendingMemoryCandidates: [] as string[],
+  memoryBlacklists: [] as string[],
+  retentionPolicy: {
+    maxActiveMemories: 200,
+    maxCandidateMemories: 50,
+    autoPromoteSimilarCount: 3,
+  },
+  dailySummary: [] as string[],
+};
+
+const DEFAULT_MAIN_BRAIN_HEARTBEAT = {
+  enabled: false,
+  cadence: "manual" as const,
+  scope: [] as string[],
+  heartbeatTasks: {} as Record<string, unknown>,
+  recentRunSummary: [] as string[],
+  lastRunAt: null as number | null,
+  nextRunAt: null as number | null,
+};
+
+const DEFAULT_MAIN_BRAIN_BOOTSTRAP = {
+  initialized: false,
+  initializedAt: null as number | null,
+  sourceTemplate: "",
+  completedSteps: [] as string[],
+  lastRebootstrapAt: null as number | null,
+};
 
 const DEFAULT_USER_PROFILE = {
   avatarUrl: "",
@@ -119,6 +189,41 @@ const mergeTimestampedRecordMap = <T extends { updatedAt?: number }>(
   return merged;
 };
 
+const mergeVersionedRecordMap = <T extends { id: string; version?: number; createdAt?: number }>(
+  local: Record<string, T[]>,
+  remote: Record<string, T[]>,
+): Record<string, T[]> => {
+  const keys = new Set([...Object.keys(local || {}), ...Object.keys(remote || {})]);
+  const merged: Record<string, T[]> = {};
+
+  for (const key of keys) {
+    const mergedById = new Map<string, T>();
+
+    for (const item of [...(remote?.[key] || []), ...(local?.[key] || [])]) {
+      const existing = mergedById.get(item.id);
+      if (!existing) {
+        mergedById.set(item.id, item);
+        continue;
+      }
+      const existingWeight = Number(existing.version || existing.createdAt || 0);
+      const nextWeight = Number(item.version || item.createdAt || 0);
+      mergedById.set(item.id, nextWeight >= existingWeight ? item : existing);
+    }
+
+    const records = Array.from(mergedById.values()).sort((left, right) => {
+      const versionDiff = Number(left.version || 0) - Number(right.version || 0);
+      if (versionDiff !== 0) return versionDiff;
+      return Number(left.createdAt || 0) - Number(right.createdAt || 0);
+    });
+
+    if (records.length > 0) {
+      merged[key] = records;
+    }
+  }
+
+  return merged;
+};
+
 const mergeWorkspacePreferenceArray = (
   local: string[],
   remote: string[],
@@ -176,6 +281,328 @@ export const mergeStudioUserAssetStates = (args: {
       return;
     }
     merged.mainBrainPreferences = local.mainBrainPreferences;
+  });
+
+  applyDecision("main-brain-soul", "Resolved main-brain soul configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainSoul = remote.mainBrainSoul;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainSoul = {
+        ...local.mainBrainSoul,
+        updatedAt: Math.max(local.mainBrainSoul.updatedAt || 0, remote.mainBrainSoul.updatedAt || 0),
+        persona: preferNonDefaultValue({
+          local: local.mainBrainSoul.persona,
+          remote: remote.mainBrainSoul.persona,
+          defaultValue: DEFAULT_MAIN_BRAIN_SOUL.persona,
+          localUpdatedAt: local.mainBrainSoul.updatedAt,
+          remoteUpdatedAt: remote.mainBrainSoul.updatedAt,
+        }),
+        tone: mergeUnique(local.mainBrainSoul.tone, remote.mainBrainSoul.tone),
+        workingStyle: mergeUnique(
+          local.mainBrainSoul.workingStyle,
+          remote.mainBrainSoul.workingStyle,
+        ),
+        restraintRules: mergeUnique(
+          local.mainBrainSoul.restraintRules,
+          remote.mainBrainSoul.restraintRules,
+        ),
+        selfCheckRules: mergeUnique(
+          local.mainBrainSoul.selfCheckRules,
+          remote.mainBrainSoul.selfCheckRules,
+        ),
+        riskPreference: preferNonDefaultValue({
+          local: local.mainBrainSoul.riskPreference,
+          remote: remote.mainBrainSoul.riskPreference,
+          defaultValue: DEFAULT_MAIN_BRAIN_SOUL.riskPreference,
+          localUpdatedAt: local.mainBrainSoul.updatedAt,
+          remoteUpdatedAt: remote.mainBrainSoul.updatedAt,
+        }),
+      };
+      return;
+    }
+    merged.mainBrainSoul = local.mainBrainSoul;
+  });
+
+  applyDecision("main-brain-user", "Resolved main-brain user configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainUser = remote.mainBrainUser;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainUser = {
+        ...local.mainBrainUser,
+        updatedAt: Math.max(local.mainBrainUser.updatedAt || 0, remote.mainBrainUser.updatedAt || 0),
+        goals: mergeUnique(local.mainBrainUser.goals, remote.mainBrainUser.goals),
+        workingHabits: mergeUnique(
+          local.mainBrainUser.workingHabits,
+          remote.mainBrainUser.workingHabits,
+        ),
+        businessContext: mergeUnique(
+          local.mainBrainUser.businessContext,
+          remote.mainBrainUser.businessContext,
+        ),
+        aestheticPreferences: mergeUnique(
+          local.mainBrainUser.aestheticPreferences,
+          remote.mainBrainUser.aestheticPreferences,
+        ),
+        communicationStyle: mergeUnique(
+          local.mainBrainUser.communicationStyle,
+          remote.mainBrainUser.communicationStyle,
+        ),
+        permanentNotes: mergeUnique(
+          local.mainBrainUser.permanentNotes,
+          remote.mainBrainUser.permanentNotes,
+        ),
+        memoryBlacklist: mergeUnique(
+          local.mainBrainUser.memoryBlacklist,
+          remote.mainBrainUser.memoryBlacklist,
+        ),
+      };
+      return;
+    }
+    merged.mainBrainUser = local.mainBrainUser;
+  });
+
+  applyDecision("main-brain-workflow", "Resolved main-brain workflow configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainWorkflow = remote.mainBrainWorkflow;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainWorkflow = {
+        ...local.mainBrainWorkflow,
+        updatedAt: Math.max(
+          local.mainBrainWorkflow.updatedAt || 0,
+          remote.mainBrainWorkflow.updatedAt || 0,
+        ),
+        defaultAnalysisDepth: preferNonDefaultValue({
+          local: local.mainBrainWorkflow.defaultAnalysisDepth,
+          remote: remote.mainBrainWorkflow.defaultAnalysisDepth,
+          defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.defaultAnalysisDepth,
+          localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+          remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+        }),
+        searchPolicy: preferNonDefaultValue({
+          local: local.mainBrainWorkflow.searchPolicy,
+          remote: remote.mainBrainWorkflow.searchPolicy,
+          defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.searchPolicy,
+          localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+          remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+        }),
+        clarifyBeforeExecution: preferNonDefaultValue({
+          local: local.mainBrainWorkflow.clarifyBeforeExecution,
+          remote: remote.mainBrainWorkflow.clarifyBeforeExecution,
+          defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.clarifyBeforeExecution,
+          localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+          remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+        }),
+        toolUseGuidelines: mergeUnique(
+          local.mainBrainWorkflow.toolUseGuidelines,
+          remote.mainBrainWorkflow.toolUseGuidelines,
+        ),
+        failureRecoveryRules: mergeUnique(
+          local.mainBrainWorkflow.failureRecoveryRules,
+          remote.mainBrainWorkflow.failureRecoveryRules,
+        ),
+        roleGovernanceDefaults: {
+          mode: preferNonDefaultValue({
+            local: local.mainBrainWorkflow.roleGovernanceDefaults.mode,
+            remote: remote.mainBrainWorkflow.roleGovernanceDefaults.mode,
+            defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.roleGovernanceDefaults.mode,
+            localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+            remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+          }),
+          allowDraft: preferNonDefaultValue({
+            local: local.mainBrainWorkflow.roleGovernanceDefaults.allowDraft,
+            remote: remote.mainBrainWorkflow.roleGovernanceDefaults.allowDraft,
+            defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.roleGovernanceDefaults.allowDraft,
+            localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+            remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+          }),
+          allowAutoPromote: preferNonDefaultValue({
+            local: local.mainBrainWorkflow.roleGovernanceDefaults.allowAutoPromote,
+            remote: remote.mainBrainWorkflow.roleGovernanceDefaults.allowAutoPromote,
+            defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.roleGovernanceDefaults.allowAutoPromote,
+            localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+            remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+          }),
+          allowAutoArchive: preferNonDefaultValue({
+            local: local.mainBrainWorkflow.roleGovernanceDefaults.allowAutoArchive,
+            remote: remote.mainBrainWorkflow.roleGovernanceDefaults.allowAutoArchive,
+            defaultValue: DEFAULT_MAIN_BRAIN_WORKFLOW.roleGovernanceDefaults.allowAutoArchive,
+            localUpdatedAt: local.mainBrainWorkflow.updatedAt,
+            remoteUpdatedAt: remote.mainBrainWorkflow.updatedAt,
+          }),
+        },
+      };
+      return;
+    }
+    merged.mainBrainWorkflow = local.mainBrainWorkflow;
+  });
+
+  applyDecision("main-brain-memory", "Resolved main-brain memory configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainMemory = remote.mainBrainMemory;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainMemory = {
+        ...local.mainBrainMemory,
+        updatedAt: Math.max(local.mainBrainMemory.updatedAt || 0, remote.mainBrainMemory.updatedAt || 0),
+        memoryIndex: mergeUnique(
+          local.mainBrainMemory.memoryIndex,
+          remote.mainBrainMemory.memoryIndex,
+        ),
+        memoryRecords: mergeTimestampedRecordMap(
+          local.mainBrainMemory.memoryRecords || {},
+          remote.mainBrainMemory.memoryRecords || {},
+        ),
+        pendingMemoryCandidates: mergeUnique(
+          local.mainBrainMemory.pendingMemoryCandidates,
+          remote.mainBrainMemory.pendingMemoryCandidates,
+        ),
+        memoryBlacklists: mergeUnique(
+          local.mainBrainMemory.memoryBlacklists,
+          remote.mainBrainMemory.memoryBlacklists,
+        ),
+        retentionPolicy: {
+          maxActiveMemories: preferNonDefaultValue({
+            local: local.mainBrainMemory.retentionPolicy.maxActiveMemories,
+            remote: remote.mainBrainMemory.retentionPolicy.maxActiveMemories,
+            defaultValue: DEFAULT_MAIN_BRAIN_MEMORY.retentionPolicy.maxActiveMemories,
+            localUpdatedAt: local.mainBrainMemory.updatedAt,
+            remoteUpdatedAt: remote.mainBrainMemory.updatedAt,
+          }),
+          maxCandidateMemories: preferNonDefaultValue({
+            local: local.mainBrainMemory.retentionPolicy.maxCandidateMemories,
+            remote: remote.mainBrainMemory.retentionPolicy.maxCandidateMemories,
+            defaultValue: DEFAULT_MAIN_BRAIN_MEMORY.retentionPolicy.maxCandidateMemories,
+            localUpdatedAt: local.mainBrainMemory.updatedAt,
+            remoteUpdatedAt: remote.mainBrainMemory.updatedAt,
+          }),
+          autoPromoteSimilarCount: preferNonDefaultValue({
+            local: local.mainBrainMemory.retentionPolicy.autoPromoteSimilarCount,
+            remote: remote.mainBrainMemory.retentionPolicy.autoPromoteSimilarCount,
+            defaultValue: DEFAULT_MAIN_BRAIN_MEMORY.retentionPolicy.autoPromoteSimilarCount,
+            localUpdatedAt: local.mainBrainMemory.updatedAt,
+            remoteUpdatedAt: remote.mainBrainMemory.updatedAt,
+          }),
+        },
+        dailySummary: mergeUnique(
+          local.mainBrainMemory.dailySummary,
+          remote.mainBrainMemory.dailySummary,
+        ),
+      };
+      return;
+    }
+    merged.mainBrainMemory = local.mainBrainMemory;
+  });
+
+  applyDecision("main-brain-heartbeat", "Resolved main-brain heartbeat configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainHeartbeat = remote.mainBrainHeartbeat;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainHeartbeat = {
+        ...local.mainBrainHeartbeat,
+        updatedAt: Math.max(
+          local.mainBrainHeartbeat.updatedAt || 0,
+          remote.mainBrainHeartbeat.updatedAt || 0,
+        ),
+        enabled: preferNonDefaultValue({
+          local: local.mainBrainHeartbeat.enabled,
+          remote: remote.mainBrainHeartbeat.enabled,
+          defaultValue: DEFAULT_MAIN_BRAIN_HEARTBEAT.enabled,
+          localUpdatedAt: local.mainBrainHeartbeat.updatedAt,
+          remoteUpdatedAt: remote.mainBrainHeartbeat.updatedAt,
+        }),
+        cadence: preferNonDefaultValue({
+          local: local.mainBrainHeartbeat.cadence,
+          remote: remote.mainBrainHeartbeat.cadence,
+          defaultValue: DEFAULT_MAIN_BRAIN_HEARTBEAT.cadence,
+          localUpdatedAt: local.mainBrainHeartbeat.updatedAt,
+          remoteUpdatedAt: remote.mainBrainHeartbeat.updatedAt,
+        }),
+        scope: mergeUnique(local.mainBrainHeartbeat.scope, remote.mainBrainHeartbeat.scope),
+        heartbeatTasks: {
+          ...(remote.mainBrainHeartbeat.heartbeatTasks || {}),
+          ...(local.mainBrainHeartbeat.heartbeatTasks || {}),
+        },
+        recentRunSummary: mergeUnique(
+          local.mainBrainHeartbeat.recentRunSummary,
+          remote.mainBrainHeartbeat.recentRunSummary,
+        ),
+        lastRunAt: preferNonDefaultValue({
+          local: local.mainBrainHeartbeat.lastRunAt,
+          remote: remote.mainBrainHeartbeat.lastRunAt,
+          defaultValue: DEFAULT_MAIN_BRAIN_HEARTBEAT.lastRunAt,
+          localUpdatedAt: local.mainBrainHeartbeat.updatedAt,
+          remoteUpdatedAt: remote.mainBrainHeartbeat.updatedAt,
+        }),
+        nextRunAt: preferNonDefaultValue({
+          local: local.mainBrainHeartbeat.nextRunAt,
+          remote: remote.mainBrainHeartbeat.nextRunAt,
+          defaultValue: DEFAULT_MAIN_BRAIN_HEARTBEAT.nextRunAt,
+          localUpdatedAt: local.mainBrainHeartbeat.updatedAt,
+          remoteUpdatedAt: remote.mainBrainHeartbeat.updatedAt,
+        }),
+      };
+      return;
+    }
+    merged.mainBrainHeartbeat = local.mainBrainHeartbeat;
+  });
+
+  applyDecision("main-brain-bootstrap", "Resolved main-brain bootstrap configuration.", (policy) => {
+    if (policy === "prefer_remote") {
+      merged.mainBrainBootstrap = remote.mainBrainBootstrap;
+      return;
+    }
+    if (policy === "manual_merge") {
+      merged.mainBrainBootstrap = {
+        ...local.mainBrainBootstrap,
+        updatedAt: Math.max(
+          local.mainBrainBootstrap.updatedAt || 0,
+          remote.mainBrainBootstrap.updatedAt || 0,
+        ),
+        initialized: preferNonDefaultValue({
+          local: local.mainBrainBootstrap.initialized,
+          remote: remote.mainBrainBootstrap.initialized,
+          defaultValue: DEFAULT_MAIN_BRAIN_BOOTSTRAP.initialized,
+          localUpdatedAt: local.mainBrainBootstrap.updatedAt,
+          remoteUpdatedAt: remote.mainBrainBootstrap.updatedAt,
+        }),
+        initializedAt: preferNonDefaultValue({
+          local: local.mainBrainBootstrap.initializedAt,
+          remote: remote.mainBrainBootstrap.initializedAt,
+          defaultValue: DEFAULT_MAIN_BRAIN_BOOTSTRAP.initializedAt,
+          localUpdatedAt: local.mainBrainBootstrap.updatedAt,
+          remoteUpdatedAt: remote.mainBrainBootstrap.updatedAt,
+        }),
+        sourceTemplate: preferNonDefaultValue({
+          local: local.mainBrainBootstrap.sourceTemplate,
+          remote: remote.mainBrainBootstrap.sourceTemplate,
+          defaultValue: DEFAULT_MAIN_BRAIN_BOOTSTRAP.sourceTemplate,
+          localUpdatedAt: local.mainBrainBootstrap.updatedAt,
+          remoteUpdatedAt: remote.mainBrainBootstrap.updatedAt,
+        }),
+        completedSteps: mergeUnique(
+          local.mainBrainBootstrap.completedSteps,
+          remote.mainBrainBootstrap.completedSteps,
+        ),
+        lastRebootstrapAt: preferNonDefaultValue({
+          local: local.mainBrainBootstrap.lastRebootstrapAt,
+          remote: remote.mainBrainBootstrap.lastRebootstrapAt,
+          defaultValue: DEFAULT_MAIN_BRAIN_BOOTSTRAP.lastRebootstrapAt,
+          localUpdatedAt: local.mainBrainBootstrap.updatedAt,
+          remoteUpdatedAt: remote.mainBrainBootstrap.updatedAt,
+        }),
+      };
+      return;
+    }
+    merged.mainBrainBootstrap = local.mainBrainBootstrap;
   });
 
   applyDecision("user-profile", "Resolved user profile preference state.", (policy) => {
@@ -412,10 +839,14 @@ export const mergeStudioUserAssetStates = (args: {
     merged.skillPreferences = local.skillPreferences;
   });
 
-  applyDecision("role", "Resolved role addons and temporary role drafts.", (policy) => {
+  applyDecision("role", "Resolved durable role assets, drafts, versions, and audit trails.", (policy) => {
     if (policy === "prefer_remote") {
       merged.agentPromptAddons = remote.agentPromptAddons;
       merged.latestRoleDrafts = remote.latestRoleDrafts;
+      merged.roles = remote.roles;
+      merged.temporaryRoleDrafts = remote.temporaryRoleDrafts;
+      merged.roleVersions = remote.roleVersions;
+      merged.roleAuditEntries = remote.roleAuditEntries;
       return;
     }
     if (policy === "manual_merge") {
@@ -427,10 +858,27 @@ export const mergeStudioUserAssetStates = (args: {
         local.latestRoleDrafts || {},
         remote.latestRoleDrafts || {},
       );
+      merged.roles = mergeTimestampedRecordMap(local.roles || {}, remote.roles || {});
+      merged.temporaryRoleDrafts = mergeTimestampedRecordMap(
+        local.temporaryRoleDrafts || {},
+        remote.temporaryRoleDrafts || {},
+      );
+      merged.roleVersions = mergeVersionedRecordMap(
+        local.roleVersions || {},
+        remote.roleVersions || {},
+      );
+      merged.roleAuditEntries = mergeVersionedRecordMap(
+        local.roleAuditEntries || {},
+        remote.roleAuditEntries || {},
+      );
       return;
     }
     merged.agentPromptAddons = local.agentPromptAddons;
     merged.latestRoleDrafts = local.latestRoleDrafts;
+    merged.roles = local.roles;
+    merged.temporaryRoleDrafts = local.temporaryRoleDrafts;
+    merged.roleVersions = local.roleVersions;
+    merged.roleAuditEntries = local.roleAuditEntries;
   });
 
   applyDecision("style-library", "Resolved durable style libraries.", (policy) => {

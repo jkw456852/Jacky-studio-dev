@@ -7,6 +7,7 @@ export const REGISTERED_SKILL_NAMES = [
   'smartEdit',
   'export',
   'touchEdit',
+  'workspaceSearch',
   'jkaiOneclick',
   'xcaiOneclick',
   'generateModel',

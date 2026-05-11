@@ -1,5 +1,9 @@
 import { normalizeResearchApiError, normalizeUnknownResearchError } from './research-errors';
 import { logResearchTelemetry } from './research-telemetry';
+import {
+  getActiveSearchProvider,
+  loadSearchSettings,
+} from '../search-settings';
 
 export type ResearchSearchMode = "web+images" | "web" | "images";
 
@@ -51,9 +55,22 @@ export async function runResearchSearch(
   query: string,
   mode: ResearchSearchMode = "web+images",
 ): Promise<SearchResponse> {
-  logResearchTelemetry('search.request', { mode, queryLength: query.length });
-
   try {
+    const searchSettings = loadSearchSettings();
+    const activeProvider = getActiveSearchProvider(searchSettings);
+    const defaults = searchSettings.defaults;
+
+    logResearchTelemetry('search.request', {
+      mode,
+      queryLength: query.length,
+      providerId: activeProvider?.id || '',
+      providerType: activeProvider?.providerType || '',
+      hasApiKey: Boolean(String(activeProvider?.apiKey || '').trim()),
+      hasBaseUrl: Boolean(String(activeProvider?.baseUrl || '').trim()),
+      webCount: defaults.webCount,
+      imageCount: defaults.imageCount,
+    });
+
     const response = await fetch("/api/search", {
       method: "POST",
       headers: {
@@ -64,11 +81,18 @@ export async function runResearchSearch(
         mode,
         locale: "zh-CN",
         count: {
-          web: 8,
-          images: 16,
+          web: defaults.webCount,
+          images: defaults.imageCount,
         },
-        safeSearch: "moderate",
-        timeRange: "any",
+        safeSearch: defaults.safeSearch,
+        timeRange: defaults.timeRange,
+        blockedDomains: defaults.blockedDomains,
+        provider: {
+          id: activeProvider?.id,
+          providerType: activeProvider?.providerType,
+          apiKey: activeProvider?.apiKey,
+          baseUrl: activeProvider?.baseUrl,
+        },
       }),
     });
 
@@ -79,6 +103,8 @@ export async function runResearchSearch(
 
     logResearchTelemetry('search.success', {
       requestId: payload?.requestId,
+      providerWeb: payload?.provider?.web || '',
+      providerImages: payload?.provider?.images || '',
       fallback: Boolean(payload?.provider?.fallback),
       webCount: Array.isArray(payload?.web) ? payload.web.length : 0,
       imageCount: Array.isArray(payload?.images) ? payload.images.length : 0,

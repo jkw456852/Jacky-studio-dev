@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildAgentTaskOutput,
   buildMainBrainRuntimeEnvelope,
   buildMainBrainTaskOutput,
   buildSkillExecutionRuntimeEnvelope,
@@ -97,4 +98,28 @@ test('buildMainBrainTaskOutput normalizes final plan and runtime result into tas
   assert.deepEqual(result.proposals, []);
   assert.equal(result.runtime?.mode, 'autonomous-main-brain');
   assert.equal(result.runtime?.stopReasonLabel, 'answered');
+});
+
+test('buildAgentTaskOutput preserves role governance audit for standard completion path', () => {
+  const audit = {
+    summary: '已自动更新专家壳 poster 的长期 addon。',
+    actions: [
+      {
+        action: 'addon_update',
+        targetBaseAgentId: 'poster',
+        promptAddonText: '先做结构化拆解，再给执行方案。',
+      },
+    ],
+  } as any;
+
+  const result = buildAgentTaskOutput({
+    message: '普通专家完成',
+    analysis: '标准完成分支',
+    roleGovernanceAudit: audit,
+  });
+
+  assert.equal(result.message, '普通专家完成');
+  assert.equal(result.analysis, '标准完成分支');
+  assert.equal(result.roleGovernanceAudit?.summary, audit.summary);
+  assert.deepEqual(result.roleGovernanceAudit?.actions, audit.actions);
 });

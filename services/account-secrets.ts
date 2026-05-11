@@ -11,6 +11,11 @@ import {
   safeLocalStorageStateStorage,
 } from '../utils/safe-storage.js';
 import { loadProviderSettings } from './provider-settings.js';
+import {
+  clearSearchSettingsStorage,
+  loadSearchSettings,
+  saveSearchSettings,
+} from './search-settings.js';
 import { useImageHostStore } from '../stores/imageHost.store.js';
 
 export interface PushAccountSecretsToAccountOptions {
@@ -47,10 +52,15 @@ const normalizeString = (value: unknown): string => String(value ?? '').trim();
 
 const DEFAULT_PROVIDERS_SIGNATURE = JSON.stringify(createEmptyAccountSecretsSnapshot().providers);
 const DEFAULT_IMAGE_HOST_SIGNATURE = JSON.stringify(createEmptyAccountSecretsSnapshot().imageHost);
+const DEFAULT_SEARCH_SIGNATURE = JSON.stringify(createEmptyAccountSecretsSnapshot().search);
 
 const hasMeaningfulImageHostConfig = (
   imageHost: StudioAccountSecretsSnapshot['imageHost'],
 ): boolean => JSON.stringify(imageHost) !== DEFAULT_IMAGE_HOST_SIGNATURE;
+
+const hasMeaningfulSearchConfig = (
+  search: StudioAccountSecretsSnapshot['search'],
+): boolean => JSON.stringify(search) !== DEFAULT_SEARCH_SIGNATURE;
 
 const hasMeaningfulAccountSecretsSnapshot = (
   snapshot: StudioAccountSecretsSnapshot,
@@ -65,6 +75,7 @@ const hasMeaningfulAccountSecretsSnapshot = (
     || Boolean(normalized.replicateKey)
     || Boolean(normalized.klingKey)
     || hasMeaningfulImageHostConfig(normalized.imageHost)
+    || hasMeaningfulSearchConfig(normalized.search)
   );
 };
 
@@ -96,6 +107,7 @@ export const clearLocalAccountSecretsStorage = (): void => {
   safeLocalStorageRemoveItem(LEGACY_YUNWU_KEY_STORAGE_KEY);
   clearStoredRemoteVersion();
   safeLocalStorageRemoveItem(IMAGE_HOST_STORAGE_KEY);
+  clearSearchSettingsStorage();
   useImageHostStore.setState({
     selectedProvider: 'none',
     imgbbKey: '',
@@ -107,6 +119,7 @@ export const clearLocalAccountSecretsStorage = (): void => {
 export const collectLocalAccountSecretsSnapshot = (): StudioAccountSecretsSnapshot => {
   const loaded = loadProviderSettings();
   const imageHostState = useImageHostStore.getState();
+  const searchSettings = loadSearchSettings();
 
   return normalizeAccountSecretsSnapshot({
     version: 1,
@@ -120,6 +133,7 @@ export const collectLocalAccountSecretsSnapshot = (): StudioAccountSecretsSnapsh
       imgbbKey: imageHostState.imgbbKey,
       customConfig: imageHostState.customConfig,
     },
+    search: searchSettings,
   });
 };
 
@@ -151,6 +165,7 @@ export const applyLocalAccountSecretsSnapshot = (
     imgbbKey: normalized.imageHost.imgbbKey,
     customConfig: clone(normalized.imageHost.customConfig),
   });
+  saveSearchSettings(normalized.search);
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
@@ -283,14 +298,21 @@ export const syncAccountSecretsWithAccount = async (
   if (remoteSnapshot.updatedAt > 0) {
     const localHasImageHost = hasMeaningfulImageHostConfig(localSnapshot.imageHost);
     const remoteHasImageHost = hasMeaningfulImageHostConfig(remoteSnapshot.imageHost);
+    const localHasSearch = hasMeaningfulSearchConfig(localSnapshot.search);
+    const remoteHasSearch = hasMeaningfulSearchConfig(remoteSnapshot.search);
 
-    if (localHasImageHost && !remoteHasImageHost) {
+    if ((localHasImageHost && !remoteHasImageHost) || (localHasSearch && !remoteHasSearch)) {
       const storedSnapshot = await pushAccountSecretsToAccount({
         ...options,
         snapshot: {
           ...remoteSnapshot,
           updatedAt: Date.now(),
-          imageHost: clone(localSnapshot.imageHost),
+          imageHost: localHasImageHost && !remoteHasImageHost
+            ? clone(localSnapshot.imageHost)
+            : clone(remoteSnapshot.imageHost),
+          search: localHasSearch && !remoteHasSearch
+            ? clone(localSnapshot.search)
+            : clone(remoteSnapshot.search),
         },
         baseUpdatedAt: remoteSnapshot.updatedAt,
       });

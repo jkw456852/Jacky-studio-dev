@@ -13,6 +13,9 @@ import {
   Wand2,
   Image as ImageIcon,
   Loader2,
+  Globe,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { ChatMessage } from '../../../types';
 import { AgentBrowserSessionCard } from './AgentBrowserSessionCard';
@@ -34,6 +37,7 @@ import {
   deriveAgentMessageImageCards,
   deriveAgentMessageOneClickView,
   deriveAgentMessagePlanningBlock,
+  deriveAgentMessageResearchView,
 } from './AgentMessage.helpers';
 
 export type AgentMessageClothingActionsProps = {
@@ -168,6 +172,10 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
 
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
   const [isPlanningExpanded, setIsPlanningExpanded] = useState(false);
+  const [isResearchSourcesExpanded, setIsResearchSourcesExpanded] =
+    useState(false);
+  const [isResearchExtractsExpanded, setIsResearchExtractsExpanded] =
+    useState(false);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -197,6 +205,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   const planningBlock = useMemo(
     () => deriveAgentMessagePlanningBlock(cleanText),
     [cleanText],
+  );
+
+  const researchView = useMemo(
+    () => deriveAgentMessageResearchView(message),
+    [message],
   );
 
   const visibleText = planningBlock?.visibleText || cleanText;
@@ -229,6 +242,243 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 <span>Image_{i + 1}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {researchView && (
+          <div className="px-1">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-sm">
+              <div className="border-b border-slate-100 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          researchView.status === 'failed'
+                            ? 'bg-rose-100 text-rose-700'
+                            : researchView.status === 'searching'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {researchView.statusLabel}
+                      </span>
+                      {researchView.providerLabel && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
+                          <Globe size={10} />
+                          {researchView.providerLabel}
+                        </span>
+                      )}
+                      {researchView.fallback && (
+                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+                          fallback
+                        </span>
+                      )}
+                    </div>
+                    {researchView.query && (
+                      <div className="mt-2 text-[12px] font-medium text-slate-800">
+                        {researchView.query}
+                      </div>
+                    )}
+                    {researchView.summary && (
+                      <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                        {researchView.summary}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 rounded-xl bg-slate-100 p-2 text-slate-500">
+                    <Search size={14} />
+                  </div>
+                </div>
+
+                {researchView.stats.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {researchView.stats.map((stat) => (
+                      <div
+                        key={`${stat.label}-${stat.value}`}
+                        className="min-w-[64px] rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2"
+                      >
+                        <div className="text-[10px] text-slate-500">{stat.label}</div>
+                        <div className="mt-0.5 text-[13px] font-semibold text-slate-800">
+                          {stat.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-3 py-3">
+                <div className="flex flex-wrap gap-2">
+                  {researchView.steps.map((step) => (
+                    <div
+                      key={step.key}
+                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                        step.status === 'done'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : step.status === 'current'
+                            ? 'bg-blue-50 text-blue-700'
+                            : step.status === 'error'
+                              ? 'bg-rose-50 text-rose-700'
+                              : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {step.label}
+                    </div>
+                  ))}
+                </div>
+
+                {researchView.citations.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[12px] font-semibold text-slate-700">
+                        引用来源
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIsResearchSourcesExpanded((value) => !value)
+                        }
+                        className="text-[11px] font-medium text-slate-500 transition hover:text-slate-800"
+                      >
+                        {isResearchSourcesExpanded ? '收起来源' : '展开来源'}
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {researchView.citations.slice(0, 4).map((citation, index) => (
+                        <a
+                          key={citation.id}
+                          href={citation.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        >
+                          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
+                            {index + 1}
+                          </span>
+                          <span className="max-w-[160px] truncate">{citation.host}</span>
+                        </a>
+                      ))}
+                      {researchView.citations.length > 4 && (
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-500">
+                          +{researchView.citations.length - 4}
+                        </span>
+                      )}
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {isResearchSourcesExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
+                            {researchView.citations.map((citation, index) => (
+                              <a
+                                key={citation.id}
+                                href={citation.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition hover:border-slate-300"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
+                                        {index + 1}
+                                      </span>
+                                      <div className="truncate text-[12px] font-medium text-slate-800">
+                                        {citation.title}
+                                      </div>
+                                    </div>
+                                    <div className="mt-1 truncate text-[10px] text-slate-500">
+                                      {citation.siteName || citation.host}
+                                    </div>
+                                    {(citation.excerpt || citation.snippet) && (
+                                      <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                                        {citation.excerpt || citation.snippet}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <ExternalLink
+                                    size={12}
+                                    className="mt-0.5 shrink-0 text-slate-400"
+                                  />
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {researchView.extractedPages.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700">
+                        <FileText size={12} />
+                        网页摘录
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setIsResearchExtractsExpanded((value) => !value)
+                        }
+                        className="text-[11px] font-medium text-slate-500 transition hover:text-slate-800"
+                      >
+                        {isResearchExtractsExpanded ? '收起摘录' : '展开摘录'}
+                      </button>
+                    </div>
+
+                    <AnimatePresence initial={false}>
+                      {isResearchExtractsExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
+                            {researchView.extractedPages.map((page, index) => (
+                              <div
+                                key={page.id}
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
+                                    {index + 1}
+                                  </span>
+                                  <div className="truncate text-[12px] font-medium text-slate-800">
+                                    {page.title}
+                                  </div>
+                                </div>
+                                <div className="mt-1 break-all text-[10px] text-slate-400">
+                                  {page.url}
+                                </div>
+                                <div className="mt-1 text-[11px] leading-5 text-slate-500 whitespace-pre-wrap">
+                                  {page.cleanedTextExcerpt || page.excerpt || '暂无正文摘录'}
+                                </div>
+                                {page.error && (
+                                  <div className="mt-1 text-[10px] text-rose-600">
+                                    {page.error}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

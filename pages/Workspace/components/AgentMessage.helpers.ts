@@ -2,6 +2,15 @@ import type { ChatMessage } from "../../../types";
 
 type AgentData = NonNullable<ChatMessage["agentData"]>;
 type WorkflowSkillCall = NonNullable<AgentData["skillCalls"]>[number];
+type AgentResearchData = NonNullable<ChatMessage["agentData"]>["research"] extends infer T
+  ? NonNullable<T>
+  : never;
+type AgentResearchCitationItem = NonNullable<
+  NonNullable<AgentResearchData["citations"]>[number]
+>;
+type AgentResearchPageItem = NonNullable<
+  NonNullable<AgentResearchData["extractedPages"]>[number]
+>;
 
 export type AgentMessageProposal = {
   id: string;
@@ -32,6 +41,44 @@ export type AgentMessagePlanningBlock = {
   previewLines: string[];
 };
 
+export type AgentMessageResearchCitation = {
+  id: string;
+  title: string;
+  url: string;
+  host: string;
+  siteName?: string;
+  snippet?: string;
+  excerpt?: string;
+};
+
+export type AgentMessageResearchPage = {
+  id: string;
+  title: string;
+  url: string;
+  excerpt?: string;
+  cleanedTextExcerpt?: string;
+  length?: number;
+  error?: string;
+};
+
+export type AgentMessageResearchView = {
+  status: "searching" | "completed" | "failed";
+  statusLabel: string;
+  query?: string;
+  summary?: string;
+  providerLabel?: string;
+  fallback: boolean;
+  stats: Array<{ label: string; value: string }>;
+  steps: Array<{
+    key: string;
+    label: string;
+    status: "done" | "current" | "idle" | "error";
+  }>;
+  citations: AgentMessageResearchCitation[];
+  extractedPages: AgentMessageResearchPage[];
+  suggestedQueries: string[];
+};
+
 const normalizeEscapedNewlines = (value: string): string =>
   (value || "")
     .replace(/\r\n/g, "\n")
@@ -39,6 +86,60 @@ const normalizeEscapedNewlines = (value: string): string =>
     .replace(/\\n/g, "\n");
 
 const VISUAL_ORCHESTRATION_MARKER = "[Visual Orchestration Plan]";
+
+const truncateText = (value: unknown, maxChars: number): string => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return normalized.length > maxChars
+    ? `${normalized.slice(0, Math.max(0, maxChars - 1))}…`
+    : normalized;
+};
+
+const readHostFromUrl = (url: unknown): string => {
+  try {
+    const host = new URL(String(url || "")).hostname.replace(/^www\./i, "");
+    return host || "来源";
+  } catch {
+    return "来源";
+  }
+};
+
+const normalizeResearchCitation = (
+  item: AgentResearchCitationItem,
+  index: number,
+): AgentMessageResearchCitation | null => {
+  const url = String(item?.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  const title = String(item?.title || "").trim() || `来源 ${index + 1}`;
+
+  return {
+    id: `${url}#${index}`,
+    title,
+    url,
+    host: String(item?.host || "").trim() || readHostFromUrl(url),
+    siteName: String(item?.siteName || "").trim() || undefined,
+    snippet: truncateText(item?.snippet, 220) || undefined,
+    excerpt: truncateText(item?.excerpt, 360) || undefined,
+  };
+};
+
+const normalizeResearchPage = (
+  item: AgentResearchPageItem,
+  index: number,
+): AgentMessageResearchPage | null => {
+  const url = String(item?.url || "").trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+
+  return {
+    id: `${url}#page-${index}`,
+    title: String(item?.title || "").trim() || `网页摘录 ${index + 1}`,
+    url,
+    excerpt: truncateText(item?.excerpt, 260) || undefined,
+    cleanedTextExcerpt: truncateText(item?.cleanedTextExcerpt, 600) || undefined,
+    length: typeof item?.length === "number" ? item.length : undefined,
+    error: truncateText(item?.error, 180) || undefined,
+  };
+};
 
 export const deriveAgentMessagePlanningBlock = (
   cleanText: string,
@@ -179,6 +280,90 @@ export const deriveAgentMessageOneClickView = (
 
   pushCurrent();
   return { intro: intro.join("\n").trim(), sections };
+};
+
+export const deriveAgentMessageResearchView = (
+  message: ChatMessage,
+): AgentMessageResearchView | null => {
+  const research = message.agentData?.research;
+  if (!research) return null;
+
+  const citations = (research.citations || [])
+    .map((item, index) => normalizeResearchCitation(item, index))
+    .filter((item): item is AgentMessageResearchCitation => Boolean(item));
+
+  const extractedPages = (research.extractedPages || [])
+    .map((item, index) => normalizeResearchPage(item, index))
+    .filter((item): item is AgentMessageResearchPage => Boolean(item));
+
+  const stats = [
+    research.webCount ? { label: "网页", value: String(research.webCount) } : null,
+    research.imageCount ? { label: "图片", value: String(research.imageCount) } : null,
+    research.extractedCount
+      ? { label: "摘录", value: String(research.extractedCount) }
+      : null,
+    citations.length > 0 ? { label: "引用", value: String(citations.length) } : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item));
+
+  const status = research.status;
+  const statusLabel =
+    status === "searching"
+      ? "检索中"
+      : status === "failed"
+        ? "检索失败"
+        : "已检索";
+
+  const steps: AgentMessageResearchView["steps"] = [
+    {
+      key: "query",
+      label: "构造查询",
+      status: status === "failed" ? "done" : "done",
+    },
+    {
+      key: "search",
+      label: "搜索网页",
+      status:
+        status === "searching"
+          ? "current"
+          : status === "failed"
+            ? "error"
+            : "done",
+    },
+    {
+      key: "extract",
+      label: "提取正文",
+      status:
+        status === "searching"
+          ? "idle"
+          : status === "failed"
+            ? "idle"
+            : extractedPages.length > 0
+              ? "done"
+              : "idle",
+    },
+    {
+      key: "answer",
+      label: "整理回答",
+      status: status === "searching" ? "idle" : status === "failed" ? "idle" : "done",
+    },
+  ];
+
+  return {
+    status,
+    statusLabel,
+    query: truncateText(research.query, 140) || undefined,
+    summary: truncateText(research.summary, 220) || undefined,
+    providerLabel: truncateText(research.providerLabel, 80) || undefined,
+    fallback: Boolean(research.fallback),
+    stats,
+    steps,
+    citations,
+    extractedPages,
+    suggestedQueries: (research.suggestedQueries || [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 6),
+  };
 };
 
 export const deriveProposalPrompt = (

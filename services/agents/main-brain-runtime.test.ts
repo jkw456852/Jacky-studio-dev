@@ -68,6 +68,51 @@ test('buildRuntimeMessage includes snapshot, observations, and latest turn hints
   assert.match(message, /\[Decision Instruction\]/);
 });
 
+test('buildRuntimeMessage surfaces workspaceSearch evidence for replanning', () => {
+  const searchTurns = [
+    {
+      turn: 1,
+      inputMessage: '查一下澳门今年 kspark 什么时候举办',
+      plan: { message: '先联网搜索' },
+      decision: {
+        turn: 1,
+        action: 'execute-skills',
+        summary: 'Planner returned a decision. Next action: execute 1 skill call(s).',
+        skillCallCount: 1,
+        messagePreview: '先联网搜索',
+      },
+      skillCalls: [{ skillName: 'workspaceSearch', params: { query: '澳门今年 kspark 什么时候举办' } }],
+      skillResults: [{
+        success: true,
+        skillName: 'workspaceSearch',
+        result: {
+          query: '澳门今年 kspark 什么时候举办',
+          summary: '已完成联网搜索，检索到活动时间与阵容线索。',
+          provider: { web: 'tavily', images: 'none', fallback: false },
+          citations: [
+            { title: 'K-Spark 官方页面', url: 'https://example.com/kspark' },
+          ],
+          extractedPages: [
+            {
+              title: 'K-Spark 官方页面',
+              cleanedTextExcerpt: '活动将于 2026 年 8 月在澳门举办，压轴嘉宾待官方公布。',
+            },
+          ],
+        },
+      }],
+      assets: [],
+    },
+  ] as any;
+
+  const snapshot = buildRuntimeSnapshot(searchTurns, baseObservations, 1);
+  const message = buildRuntimeMessage('查一下澳门今年 kspark 什么时候举办', searchTurns, baseObservations, snapshot);
+
+  assert.match(message, /workspaceSearch\.query=查一下澳门今年 kspark 什么时候举办|workspaceSearch\.query=澳门今年 kspark 什么时候举办/);
+  assert.match(message, /workspaceSearch\.summary=已完成联网搜索/);
+  assert.match(message, /workspaceSearch\.provider=tavily \/ none/);
+  assert.match(message, /workspaceSearch\.extractedFacts=K-Spark 官方页面: 活动将于 2026 年 8 月在澳门举办/);
+});
+
 test('collectExecutableSkillCalls returns only populated skill call arrays', () => {
   assert.deepEqual(collectExecutableSkillCalls(null), []);
   assert.deepEqual(collectExecutableSkillCalls({}), []);
