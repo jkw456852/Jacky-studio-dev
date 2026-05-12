@@ -15,7 +15,7 @@ export const SYSTEM_ANNOUNCEMENTS_STORAGE_KEY =
 export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
   {
     id: "2026-05-12-projects-announcement-and-workspace-updates",
-    date: "2026.05.12",
+    date: "2026.05.12 14:30",
     title: "公告更清爽了，项目和工作台也补齐了一批实用更新",
     summary:
       "这次把公告弹窗重做得更简洁，项目页也补上了同款公告入口；另外把项目封面、图片拖拽上传、模型偏好和局部修图结果回传这些日常最常碰到的体验一起顺手补齐了。",
@@ -27,8 +27,8 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
       "工作台里的模型偏好入口已经补回正确位置，可以直接改图片和视频的偏好模型。",
     ],
     fixes: [
-      "修掉了局部修图只提示成功、但没有把结果图带回来的问题，现在会尽量把编辑后的图片结果提取并显示出来。",
-      "清掉了一批已经废弃的快捷能力入口，首页和侧边栏的能力展示更一致，不容易再点到无效功能。",
+      "优化网站流畅性。",
+      "增加网站稳定性。",
     ],
     experiments: [
       "工作台里已经接入工作流配方中心骨架，先覆盖导入、smoke test、发布、回滚和放入画板这条主链路，但整体还属于实验阶段。",
@@ -37,7 +37,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
   },
   {
     id: "2026-05-12-home-announcement-center",
-    date: "2026.05.12",
+    date: "2026.05.12 10:30",
     title: "首页现在有系统公告了",
     summary:
       "以后点右上角铃铛，就能直接看到这次到底更新了什么，不用再靠猜。",
@@ -56,7 +56,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
   },
   {
     id: "2026-05-11-home-skill-sync",
-    date: "2026.05.11",
+    date: "2026.05.11 19:30",
     title: "首页能力入口做了一轮清理",
     summary:
       "把首页里一批已经废弃、容易误导人的旧能力入口清掉了，保留现在真正还在用的。",
