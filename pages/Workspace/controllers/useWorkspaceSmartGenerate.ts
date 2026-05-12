@@ -1,6 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { CanvasElement, ChatMessage } from "../../../types";
 import type { ImageModel } from "../../../types/common";
+import { extractImageUrlsFromResult } from "../../../services/agents/image-result-extractor";
 import { useAgentStore } from "../../../stores/agent.store";
 import { useProjectStore } from "../../../stores/project.store";
 import { imageGenSkill } from "../../../services/skills/image-gen.skill";
@@ -72,16 +73,9 @@ const collectDerivedImageUrls = (task: DerivedImageTask): string[] => {
           asset?.type === "image" && typeof asset.url === "string",
       )
       .map((asset) => asset.url)),
-    ...((task?.output?.skillCalls || [])
-      .filter(
-        (
-          call,
-        ): call is {
-          success: true;
-          result: string;
-        } => Boolean(call?.success) && typeof call?.result === "string",
-      )
-      .map((call) => call.result)),
+    ...((task?.output?.skillCalls || []).flatMap((call) =>
+      call?.success ? extractImageUrlsFromResult(call.result) : [],
+    )),
   ];
 };
 

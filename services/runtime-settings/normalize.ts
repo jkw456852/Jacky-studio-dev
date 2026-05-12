@@ -1,12 +1,12 @@
-import type { LoadedProviderSettings } from "../provider-settings";
+import type { LoadedProviderSettings } from "../provider-settings.ts";
 import {
   DEFAULT_RUNTIME_SETTINGS_SNAPSHOT,
   RUNTIME_SETTINGS_VERSION,
-} from "./defaults";
+} from "./defaults.ts";
 import type {
   RuntimeImagePostPathMap,
   RuntimeSettingsSnapshot,
-} from "./schema";
+} from "./schema.ts";
 
 const clampInteger = (
   value: unknown,

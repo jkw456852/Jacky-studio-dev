@@ -1,4 +1,4 @@
-import type { ImageModelPostPathConfig } from "../provider-settings";
+import type { ImageModelPostPathConfig } from "../provider-settings.ts";
 
 export type RuntimeSettingsSource =
   | "global"

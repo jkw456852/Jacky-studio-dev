@@ -1,9 +1,9 @@
-import { loadProviderSettings } from "../provider-settings";
-import { normalizeRuntimeSettingsSnapshot } from "./normalize";
+import { loadProviderSettings } from "../provider-settings.ts";
+import { normalizeRuntimeSettingsSnapshot } from "./normalize.ts";
 import type {
   RuntimeSettingsSnapshot,
   RuntimeSettingsView,
-} from "./schema";
+} from "./schema.ts";
 
 type RuntimeSettingsListener = (
   view: RuntimeSettingsView<RuntimeSettingsSnapshot>,

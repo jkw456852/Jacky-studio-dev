@@ -17,6 +17,12 @@ import { getMemoryKey } from '../services/topicMemory/key';
 import { AnimatePresence } from 'framer-motion';
 import { SettingsModal } from '../components/SettingsModal';
 import Sidebar from '../components/Sidebar';
+import SystemAnnouncementModal from '../components/SystemAnnouncementModal';
+import {
+  getUnreadAnnouncementCount,
+  markAllAnnouncementsAsRead,
+  SYSTEM_ANNOUNCEMENTS,
+} from '../services/systemAnnouncements';
 import { createNewWorkspacePath, workspacePath } from '../utils/routes';
 
 const toMemoryKey = (workspaceId: string, conversationId: string): string => {
@@ -24,10 +30,15 @@ const toMemoryKey = (workspaceId: string, conversationId: string): string => {
   if (conversationId.includes(':')) return conversationId;
   return getMemoryKey(workspaceId, conversationId);
 };
+interface HeaderProps {
+  unreadAnnouncementCount: number;
+  onOpenAnnouncements: () => void;
+}
 
-
-
-const Header = () => (
+const Header: React.FC<HeaderProps> = ({
+  unreadAnnouncementCount,
+  onOpenAnnouncements,
+}) => (
   <header className="fixed top-0 left-0 right-0 h-16 px-8 flex items-center justify-between z-40 bg-white/70 backdrop-blur-md border-b border-white/20 shadow-sm shadow-gray-100/20">
     <div className="flex items-center gap-2">
       <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-xs">JK</div>
@@ -37,8 +48,18 @@ const Header = () => (
       <div className="text-sm font-medium text-gray-600 flex items-center gap-1 cursor-pointer">
         简体中文 <ChevronDown size={14} />
       </div>
-      <button className="p-2 rounded-full hover:bg-gray-200 transition">
+      <button
+        type="button"
+        onClick={onOpenAnnouncements}
+        className="relative rounded-full border border-black/5 bg-white/80 p-2 text-gray-600 transition hover:bg-gray-100 hover:text-black"
+        aria-label="打开系统公告"
+      >
         <Bell size={20} className="text-gray-600" />
+        {unreadAnnouncementCount > 0 ? (
+          <span className="absolute -right-1 -top-1 flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-5 text-white shadow-md shadow-red-500/25">
+            {unreadAnnouncementCount > 9 ? '9+' : unreadAnnouncementCount}
+          </span>
+        ) : null}
       </button>
       <div className="w-8 h-8 rounded-full border border-gray-200 cursor-pointer bg-black text-white text-[10px] font-bold flex items-center justify-center">
         JK
@@ -218,6 +239,8 @@ const Projects: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
+  const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
 
   const loadProjects = async () => {
       const loadedProjects = await getProjectSummaries();
@@ -227,6 +250,16 @@ const Projects: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  useEffect(() => {
+    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+  }, []);
+
+  const handleOpenAnnouncements = () => {
+    setIsAnnouncementOpen(true);
+    markAllAnnouncementsAsRead();
+    setUnreadAnnouncementCount(0);
+  };
 
   const handleSelect = (id: string) => {
       const newSelected = new Set(selectedIds);
@@ -296,8 +329,16 @@ const Projects: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   return (
     <div className="min-h-screen pb-20 bg-gray-50/50">
-      <Header />
+      <Header
+        unreadAnnouncementCount={unreadAnnouncementCount}
+        onOpenAnnouncements={handleOpenAnnouncements}
+      />
       <Sidebar />
+      <SystemAnnouncementModal
+        isOpen={isAnnouncementOpen}
+        announcements={SYSTEM_ANNOUNCEMENTS}
+        onClose={() => setIsAnnouncementOpen(false)}
+      />
       {onExit && (
         <button
           onClick={onExit}

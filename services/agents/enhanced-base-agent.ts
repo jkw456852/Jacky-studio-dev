@@ -17,6 +17,7 @@ import {
   isImageGenerationSkillName,
   isVideoGenerationSkillName,
 } from "../skills/skill-manifest";
+import { buildImageAssetsFromSkillResults } from "./image-result-extractor";
 import { errorHandler, ErrorType, AppError } from "../../utils/error-handler";
 import { buildEcommerceProposals } from "./shared/ecommerce-variants";
 import { useAgentStore } from "../../stores/agent.store";
@@ -1515,15 +1516,18 @@ export abstract class EnhancedBaseAgent {
       );
     }
 
-    return skillCalls
+    const videoAssets = skillCalls
       .filter(
-        (s) => s.success && s.result && isAssetProducingSkillName(s.skillName),
+        (s) =>
+          s.success &&
+          s.result &&
+          isAssetProducingSkillName(s.skillName) &&
+          isVideoGenerationSkillName(s.skillName) &&
+          typeof s.result === "string",
       )
       .map((s) => ({
         id: `asset-${Date.now()}-${Math.random()}`,
-        type: isVideoGenerationSkillName(s.skillName)
-          ? ("video" as const)
-          : ("image" as const),
+        type: "video" as const,
         url: s.result,
         metadata: {
           prompt: s.params?.prompt || s.params?.editType || "",
@@ -1531,6 +1535,18 @@ export abstract class EnhancedBaseAgent {
           agentId: this.agentInfo.id,
         },
       }));
+
+    const imageAssets = buildImageAssetsFromSkillResults(
+      skillCalls.filter((s) =>
+        s.success &&
+        s.result &&
+        isAssetProducingSkillName(s.skillName) &&
+        !isVideoGenerationSkillName(s.skillName),
+      ),
+      this.agentInfo.id,
+    );
+
+    return [...imageAssets, ...videoAssets];
   }
 
   /**

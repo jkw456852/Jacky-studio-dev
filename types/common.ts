@@ -125,6 +125,10 @@ export interface CanvasElement {
   treeNodeKind?: WorkspaceTreeNodeKind;
   treeNodeTone?: string;
   treeChildrenCollapsed?: boolean;
+  workflowNodeId?: string;
+  workflowRecipeId?: string;
+  workflowRecipeVersion?: string;
+  workflowNodeRole?: 'entry' | 'processor' | 'output';
 
   // Video Gen Specifics
   genStartFrame?: string;

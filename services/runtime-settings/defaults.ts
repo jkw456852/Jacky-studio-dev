@@ -1,4 +1,4 @@
-import type { RuntimeSettingsSnapshot } from "./schema";
+import type { RuntimeSettingsSnapshot } from "./schema.ts";
 
 export const RUNTIME_SETTINGS_VERSION = "2026-04-27.v1";
 

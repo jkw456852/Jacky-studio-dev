@@ -263,7 +263,7 @@ export const capHistoryLength = (history: HistoryState[]): HistoryState[] =>
 
 export const compactProjectForPersist = (project: Project): Project => ({
   ...project,
-  thumbnail: trimElementUrl(project.thumbnail),
+  thumbnail: project.thumbnail,
   elements: compactElementsForHistory(project.elements || []),
   markers: Array.isArray(project.markers) ? [...project.markers] : [],
   conversations: trimConversationsForPersist(project.conversations || []),

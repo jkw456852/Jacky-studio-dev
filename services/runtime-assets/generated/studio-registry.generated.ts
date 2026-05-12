@@ -619,23 +619,7 @@ export const STUDIO_REGISTRY_MANIFEST = {
       "notes": "适合："
     }
   },
-  "plugins": {
-    "quick-skills": {
-      "id": "quick-skills",
-      "name": "Quick Skills",
-      "label": "快捷技能",
-      "description": "管理助手侧边栏中的快捷技能入口、排序和启用状态。",
-      "category": "quick-skill",
-      "defaultEnabled": true,
-      "defaultPinned": true,
-      "notes": "这个插件资产代表侧边栏里的快捷技能系统本身。",
-      "tags": [
-        "assistant",
-        "skills",
-        "workflow"
-      ]
-    }
-  },
+  "plugins": {},
   "systems": {
     "skysper-core": {
       "id": "skysper-core",

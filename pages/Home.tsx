@@ -1,13 +1,10 @@
-﻿import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Home as HomeIcon,
-  Folder,
-  User,
-  Info,
   Plus,
   Bell,
+  Check,
   ChevronDown,
   Zap,
   Globe,
@@ -17,17 +14,12 @@ import {
   Paperclip,
   Image as ImageIcon,
   Video,
-  Hash,
   X,
   FileText,
-  Banana,
-  ShoppingCart,
-  Palette,
-  Star,
-  Settings,
   Trash2,
 } from "lucide-react";
-import { Project } from "../types";
+import type { ImageModel, Project, VideoModel } from "../types";
+import SystemAnnouncementModal from "../components/SystemAnnouncementModal";
 import {
   deleteProject,
   getProject,
@@ -35,8 +27,18 @@ import {
 } from "../services/storage";
 import { deleteTopicMemory } from "../services/topic-memory";
 import { getMemoryKey } from "../services/topicMemory/key";
-import { SettingsModal } from "../components/SettingsModal";
 import Sidebar from "../components/Sidebar";
+import {
+  getUnreadAnnouncementCount,
+  markAllAnnouncementsAsRead,
+  SYSTEM_ANNOUNCEMENTS,
+} from "../services/systemAnnouncements";
+import { useWorkspaceModelPreferences } from "./Workspace/controllers/useWorkspaceModelPreferences";
+import {
+  getMappedModelConfigs,
+  getMappedModelDisplaySummary,
+  getModelDisplayLabel,
+} from "../services/provider-settings";
 import { ROUTES, createNewWorkspacePath, workspacePath } from "../utils/routes";
 
 const toMemoryKey = (workspaceId: string, conversationId: string): string => {
@@ -45,7 +47,15 @@ const toMemoryKey = (workspaceId: string, conversationId: string): string => {
   return getMemoryKey(workspaceId, conversationId);
 };
 
-const Header = () => (
+interface HeaderProps {
+  unreadAnnouncementCount: number;
+  onOpenAnnouncements: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({
+  unreadAnnouncementCount,
+  onOpenAnnouncements,
+}) => (
   <header className="fixed top-0 left-0 right-0 h-16 px-8 flex items-center justify-between z-40 bg-white/70 backdrop-blur-md border-b border-white/20 shadow-sm shadow-gray-100/20">
     <div className="flex items-center gap-2">
       <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-xs">
@@ -57,8 +67,18 @@ const Header = () => (
       <div className="text-sm font-medium text-gray-600 flex items-center gap-1 cursor-pointer">
         简体中文 <ChevronDown size={14} />
       </div>
-      <button className="p-2 rounded-full hover:bg-gray-200 transition">
-        <Bell size={20} className="text-gray-600" />
+      <button
+        type="button"
+        onClick={onOpenAnnouncements}
+        className="relative rounded-full border border-black/5 bg-white/80 p-2 text-gray-600 transition hover:bg-gray-100 hover:text-black"
+        aria-label="打开系统公告"
+      >
+        <Bell size={20} className="text-current" />
+        {unreadAnnouncementCount > 0 ? (
+          <span className="absolute -right-1 -top-1 flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-5 text-white shadow-md shadow-red-500/25">
+            {unreadAnnouncementCount > 9 ? "9+" : unreadAnnouncementCount}
+          </span>
+        ) : null}
       </button>
       <div className="w-8 h-8 rounded-full border border-gray-200 cursor-pointer bg-black text-white text-[10px] font-bold flex items-center justify-center">
         JK
@@ -67,28 +87,392 @@ const Header = () => (
   </header>
 );
 
-interface FilterPillProps {
-  icon?: React.ReactNode;
-  text: string;
-  active?: boolean;
-}
+type HomeCreationMode = "agent" | "image" | "video";
 
-const FilterPill: React.FC<FilterPillProps> = ({
-  icon,
-  text,
-  active = false,
-}) => (
-  <button
-    className={`px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 border transition ${
-      active
-        ? "bg-orange-50 border-orange-200 text-orange-600"
-        : "bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-    }`}
-  >
-    {icon}
-    {text}
-  </button>
-);
+const MODE_OPTIONS: Array<{
+  id: HomeCreationMode;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  { id: "agent", label: "主脑", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
+  { id: "image", label: "图片", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
+  { id: "video", label: "视频", icon: <Video size={14} strokeWidth={2.2} /> },
+];
+
+type HomeModelPreferenceTab = "image" | "video" | "3d";
+
+type HomeToolbarModelOption = {
+  optionKey?: string;
+  id: string;
+  name: string;
+  desc: string;
+  time?: string;
+  badge?: string;
+  providerId?: string | null;
+};
+
+const HOME_MODEL_OPTIONS: Record<HomeModelPreferenceTab, HomeToolbarModelOption[]> = {
+  image: [
+    {
+      id: "Nano Banana Pro",
+      name: "Nano Banana Pro",
+      desc: "高质量细节优先，适合正式出图。",
+      time: "~20s",
+    },
+    {
+      id: "NanoBanana2",
+      name: "Nano Banana 2",
+      desc: "更快一点，适合大量试图。",
+      time: "~15s",
+    },
+    {
+      id: "Seedream5.0",
+      name: "Seedream 5.0",
+      desc: "偏电影感和质感表现。",
+      time: "~15s",
+    },
+    {
+      id: "GPT Image 2",
+      name: "GPT Image 2",
+      desc: "适合 OpenAI 图像链路。",
+      time: "~30s",
+    },
+  ],
+  video: [
+    {
+      id: "veo-3.1-fast-generate-preview",
+      name: "Veo 3.1 Fast",
+      desc: "出片更快，适合快速预览。",
+      time: "~10s",
+      badge: "极速版",
+    },
+    {
+      id: "veo-3.1-generate-preview",
+      name: "Veo 3.1 Pro",
+      desc: "质量优先，适合正式视频生成。",
+      time: "~180s",
+      badge: "专业版",
+    },
+    {
+      id: "sora-2",
+      name: "Sora 2",
+      desc: "适合高表现力视频任务。",
+      time: "~300s",
+    },
+  ],
+  "3d": [
+    {
+      id: "Tripo",
+      name: "Tripo",
+      desc: "默认 3D 生成模型。",
+    },
+  ],
+};
+
+const buildHomeModelOptions = (
+  category: "image" | "video",
+): HomeToolbarModelOption[] => {
+  const mapped = getMappedModelConfigs(category).map((config) => ({
+    optionKey: config.raw || `${config.providerId || "default"}::${config.modelId}`,
+    id: category === "image" ? getModelDisplayLabel(config.modelId) : config.modelId,
+    name: getModelDisplayLabel(config.modelId),
+    providerId: config.providerId || null,
+    desc: config.providerName
+      ? `当前映射到 ${config.providerName}`
+      : "当前已在设置中映射",
+  }));
+
+  return mapped.length > 0 ? mapped : HOME_MODEL_OPTIONS[category];
+};
+
+const HomeModelPreferencePopover: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  modelPreferenceTab: HomeModelPreferenceTab;
+  setModelPreferenceTab: (tab: HomeModelPreferenceTab) => void;
+  autoModelSelect: boolean;
+  setAutoModelSelect: (value: boolean) => void;
+  preferredImageModel: ImageModel;
+  setPreferredImageModel: (value: ImageModel) => void;
+  preferredImageProviderId: string | null;
+  setPreferredImageProviderId: (value: string | null) => void;
+  preferredVideoModel: VideoModel;
+  setPreferredVideoModel: (value: VideoModel) => void;
+  preferredVideoProviderId: string | null;
+  setPreferredVideoProviderId: (value: string | null) => void;
+  preferred3DModel: string;
+  setPreferred3DModel: (value: string) => void;
+}> = ({
+  isOpen,
+  onClose,
+  anchorRef,
+  modelPreferenceTab,
+  setModelPreferenceTab,
+  autoModelSelect,
+  setAutoModelSelect,
+  preferredImageModel,
+  setPreferredImageModel,
+  preferredImageProviderId,
+  setPreferredImageProviderId,
+  preferredVideoModel,
+  setPreferredVideoModel,
+  preferredVideoProviderId,
+  setPreferredVideoProviderId,
+  preferred3DModel,
+  setPreferred3DModel,
+}) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+
+  const mappedImageSummary = getMappedModelDisplaySummary("image");
+  const mappedVideoSummary = getMappedModelDisplaySummary("video");
+  const mappedScriptSummary = getMappedModelDisplaySummary("script");
+
+  const visibleImageOptions = useMemo(() => buildHomeModelOptions("image"), []);
+  const visibleVideoOptions = useMemo(() => buildHomeModelOptions("video"), []);
+  const visible3DOptions = HOME_MODEL_OPTIONS["3d"];
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const syncPosition = () => {
+      if (!anchorRef.current) return;
+      setAnchorRect(anchorRef.current.getBoundingClientRect());
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    syncPosition();
+    window.addEventListener("resize", syncPosition);
+    window.addEventListener("scroll", syncPosition, true);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("resize", syncPosition);
+      window.removeEventListener("scroll", syncPosition, true);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [anchorRef, isOpen, onClose]);
+
+  const currentOptions =
+    modelPreferenceTab === "video"
+      ? visibleVideoOptions
+      : modelPreferenceTab === "image"
+        ? visibleImageOptions
+        : visible3DOptions;
+
+  const currentValue =
+    modelPreferenceTab === "image"
+      ? preferredImageModel
+      : modelPreferenceTab === "video"
+        ? preferredVideoModel
+        : preferred3DModel;
+
+  return (
+    <AnimatePresence>
+      {isOpen && anchorRect ? (
+        <motion.div
+          ref={panelRef}
+          initial={{ opacity: 0, y: 12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.98 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="fixed z-[95] w-[350px] max-w-[calc(100vw-32px)] rounded-[32px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)]"
+          style={{
+            top: Math.max(16, anchorRect.top - 24 - 540),
+            left: Math.min(
+              Math.max(16, anchorRect.right - 350),
+              window.innerWidth - 366,
+            ),
+          }}
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <h3 className="text-[17px] font-bold tracking-tight text-slate-900">
+              模型偏好
+            </h3>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                自动选择
+              </span>
+              <button
+                type="button"
+                onClick={() => setAutoModelSelect(!autoModelSelect)}
+                className={`relative h-6 w-11 rounded-full transition-all duration-300 ${
+                  autoModelSelect ? "bg-black" : "bg-slate-200 p-0.5"
+                }`}
+              >
+                <motion.div
+                  animate={{ x: autoModelSelect ? 24 : 2 }}
+                  className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-6 flex rounded-2xl bg-slate-100/70 p-1.5">
+            {(["image", "video", "3d"] as HomeModelPreferenceTab[]).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setModelPreferenceTab(tab)}
+                className={`flex-1 rounded-xl py-2 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                  modelPreferenceTab === tab
+                    ? "bg-white text-black shadow-sm"
+                    : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-4 px-1 pb-2">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                设置映射
+              </div>
+              <div className="mt-2 text-[12px] font-semibold leading-6 text-slate-700">
+                图像：{mappedImageSummary}
+              </div>
+              <div className="text-[12px] font-semibold leading-6 text-slate-700">
+                视频：{mappedVideoSummary}
+              </div>
+              <div className="text-[12px] font-semibold leading-6 text-slate-700">
+                文本：{mappedScriptSummary}
+              </div>
+            </div>
+
+            <div className="text-[11px] font-bold uppercase text-slate-600">
+              {modelPreferenceTab === "image"
+                ? "图像"
+                : modelPreferenceTab === "video"
+                  ? "视频"
+                  : "3D"}{" "}
+              生成调度模型
+            </div>
+
+            <input
+              type="text"
+              value={currentValue}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (modelPreferenceTab === "image") {
+                  setPreferredImageModel(value as ImageModel);
+                  setPreferredImageProviderId(null);
+                } else if (modelPreferenceTab === "video") {
+                  setPreferredVideoModel(value as VideoModel);
+                  setPreferredVideoProviderId(null);
+                } else {
+                  setPreferred3DModel(value);
+                }
+                setAutoModelSelect(false);
+              }}
+              className={`w-full rounded-xl border bg-slate-50/60 px-4 py-3 text-[13px] font-bold text-slate-800 outline-none transition-all hover:bg-white focus:bg-white focus:ring-4 focus:ring-black/5 ${
+                !autoModelSelect
+                  ? "border-black"
+                  : "border-slate-200 focus:border-black"
+              }`}
+            />
+
+            <div className="mt-2 flex max-h-[220px] flex-col gap-1.5 overflow-y-auto border-b border-slate-100 pb-4 pr-2 select-none custom-scrollbar">
+              {currentOptions.map((preset) => {
+                const isSelected =
+                  modelPreferenceTab === "image"
+                    ? currentValue === preset.id &&
+                      (autoModelSelect ||
+                        (preset.providerId || null) ===
+                          (preferredImageProviderId || null))
+                    : modelPreferenceTab === "video"
+                      ? currentValue === preset.id &&
+                        (autoModelSelect ||
+                          (preset.providerId || null) ===
+                            (preferredVideoProviderId || null))
+                      : currentValue === preset.id;
+
+                return (
+                  <button
+                    key={preset.optionKey || preset.id}
+                    type="button"
+                    onClick={() => {
+                      if (modelPreferenceTab === "image") {
+                        setPreferredImageModel(preset.id as ImageModel);
+                        setPreferredImageProviderId(preset.providerId || null);
+                      } else if (modelPreferenceTab === "video") {
+                        setPreferredVideoModel(preset.id as VideoModel);
+                        setPreferredVideoProviderId(preset.providerId || null);
+                      } else {
+                        setPreferred3DModel(preset.id);
+                      }
+                      setAutoModelSelect(false);
+                      onClose();
+                    }}
+                    className={`rounded-2xl border p-3 text-left transition-all ${
+                      isSelected
+                        ? "border-slate-200/70 bg-slate-50/80 shadow-sm"
+                        : "border-transparent bg-transparent hover:border-slate-100 hover:bg-slate-50/60"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="mb-0.5 flex items-center gap-2">
+                          <span
+                            className={`text-[14px] font-bold ${
+                              isSelected ? "text-slate-900" : "text-slate-700"
+                            }`}
+                          >
+                            {preset.name}
+                          </span>
+                          {preset.badge ? (
+                            <span className="rounded-md border border-blue-100/50 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-500">
+                              {preset.badge}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-xs font-medium text-slate-500">
+                          {preset.desc}
+                        </div>
+                        {preset.time ? (
+                          <div className="mt-1.5 inline-flex rounded-md bg-slate-100/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">
+                            {preset.time}
+                          </div>
+                        ) : null}
+                      </div>
+                      {isSelected ? (
+                        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white shadow-sm">
+                          <Check size={12} className="text-black" strokeWidth={3} />
+                        </div>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="pt-2 text-[11px] font-medium leading-relaxed text-slate-400">
+              这里改的是和侧边栏同一份模型偏好。后面你在工作台里继续出图或出视频，会沿用这套设置。
+            </p>
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+};
 
 interface ProjectCardProps {
   project?: Project;
@@ -165,18 +549,46 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [prompt, setPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
 
-  // Attachments State
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentPreviewUrlMapRef = useRef<Map<File, string>>(new Map());
+  const modelPreferenceAnchorRef = useRef<HTMLButtonElement>(null);
 
-  // Model State: 'thinking' (Pro) or 'fast' (Flash)
   const [modelMode, setModelMode] = useState<"thinking" | "fast">("fast");
+  const [creationMode, setCreationMode] = useState<HomeCreationMode>("agent");
 
-  // New States for Features
   const [webEnabled, setWebEnabled] = useState(false);
-  const [imageModelEnabled, setImageModelEnabled] = useState(false); // Cube icon: "Nano Banana Pro"
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
+  const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
+  const [preferredImageModelLabel, setPreferredImageModelLabel] =
+    useState("Nano Banana Pro");
 
-  // UI States
+  const {
+    modelPreferences: {
+      showModelPreference,
+      setShowModelPreference,
+      modelPreferenceTab,
+      setModelPreferenceTab,
+      autoModelSelect,
+      setAutoModelSelect,
+      preferredImageModel,
+      setPreferredImageModel,
+      preferredImageProviderId,
+      setPreferredImageProviderId,
+      preferredVideoModel,
+      setPreferredVideoModel,
+      preferredVideoProviderId,
+      setPreferredVideoProviderId,
+      preferred3DModel,
+      setPreferred3DModel,
+    },
+  } = useWorkspaceModelPreferences({
+    modelMode,
+    clearMessages: () => {},
+    setModelMode,
+  });
+
   const loadRecentProjects = async () => {
     const all = await getProjectSummaries();
     setRecentProjects(all.slice(0, 20));
@@ -185,6 +597,31 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   useEffect(() => {
     void loadRecentProjects();
   }, []);
+
+  useEffect(() => {
+    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+  }, []);
+
+  useEffect(() => {
+    const activeFiles = new Set(attachments);
+    attachmentPreviewUrlMapRef.current.forEach((url, file) => {
+      if (!activeFiles.has(file)) {
+        URL.revokeObjectURL(url);
+        attachmentPreviewUrlMapRef.current.delete(file);
+      }
+    });
+  }, [attachments]);
+
+  useEffect(() => {
+    return () => {
+      attachmentPreviewUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
+      attachmentPreviewUrlMapRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    setPreferredImageModelLabel(String(preferredImageModel || "Nano Banana Pro"));
+  }, [preferredImageModel]);
 
   const handleDeleteProject = async (
     project: Project,
@@ -218,19 +655,39 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initialAttachments: attachments,
           initialModelMode: modelMode,
           initialWebEnabled: webEnabled,
-          initialImageModel: imageModelEnabled ? "Nano Banana Pro" : undefined,
+          initialImageModel:
+            creationMode === "image" ? preferredImageModelLabel : undefined,
+          initialCreationMode: creationMode,
         },
       });
     }
   };
 
+  const getAttachmentPreviewUrl = (file: File) => {
+    const existing = attachmentPreviewUrlMapRef.current.get(file);
+    if (existing) return existing;
+    const next = URL.createObjectURL(file);
+    attachmentPreviewUrlMapRef.current.set(file, next);
+    return next;
+  };
+
+  const appendFiles = (files: File[]) => {
+    const acceptedFiles = files
+      .filter(
+        (file) =>
+          file.type.startsWith("image/") ||
+          file.type.startsWith("video/") ||
+          /\.(doc|docx|pdf|md|txt|jpg|jpeg|png|webp)$/i.test(file.name),
+      )
+      .slice(0, 10);
+    if (acceptedFiles.length === 0) return;
+
+    setAttachments((prev) => [...prev, ...acceptedFiles].slice(0, 10));
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setAttachments((prev) => {
-        const combined = [...prev, ...newFiles];
-        return combined.slice(0, 10);
-      });
+      appendFiles(Array.from(e.target.files));
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -239,10 +696,43 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleOpenAnnouncements = () => {
+    setIsAnnouncementOpen(true);
+    markAllAnnouncementsAsRead();
+    setUnreadAnnouncementCount(0);
+  };
+
   return (
     <div className="min-h-screen pb-20 bg-gradient-to-b from-gray-50 to-white">
-      <Header />
+      <Header
+        unreadAnnouncementCount={unreadAnnouncementCount}
+        onOpenAnnouncements={handleOpenAnnouncements}
+      />
       <Sidebar />
+      <HomeModelPreferencePopover
+        isOpen={showModelPreference}
+        onClose={() => setShowModelPreference(false)}
+        anchorRef={modelPreferenceAnchorRef}
+        modelPreferenceTab={modelPreferenceTab}
+        setModelPreferenceTab={setModelPreferenceTab}
+        autoModelSelect={autoModelSelect}
+        setAutoModelSelect={setAutoModelSelect}
+        preferredImageModel={preferredImageModel}
+        setPreferredImageModel={setPreferredImageModel}
+        preferredImageProviderId={preferredImageProviderId}
+        setPreferredImageProviderId={setPreferredImageProviderId}
+        preferredVideoModel={preferredVideoModel}
+        setPreferredVideoModel={setPreferredVideoModel}
+        preferredVideoProviderId={preferredVideoProviderId}
+        setPreferredVideoProviderId={setPreferredVideoProviderId}
+        preferred3DModel={preferred3DModel}
+        setPreferred3DModel={setPreferred3DModel}
+      />
+      <SystemAnnouncementModal
+        isOpen={isAnnouncementOpen}
+        announcements={SYSTEM_ANNOUNCEMENTS}
+        onClose={() => setIsAnnouncementOpen(false)}
+      />
       {onExit && (
         <button
           onClick={onExit || (() => navigate(ROUTES.dashboard))}
@@ -281,16 +771,48 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           </p>
         </motion.div>
 
-        {/* Input Area */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.2 }}
-          className="w-full max-w-4xl relative mb-8"
+          className="w-full max-w-4xl relative mb-16"
         >
-          <div className="bg-white rounded-[28px] border border-gray-200/50 shadow-xl shadow-gray-100/50 hover:shadow-2xl hover:shadow-gray-200/50 transition-all duration-300 relative group focus-within:ring-2 focus-within:ring-black/5 focus-within:border-gray-300 overflow-hidden">
+          <div
+            className={`bg-white rounded-[28px] border shadow-xl shadow-gray-100/50 hover:shadow-2xl hover:shadow-gray-200/50 transition-all duration-300 relative group focus-within:ring-2 focus-within:ring-black/5 focus-within:border-gray-300 overflow-hidden ${
+              isDragOver
+                ? "border-blue-400 ring-2 ring-blue-100 bg-blue-50/30"
+                : "border-gray-200/50"
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsDragOver(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsDragOver(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setIsDragOver(false);
+              if (event.dataTransfer.files.length > 0) {
+                appendFiles(Array.from(event.dataTransfer.files));
+              }
+            }}
+          >
+            {isDragOver ? (
+              <div className="absolute inset-0 z-30 rounded-[28px] bg-blue-50/80 border-2 border-dashed border-blue-400 flex items-center justify-center pointer-events-none">
+                <div className="flex flex-col items-center gap-2">
+                  <ImageIcon size={24} className="text-blue-500" />
+                  <span className="text-sm font-medium text-blue-600">
+                    将图片拖到这里添加到对话
+                  </span>
+                </div>
+              </div>
+            ) : null}
             <div className="p-4 pt-3">
-              {/* Input Field */}
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -304,7 +826,6 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 }}
               />
 
-              {/* Attachments Preview */}
               {attachments.length > 0 && (
                 <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar px-1">
                   {attachments.map((file, i) => (
@@ -314,7 +835,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     >
                       {file.type.startsWith("image/") ? (
                         <img
-                          src={URL.createObjectURL(file)}
+                          src={getAttachmentPreviewUrl(file)}
                           alt="preview"
                           className="w-full h-full object-cover"
                         />
@@ -337,9 +858,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
               )}
 
-              {/* Bottom Toolbar */}
               <div className="flex justify-between items-center mt-2">
-                {/* Left: Attachment & Agent */}
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <button
@@ -360,9 +879,26 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   </div>
                 </div>
 
-                {/* Right: Controls */}
                 <div className="flex items-center gap-2">
-                  {/* Model Switcher Pill */}
+                  <div className="hidden sm:flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50/70 p-0.5">
+                    {MODE_OPTIONS.map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setCreationMode(mode.id)}
+                        className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition ${
+                          creationMode === mode.id
+                            ? "bg-white text-black shadow-sm ring-1 ring-black/5"
+                            : "text-gray-400 hover:text-gray-700"
+                        }`}
+                        title={`切换到${mode.label}模式`}
+                      >
+                        {mode.icon}
+                        <span>{mode.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="h-9 rounded-full border border-gray-200 bg-gray-50/50 flex items-center p-0.5 gap-1">
                     <button
                       onClick={() => setModelMode("thinking")}
@@ -380,8 +916,6 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </button>
                   </div>
 
-                  {/* Globe (Web Search) */}
-                  {/* Globe (Web Search) */}
                   <button
                     onClick={() => setWebEnabled(!webEnabled)}
                     className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${webEnabled ? "bg-black text-white border-black" : "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50"}`}
@@ -390,16 +924,19 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     <Globe size={18} strokeWidth={1.5} />
                   </button>
 
-                  {/* Cube (Image Model Selection - Nano Banana Pro) */}
                   <button
-                    onClick={() => setImageModelEnabled(!imageModelEnabled)}
-                    className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${imageModelEnabled ? "bg-blue-50 border-blue-200 text-blue-500" : "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50"}`}
-                    title="Image Model: Nano Banana Pro"
+                    ref={modelPreferenceAnchorRef}
+                    onClick={() => setShowModelPreference(!showModelPreference)}
+                    className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${
+                      showModelPreference
+                        ? "bg-blue-50 border-blue-200 text-blue-500"
+                        : "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                    title="模型偏好"
                   >
                     <Box size={18} strokeWidth={2} />
                   </button>
 
-                  {/* Send Button */}
                   <button
                     onClick={handleSearch}
                     disabled={!prompt.trim() && attachments.length === 0}
@@ -417,32 +954,6 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           </div>
         </motion.div>
 
-        {/* Filters / Tags */}
-        <div className="flex flex-wrap justify-center gap-3 mb-16">
-          <FilterPill
-            text={
-              modelMode === "thinking" ? "Nano Banana Pro" : "Nano Banana Flash"
-            }
-            icon={
-              <Banana
-                size={16}
-                className={
-                  modelMode === "thinking"
-                    ? "text-orange-500"
-                    : "text-yellow-500"
-                }
-              />
-            }
-            active={true}
-          />
-          <FilterPill text="Design" icon={<Box size={16} />} />
-          <FilterPill text="Branding" icon={<Star size={16} />} />
-          <FilterPill text="Illustration" icon={<Palette size={16} />} />
-          <FilterPill text="E-Commerce" icon={<ShoppingCart size={16} />} />
-          <FilterPill text="Video" icon={<Video size={16} />} />
-        </div>
-
-        {/* Recent Projects */}
         <div className="w-full">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-medium">最近项目</h2>
@@ -470,5 +981,3 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 };
 
 export default Home;
-
-

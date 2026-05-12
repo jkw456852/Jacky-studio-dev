@@ -14,13 +14,16 @@ export const WorkspaceSidebarLayer: React.FC<WorkspaceSidebarLayerProps> = memo(
   assistant,
   showAssistant,
 }) => {
-  const isAssistantFullscreen = showAssistant && Boolean(assistant.panelUi.isFullscreen);
+  const isWorkflowRecipesOpen = leftPanel.leftPanelMode === "workflow-recipes";
+  const isAssistantFullscreen =
+    showAssistant && !isWorkflowRecipesOpen && Boolean(assistant.panelUi.isFullscreen);
+  const shouldShowAssistant = showAssistant && !isWorkflowRecipesOpen;
 
   return (
     <>
       {!isAssistantFullscreen ? <WorkspaceLeftPanel {...leftPanel} /> : null}
       <AnimatePresence>
-        {showAssistant && <AssistantSidebar {...assistant} />}
+        {shouldShowAssistant ? <AssistantSidebar {...assistant} /> : null}
       </AnimatePresence>
     </>
   );

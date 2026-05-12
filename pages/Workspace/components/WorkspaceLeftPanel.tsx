@@ -6,7 +6,7 @@ import { WorkspaceFocusedGroupBanner } from "./WorkspaceFocusedGroupBanner";
 import { WorkspaceGeneratedFilesPanel } from "./WorkspaceGeneratedFilesPanel";
 import { WorkspaceLayersPanel } from "./WorkspaceLayersPanel";
 
-type WorkspaceLeftPanelMode = "layers" | "files" | null;
+type WorkspaceLeftPanelMode = "layers" | "files" | "workflow-recipes" | null;
 
 type WorkspaceLeftPanelProps = {
   leftPanelMode: WorkspaceLeftPanelMode;
@@ -27,6 +27,7 @@ type WorkspaceLeftPanelProps = {
   onPreviewImage: (url: string) => void;
   focusedGroupId: string | null;
   onExitFocusedGroup: () => void;
+  workflowRecipesPanel?: React.ReactNode;
 };
 
 export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
@@ -48,6 +49,7 @@ export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
   onPreviewImage,
   focusedGroupId,
   onExitFocusedGroup,
+  workflowRecipesPanel,
 }) => {
   return (
     <AnimatePresence>
@@ -57,11 +59,20 @@ export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -280 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="absolute top-0 left-0 bottom-0 w-[220px] bg-white/98 backdrop-blur-xl border-r border-gray-200/60 z-50 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.04)]"
+          className={[
+            "absolute bg-white/98 backdrop-blur-xl z-50 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.04)]",
+            leftPanelMode === "workflow-recipes"
+              ? "top-16 left-5 right-5 bottom-5 rounded-[24px] border border-gray-200 overflow-hidden shadow-[0_24px_64px_rgba(15,23,42,0.16)]"
+              : "top-0 left-0 bottom-0 w-[220px] border-r border-gray-200/60",
+          ].join(" ")}
         >
           <div className="px-4 py-3.5 flex items-center justify-between border-b border-gray-100 shrink-0">
             <span className="font-semibold text-sm text-gray-900">
-              {leftPanelMode === "layers" ? "图层" : "已生成文件列表"}
+              {leftPanelMode === "layers"
+                ? "图层"
+                : leftPanelMode === "files"
+                  ? "已生成文件列表"
+                  : "Workflow Recipe"}
             </span>
             <button
               onClick={onClose}
@@ -87,18 +98,24 @@ export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
                 onToggleCollapse={onToggleCollapse}
                 onEnterGroup={onEnterGroup}
               />
-            ) : (
+            ) : leftPanelMode === "files" ? (
               <WorkspaceGeneratedFilesPanel
                 messages={messages}
                 onPreviewImage={onPreviewImage}
               />
+            ) : (
+              workflowRecipesPanel || (
+                <div className="p-4 text-sm text-gray-500">Workflow recipe 面板骨架尚未接入运行时数据。</div>
+              )
             )}
 
-            <WorkspaceFocusedGroupBanner
-              focusedGroupId={focusedGroupId}
-              elements={elements}
-              onExit={onExitFocusedGroup}
-            />
+            {leftPanelMode !== "workflow-recipes" ? (
+              <WorkspaceFocusedGroupBanner
+                focusedGroupId={focusedGroupId}
+                elements={elements}
+                onExit={onExitFocusedGroup}
+              />
+            ) : null}
           </div>
         </motion.div>
       )}

@@ -44,6 +44,7 @@ type WorkspaceBootstrapLocationState = {
   initialModelMode?: "thinking" | "fast";
   initialWebEnabled?: boolean;
   initialImageModel?: string;
+  initialCreationMode?: "agent" | "image" | "video";
   backgroundUrl?: string;
   backgroundType?: string;
 };
@@ -78,6 +79,7 @@ type UseWorkspaceProjectLoaderArgs = {
   setModelMode: (mode: "thinking" | "fast") => void;
   setWebEnabled: (enabled: boolean) => void;
   setImageModelEnabled: (enabled: boolean) => void;
+  setCreationMode?: (mode: "agent" | "image" | "video") => void;
   handleSend: (
     overridePrompt?: string,
     overrideAttachments?: File[],
@@ -874,6 +876,7 @@ export const useWorkspaceProjectLoader = ({
   setModelMode,
   setWebEnabled,
   setImageModelEnabled,
+  setCreationMode,
   handleSend,
   setElements,
 }: UseWorkspaceProjectLoaderArgs) => {
@@ -1048,11 +1051,15 @@ export const useWorkspaceProjectLoader = ({
         if (locationState.initialImageModel) {
           setImageModelEnabled(true);
         }
+        if (locationState.initialCreationMode && setCreationMode) {
+          setCreationMode(locationState.initialCreationMode);
+        }
 
         void handleSend(
           locationState.initialPrompt,
           locationState.initialAttachments,
           locationState.initialWebEnabled,
+          undefined,
         );
       }
     }
@@ -1096,4 +1103,3 @@ export const useWorkspaceProjectLoader = ({
     };
   }, [id]);
 };
-

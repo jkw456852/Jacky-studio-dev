@@ -1,4 +1,4 @@
-import { getRuntimeSettingsSnapshot } from "../runtime-settings";
+import { getRuntimeSettingsSnapshot } from "../runtime-settings/index.ts";
 import { ensureBrowserConsoleBridge, readRecentConsoleEvents } from "./console-bridge";
 import { planBrowserAgentGoalSession } from "./goal-planner";
 import {

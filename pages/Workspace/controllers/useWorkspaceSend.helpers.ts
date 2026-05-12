@@ -1,5 +1,6 @@
 import type { AgentTask } from "../../../types/agent.types";
 import type { CanvasElement, ChatMessage, InputBlock } from "../../../types";
+import { extractImageUrlsFromResult } from "../../../services/agents/image-result-extractor";
 import {
   extractWebPage,
   pickUsableReferenceImages,
@@ -165,10 +166,7 @@ export const collectDerivedImageUrlsFromTask = (
       .filter((asset) => asset?.type === "image" && typeof asset.url === "string")
       .map((asset) => asset.url)),
     ...(((result.output?.skillCalls || []) as DerivedTaskSkillCall[]).flatMap(
-      (call) =>
-        Boolean(call?.success) && typeof call?.result === "string"
-          ? [call.result]
-          : [],
+      (call) => (Boolean(call?.success) ? extractImageUrlsFromResult(call?.result) : []),
     )),
   ];
 };

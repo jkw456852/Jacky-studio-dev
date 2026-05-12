@@ -1,4 +1,4 @@
-﻿import { fetchAvailableModels } from './gemini';
+﻿import { fetchAvailableModels } from './gemini.ts';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
 import { getStudioUserAssetApi } from './runtime-assets/api.ts';
 

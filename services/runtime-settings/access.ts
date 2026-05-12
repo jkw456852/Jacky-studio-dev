@@ -1,4 +1,4 @@
-import { getRuntimeSettingsSnapshot } from "./snapshot";
+import { getRuntimeSettingsSnapshot } from "./snapshot.ts";
 
 export const getVisualOrchestratorSettings = () =>
   getRuntimeSettingsSnapshot().value.visualOrchestrator;

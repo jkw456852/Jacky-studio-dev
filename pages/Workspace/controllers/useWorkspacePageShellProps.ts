@@ -723,6 +723,11 @@ export const useWorkspacePageShellProps = ({
         setNodeInteractionMode,
         onOpenDashboard: navigateToDashboard,
         onShowAssistant: handleOpenAssistant,
+        workflowRecipesOpen: leftPanelMode === "workflow-recipes",
+        onToggleWorkflowRecipes: () =>
+          setLeftPanelMode(
+            leftPanelMode === "workflow-recipes" ? null : "workflow-recipes",
+          ),
       },
       bottomToolbar: {
         leftPanelMode,

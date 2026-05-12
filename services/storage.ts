@@ -1,4 +1,5 @@
 import type { Project } from '../types/index.ts';
+import { resolveProjectThumbnail } from './project-thumbnail.ts';
 import { safeLocalStorageRemoveItem } from '../utils/safe-storage.ts';
 
 export const DB_NAME = 'XcStudioDB';
@@ -116,7 +117,7 @@ export const getProjectSummaries = async (): Promise<ProjectSummary[]> => {
           id: value.id,
           title: value.title,
           updatedAt: value.updatedAt,
-          thumbnail: value.thumbnail,
+          thumbnail: resolveProjectThumbnail(value) || undefined,
         });
         cursor.continue();
       };
@@ -151,7 +152,11 @@ export const saveProject = async (project: Project): Promise<void> => {
     const { compactProjectForPersist } = await import(
       '../pages/Workspace/controllers/workspacePersistence.ts'
     );
-    const compactProject = compactProjectForPersist(project);
+    const normalizedProject: Project = {
+      ...project,
+      thumbnail: resolveProjectThumbnail(project) || undefined,
+    };
+    const compactProject = compactProjectForPersist(normalizedProject);
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);

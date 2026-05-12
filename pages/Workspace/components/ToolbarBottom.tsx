@@ -2,8 +2,8 @@ import React from 'react';
 import { Layers, Folder, Minus, Plus } from 'lucide-react';
 
 interface ToolbarBottomProps {
-    leftPanelMode: 'layers' | 'files' | null;
-    setLeftPanelMode: (mode: 'layers' | 'files' | null) => void;
+    leftPanelMode: 'layers' | 'files' | 'workflow-recipes' | null;
+    setLeftPanelMode: (mode: 'layers' | 'files' | 'workflow-recipes' | null) => void;
     zoom: number;
     setZoom: React.Dispatch<React.SetStateAction<number>>;
 }

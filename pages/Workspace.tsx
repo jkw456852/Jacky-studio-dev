@@ -111,6 +111,7 @@ import {
   WorkspaceNodeInteractionMode,
 } from "../types";
 import { saveProject, formatDate } from "../services/storage";
+import { resolveProjectThumbnail } from "../services/project-thumbnail";
 import {
   getMappedModelConfigs,
   getModelDisplayLabel,
@@ -160,6 +161,22 @@ import { WorkspaceLayersPanel } from "./Workspace/components/WorkspaceLayersPane
 import { WorkspacePageOverlays } from "./Workspace/components/WorkspacePageOverlays";
 import { WorkspaceSidebarLayer } from "./Workspace/components/WorkspaceSidebarLayer";
 import { EcommerceWorkflowDrawer } from "./Workspace/components/workflow/EcommerceWorkflowDrawer";
+import {
+  RecipeLifecyclePanel,
+  type WorkflowRecipeImportDraft,
+  type WorkflowRecipeLifecycleRuntimeSummary,
+  type WorkflowRecipeLifecycleTab,
+  type WorkflowRecipeTestDraft,
+} from "./Workspace/components/workflow-recipes";
+import { importWorkflowRecipe } from "../services/workflow-recipes/importer";
+import {
+  runWorkflowRecipeSmokeTest,
+} from "../services/workflow-recipes/testing";
+import {
+  publishWorkflowRecipe,
+  rollbackWorkflowRecipePublication,
+} from "../services/workflow-recipes/publisher";
+import { FASHION_MODEL_TRYON_MVP_RECIPE } from "../services/workflow-recipes/presets/fashion-model-tryon-mvp.recipe";
 import { assetsToCanvasElementsAtCenter } from "../utils/canvas-helpers";
 import { AgentSelector } from "../components/agents/AgentSelector";
 import { TaskProgress } from "../components/agents/TaskProgress";
@@ -1392,9 +1409,28 @@ const Workspace: React.FC = () => {
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editingMarkerLabel, setEditingMarkerLabel] = useState("");
 
-  const [leftPanelMode, setLeftPanelMode] = useState<"layers" | "files" | null>(
+  const [leftPanelMode, setLeftPanelMode] = useState<
+    "layers" | "files" | "workflow-recipes" | null
+  >(
     null,
   );
+  const [workflowRecipeTab, setWorkflowRecipeTab] =
+    useState<WorkflowRecipeLifecycleTab>("import");
+  const [workflowRecipeImportDraft, setWorkflowRecipeImportDraft] =
+    useState<WorkflowRecipeImportDraft>({
+      rawJson: "",
+      fileName: "",
+    });
+  const [workflowRecipeTestDraft, setWorkflowRecipeTestDraft] =
+    useState<WorkflowRecipeTestDraft>({
+      inputJson:
+        '{\n  "garmentImages": ["asset://garment-front.png"],\n  "modelImage": "asset://model.png",\n  "requirements": {\n    "aspectRatio": "3:4",\n    "platform": "taobao",\n    "count": 1\n  },\n  "tryonBrief": "强调面料和版型保持一致"\n}',
+      constantsJson: '{\n  "defaultPrompt": "make a try-on image"\n}',
+      contextJson: '{\n  "requestId": "workflow-recipe-ui-smoke"\n}',
+    });
+  const [workflowRecipeRuntimeSummary, setWorkflowRecipeRuntimeSummary] =
+    useState<WorkflowRecipeLifecycleRuntimeSummary>({});
+  const [isWorkflowRecipeBusy, setIsWorkflowRecipeBusy] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -3996,10 +4032,14 @@ const Workspace: React.FC = () => {
     const save = async () => {
       if (isLoadingRecord.current) return;
       if (Date.now() < suspendAutoSaveUntilRef.current) return;
-      const firstImage = elementsRef.current.find(
-        (el) => el.type === "image" || el.type === "gen-image",
-      );
-      const thumbnail = firstImage?.url || "";
+      const thumbnail = resolveProjectThumbnail({
+        id,
+        title: projectTitle,
+        updatedAt: formatDate(Date.now()),
+        elements: elementsRef.current,
+        markers: markersRef.current,
+        conversations,
+      });
       await saveProject({
         id,
         title: projectTitle,
@@ -4381,6 +4421,7 @@ const Workspace: React.FC = () => {
     setModelMode,
     setWebEnabled,
     setImageModelEnabled,
+    setCreationMode,
     handleSend,
     setElements,
   });
@@ -5226,6 +5267,434 @@ const Workspace: React.FC = () => {
     deleteSelectedElement,
   ]);
 
+  const handleWorkflowRecipeImport = useCallback(() => {
+    setIsWorkflowRecipeBusy(true);
+    try {
+      const result = importWorkflowRecipe({
+        raw: workflowRecipeImportDraft.rawJson,
+        now: Date.now(),
+      });
+      setWorkflowRecipeRuntimeSummary((prev) => ({
+        ...prev,
+        recipe: result.recipe || null,
+        importReport: result.report,
+        testingRecord: result.testingRecord || prev.testingRecord || null,
+      }));
+      setWorkflowRecipeTab("testing");
+      setFeatureNotice(
+        result.ok
+          ? "Workflow recipe 已导入测试区骨架。"
+          : "Workflow recipe 导入失败，请查看校验报告。",
+      );
+    } finally {
+      setIsWorkflowRecipeBusy(false);
+    }
+  }, [workflowRecipeImportDraft.rawJson]);
+
+  const parseWorkflowRecipeJsonObject = (
+    label: string,
+    raw: string,
+  ): Record<string, unknown> => {
+    try {
+      const parsed = JSON.parse(raw || "{}") as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(`${label} 必须是 JSON 对象。`);
+      }
+      return parsed as Record<string, unknown>;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `${label} 解析失败，请输入合法 JSON 对象。`;
+      throw new Error(message);
+    }
+  };
+
+  const handleWorkflowRecipeSmokeTest = useCallback(async () => {
+    const now = Date.now();
+    const recipe =
+      workflowRecipeRuntimeSummary.recipe || FASHION_MODEL_TRYON_MVP_RECIPE;
+
+    setIsWorkflowRecipeBusy(true);
+    try {
+      const inputs = parseWorkflowRecipeJsonObject(
+        "输入参数",
+        workflowRecipeTestDraft.inputJson,
+      );
+      const constants = parseWorkflowRecipeJsonObject(
+        "常量",
+        workflowRecipeTestDraft.constantsJson,
+      );
+      const context = parseWorkflowRecipeJsonObject(
+        "上下文",
+        workflowRecipeTestDraft.contextJson,
+      );
+
+      const result = await runWorkflowRecipeSmokeTest({
+        recipe,
+        nodeId: `workspace-smoke:${recipe.recipeId}`,
+        inputs,
+        constants,
+        context,
+        capabilityExecutors: {
+          analyzeClothingProduct: async () => ({
+            productType: "tops",
+            isSet: false,
+            keyFeatures: ["crew neck"],
+            materialGuess: ["knit"],
+            colorPalette: ["black"],
+            fitSilhouette: ["regular"],
+            anchorDescription: "保持肩线、袖长和面料纹理",
+            forbiddenChanges: ["不要改袖长"],
+          }),
+          clothingStudioWorkflow: async () => ({
+            ui: { type: "clothingStudio.results", total: 1 },
+            images: [
+              {
+                url: "https://example.com/mvp-smoke.png",
+                label: "smoke",
+              },
+            ],
+            failedItems: [],
+          }),
+        },
+        now,
+      });
+
+      setWorkflowRecipeRuntimeSummary((prev) => ({
+        ...prev,
+        recipe,
+        testingRecord: result.testingRecord,
+        smokeTestReport: result.report,
+        nodeInstance: result.nodeInstance,
+        logs: result.report.logs,
+      }));
+      setWorkflowRecipeTab("testing");
+      setFeatureNotice(
+        result.status === "passed"
+          ? `Workflow recipe smoke test 已通过：${recipe.recipeId}@${recipe.version}`
+          : `Workflow recipe smoke test 失败：${result.report.errorCode || "unknown_error"}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Workflow recipe smoke test 执行失败。";
+      const logs = [
+        {
+          level: "error" as const,
+          message,
+          timestamp: now,
+        },
+      ];
+      setWorkflowRecipeRuntimeSummary((prev) => ({
+        ...prev,
+        recipe,
+        nodeInstance: null,
+        testingRecord: {
+          recipeId: recipe.recipeId,
+          recipeVersion: recipe.version,
+          status: "failed",
+          lastRunAt: now,
+          lastErrorCode: "input_invalid",
+          lastErrorMessage: message,
+        },
+        smokeTestReport: {
+          schemaPassed: true,
+          dryRunPassed: false,
+          smokeRunPassed: false,
+          outputKeys: [],
+          logs,
+          errorCode: "input_invalid",
+          errorMessage: message,
+        },
+        logs,
+      }));
+      setFeatureNotice(message);
+    } finally {
+      setIsWorkflowRecipeBusy(false);
+    }
+  }, [workflowRecipeRuntimeSummary.recipe, workflowRecipeTestDraft]);
+
+  const handleWorkflowRecipePublish = useCallback(() => {
+    setIsWorkflowRecipeBusy(true);
+    try {
+      if (
+        !workflowRecipeRuntimeSummary.recipe ||
+        !workflowRecipeRuntimeSummary.importReport
+      ) {
+        setFeatureNotice("请先完成 workflow recipe 导入。");
+        return;
+      }
+      if (workflowRecipeRuntimeSummary.testingRecord?.status !== "passed") {
+        setFeatureNotice("请先通过 workflow recipe smoke test，再执行发布。");
+        return;
+      }
+      const result = publishWorkflowRecipe({
+        recipe: workflowRecipeRuntimeSummary.recipe,
+        report: workflowRecipeRuntimeSummary.importReport,
+        existing: workflowRecipeRuntimeSummary.publishRecord || null,
+        now: Date.now(),
+      });
+      if (!result.ok || !result.record) {
+        setFeatureNotice(result.reason || "当前 recipe 尚未满足发布门槛。");
+        return;
+      }
+      setWorkflowRecipeRuntimeSummary((prev) => ({
+        ...prev,
+        publishRecord: result.record || null,
+      }));
+      setWorkflowRecipeTab("library");
+      setFeatureNotice("Workflow recipe 已进入发布区骨架。");
+    } finally {
+      setIsWorkflowRecipeBusy(false);
+    }
+  }, [workflowRecipeRuntimeSummary]);
+
+  const handleWorkflowRecipeRollback = useCallback(
+    (targetVersion: string) => {
+      setIsWorkflowRecipeBusy(true);
+      try {
+        if (!workflowRecipeRuntimeSummary.publishRecord) {
+          setFeatureNotice("当前没有可回滚的 workflow recipe 发布记录。");
+          return;
+        }
+        const publishHistory =
+          workflowRecipeRuntimeSummary.publishRecord.publishHistory || [];
+        const fallbackVersion =
+          targetVersion === "previous"
+            ? publishHistory.length >= 2
+              ? publishHistory[publishHistory.length - 2]?.version ||
+                workflowRecipeRuntimeSummary.publishRecord.version
+              : workflowRecipeRuntimeSummary.publishRecord.version
+            : targetVersion;
+        const rolledBack = rollbackWorkflowRecipePublication({
+          target: workflowRecipeRuntimeSummary.publishRecord,
+          toVersion: fallbackVersion,
+          reason: "Workspace skeleton rollback",
+          now: Date.now(),
+        });
+        setWorkflowRecipeRuntimeSummary((prev) => ({
+          ...prev,
+          publishRecord: rolledBack,
+        }));
+        setFeatureNotice("Workflow recipe 回滚记录已写入骨架。");
+      } finally {
+        setIsWorkflowRecipeBusy(false);
+      }
+    },
+    [workflowRecipeRuntimeSummary.publishRecord],
+  );
+
+  const handleWorkflowRecipeInsertToCanvas = useCallback(() => {
+    const recipe = workflowRecipeRuntimeSummary.recipe;
+    const publishRecord = workflowRecipeRuntimeSummary.publishRecord;
+    if (!recipe || !publishRecord) {
+      setFeatureNotice("请先完成 workflow recipe 发布，再放入画板。");
+      return;
+    }
+
+    const now = Date.now();
+    const nodeId = `workflow-node-${now}`;
+    const groupId = `workflow-node-group-${now}`;
+    const cardId = `workflow-node-card-${now}`;
+    const titleId = `workflow-node-title-${now}`;
+    const metaId = `workflow-node-meta-${now}`;
+    const cardWidth = 320;
+    const cardHeight = 184;
+    const canvasCenter = getCanvasCenterPoint({
+      showAssistant,
+      pan,
+      zoom,
+    });
+    const cardX = canvasCenter.x - cardWidth / 2;
+    const cardY = canvasCenter.y - cardHeight / 2;
+    const nextZBase = elementsRef.current.length + 1;
+
+    const nodeInstance = {
+      ...(workflowRecipeRuntimeSummary.nodeInstance || {
+        recipeId: recipe.recipeId,
+        recipeVersion: recipe.version,
+        title: recipe.title,
+        summary: recipe.summary,
+        status: "configured" as const,
+        inputValues: {},
+        outputValues: {},
+        stepStates: [],
+      }),
+      nodeId,
+    };
+
+    const cardElement: CanvasElement = {
+      id: cardId,
+      type: "shape",
+      shapeType: "square",
+      x: cardX,
+      y: cardY,
+      width: cardWidth,
+      height: cardHeight,
+      zIndex: nextZBase,
+      cornerRadius: 12,
+      fillColor: "#f8fafc",
+      strokeColor: "#cbd5e1",
+      strokeWidth: 1,
+      groupId,
+      workflowNodeId: nodeId,
+      workflowRecipeId: recipe.recipeId,
+      workflowRecipeVersion: recipe.version,
+      workflowNodeRole: "processor",
+    };
+
+    const titleElement: CanvasElement = {
+      id: titleId,
+      type: "text",
+      text: recipe.title,
+      x: cardX + 20,
+      y: cardY + 18,
+      width: cardWidth - 40,
+      height: 28,
+      fontSize: 18,
+      fontWeight: 600,
+      fontFamily: "Inter",
+      fillColor: "#111827",
+      textAlign: "left",
+      lineHeight: 1.3,
+      letterSpacing: 0,
+      zIndex: nextZBase + 1,
+      groupId,
+      workflowNodeId: nodeId,
+      workflowRecipeId: recipe.recipeId,
+      workflowRecipeVersion: recipe.version,
+      workflowNodeRole: "processor",
+    };
+
+    const metaElement: CanvasElement = {
+      id: metaId,
+      type: "text",
+      text: `${recipe.recipeId}@${recipe.version}\n状态：${publishRecord.status} · 节点：${nodeInstance.status}`,
+      x: cardX + 20,
+      y: cardY + 58,
+      width: cardWidth - 40,
+      height: 72,
+      fontSize: 13,
+      fontWeight: 400,
+      fontFamily: "Inter",
+      fillColor: "#4b5563",
+      textAlign: "left",
+      lineHeight: 1.5,
+      letterSpacing: 0,
+      zIndex: nextZBase + 2,
+      groupId,
+      workflowNodeId: nodeId,
+      workflowRecipeId: recipe.recipeId,
+      workflowRecipeVersion: recipe.version,
+      workflowNodeRole: "processor",
+    };
+
+    const originalChildData = {
+      [cardId]: {
+        x: cardElement.x,
+        y: cardElement.y,
+        width: cardElement.width,
+        height: cardElement.height,
+        zIndex: cardElement.zIndex,
+      },
+      [titleId]: {
+        x: titleElement.x,
+        y: titleElement.y,
+        width: titleElement.width,
+        height: titleElement.height,
+        zIndex: titleElement.zIndex,
+      },
+      [metaId]: {
+        x: metaElement.x,
+        y: metaElement.y,
+        width: metaElement.width,
+        height: metaElement.height,
+        zIndex: metaElement.zIndex,
+      },
+    };
+
+    const groupElement: CanvasElement = {
+      id: groupId,
+      type: "group",
+      x: cardX,
+      y: cardY,
+      width: cardWidth,
+      height: cardHeight,
+      zIndex: nextZBase + 3,
+      children: [cardId, titleId, metaId],
+      isCollapsed: false,
+      originalChildData,
+      workflowNodeId: nodeId,
+      workflowRecipeId: recipe.recipeId,
+      workflowRecipeVersion: recipe.version,
+      workflowNodeRole: "processor",
+    };
+
+    const nextElements = [
+      ...elementsRef.current,
+      cardElement,
+      titleElement,
+      metaElement,
+      groupElement,
+    ];
+
+    setElementsSynced(nextElements);
+    saveToHistory(nextElements, markersRef.current);
+    setSelectedElementId(groupId);
+    setSelectedElementIds([groupId]);
+    setWorkflowRecipeRuntimeSummary((prev) => ({
+      ...prev,
+      nodeInstance,
+      canvasNodeId: nodeId,
+      canvasElementId: groupId,
+    }));
+    setFeatureNotice(`Workflow recipe 节点已放入画板：${recipe.title}`);
+  }, [
+    workflowRecipeRuntimeSummary.recipe,
+    workflowRecipeRuntimeSummary.publishRecord,
+    workflowRecipeRuntimeSummary.nodeInstance,
+    showAssistant,
+    pan,
+    zoom,
+    saveToHistory,
+    setElementsSynced,
+    markersRef,
+  ]);
+
+  const workflowRecipesPanel = useMemo(
+    () => (
+      <RecipeLifecyclePanel
+        activeTab={workflowRecipeTab}
+        onTabChange={setWorkflowRecipeTab}
+        summary={workflowRecipeRuntimeSummary}
+        importDraft={workflowRecipeImportDraft}
+        testDraft={workflowRecipeTestDraft}
+        busy={isWorkflowRecipeBusy}
+        onImportDraftChange={setWorkflowRecipeImportDraft}
+        onTestDraftChange={setWorkflowRecipeTestDraft}
+        onImportRecipe={handleWorkflowRecipeImport}
+        onRunSmokeTest={handleWorkflowRecipeSmokeTest}
+        onPublishRecipe={handleWorkflowRecipePublish}
+        onRollbackRecipe={handleWorkflowRecipeRollback}
+        onInsertToCanvas={handleWorkflowRecipeInsertToCanvas}
+      />
+    ),
+    [
+      handleWorkflowRecipeImport,
+      handleWorkflowRecipeInsertToCanvas,
+      handleWorkflowRecipePublish,
+      handleWorkflowRecipeRollback,
+      handleWorkflowRecipeSmokeTest,
+      isWorkflowRecipeBusy,
+      workflowRecipeImportDraft,
+      workflowRecipeRuntimeSummary,
+      workflowRecipeTab,
+      workflowRecipeTestDraft,
+    ],
+  );
+
   const { workspaceLeftPanelProps, assistantSidebarProps } =
     useWorkspaceSidebarProps({
       leftPanelMode,
@@ -5243,6 +5712,7 @@ const Workspace: React.FC = () => {
       messages,
       setPreviewUrl,
       focusedGroupId,
+      workflowRecipesPanel,
       id,
       conversations,
       setConversations,
@@ -5656,8 +6126,6 @@ const Workspace: React.FC = () => {
 };
 
 export default Workspace;
-
-
 
 
 

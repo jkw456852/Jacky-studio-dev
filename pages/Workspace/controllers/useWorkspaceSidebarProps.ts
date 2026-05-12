@@ -41,6 +41,9 @@ type UseWorkspaceSidebarPropsArgs = {
   focusedGroupId: React.ComponentProps<
     typeof WorkspaceLeftPanel
   >["focusedGroupId"];
+  workflowRecipesPanel: React.ComponentProps<
+    typeof WorkspaceLeftPanel
+  >["workflowRecipesPanel"];
   id: string | undefined;
   conversations: React.ComponentProps<
     typeof AssistantSidebar
@@ -339,6 +342,7 @@ export const useWorkspaceSidebarProps = ({
   messages,
   setPreviewUrl,
   focusedGroupId,
+  workflowRecipesPanel,
   id,
   conversations,
   setConversations,
@@ -491,6 +495,7 @@ export const useWorkspaceSidebarProps = ({
       onPreviewImage: setPreviewUrl,
       focusedGroupId,
       onExitFocusedGroup: handleExitFocusedGroup,
+      workflowRecipesPanel,
     }),
     [
       elementById,
@@ -511,6 +516,7 @@ export const useWorkspaceSidebarProps = ({
       setFocusedGroupId,
       setIsHistoryExpanded,
       setPreviewUrl,
+      workflowRecipesPanel,
     ],
   );
 

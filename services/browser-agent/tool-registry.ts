@@ -2,7 +2,7 @@ import {
   getRuntimeSettingsSnapshot,
   type RuntimeSettingsSnapshot,
   type RuntimeSettingsView,
-} from "../runtime-settings";
+} from "../runtime-settings/index.ts";
 import { readRecentConsoleEvents } from "./console-bridge";
 
 export type BrowserToolCategory =
