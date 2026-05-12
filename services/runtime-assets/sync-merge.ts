@@ -4,6 +4,7 @@ import type {
   StudioAssetSyncPolicy,
 } from "./sync-policy.ts";
 import { resolveStudioAssetSyncPolicy } from "./sync-policy.ts";
+import { getStudioUserAssetApi } from "./api.ts";
 
 type MergeKind =
   | "main-brain"
@@ -34,6 +35,126 @@ export interface StudioAssetMergeResult {
 
 const cloneState = (state: StudioUserAssetState): StudioUserAssetState =>
   JSON.parse(JSON.stringify(state)) as StudioUserAssetState;
+
+const normalizeMergeState = (
+  state: StudioUserAssetState | null | undefined,
+): StudioUserAssetState => {
+  const fallback = getStudioUserAssetApi().getSnapshot();
+  if (!state || typeof state !== "object") {
+    return cloneState(fallback);
+  }
+
+  try {
+    const merged = {
+      ...fallback,
+      ...state,
+      mainBrainPreferences: {
+        ...fallback.mainBrainPreferences,
+        ...(state.mainBrainPreferences || {}),
+      },
+      mainBrainSoul: {
+        ...fallback.mainBrainSoul,
+        ...(state.mainBrainSoul || {}),
+      },
+      mainBrainUser: {
+        ...fallback.mainBrainUser,
+        ...(state.mainBrainUser || {}),
+      },
+      mainBrainWorkflow: {
+        ...fallback.mainBrainWorkflow,
+        ...(state.mainBrainWorkflow || {}),
+        roleGovernanceDefaults: {
+          ...fallback.mainBrainWorkflow.roleGovernanceDefaults,
+          ...(state.mainBrainWorkflow?.roleGovernanceDefaults || {}),
+        },
+      },
+      mainBrainMemory: {
+        ...fallback.mainBrainMemory,
+        ...(state.mainBrainMemory || {}),
+        retentionPolicy: {
+          ...fallback.mainBrainMemory.retentionPolicy,
+          ...(state.mainBrainMemory?.retentionPolicy || {}),
+        },
+      },
+      mainBrainHeartbeat: {
+        ...fallback.mainBrainHeartbeat,
+        ...(state.mainBrainHeartbeat || {}),
+        heartbeatTasks: {
+          ...fallback.mainBrainHeartbeat.heartbeatTasks,
+          ...(state.mainBrainHeartbeat?.heartbeatTasks || {}),
+        },
+      },
+      mainBrainBootstrap: {
+        ...fallback.mainBrainBootstrap,
+        ...(state.mainBrainBootstrap || {}),
+      },
+      userProfile: {
+        ...fallback.userProfile,
+        ...(state.userProfile || {}),
+      },
+      workspacePreferences: {
+        ...fallback.workspacePreferences,
+        ...(state.workspacePreferences || {}),
+        imageModelPostPaths: {
+          ...fallback.workspacePreferences.imageModelPostPaths,
+          ...(state.workspacePreferences?.imageModelPostPaths || {}),
+        },
+      },
+      skillPreferences: {
+        ...fallback.skillPreferences,
+        ...(state.skillPreferences || {}),
+        customSkillConfigs: {
+          ...fallback.skillPreferences.customSkillConfigs,
+          ...(state.skillPreferences?.customSkillConfigs || {}),
+        },
+      },
+      pluginPreferences: {
+        ...fallback.pluginPreferences,
+        ...(state.pluginPreferences || {}),
+        records: {
+          ...fallback.pluginPreferences.records,
+          ...(state.pluginPreferences?.records || {}),
+        },
+      },
+      agentPromptAddons: {
+        ...fallback.agentPromptAddons,
+        ...(state.agentPromptAddons || {}),
+      },
+      latestRoleDrafts: {
+        ...fallback.latestRoleDrafts,
+        ...(state.latestRoleDrafts || {}),
+      },
+      roles: {
+        ...fallback.roles,
+        ...(state.roles || {}),
+      },
+      temporaryRoleDrafts: {
+        ...fallback.temporaryRoleDrafts,
+        ...(state.temporaryRoleDrafts || {}),
+      },
+      roleVersions: {
+        ...fallback.roleVersions,
+        ...(state.roleVersions || {}),
+      },
+      roleAuditEntries: {
+        ...fallback.roleAuditEntries,
+        ...(state.roleAuditEntries || {}),
+      },
+      styleLibraries: {
+        ...fallback.styleLibraries,
+        ...(state.styleLibraries || {}),
+      },
+      evolutionRecords: {
+        ...fallback.evolutionRecords,
+        ...(state.evolutionRecords || {}),
+      },
+    } satisfies StudioUserAssetState;
+
+    return cloneState(merged);
+  } catch {
+    return cloneState(fallback);
+  }
+};
 
 const mergeUnique = (left: string[], right: string[]): string[] =>
   Array.from(new Set([...(left || []), ...(right || [])])).filter(Boolean);
@@ -250,8 +371,8 @@ export const mergeStudioUserAssetStates = (args: {
   remote: StudioUserAssetState;
   policy?: StudioAssetSyncPolicy | null;
 }): StudioAssetMergeResult => {
-  const local = cloneState(args.local);
-  const remote = cloneState(args.remote);
+  const local = normalizeMergeState(args.local);
+  const remote = normalizeMergeState(args.remote);
   const merged = cloneState(local);
   const decisions: StudioAssetMergeDecision[] = [];
 

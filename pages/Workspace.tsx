@@ -1511,11 +1511,11 @@ const Workspace: React.FC = () => {
     setUnreadAnnouncementCount(getUnreadAnnouncementCount());
   }, []);
 
-  const handleOpenAnnouncements = () => {
+  const handleOpenAnnouncements = useCallback(() => {
     setIsAnnouncementOpen(true);
     markAllAnnouncementsAsRead();
     setUnreadAnnouncementCount(0);
-  };
+  }, []);
 
   useEffect(() => {
     return () => {
