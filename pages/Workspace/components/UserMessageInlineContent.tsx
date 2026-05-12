@@ -1,5 +1,6 @@
 import React from "react";
 import type { ChatMessage } from "../../../types";
+import { getRenderableImageAssetUrl } from "../workspaceShared";
 
 const normalizeAttachmentLabel = (value: string) => {
   const trimmed = String(value || "").trim();
@@ -26,25 +27,34 @@ export const UserMessageInlineContent: React.FC<UserMessageInlineContentProps> =
 
   return (
     <div className="flex flex-wrap items-start content-start gap-[4px] leading-6">
-      {inlineParts.map((part, index) =>
-        part.type === "text" ? (
-          <span
-            key={`inline-text-${index}`}
-            className={`${textClassName} whitespace-pre-wrap break-words leading-6`}
-          >
-            {part.text}
-          </span>
-        ) : (
+      {inlineParts.map((part, index) => {
+        if (part.type === "text") {
+          return (
+            <span
+              key={`inline-text-${index}`}
+              className={`${textClassName} whitespace-pre-wrap break-words leading-6`}
+            >
+              {part.text}
+            </span>
+          );
+        }
+
+        const previewUrl = getRenderableImageAssetUrl(part.url);
+        if (!previewUrl) {
+          return null;
+        }
+
+        return (
           <button
             key={`inline-attachment-${index}`}
             type="button"
-            onClick={() => onPreview?.(part.url)}
+            onClick={() => onPreview?.(previewUrl)}
             title={normalizeAttachmentLabel(part.label)}
             className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white pl-[2px] pr-2 py-[2px] shadow-sm transition hover:bg-gray-50"
           >
             <div className="h-5 w-5 overflow-hidden rounded-full border border-gray-100 bg-white">
               <img
-                src={part.url}
+                src={previewUrl}
                 alt={part.label}
                 className="h-full w-full object-cover"
               />
@@ -53,8 +63,8 @@ export const UserMessageInlineContent: React.FC<UserMessageInlineContentProps> =
               {normalizeAttachmentLabel(part.label)}
             </span>
           </button>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 };

@@ -5,6 +5,10 @@ import type {
   Marker,
   Project,
 } from '../../../types';
+import {
+  getRenderableImageAssetUrl,
+  sanitizePersistableAttachmentPreviewUrl,
+} from '../workspaceShared';
 
 const MAX_HISTORY_STEPS = 30;
 const MAX_CONVERSATIONS = 12;
@@ -109,7 +113,7 @@ const compactInlineParts = (message: ChatMessage): ChatMessage["inlineParts"] =>
           : null;
       }
 
-      const url = trimText(part.url, 8000);
+      const url = sanitizePersistableAttachmentPreviewUrl(part.url);
       const label = trimText(part.label, 160);
       if (!url || !label) {
         return null;
@@ -263,7 +267,7 @@ export const capHistoryLength = (history: HistoryState[]): HistoryState[] =>
 
 export const compactProjectForPersist = (project: Project): Project => ({
   ...project,
-  thumbnail: project.thumbnail,
+  thumbnail: getRenderableImageAssetUrl(project.thumbnail),
   elements: compactElementsForHistory(project.elements || []),
   markers: Array.isArray(project.markers) ? [...project.markers] : [],
   conversations: trimConversationsForPersist(project.conversations || []),

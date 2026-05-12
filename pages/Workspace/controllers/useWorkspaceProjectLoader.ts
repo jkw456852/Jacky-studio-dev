@@ -30,7 +30,10 @@ import {
   createImagePreviewDataUrl,
   estimateDataUrlBytes,
   getElementDisplayUrl,
+  getRenderableImageAssetUrl,
   getElementSourceUrl,
+  normalizeNestedImageDataUrl,
+  sanitizePersistableAttachmentPreviewUrl,
 } from "../workspaceShared";
 import {
   getAllNodeParentIds,
@@ -101,30 +104,8 @@ const HTTP_URL_PREFIX = /^https?:\/\//i;
 const LOAD_INTERRUPTED_GENERATION_ERROR =
   "生成任务因页面刷新已中断，请重试。";
 
-const normalizeLoadedDataUrl = (value: string | undefined): string | undefined => {
-  if (typeof value !== "string") {
-    return value;
-  }
-
-  let normalized = value.trim();
-  if (!normalized) {
-    return normalized;
-  }
-
-  while (
-    /^data:image\/[a-z0-9.+-]+;base64,data:image\//i.test(normalized)
-  ) {
-    const nested = normalized.match(
-      /^data:image\/[a-z0-9.+-]+;base64,(data:image\/.+)$/i,
-    )?.[1];
-    if (!nested || nested === normalized) {
-      break;
-    }
-    normalized = nested;
-  }
-
-  return normalized;
-};
+const normalizeLoadedDataUrl = (value: string | undefined): string | undefined =>
+  normalizeNestedImageDataUrl(value);
 
 const keepSafeLoadedAssetUrl = (
   value: string | undefined,
@@ -414,14 +395,66 @@ const trimLoadText = (value: unknown, maxLength: number): string => {
 const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
   const attachments = Array.isArray(message.attachments)
     ? message.attachments
+        .map((item) => sanitizePersistableAttachmentPreviewUrl(item))
         .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
         .slice(0, 12)
     : undefined;
   const attachmentMetadata = Array.isArray(message.attachmentMetadata)
-    ? message.attachmentMetadata.slice(0, 12)
+    ? message.attachmentMetadata
+        .slice(0, 12)
+        .map((item) =>
+          item && typeof item === "object"
+            ? {
+                ...item,
+                markerInfo: item.markerInfo
+                  ? {
+                      ...item.markerInfo,
+                      fullImageUrl: getRenderableImageAssetUrl(
+                        item.markerInfo.fullImageUrl,
+                      ),
+                    }
+                  : item.markerInfo,
+              }
+            : item,
+        )
+    : undefined;
+  const inlineParts = Array.isArray(message.inlineParts)
+    ? message.inlineParts
+        .slice(0, 48)
+        .map((part) => {
+          if (!part || typeof part !== "object") {
+            return null;
+          }
+          if (part.type === "text") {
+            const text = trimLoadText(part.text, SAFE_LOAD_TEXT_LIMIT);
+            return text ? { type: "text" as const, text } : null;
+          }
+
+          const url = sanitizePersistableAttachmentPreviewUrl(part.url);
+          const label = trimLoadText(part.label, 160);
+          if (!url || !label) {
+            return null;
+          }
+
+          return {
+            type: "attachment" as const,
+            url,
+            label,
+            markerInfo: part.markerInfo
+              ? {
+                  ...part.markerInfo,
+                  fullImageUrl: getRenderableImageAssetUrl(
+                    part.markerInfo.fullImageUrl,
+                  ),
+                }
+              : undefined,
+          };
+        })
+        .filter(Boolean) as NonNullable<ChatMessage["inlineParts"]>
     : undefined;
   const imageUrls = Array.isArray(message.agentData?.imageUrls)
     ? message.agentData.imageUrls
+        .map((item) => getRenderableImageAssetUrl(item))
         .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
         .slice(0, 12)
     : [];
@@ -439,7 +472,7 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
       attachmentMetadata && attachmentMetadata.length > 0
         ? attachmentMetadata
         : undefined,
-    inlineParts: message.inlineParts,
+    inlineParts: inlineParts && inlineParts.length > 0 ? inlineParts : undefined,
     agentData: message.agentData
       ? {
           model: message.agentData.model,

@@ -1,7 +1,8 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import ReactDOM from 'react-dom';
 import type { WorkspaceMarkerInfo } from '../../../types';
+import { getRenderableImageAssetUrl } from '../workspaceShared';
 
 type MessageAttachmentMetadata = {
   markerName?: string;
@@ -23,104 +24,124 @@ export const MessageAttachments: React.FC<MessageAttachmentsProps> = ({
   if (!attachments || attachments.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+    <div className="mb-1 flex flex-wrap items-center gap-1.5">
       {attachments.map((url, index) => {
         const metadata = attachmentMetadata?.[index];
         const isMarker = !!metadata?.markerInfo;
-        
+        const previewUrl = getRenderableImageAssetUrl(url);
+        const markerPreviewUrl = getRenderableImageAssetUrl(
+          metadata?.markerInfo?.fullImageUrl,
+        );
+        const renderUrl = markerPreviewUrl || previewUrl;
+
+        if (!previewUrl) {
+          return null;
+        }
+
         return (
           <div key={`${url}-${index}`} className="relative group/chip">
             <button
-              id={`msg-chip-${url}-${index}`}
+              id={`msg-chip-${index}`}
               type="button"
-              onClick={() => onPreview?.(url)}
+              onClick={() => onPreview?.(previewUrl)}
               onMouseEnter={() => setHoveredIdx(index)}
               onMouseLeave={() => setHoveredIdx(null)}
-              className="inline-flex items-center gap-1.5 bg-white border border-gray-100 rounded-lg pl-1 pr-2 py-0.5 select-none hover:bg-gray-50 transition duration-200 cursor-pointer shadow-sm"
+              className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-gray-100 bg-white py-0.5 pl-1 pr-2 shadow-sm transition duration-200 hover:bg-gray-50"
               title={metadata?.markerName || `参考内容 ${index + 1}`}
             >
-              <div className="w-5 h-5 rounded-sm overflow-hidden flex-shrink-0 bg-white">
-                <img src={url} className="w-full h-full object-cover" />
+              <div className="h-5 w-5 flex-shrink-0 overflow-hidden rounded-sm bg-white">
+                <img src={previewUrl} className="h-full w-full object-cover" />
               </div>
-              <span className="text-[11px] text-gray-600 font-medium">
+              <span className="text-[11px] font-medium text-gray-600">
                 {metadata?.markerName || `参考内容 ${index + 1}`}
               </span>
             </button>
 
-            {/* 悬停放大预览窗 - 改为显示在下方，带两段式动画 */}
-            {hoveredIdx === index && isMarker && metadata.markerInfo && (() => {
-                const markerInfo = metadata.markerInfo;
-                const MAX_SIZE = 220;
-                const ratio = markerInfo.imageWidth / markerInfo.imageHeight;
-                let renderWidth = MAX_SIZE;
-                let renderHeight = MAX_SIZE;
+            {hoveredIdx === index &&
+            isMarker &&
+            metadata?.markerInfo &&
+            renderUrl &&
+            (() => {
+              const markerInfo = metadata.markerInfo;
+              const maxSize = 220;
+              const ratio = markerInfo.imageWidth / markerInfo.imageHeight;
+              let renderWidth = maxSize;
+              let renderHeight = maxSize;
 
-                if (ratio > 1) {
-                    renderHeight = MAX_SIZE / ratio;
-                } else {
-                    renderWidth = MAX_SIZE * ratio;
-                }
+              if (ratio > 1) {
+                renderHeight = maxSize / ratio;
+              } else {
+                renderWidth = maxSize * ratio;
+              }
 
-                // 计算相对于按钮位置
-                const chipEl = document.getElementById(`msg-chip-${url}-${index}`);
-                const chipRect = chipEl?.getBoundingClientRect();
-                if (!chipRect) return null;
+              const chipEl = document.getElementById(`msg-chip-${index}`);
+              const chipRect = chipEl?.getBoundingClientRect();
+              if (!chipRect) return null;
 
-                return ReactDOM.createPortal(
-                    <div className="fixed z-[9999] pointer-events-none" style={{
-                        left: chipRect.left + chipRect.width / 2 - renderWidth / 2,
-                        top: chipRect.top + chipRect.height + 8,
-                        width: renderWidth, height: renderHeight
-                    }}>
+              return ReactDOM.createPortal(
+                <div
+                  className="pointer-events-none fixed z-[9999]"
+                  style={{
+                    left: chipRect.left + chipRect.width / 2 - renderWidth / 2,
+                    top: chipRect.top + chipRect.height + 8,
+                    width: renderWidth,
+                    height: renderHeight,
+                  }}
+                >
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: -8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative h-full w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+                  >
+                    <motion.div
+                      className="absolute inset-0"
+                      initial={{ scale: 1 }}
+                      animate={{ scale: 3 }}
+                      transition={{
+                        delay: 0.5,
+                        duration: 0.8,
+                        ease: [0.25, 0.1, 0.25, 1],
+                      }}
+                      style={{
+                        transformOrigin: `${((markerInfo.x + markerInfo.width / 2) / markerInfo.imageWidth) * 100}% ${((markerInfo.y + markerInfo.height / 2) / markerInfo.imageHeight) * 100}%`,
+                      }}
+                    >
+                      <img
+                        src={renderUrl}
+                        className="h-full w-full object-cover"
+                      />
+                      <div
+                        className="absolute"
+                        style={{
+                          left: `${((markerInfo.x + markerInfo.width / 2) / markerInfo.imageWidth) * 100}%`,
+                          top: `${((markerInfo.y + markerInfo.height / 2) / markerInfo.imageHeight) * 100}%`,
+                          transform: 'translate(-50%, -100%)',
+                          transformOrigin: 'bottom center',
+                        }}
+                      >
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: -8 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="w-full h-full bg-white rounded-2xl shadow-xl overflow-hidden relative border border-gray-200"
+                          className="relative flex flex-col items-center"
+                          initial={{ scale: 1, opacity: 0 }}
+                          animate={{ scale: 0.333, opacity: 1 }}
+                          transition={{
+                            delay: 0.5,
+                            duration: 0.8,
+                            ease: [0.25, 0.1, 0.25, 1],
+                          }}
+                          style={{ transformOrigin: 'bottom center' }}
                         >
-                            {/* 先显示全图，再缩放到标记区域 */}
-                            <motion.div
-                                className="absolute inset-0"
-                                initial={{ scale: 1 }}
-                                animate={{ scale: 3 }}
-                                transition={{
-                                    delay: 0.5,
-                                    duration: 0.8,
-                                    ease: [0.25, 0.1, 0.25, 1]
-                                }}
-                                style={{
-                                    transformOrigin: `${(markerInfo.x + markerInfo.width / 2) / markerInfo.imageWidth * 100}% ${(markerInfo.y + markerInfo.height / 2) / markerInfo.imageHeight * 100}%`
-                                }}
-                            >
-                                <img src={markerInfo.fullImageUrl || url} className="w-full h-full object-cover" />
-                                {/* 覆盖标记点 */}
-                                <div
-                                    className="absolute"
-                                    style={{
-                                        left: `${(markerInfo.x + markerInfo.width / 2) / markerInfo.imageWidth * 100}%`,
-                                        top: `${(markerInfo.y + markerInfo.height / 2) / markerInfo.imageHeight * 100}%`,
-                                        transform: 'translate(-50%, -100%)',
-                                        transformOrigin: 'bottom center'
-                                    }}
-                                >
-                                    <motion.div
-                                        className="relative flex flex-col items-center"
-                                        initial={{ scale: 1, opacity: 0 }}
-                                        animate={{ scale: 0.333, opacity: 1 }}
-                                        transition={{ delay: 0.5, duration: 0.8, ease: [0.25, 0.1, 0.25, 1] }}
-                                        style={{ transformOrigin: 'bottom center' }}
-                                    >
-                                        <div className="w-[28px] h-[28px] rounded-full bg-[#3B82F6] border-2 border-white flex items-center justify-center text-white font-bold text-[12px] relative z-10 shadow-lg">
-                                            {index + 1}
-                                        </div>
-                                        <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-[#3B82F6] -mt-[1px]"></div>
-                                    </motion.div>
-                                </div>
-                            </motion.div>
+                          <div className="relative z-10 flex h-[28px] w-[28px] items-center justify-center rounded-full border-2 border-white bg-[#3B82F6] text-[12px] font-bold text-white shadow-lg">
+                            {index + 1}
+                          </div>
+                          <div className="-mt-[1px] h-0 w-0 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-[#3B82F6]"></div>
                         </motion.div>
-                    </div>,
-                    document.body
-                );
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                </div>,
+                document.body,
+              );
             })()}
           </div>
         );

@@ -42,6 +42,10 @@ const DISPLAY_PROXY_MIN_EDGE = 1024;
 const DISPLAY_PROXY_OVERSAMPLE = 2;
 const DATA_URL_PREFIX = /^data:/i;
 const TRANSIENT_ASSET_URL = /^(data:|blob:)/i;
+const IMAGE_DATA_URL_PREFIX = /^data:image\//i;
+const NESTED_IMAGE_DATA_URL_PREFIX =
+  /^data:image\/[a-z0-9.+-]+;base64,data:image\//i;
+const RENDERABLE_IMAGE_ASSET_URL = /^(https?:\/\/|blob:|data:image\/)/i;
 const REFERENCE_IMAGE_NORMALIZE_TRIGGER_BYTES = 256 * 1024;
 const REFERENCE_IMAGE_PREVIEW_MAX_BYTES = 200 * 1024;
 
@@ -391,6 +395,41 @@ export const compressImage = (
 export const isTransientAssetUrl = (value: string | null | undefined): boolean =>
   TRANSIENT_ASSET_URL.test(String(value || "").trim());
 
+export const normalizeNestedImageDataUrl = (
+  value: string | null | undefined,
+): string | undefined => {
+  let normalized = String(value || "").trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  while (NESTED_IMAGE_DATA_URL_PREFIX.test(normalized)) {
+    const nested = normalized.match(
+      /^data:image\/[a-z0-9.+-]+;base64,(data:image\/.+)$/i,
+    )?.[1];
+    if (!nested || nested === normalized) {
+      break;
+    }
+    normalized = nested.trim();
+  }
+
+  return normalized || undefined;
+};
+
+export const getRenderableImageAssetUrl = (
+  value: string | null | undefined,
+): string | undefined => {
+  const normalized = normalizeNestedImageDataUrl(value);
+  if (!normalized || !RENDERABLE_IMAGE_ASSET_URL.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+};
+
+export const isRenderableImageAssetUrl = (
+  value: string | null | undefined,
+): boolean => Boolean(getRenderableImageAssetUrl(value));
+
 export const estimateDataUrlBytes = (value: string | null | undefined): number => {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -403,6 +442,24 @@ export const estimateDataUrlBytes = (value: string | null | undefined): number =
   }
 
   return Math.floor(((normalized.length - commaIndex - 1) * 3) / 4);
+};
+
+export const sanitizePersistableAttachmentPreviewUrl = (
+  value: string | null | undefined,
+  maxBytes: number = REFERENCE_IMAGE_NORMALIZE_TRIGGER_BYTES,
+): string | undefined => {
+  const normalized = getRenderableImageAssetUrl(value);
+  if (!normalized || /^blob:/i.test(normalized)) {
+    return undefined;
+  }
+
+  if (IMAGE_DATA_URL_PREFIX.test(normalized)) {
+    return estimateDataUrlBytes(normalized) <= maxBytes
+      ? normalized
+      : undefined;
+  }
+
+  return normalized;
 };
 
 export const isLikelyGeneratedReferencePreview = (
