@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { ChevronDown, GitBranch, LayoutTemplate, MessageSquare } from "lucide-react";
+import { Bell, ChevronDown, GitBranch, LayoutTemplate, MessageSquare } from "lucide-react";
 import type { WorkspaceNodeInteractionMode } from "../../../types";
 
 type WorkspaceHeaderBarProps = {
@@ -10,6 +10,8 @@ type WorkspaceHeaderBarProps = {
   setNodeInteractionMode: React.Dispatch<React.SetStateAction<WorkspaceNodeInteractionMode>>;
   onOpenDashboard: () => void;
   onShowAssistant: () => void;
+  onOpenAnnouncements: () => void;
+  unreadAnnouncementCount: number;
   workflowRecipesOpen?: boolean;
   onToggleWorkflowRecipes?: () => void;
 };
@@ -38,6 +40,8 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
   setNodeInteractionMode,
   onOpenDashboard,
   onShowAssistant,
+  onOpenAnnouncements,
+  unreadAnnouncementCount,
   workflowRecipesOpen = false,
   onToggleWorkflowRecipes,
 }) => {
@@ -119,6 +123,19 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
       </div>
 
       <div className="pointer-events-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenAnnouncements}
+          className="relative flex h-10 w-10 items-center justify-center rounded-full border border-gray-200/80 bg-white/92 text-gray-600 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm transition hover:border-gray-300 hover:bg-white hover:text-gray-900"
+          aria-label="打开系统公告"
+        >
+          <Bell size={16} className="text-current" />
+          {unreadAnnouncementCount > 0 ? (
+            <span className="absolute -right-1 -top-1 flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold leading-5 text-white shadow-md shadow-red-500/25">
+              {unreadAnnouncementCount > 9 ? "9+" : unreadAnnouncementCount}
+            </span>
+          ) : null}
+        </button>
         <button
           type="button"
           onClick={onToggleWorkflowRecipes}

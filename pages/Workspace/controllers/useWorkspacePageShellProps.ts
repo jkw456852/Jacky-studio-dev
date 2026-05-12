@@ -46,6 +46,8 @@ type UseWorkspacePageShellPropsArgs = {
   >;
   showAssistant: boolean;
   setShowAssistant: React.Dispatch<React.SetStateAction<boolean>>;
+  unreadAnnouncementCount: number;
+  onOpenAnnouncements: () => void;
   isCtrlPressed: boolean;
   projectTitle: string;
   setProjectTitle: React.Dispatch<React.SetStateAction<string>>;
@@ -150,6 +152,8 @@ export const useWorkspacePageShellProps = ({
   workspaceCanvasOverlayLayerProps,
   showAssistant,
   setShowAssistant,
+  unreadAnnouncementCount,
+  onOpenAnnouncements,
   isCtrlPressed,
   projectTitle,
   setProjectTitle,
@@ -723,6 +727,8 @@ export const useWorkspacePageShellProps = ({
         setNodeInteractionMode,
         onOpenDashboard: navigateToDashboard,
         onShowAssistant: handleOpenAssistant,
+        onOpenAnnouncements,
+        unreadAnnouncementCount,
         workflowRecipesOpen: leftPanelMode === "workflow-recipes",
         onToggleWorkflowRecipes: () =>
           setLeftPanelMode(
@@ -816,6 +822,7 @@ export const useWorkspacePageShellProps = ({
       marqueeStart,
       navigateToDashboard,
       nodeInteractionMode,
+      onOpenAnnouncements,
       pan,
       previewUrl,
       projectTitle,
@@ -829,6 +836,7 @@ export const useWorkspacePageShellProps = ({
       selectedElementIds,
       showAssistant,
       showFeatureComingSoon,
+      unreadAnnouncementCount,
       visibleCanvasElements,
       workspaceCanvasElementsLayerProps,
       workspaceCanvasOverlayLayerProps,

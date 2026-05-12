@@ -11,6 +11,7 @@ import ReactDOM from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ROUTES } from "../utils/routes";
+import SystemAnnouncementModal from "../components/SystemAnnouncementModal";
 import {
   ChevronDown,
   Minus,
@@ -112,6 +113,11 @@ import {
 } from "../types";
 import { saveProject, formatDate } from "../services/storage";
 import { resolveProjectThumbnail } from "../services/project-thumbnail";
+import {
+  getUnreadAnnouncementCount,
+  markAllAnnouncementsAsRead,
+  SYSTEM_ANNOUNCEMENTS,
+} from "../services/systemAnnouncements";
 import {
   getMappedModelConfigs,
   getModelDisplayLabel,
@@ -1479,6 +1485,8 @@ const Workspace: React.FC = () => {
   const [showAssistant, setShowAssistant] = useState(true);
   const [isAssistantFullscreen, setIsAssistantFullscreen] = useState(false);
   const [isEcommerceWorkflowOpen, setIsEcommerceWorkflowOpen] = useState(false);
+  const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
+  const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const showAssistantRef = useRef(true);
   const [featureNotice, setFeatureNotice] = useState<string | null>(null);
   const featureNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1498,6 +1506,16 @@ const Workspace: React.FC = () => {
       setIsAssistantFullscreen(false);
     }
   }, [isAssistantFullscreen, showAssistant]);
+
+  useEffect(() => {
+    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+  }, []);
+
+  const handleOpenAnnouncements = () => {
+    setIsAnnouncementOpen(true);
+    markAllAnnouncementsAsRead();
+    setUnreadAnnouncementCount(0);
+  };
 
   useEffect(() => {
     return () => {
@@ -5968,6 +5986,8 @@ const Workspace: React.FC = () => {
     workspaceCanvasOverlayLayerProps,
     showAssistant,
     setShowAssistant,
+    unreadAnnouncementCount,
+    onOpenAnnouncements: handleOpenAnnouncements,
     isCtrlPressed: effectiveCtrlMarkActive,
     projectTitle,
     setProjectTitle,
@@ -6045,6 +6065,11 @@ const Workspace: React.FC = () => {
       className="flex h-screen w-screen overflow-hidden bg-[#E8E8E8] font-sans"
       style={{ cursor: activeTool === "text" ? "crosshair" : "default" }}
     >
+      <SystemAnnouncementModal
+        isOpen={isAnnouncementOpen}
+        announcements={SYSTEM_ANNOUNCEMENTS}
+        onClose={() => setIsAnnouncementOpen(false)}
+      />
       <div className="flex flex-1 relative overflow-hidden">
         <WorkspacePageOverlays {...workspacePageOverlaysProps} />
         <WorkspaceSidebarLayer {...workspaceSidebarLayerProps} />
@@ -6126,8 +6151,3 @@ const Workspace: React.FC = () => {
 };
 
 export default Workspace;
-
-
-
-
-
