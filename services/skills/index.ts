@@ -28,6 +28,10 @@ import {
 } from './ecom-oneclick-workflow.skill';
 import { REGISTERED_SKILL_NAMES } from './skill-manifest.ts';
 import { formatSkillExecutionResult, resolveSkillHandler } from './skill-runtime.ts';
+import {
+  isAssetProducingSkillName,
+  isVideoGenerationSkillName,
+} from './skill-manifest.ts';
 
 export { imageGenSkill, videoGenSkill, textExtractSkill, regionAnalyzeSkill, copyGenSkill, smartEditSkill, exportSkill, touchEditSkill, workspaceSearchSkill, runJkAiOneclick, generateModelSkill, analyzeClothingProductSkill, clothingStudioSkill, clothingStudioWorkflowSkill, analyzeListingProductSkill, amazonListingSkill, cnDetailPageSkill, ecomAnalyzeProductSkill, ecomSupplementQuestionsSkill, ecomAutofillSupplementsSkill, ecomAutofillImageAnalysesSkill, ecomAutofillPlansSkill, ecomAnalyzeImagesSkill, ecomGeneratePlansSkill, ecomRewritePromptSkill, ecomReviewGeneratedResultSkill };
 
@@ -64,6 +68,17 @@ export const AVAILABLE_SKILLS = {
 export async function executeSkill(skillName: string, params: any): Promise<any> {
   const skill = resolveSkillHandler(AVAILABLE_SKILLS, skillName);
   const result = await skill(params);
+  const normalizedSkillName = skillName;
+  if (
+    isAssetProducingSkillName(normalizedSkillName) &&
+    (result === null || result === undefined || result === '')
+  ) {
+    throw new Error(
+      `${normalizedSkillName} completed without producing a ${
+        isVideoGenerationSkillName(normalizedSkillName) ? 'video' : 'image'
+      } result`,
+    );
+  }
 
   return formatSkillExecutionResult({
     skillName,

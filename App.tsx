@@ -5,6 +5,7 @@ import { AuthSessionProvider } from './hooks/useAuthSession';
 import { ROUTES } from './utils/routes';
 
 const Home = lazy(() => import('./pages/Home'));
+const GptImageInspiration = lazy(() => import('./pages/GptImageInspiration'));
 const Workspace = lazy(() => import('./pages/Workspace'));
 const WorkspaceNew = lazy(() => import('./pages/Workspace/WorkspaceNew'));
 const Projects = lazy(() => import('./pages/Projects'));
@@ -26,6 +27,7 @@ const App: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               <Route path={ROUTES.landing} element={<Landing />} />
               <Route path={ROUTES.dashboard} element={<Home onExit={onExit} />} />
               <Route path={ROUTES.projects} element={<Projects onExit={onExit} />} />
+              <Route path={ROUTES.gptImageInspiration} element={<GptImageInspiration />} />
               <Route path={`${ROUTES.workspace}/:id`} element={<Workspace />} />
               {/* 新版Workspace - 使用Store和组件化架构 */}
               <Route path={`${ROUTES.workspaceNew}/:id`} element={<WorkspaceNew />} />

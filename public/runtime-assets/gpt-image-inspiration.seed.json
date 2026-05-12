@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "source": {
+    "siteUrl": "https://gpt-image2.canghe.ai/",
+    "repoUrl": "https://github.com/freestylefly/awesome-gpt-image-2",
+    "owner": "freestylefly",
+    "repo": "awesome-gpt-image-2",
+    "branch": "main"
+  },
+  "relationshipSummary": {
+    "siteUrl": "https://gpt-image2.canghe.ai/",
+    "repoUrl": "https://github.com/freestylefly/awesome-gpt-image-2",
+    "docs": [
+      {
+        "id": "readme",
+        "title": "awesome-gpt-image-2",
+        "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/tree/main"
+      },
+      {
+        "id": "docs-templates",
+        "title": "templates",
+        "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md"
+      },
+      {
+        "id": "docs-gallery-part-1",
+        "title": "gallery-part-1",
+        "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-1.md"
+      }
+    ]
+  },
+  "docs": [
+    {
+      "id": "readme",
+      "path": "README.md",
+      "title": "awesome-gpt-image-2",
+      "summary": "这个仓库既是 GPT Image 2 提示词资源库，也是在线展示站的源码与内容源头。",
+      "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/tree/main",
+      "rawUrl": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/README.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "awesome-gpt-image-2",
+          "anchor": "awesome-gpt-image-2"
+        },
+        {
+          "level": 2,
+          "text": "Website",
+          "anchor": "website"
+        },
+        {
+          "level": 2,
+          "text": "Templates",
+          "anchor": "templates"
+        },
+        {
+          "level": 2,
+          "text": "Gallery",
+          "anchor": "gallery"
+        }
+      ],
+      "content": "# awesome-gpt-image-2\n\n这是一个围绕 GPT Image 2 的资源库，既包含模板和案例文档，也包含在线展示站的实现思路。\n\n## 它们三者的关系\n\n- `https://gpt-image2.canghe.ai/`：更适合浏览的在线展示站。\n- `https://github.com/freestylefly/awesome-gpt-image-2`：仓库与内容源头。\n- `docs/templates.md`、`docs/gallery-part-1.md`：真正沉淀模板和案例内容的 Markdown 文档。\n\n## 为什么适合接到你们站里\n\n如果你们只是想做“在线内容展示”，最稳的做法不是直接 iframe 外站，而是把 GitHub 的 Markdown 内容同步成站内 JSON，然后再用你们自己的页面渲染。\n\n## 推荐接入方式\n\n1. 以 GitHub repo 为内容源。\n2. 用定时脚本同步 README、templates、gallery 文档。\n3. 转成统一 JSON 数据结构。\n4. 前端读取你们自己的 runtime asset 展示。\n\n## 后续可加的价值层\n\n- 分类与搜索\n- 收藏与最近查看\n- Prompt 结构化拆解\n- 一键导入工作流或能力节点\n"
+    },
+    {
+      "id": "docs-templates",
+      "path": "docs/templates.md",
+      "title": "templates",
+      "summary": "模板文档更适合作为你们站内的 Prompt 模板中心入口。",
+      "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/templates.md",
+      "rawUrl": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/docs/templates.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "Templates",
+          "anchor": "templates"
+        }
+      ],
+      "content": "# Templates\n\n这份文档适合作为你们站内“模板中心”的主入口。\n\n建议在站内把它转成卡片化浏览，而不是原样 Markdown 平铺：\n\n- 按题材分类\n- 按风格分类\n- 支持一键复制\n- 支持导入到你们的 workflow recipe / capability node\n\n如果后面要继续做产品化，这块优先级很高，因为它比案例更容易直接转化为可执行输入。 \n"
+    },
+    {
+      "id": "docs-gallery-part-1",
+      "path": "docs/gallery-part-1.md",
+      "title": "gallery-part-1",
+      "summary": "案例文档更适合作为灵感库和结果参考库，适合配合模板做联动浏览。",
+      "sourceUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-1.md",
+      "rawUrl": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/docs/gallery-part-1.md",
+      "headings": [
+        {
+          "level": 1,
+          "text": "Gallery Part 1",
+          "anchor": "gallery-part-1"
+        },
+        {
+          "level": 2,
+          "text": "Case 8",
+          "anchor": "case-8"
+        }
+      ],
+      "content": "# Gallery Part 1\n\n这类文档更像案例库，而不是模板库。\n\n## Case 8\n\n像 `#case-8` 这样的具体锚点，说明仓库里的案例其实是按 Markdown 章节组织的。在线站只是把它做成更好浏览的页面。\n\n对于你们网站，最佳方式是：\n\n- 左侧做案例目录\n- 中间看结果图和说明\n- 右侧关联模板 / Prompt / 一键导入\n\n这样用户不会觉得只是“看文档”，而会觉得是在用一个真正的灵感系统。 \n"
+    }
+  ]
+}

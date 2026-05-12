@@ -2,6 +2,7 @@ export const ROUTES = {
   landing: '/',
   dashboard: '/dashboard',
   projects: '/projects',
+  gptImageInspiration: '/gpt-image-inspiration',
   workspace: '/workspace',
   workspaceNew: '/workspace-new',
   settings: '/settings',

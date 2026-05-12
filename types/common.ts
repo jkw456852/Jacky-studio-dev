@@ -53,6 +53,7 @@ export interface WorkspaceStyleLibrary {
   slug?: string;
   title: string;
   summary: string;
+  coverImageUrl?: string;
   referenceInterpretation: string;
   planningDirectives: string[];
   promptDirectives: string[];

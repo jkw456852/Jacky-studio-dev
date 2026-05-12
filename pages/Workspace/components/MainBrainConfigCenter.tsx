@@ -117,49 +117,49 @@ type NavItem = {
 const PRIMARY_SECTIONS: NavItem[] = [
   {
     id: 'overview',
-    title: 'Overview',
-    caption: '状态摘要与待处理提醒',
+    title: '总览',
+    caption: '先看当前状态和常用入口',
     icon: Compass,
   },
   {
     id: 'bootstrap',
-    title: 'Bootstrap',
-    caption: '首次初始化问卷与默认值落库',
+    title: '初始偏好',
+    caption: '第一次设置主脑的默认方式',
     icon: Sparkles,
   },
   {
     id: 'soul',
-    title: 'Soul',
-    caption: '人格、风格、克制与风险偏好',
+    title: '主脑风格',
+    caption: '表达方式、做事风格和风险偏好',
     icon: Brain,
   },
   {
     id: 'user',
-    title: 'User',
-    caption: '用户目标、习惯、背景与偏好',
+    title: '用户偏好',
+    caption: '目标、习惯、背景和长期偏好',
     icon: UserRound,
   },
   {
     id: 'workflow',
-    title: 'Workflow',
-    caption: '默认做事方式与治理策略',
+    title: '做事方式',
+    caption: '默认分析、搜索和角色处理方式',
     icon: Workflow,
   },
   {
     id: 'memory',
-    title: 'Memory',
-    caption: '待确认记忆、长期记忆与每日摘要',
+    title: '长期记忆',
+    caption: '待确认记忆、已确认记忆和整理结果',
     icon: Activity,
   },
   {
     id: 'heartbeat',
-    title: 'Heartbeat',
-    caption: '低频整理任务、频率边界与最近摘要',
+    title: '定期整理',
+    caption: '低频整理任务、频率和边界',
     icon: Clock3,
   },
 ];
 
-const FUTURE_SECTIONS = ['Audit · 待后续实现'] as const;
+const FUTURE_SECTIONS = ['历史与审计将在下一阶段补齐'] as const;
 
 const MEMORY_FILTERS: Array<{
   id: MemoryFilterId;
@@ -520,19 +520,17 @@ const SectionCard: React.FC<{
 }> = ({ title, description, children, tone = 'white' }) => (
   <section
     className={[
-      'rounded-3xl border border-slate-200',
+      'rounded-2xl border border-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.04)]',
       tone === 'slate' ? 'bg-slate-50/70' : 'bg-white',
     ].join(' ')}
   >
-    <div className="border-b border-slate-200 px-5 py-4">
-      <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-        {title}
-      </div>
+    <div className="px-5 py-4">
+      <div className="text-[16px] font-semibold text-slate-900">{title}</div>
       {description ? (
-        <p className="mt-2 text-[12px] leading-5 text-slate-500">{description}</p>
+        <p className="mt-1 text-[12px] leading-5 text-slate-500">{description}</p>
       ) : null}
     </div>
-    <div className="px-5 py-4">{children}</div>
+    <div className="px-5 pb-5">{children}</div>
   </section>
 );
 
@@ -1138,141 +1136,44 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderOverview = () => (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-2">
-        {[
-          {
-            title: 'Soul 摘要',
-            value: soulAsset.persona || '尚未定义人格定位',
-            meta: `${toLines(soulAsset.tone.join('\n')).length} 条表达风格 / ${toLines(soulAsset.workingStyle.join('\n')).length} 条工作风格`,
-            icon: Brain,
-          },
-          {
-            title: 'User 摘要',
-            value: toLines(userAsset.goals.join('\n'))[0] || '尚未定义用户长期目标',
-            meta: `${toLines(userAsset.workingHabits.join('\n')).length} 条工作习惯 / ${toLines(userAsset.businessContext.join('\n')).length} 条业务背景`,
-            icon: UserRound,
-          },
-          {
-            title: 'Workflow 摘要',
-            value: `分析 ${workflowAsset.defaultAnalysisDepth} · 搜索 ${workflowAsset.searchPolicy}`,
-            meta: `澄清优先：${workflowAsset.clarifyBeforeExecution ? '是' : '否'} / 工具规则 ${workflowAsset.toolUseGuidelines.length} 条`,
-            icon: Route,
-          },
-          {
-            title: 'Role Governance 默认策略',
-            value: workflowAsset.roleGovernanceDefaults.mode,
-            meta: `草案 ${workflowAsset.roleGovernanceDefaults.allowDraft ? '允许' : '禁止'} · 自动升级 ${workflowAsset.roleGovernanceDefaults.allowAutoPromote ? '允许' : '禁止'}`,
-            icon: ShieldCheck,
-          },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <div
-              key={item.title}
-              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    {item.title}
-                  </div>
-                  <div className="mt-3 text-[15px] font-semibold leading-6 text-slate-900">
-                    {item.value}
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-slate-100 p-2 text-slate-600">
-                  <Icon size={16} />
-                </div>
-              </div>
-              <div className="mt-3 text-[12px] leading-5 text-slate-500">{item.meta}</div>
+      <SectionCard title="当前状态" description="先看主脑现在大概怎么工作。">
+        <div className="grid gap-3 md:grid-cols-2 text-[13px] leading-6 text-slate-700">
+          <div className="rounded-2xl bg-slate-50 px-4 py-3">
+            <div className="text-[12px] text-slate-500">主脑风格</div>
+            <div className="mt-1 font-semibold text-slate-900">
+              {soulAsset.persona || '还没设置'}
             </div>
-          );
-        })}
-      </div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 px-4 py-3">
+            <div className="text-[12px] text-slate-500">做事方式</div>
+            <div className="mt-1 font-semibold text-slate-900">
+              {workflowAsset.defaultAnalysisDepth} · {workflowAsset.searchPolicy}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 px-4 py-3">
+            <div className="text-[12px] text-slate-500">长期记忆</div>
+            <div className="mt-1 font-semibold text-slate-900">{activeMemories.length} 条</div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 px-4 py-3">
+            <div className="text-[12px] text-slate-500">最近整理</div>
+            <div className="mt-1 text-slate-900">
+              {heartbeatAsset.recentRunSummary[0] || '还没有最近整理摘要。'}
+            </div>
+          </div>
+        </div>
+      </SectionCard>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <SectionCard title="运行状态" description="只展示需要立即判断的信息，不堆全量详情。">
-          <div className="space-y-3 text-[13px] leading-6 text-slate-700">
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-blue-50/70 px-4 py-3">
-              <span>Bootstrap 初始化</span>
-              <InfoPill tone="blue">{bootstrapAsset.initialized ? '已完成' : '待初始化'}</InfoPill>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50/80 px-4 py-3">
-              <span>已确认长期记忆</span>
-              <InfoPill>{activeMemories.length} 条</InfoPill>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-amber-50/70 px-4 py-3">
-              <span>待确认记忆</span>
-              <InfoPill tone="amber">{pendingMemoryCount} 条</InfoPill>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50/80 px-4 py-3">
-              <span>Heartbeat 任务</span>
-              <InfoPill>{heartbeatTaskCount} 个</InfoPill>
-            </div>
-          </div>
-        </SectionCard>
-        <SectionCard title="最近摘要" description="帮助判断主脑当前是否处于可用、可控状态。">
-          <div className="space-y-3 text-[12px] leading-6 text-slate-700">
-            <div>
-              <div className="font-semibold text-slate-900">最近记忆摘要</div>
-              <div className="mt-1 text-slate-600">
-                {activeMemories[0]?.summary || '当前没有已确认长期记忆。'}
-              </div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">最近 Heartbeat 摘要</div>
-              <div className="mt-1 text-slate-600">
-                {heartbeatAsset.recentRunSummary[0] || 'Heartbeat 暂无最近执行摘要。'}
-              </div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">Bootstrap 状态</div>
-              <div className="mt-1 text-slate-600">
-                {bootstrapAsset.initialized
-                  ? `首次初始化 ${formatTime(bootstrapAsset.initializedAt)}${bootstrapAsset.lastRebootstrapAt ? ` · 最近重跑 ${formatTime(bootstrapAsset.lastRebootstrapAt)}` : ''}`
-                  : '当前还未完成主脑首次初始化。'}
-              </div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">最近变更时间</div>
-              <div className="mt-1 text-slate-600">{formatTime(latestUpdatedAt)}</div>
-            </div>
-          </div>
-        </SectionCard>
-        <SectionCard title="快速入口" description="先把高频配置集中收口，其余复杂模块后续再接。">
-          <div className="grid gap-2">
-            {PRIMARY_SECTIONS.filter((item) => item.id !== 'overview').map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveSection(item.id)}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                >
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-900">{item.title}</div>
-                    <div className="mt-1 text-[11px] leading-5 text-slate-500">{item.caption}</div>
-                  </div>
-                  <Icon size={15} className="shrink-0 text-slate-400" />
-                </button>
-              );
-            })}
-          </div>
-        </SectionCard>
-      </div>
-
-      <SectionCard title="共享补充层" description="保留旧的全局偏好行编辑能力，作为结构化资产之外的补充约束。">
+      <SectionCard title="补充规则" description="这里只放少量长期补充。">
         <div className="space-y-4">
           <textarea
             value={legacyPreferenceDraft}
             onChange={(event) => onLegacyPreferenceDraftChange(event.target.value)}
-            placeholder="例如：改代码前先检查是否仍然走到了旧链路。"
-            className="min-h-[180px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+            placeholder="例如：改代码前先确认是否仍然走到了旧链路。"
+            className="min-h-[160px] w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-[13px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-[11px] leading-5 text-slate-400">
-              当前已保存 {legacyPreferenceStoredCount} 条共享补充偏好，继续作为运行时注入的一部分。
+              当前已保存 {legacyPreferenceStoredCount} 条补充规则。
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1281,7 +1182,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
                 disabled={legacyPreferenceStoredCount === 0 && !legacyPreferenceDraft.trim()}
                 className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                清空补充层
+                清空
               </button>
               <button
                 type="button"
@@ -1289,7 +1190,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
                 disabled={!legacyPreferenceDirty}
                 className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                保存补充层
+                保存
               </button>
             </div>
           </div>
@@ -1300,7 +1201,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderSoul = () => (
     <div className="space-y-4">
-      <SectionCard title="人格与表达" description="定义主脑在长期协作中的人格定位、表达方式与做事风格。">
+      <SectionCard title="主脑风格" description="决定主脑长期怎么表达、怎么做事。">
         <div className="space-y-4 text-[13px] leading-6 text-slate-700">
           <label className="block">
             <div className="font-semibold text-slate-900">人格定位</div>
@@ -1335,7 +1236,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </div>
         </div>
       </SectionCard>
-      <SectionCard title="克制与风控" description="控制主脑在哪些地方必须克制、自检，以及遇到风险时倾向如何处理。">
+      <SectionCard title="风险边界" description="控制主脑在哪些地方必须更谨慎。">
         <div className="grid gap-4 xl:grid-cols-2">
           <label className="block">
             <div className="font-semibold text-slate-900">克制规则</div>
@@ -1404,7 +1305,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!soulDirty}
             className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            重置 Soul
+            重置
           </button>
           <button
             type="button"
@@ -1412,7 +1313,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!soulDirty}
             className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            保存 Soul
+            保存设置
           </button>
         </div>
       </SectionCard>
@@ -1421,7 +1322,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderUser = () => (
     <div className="space-y-4">
-      <SectionCard title="用户长期画像" description="这里存的是对用户本人的长期理解，不是单次任务说明。">
+      <SectionCard title="用户偏好" description="这里保存的是长期偏好，不是当前一次任务说明。">
         <div className="grid gap-4 xl:grid-cols-2 text-[13px] leading-6 text-slate-700">
           {[
             ['用户目标', 'goalsText', '例如：把配置中心做成真功能'],
@@ -1448,7 +1349,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           ))}
         </div>
       </SectionCard>
-      <SectionCard title="记忆边界" description="定义哪些信息不应该被主脑长期记住，避免记忆污染。">
+      <SectionCard title="不该长期记住的内容" description="避免把一次性信息误记成长期偏好。">
         <label className="block text-[13px] leading-6 text-slate-700">
           <div className="font-semibold text-slate-900">记忆黑名单</div>
           <textarea
@@ -1467,7 +1368,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!userDirty}
             className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            重置 User
+            重置
           </button>
           <button
             type="button"
@@ -1475,7 +1376,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!userDirty}
             className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            保存 User
+            保存设置
           </button>
         </div>
       </SectionCard>
@@ -1484,7 +1385,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderWorkflow = () => (
     <div className="space-y-4">
-      <SectionCard title="默认工作策略" description="控制主脑默认怎么分析、要不要优先搜索、遇到不明确时是否先澄清。">
+      <SectionCard title="做事方式" description="控制主脑默认怎么分析、什么时候先澄清。">
         <div className="grid gap-4 xl:grid-cols-2 text-[13px] leading-6 text-slate-700">
           <label className="block">
             <div className="font-semibold text-slate-900">默认分析深度</div>
@@ -1498,9 +1399,9 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
               }
               className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 text-[13px] text-slate-800 outline-none transition focus:border-slate-300 focus:bg-white"
             >
-              <option value="light">light</option>
-              <option value="balanced">balanced</option>
-              <option value="deep">deep</option>
+              <option value="light">轻量</option>
+              <option value="balanced">标准</option>
+              <option value="deep">深入</option>
             </select>
           </label>
           <label className="block">
@@ -1515,9 +1416,9 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
               }
               className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 text-[13px] text-slate-800 outline-none transition focus:border-slate-300 focus:bg-white"
             >
-              <option value="never">never</option>
-              <option value="auto">auto</option>
-              <option value="prefer">prefer</option>
+              <option value="never">不主动搜索</option>
+              <option value="auto">按需判断</option>
+              <option value="prefer">优先搜索</option>
             </select>
           </label>
         </div>
@@ -1532,7 +1433,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           />
         </div>
       </SectionCard>
-      <SectionCard title="工具与恢复策略" description="定义工具使用原则，以及执行失败后主脑默认如何恢复。">
+      <SectionCard title="工具和失败处理" description="让主脑知道什么时候用工具，失败后怎么继续。">
         <div className="grid gap-4 xl:grid-cols-2 text-[13px] leading-6 text-slate-700">
           <label className="block">
             <div className="font-semibold text-slate-900">工具使用原则</div>
@@ -1564,7 +1465,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </label>
         </div>
       </SectionCard>
-      <SectionCard title="默认角色治理策略" description="这里是 Workflow 层的默认治理策略，用于避免与角色治理形成两套冲突默认值。">
+      <SectionCard title="角色自动处理" description="控制主脑默认能不能帮你处理角色相关动作。">
         <div className="grid gap-4 xl:grid-cols-2">
           <label className="block text-[13px] leading-6 text-slate-700 xl:col-span-2">
             <div className="font-semibold text-slate-900">治理模式</div>
@@ -1572,18 +1473,18 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
               {[
                 {
                   value: 'manual_only',
-                  label: '仅手动维护',
-                  desc: '主脑只读不改，适合谨慎模式。',
+                  label: '只手动处理',
+                  desc: '主脑只看不改，适合最谨慎的方式。',
                 },
                 {
                   value: 'approval_required',
-                  label: '需要人工确认',
-                  desc: '可以产出候选治理动作，但需要确认后落地。',
+                  label: '改动先确认',
+                  desc: '主脑可以先给建议，但要你点头后才生效。',
                 },
                 {
                   value: 'auto_manage',
-                  label: '允许自动治理',
-                  desc: '主脑可直接推进高频治理动作。',
+                  label: '允许自动处理',
+                  desc: '适合高频场景，主脑可以直接推进常见动作。',
                 },
               ].map((item) => (
                 <button
@@ -1649,7 +1550,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!workflowDirty}
             className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            重置 Workflow
+            重置
           </button>
           <button
             type="button"
@@ -1657,7 +1558,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
             disabled={!workflowDirty}
             className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            保存 Workflow
+            保存设置
           </button>
         </div>
       </SectionCard>
@@ -1669,8 +1570,8 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
     return (
       <div className="space-y-4">
         <SectionCard
-          title="初始化状态"
-          description="Bootstrap 用于完成首次主脑建档，或在后续统一重跑默认值。当前阶段会覆盖 Soul / User / Workflow 默认内容。"
+          title="初始偏好状态"
+          description="这里决定第一次设置主脑时的默认方式。"
         >
           <div className="space-y-4 text-[13px] leading-6 text-slate-700">
             <div className="grid gap-4 xl:grid-cols-3">
@@ -1707,7 +1608,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </div>
         </SectionCard>
 
-        <SectionCard title="首次问卷" description="先定义主脑的协作定位、输出方式与搜索偏好，再生成结构化默认值。">
+        <SectionCard title="第一次怎么设置主脑" description="先决定协作风格、输出方式和搜索习惯。">
           <div className="space-y-5 text-[13px] leading-6 text-slate-700">
             <div>
               <div className="font-semibold text-slate-900">1. 你希望主脑更像哪种协作对象？</div>
@@ -1829,7 +1730,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </div>
         </SectionCard>
 
-        <SectionCard title="治理与长期维护偏好" description="继续决定默认治理边界，并把用户的常见项目类型沉淀为长期画像的一部分。">
+        <SectionCard title="长期维护偏好" description="决定默认治理边界，以及主脑更常服务什么类型的项目。">
           <div className="space-y-4 text-[13px] leading-6 text-slate-700">
             <div className="grid gap-4 xl:grid-cols-2">
               <ToggleRow
@@ -1887,7 +1788,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderMemory = () => (
     <div className="space-y-4">
-      <SectionCard title="Memory 工作区" description="这里管理待确认记忆、已确认长期记忆与最近提炼结果，不再把记忆只当成长文本堆叠。">
+      <SectionCard title="长期记忆" description="这里管理待确认记忆、已确认记忆和最近整理结果。">
         <div className="space-y-4">
           <div className="grid gap-3 xl:grid-cols-3">
             {MEMORY_FILTERS.map((item) => {
@@ -2059,7 +1960,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
       </SectionCard>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionCard title="每日记忆摘要" description="用于沉淀最近自动提炼出的结论性提醒，而不是堆整段原文。">
+        <SectionCard title="最近整理摘要" description="这里只保留最近的结论，不铺整段原文。">
           <div className="space-y-2 text-[12px] leading-6 text-slate-600">
             {memoryAsset.dailySummary.length > 0 ? (
               memoryAsset.dailySummary.map((item, index) => (
@@ -2073,7 +1974,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </div>
         </SectionCard>
 
-        <SectionCard title="记忆边界与保留策略" description="控制哪些内容不应长期记住，并展示当前保留上限，避免记忆无限膨胀。">
+        <SectionCard title="记忆边界" description="控制哪些内容不该长期保留，避免越记越乱。">
           <div className="space-y-3 text-[12px] leading-6 text-slate-600">
             <div className="rounded-2xl bg-slate-50/70 px-4 py-3">
               黑名单：
@@ -2094,7 +1995,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
 
   const renderHeartbeat = () => (
     <div className="space-y-4">
-      <SectionCard title="Heartbeat 总控" description="Heartbeat 只负责低频整理与提醒，不是无边界持续自治 agent。这里先控制总开关、全局频率、范围和最近摘要。">
+      <SectionCard title="定期整理" description="这里只做低频整理和提醒，不做无边界自动执行。">
         <div className="space-y-4 text-[13px] leading-6 text-slate-700">
           <div className="grid gap-4 xl:grid-cols-2">
             <ToggleRow
@@ -2172,7 +2073,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
       </SectionCard>
 
       <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <SectionCard title="任务列表" description="这里只允许低频整理、提醒和冲突检查类任务，不接高风险自动发布或无限制搜索。">
+        <SectionCard title="整理任务" description="这里只放低频整理和提醒任务。">
           <div className="space-y-3">
             {heartbeatTasks.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-[12px] leading-6 text-slate-500">
@@ -2226,7 +2127,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
           </div>
         </SectionCard>
 
-        <SectionCard title="任务详情" description="支持单任务开关、频率、范围和最近摘要维护，同时明确风险边界。">
+        <SectionCard title="任务设置" description="设置当前任务的开关、频率、范围和最近摘要。">
           {heartbeatTaskDraft && selectedHeartbeatTask ? (
             <div className="space-y-4 text-[13px] leading-6 text-slate-700">
               <div className="grid gap-4 xl:grid-cols-2">
@@ -2294,9 +2195,9 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
                     }
                     className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 text-[13px] text-slate-800 outline-none transition focus:border-slate-300 focus:bg-white"
                   >
-                    <option value="manual">manual</option>
-                    <option value="daily">daily</option>
-                    <option value="weekly">weekly</option>
+                    <option value="manual">手动</option>
+                    <option value="daily">每天</option>
+                    <option value="weekly">每周</option>
                   </select>
                 </label>
               </div>
@@ -2392,83 +2293,52 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
   };
 
   const renderSidePanel = () => {
-    if (activeSection === 'overview') {
-      return (
-        <div className="space-y-4">
-          <SectionCard title="运行时注入预览" description="这里展示当前已保存配置进入运行时后的共享提示词块。" tone="slate">
-            <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-slate-700">
-              {getMainBrainPreferenceBlock() || '当前还没有额外主脑共享摘要。'}
-            </pre>
-          </SectionCard>
-          <SectionCard title="影响范围" description="Overview 只负责摘要与入口，不直接承载大段全文。">
-            <div className="space-y-2 text-[12px] leading-6 text-slate-600">
-              <div>· 所有角色都会继承这里保存的长期主脑配置。</div>
-              <div>· 共享补充层会与结构化 Soul / User / Workflow 一起注入运行时。</div>
-              <div>· Memory / Heartbeat / Audit 后续会下沉到独立分区，不继续堆在首页。</div>
-            </div>
-          </SectionCard>
-          <SectionCard title="系统基线" description="保留默认长期规则，方便判断哪些是系统默认、哪些是用户增量。">
-            <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-slate-700">
-              {legacyPreferenceDefaultText || '当前没有额外默认基线。'}
-            </pre>
-          </SectionCard>
-        </div>
-      );
-    }
-
-    const panelMap: Record<Exclude<MainBrainSectionId, 'overview'>, { preview: string; title: string; desc: string; updatedAt: number }> = {
+    const simplePanelMap: Record<MainBrainSectionId, { title: string; lines: string[] }> = {
+      overview: {
+        title: '说明',
+        lines: [
+          '这里的设置会影响主脑长期怎么工作。',
+          '长期记忆和定期整理会在后续任务里持续生效。',
+        ],
+      },
       bootstrap: {
-        preview: bootstrapPreview,
-        title: 'Bootstrap 输出预览',
-        desc: '这里展示问卷选择会生成的默认配置摘要，落库后会覆盖 Soul / User / Workflow 当前默认值。',
-        updatedAt: bootstrapAsset.updatedAt,
+        title: '说明',
+        lines: ['这里决定第一次设置主脑时的默认方式。'],
       },
       soul: {
-        preview: soulPreview,
-        title: 'Soul 注入摘要预览',
-        desc: '会影响主脑在规划、表达、风险判断时的长期人格。',
-        updatedAt: soulAsset.updatedAt,
+        title: '说明',
+        lines: ['这里决定主脑的表达方式、做事风格和风险偏好。'],
       },
       user: {
-        preview: userPreview,
-        title: 'User 注入摘要预览',
-        desc: '会影响主脑对用户本人目标、习惯、背景的长期理解。',
-        updatedAt: userAsset.updatedAt,
+        title: '说明',
+        lines: ['这里保存用户长期偏好，不是一次性的当前任务说明。'],
       },
       workflow: {
-        preview: workflowPreview,
-        title: 'Workflow 注入摘要预览',
-        desc: '会影响分析深度、联网搜索、澄清优先级和默认治理策略。',
-        updatedAt: workflowAsset.updatedAt,
+        title: '说明',
+        lines: ['这里决定主脑默认怎么分析、搜索，以及如何处理角色。'],
       },
       memory: {
-        preview: memoryPreview,
-        title: 'Memory 运行时摘要预览',
-        desc: '这里展示当前长期记忆进入运行时前的摘要形态，重点关注已确认记忆、待确认数量与边界提醒。',
-        updatedAt: memoryAsset.updatedAt,
+        title: '说明',
+        lines: ['这里管理待确认记忆、已确认记忆和最近整理结果。'],
       },
       heartbeat: {
-        preview: heartbeatPreview,
-        title: 'Heartbeat 运行时摘要预览',
-        desc: '这里展示 Heartbeat 的全局启用状态、任务频率、最近摘要与当前聚焦任务，用于确保它仍是低频可控能力。',
-        updatedAt: heartbeatAsset.updatedAt,
+        title: '说明',
+        lines: ['这里只做低频整理和提醒，不做无边界自动执行。'],
       },
     };
 
-    const panel = panelMap[activeSection as Exclude<MainBrainSectionId, 'overview'>];
+    const panel = simplePanelMap[activeSection];
     return (
       <div className="space-y-4">
-        <SectionCard title={panel.title} description={panel.desc} tone="slate">
-          <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-slate-700">
-            {panel.preview || '当前分区还没有可预览的结构化摘要。'}
-          </pre>
-        </SectionCard>
-        <SectionCard title="变更信息" description="帮助确认当前编辑会影响什么，以及上次持久化发生在什么时候。">
+        <SectionCard title={panel.title} description="保持简短，避免信息堆积。" tone="slate">
           <div className="space-y-2 text-[12px] leading-6 text-slate-600">
-            <div>最近保存：{formatTime(panel.updatedAt)}</div>
-            <div>运行时生效方式：准备执行任务时统一注入 prompt 层。</div>
-            <div>风险提醒：避免在这里堆长篇原文，优先存可摘要、可执行的规则。</div>
+            {panel.lines.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
           </div>
+        </SectionCard>
+        <SectionCard title="最近保存" description="只保留最必要的信息。">
+          <div className="text-[12px] leading-6 text-slate-600">{formatTime(latestUpdatedAt)}</div>
         </SectionCard>
       </div>
     );
@@ -2482,35 +2352,36 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
         onClick={onClose}
         className="absolute inset-0"
       />
-      <div className="relative z-[146] flex max-h-[min(88vh,920px)] w-[min(1320px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-28px_rgba(15,23,42,0.45)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Lightbulb size={18} className="text-amber-500" />
-              <h3 className="text-[20px] font-semibold text-slate-900">主脑配置中心</h3>
-              <InfoPill tone="blue">Phase 1</InfoPill>
+      <div className="relative z-[146] flex h-[min(88vh,920px)] w-[min(1120px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_90px_-28px_rgba(15,23,42,0.45)]">
+        <div className="border-b border-slate-200 bg-white px-6 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Lightbulb size={18} className="text-amber-500" />
+                <h3 className="text-[20px] font-semibold text-slate-900">主脑配置中心</h3>
+              </div>
+              <p className="mt-2 max-w-[760px] text-[13px] leading-6 text-slate-500">
+                这里管理主脑长期怎么工作、会记住什么，以及多久整理一次长期信息。
+              </p>
             </div>
-            <p className="mt-2 text-[13px] leading-6 text-slate-500">
-              长期规则、用户画像、工作策略与运行状态摘要在这里统一管理，避免继续把复杂编辑堆在输入区。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <InfoPill>最近更新 {formatTime(latestUpdatedAt)}</InfoPill>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <InfoPill>最近更新 {formatTime(latestUpdatedAt)}</InfoPill>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden px-6 py-5 lg:grid-cols-[220px_minmax(0,1fr)_320px]">
-          <aside className="min-h-0 overflow-y-auto">
-            <div className="rounded-3xl border border-slate-200 bg-white p-3">
-              <div className="px-2 pb-3 pt-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                当前分区
+        <div className="grid min-h-0 flex-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-y-auto pr-1">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+              <div className="px-2 pb-3 pt-1 text-[13px] font-semibold text-slate-900">
+                配置分区
               </div>
               <div className="space-y-2">
                 {PRIMARY_SECTIONS.map((item) => {
@@ -2532,36 +2403,19 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
                         <Icon size={15} className={active ? 'text-slate-100' : 'text-slate-400'} />
                         <span className="text-[13px] font-semibold">{item.title}</span>
                       </div>
-                      <div
-                        className={[
-                          'mt-1 text-[11px] leading-5',
-                          active ? 'text-slate-200' : 'text-slate-500',
-                        ].join(' ')}
-                      >
-                        {item.caption}
-                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
-            <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                下一阶段
-              </div>
-              <div className="mt-3 space-y-2 text-[12px] leading-5 text-slate-500">
-                {FUTURE_SECTIONS.map((item) => (
-                  <div key={item} className="rounded-2xl bg-white/80 px-3 py-2">
-                    {item}
-                  </div>
-                ))}
-              </div>
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-[12px] leading-5 text-slate-500">
+              {FUTURE_SECTIONS.map((item) => (
+                <div key={item}>{item}</div>
+              ))}
             </div>
           </aside>
 
           <main className="min-h-0 overflow-y-auto pr-1">{renderMainContent()}</main>
-
-          <aside className="min-h-0 overflow-y-auto pr-1">{renderSidePanel()}</aside>
         </div>
       </div>
     </div>

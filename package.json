@@ -14,7 +14,8 @@
   "scripts": {
     "dev": "vite",
     "sync:studio-assets": "node scripts/sync-studio-assets.mjs",
-    "build": "npm run sync:studio-assets && vite build",
+    "sync:gpt-image-inspiration": "node scripts/sync-gpt-image-inspiration.mjs",
+    "build": "npm run sync:studio-assets && npm run sync:gpt-image-inspiration && vite build",
     "preview": "vite preview",
     "main-brain:capabilities:check": "node --experimental-strip-types scripts/main-brain-capability-tooling.mjs check",
     "main-brain:capabilities:scaffold": "node --experimental-strip-types scripts/main-brain-capability-tooling.mjs scaffold",

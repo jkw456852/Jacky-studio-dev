@@ -30,6 +30,12 @@ export type AgentMessageImageCard = {
   title: string;
 };
 
+export type AgentMessageExecutionMode =
+  | "true_edit"
+  | "reference_guided_generate"
+  | "generate"
+  | "unknown";
+
 export type AgentMessageOneClickView = {
   intro: string;
   sections: Array<{ title: string; body: string }>;
@@ -238,6 +244,38 @@ export const deriveAgentMessageImageCards = (
       title: matched?.description || matched?.title || `Image ${index + 1}`,
     };
   });
+};
+
+export const deriveAgentMessageExecutionMode = (
+  agentData: ChatMessage["agentData"],
+): AgentMessageExecutionMode => {
+  const skillCalls: WorkflowSkillCall[] = agentData?.skillCalls || [];
+  const successfulSmartEdit = skillCalls.find(
+    (skillCall) =>
+      Boolean(skillCall?.success) && skillCall?.skillName === "smartEdit",
+  );
+  const successfulGenerate = skillCalls.find(
+    (skillCall) =>
+      Boolean(skillCall?.success) && skillCall?.skillName === "generateImage",
+  );
+
+  if (successfulSmartEdit) {
+    const editType = String(successfulSmartEdit.params?.editType || "").trim();
+    const hasMask = Boolean(successfulSmartEdit.params?.maskImage);
+    const isStructuredEdit =
+      hasMask ||
+      editType === "object-remove" ||
+      editType === "background-remove" ||
+      editType === "style-transfer" ||
+      editType === "extend";
+    return isStructuredEdit ? "true_edit" : "reference_guided_generate";
+  }
+
+  if (successfulGenerate) {
+    return "generate";
+  }
+
+  return "unknown";
 };
 
 export const deriveAgentMessageOneClickView = (

@@ -1,4 +1,5 @@
-import { editImage, generateImage, refineImagePrompt } from '../gemini';
+import { editImage, refineImagePrompt } from '../gemini';
+import { generateImageWithProvider } from '../providers';
 
 export interface SmartEditParams {
   sourceUrl: string;
@@ -58,7 +59,11 @@ export async function smartEditSkill(params: SmartEditParams): Promise<string | 
     let finalPrompt = promptTemplate;
 
     // Determine the model to use - upscale usually works best with the Pro image model
-    const generationModel = params.parameters?.model || (params.editType === 'upscale' ? 'Nano Banana Pro' : 'nanobanana2');
+    const generationModel =
+      resolveSmartEditModelId(params.parameters?.model) ||
+      (params.editType === 'upscale'
+        ? 'gemini-3-pro-image-preview'
+        : 'NanoBanana2');
 
     // 2-Step Generation: If the prompt looks like a framework (meta-prompt), refine it first via Flash
     const isMetaPrompt = promptTemplate.includes('【') || promptTemplate.includes('══');
@@ -105,19 +110,42 @@ export async function smartEditSkill(params: SmartEditParams): Promise<string | 
       const requestedAspectRatio = params.parameters?.aspectRatio || '1:1';
       const requestedImageSize = params.parameters?.imageSize;
       // fallback to current robust generation flow
-      result = await generateImage({
-        prompt: finalPrompt,
-        model: generationModel,
-        aspectRatio: requestedAspectRatio,
-        imageSize: requestedImageSize || (params.editType === 'upscale' ? (params.parameters?.factor >= 4 ? '4K' : '2K') : '1K'),
-        providerId: params.parameters?.providerId,
-        referenceImage: params.sourceUrl
-      });
+      result = await generateImageWithProvider(
+        {
+          prompt: finalPrompt,
+          providerId: params.parameters?.providerId,
+          aspectRatio: requestedAspectRatio,
+          imageSize:
+            requestedImageSize ||
+            (params.editType === 'upscale'
+              ? params.parameters?.factor >= 4
+                ? '4K'
+                : '2K'
+              : '1K'),
+          referenceImage: params.sourceUrl,
+          referenceImages: params.parameters?.referenceImages,
+          maskImage: params.maskImage,
+          referenceStrength: params.parameters?.referenceStrength,
+          referencePriority: params.parameters?.referencePriority,
+          referenceMode: params.parameters?.referenceMode,
+          referenceRoleMode: params.parameters?.referenceRoleMode,
+          promptLanguagePolicy: params.parameters?.promptLanguagePolicy,
+          textPolicy: params.parameters?.textPolicy,
+          consistencyContext: params.parameters?.consistencyContext,
+        },
+        generationModel,
+      );
+    }
+
+    if (!result) {
+      throw new Error(
+        `Smart edit did not produce an image for editType=${params.editType}`,
+      );
     }
 
     return result;
   } catch (error) {
     console.error('Smart edit error:', error);
-    return null;
+    throw error;
   }
 }

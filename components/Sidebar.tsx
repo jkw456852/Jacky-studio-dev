@@ -6,6 +6,7 @@ import { useAuthSession } from "../hooks/useAuthSession";
 import {
   Home as HomeIcon,
   Folder,
+  Image as ImageIcon,
   Plus,
   Settings,
   User,
@@ -40,7 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
         <div>
           <button
             onClick={handleNewProject}
-            className="h-12 w-12 rounded-lg bg-foreground text-background shadow-premium transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center"
+            className="flex h-12 w-12 items-center justify-center rounded-lg bg-foreground text-background shadow-premium transition-all duration-200 hover:scale-105 active:scale-95"
             title="新建项目"
           >
             <Plus size={24} />
@@ -69,6 +70,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
             title="项目"
           >
             <Folder size={20} />
+          </button>
+          <button
+            onClick={() => navigate(ROUTES.gptImageInspiration)}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.gptImageInspiration)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
+            title="GPT Image 灵感库"
+          >
+            <ImageIcon size={20} />
           </button>
           <button
             onClick={() => navigate(ROUTES.settings)}
@@ -127,6 +139,20 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           />
           <span className="text-[10px] font-black uppercase tracking-tighter">
             项目
+          </span>
+        </button>
+        <button
+          onClick={() => navigate(ROUTES.gptImageInspiration)}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.gptImageInspiration) ? "text-black" : "text-gray-400"
+          }`}
+        >
+          <ImageIcon
+            size={20}
+            strokeWidth={isActive(ROUTES.gptImageInspiration) ? 2.5 : 2}
+          />
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            灵感库
           </span>
         </button>
 

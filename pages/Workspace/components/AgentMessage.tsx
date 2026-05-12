@@ -34,6 +34,7 @@ import type {
 } from '../../../types/workflow.types';
 import {
   deriveAgentMessageContent,
+  deriveAgentMessageExecutionMode,
   deriveAgentMessageImageCards,
   deriveAgentMessageOneClickView,
   deriveAgentMessagePlanningBlock,
@@ -197,6 +198,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
     [agentData],
   );
 
+  const executionMode = useMemo(
+    () => deriveAgentMessageExecutionMode(agentData),
+    [agentData],
+  );
+
   const oneClickView = useMemo(
     () => deriveAgentMessageOneClickView(cleanText, message),
     [cleanText, message],
@@ -217,6 +223,24 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   const workflowType = message.workflowUi?.type || '';
   const isClothingWorkflowUi = workflowType.startsWith('clothingStudio.');
   const isEcommerceWorkflowUi = workflowType.startsWith('ecomOneClick.');
+  const analysisPanelTitle =
+    executionMode === 'true_edit' ? '编辑分析' : '任务分析';
+  const executionModeBadgeLabel =
+    executionMode === 'true_edit'
+      ? 'True Edit'
+      : executionMode === 'reference_guided_generate'
+        ? 'Ref-guided Generate'
+        : executionMode === 'generate'
+          ? 'Generate'
+          : null;
+  const executionModeNotice =
+    executionMode === 'reference_guided_generate'
+      ? '本次展示的是任务分析，不是完整思考过程。本次走的是参考图引导生成，不是严格的局部定点编辑；系统会尽量保持主体和整体结构一致。'
+      : executionMode === 'true_edit'
+        ? '本次展示的是任务分析，不是完整思考过程。本次走的是编辑路径，系统会优先围绕原图结构做定向修改，而不是整张重生成。'
+        : executionMode === 'generate'
+          ? '本次展示的是任务分析，不是完整思考过程。当前结果走的是生成路径。'
+          : '本次展示的是任务分析，不是完整思考过程。';
 
   return (
     <div className="w-full group">
@@ -691,7 +715,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 className="text-gray-500 transition-colors group-hover/btn:text-gray-800"
               />
               <span className="text-[12px] font-medium text-gray-600 transition-colors group-hover/btn:text-gray-900">
-                图片分析
+                {analysisPanelTitle}
               </span>
               {isAnalysisExpanded ? (
                 <ChevronUp size={12} className="text-gray-400" />
@@ -709,6 +733,17 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                   className="overflow-hidden"
                 >
                   <div className="mt-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-[12px] leading-relaxed text-gray-600 whitespace-pre-wrap">
+                    <div
+                      className={`mb-2 rounded-md px-2 py-1.5 text-[11px] leading-5 whitespace-normal ${
+                        executionMode === 'true_edit'
+                          ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
+                          : executionMode === 'reference_guided_generate'
+                            ? 'border border-amber-100 bg-amber-50 text-amber-700'
+                            : 'border border-slate-200 bg-white text-slate-600'
+                      }`}
+                    >
+                      {executionModeNotice}
+                    </div>
                     {agentData.analysis}
                   </div>
                 </motion.div>
@@ -794,6 +829,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 {agentData?.model || 'Nano Banana Pro'}
               </span>
             </div>
+            {executionModeBadgeLabel && (
+              <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                {executionModeBadgeLabel}
+              </span>
+            )}
           </div>
         )}
 

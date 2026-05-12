@@ -18,6 +18,7 @@ import type {
   ImageModel,
   WorkspaceStyleLibrary,
 } from "../../../types";
+import { uploadImage } from "../../../utils/uploader";
 import {
   WORKSPACE_NODE_BERSERK_SHADOW,
   WORKSPACE_NODE_RADIUS,
@@ -240,6 +241,7 @@ const TreePromptReferenceUploadTrigger: React.FC<{
 type StyleLibraryDraftState = {
   title: string;
   summary: string;
+  coverImageUrl: string;
   referenceInterpretation: string;
   planningDirectivesText: string;
   promptDirectivesText: string;
@@ -255,6 +257,7 @@ const buildStyleLibraryDraft = (
   return {
     title: normalized?.title || "",
     summary: normalized?.summary || "",
+    coverImageUrl: normalized?.coverImageUrl || "",
     referenceInterpretation: normalized?.referenceInterpretation || "",
     planningDirectivesText: toDirectiveText(normalized?.planningDirectives),
     promptDirectivesText: toDirectiveText(normalized?.promptDirectives),
@@ -274,6 +277,7 @@ const buildStyleLibraryFromDraft = (
   normalizeWorkspaceStyleLibrary({
     title: draft.title,
     summary: draft.summary,
+    coverImageUrl: String(draft.coverImageUrl || "").trim() || undefined,
     referenceInterpretation: draft.referenceInterpretation,
     planningDirectives: parseDirectiveText(draft.planningDirectivesText),
     promptDirectives: parseDirectiveText(draft.promptDirectivesText),
@@ -305,14 +309,24 @@ const buildDetachedStyleLibraryAsset = (
   };
 };
 
+const getStoredStyleLibraryOrigin = (
+  library: WorkspaceStyleLibrary | null | undefined,
+): "user" | "runtime" => {
+  const normalized = normalizeWorkspaceStyleLibrary(library);
+  if (!normalized) return "runtime";
+  if (normalized.createdBy === "main-brain") return "runtime";
+  return "user";
+};
+
 const getStyleLibrarySourceLabel = (
   library: WorkspaceStyleLibrary | null | undefined,
 ) => {
   const normalized = normalizeWorkspaceStyleLibrary(library);
   if (!normalized) return LABEL_STYLE_LIBRARY_RUNTIME;
   if (normalized.createdBy === "system") return LABEL_STYLE_LIBRARY_SYSTEM;
-  if (normalized.id) return LABEL_STYLE_LIBRARY_USER;
-  return LABEL_STYLE_LIBRARY_RUNTIME;
+  return getStoredStyleLibraryOrigin(normalized) === "runtime"
+    ? LABEL_STYLE_LIBRARY_RUNTIME
+    : LABEL_STYLE_LIBRARY_USER;
 };
 
 type TreePromptStyleLibraryModalProps = {
@@ -323,6 +337,7 @@ type TreePromptStyleLibraryModalProps = {
   onApplyDraft: () => boolean;
   onClose: () => void;
   onDeleteSelectedUserStyleLibrary: () => void;
+  onDeleteStyleLibraries: (libraryIds: string[]) => void;
   onSaveDetachedAsset: () => void;
   onSeedCustomStyleLibrary: () => void;
   onSelectMode: (mode: NonNullable<CanvasElement["genReferenceRoleMode"]>) => void;
@@ -333,8 +348,6 @@ type TreePromptStyleLibraryModalProps = {
   onUseSelectedUserLibrary: (library: WorkspaceStyleLibrary) => void;
   onEditSelectedUserLibrary: (library: WorkspaceStyleLibrary) => void;
   selectedUserStyleLibrary: WorkspaceStyleLibrary | null;
-  setShowStyleLibraryDetails: React.Dispatch<React.SetStateAction<boolean>>;
-  showStyleLibraryDetails: boolean;
   styleLibraryDraft: StyleLibraryDraftState;
   styleLibraryOptions: Array<{
     value: NonNullable<CanvasElement["genReferenceRoleMode"]>;
@@ -366,6 +379,40 @@ type TreePromptStyleGalleryItemV2 = {
   sortOrder: number;
 };
 
+const STYLE_GALLERY_PREVIEW_BACKGROUNDS = [
+  "linear-gradient(135deg, rgba(249,244,236,0.98), rgba(255,255,255,0.98))",
+  "linear-gradient(135deg, rgba(242,244,255,0.98), rgba(255,255,255,0.98))",
+  "linear-gradient(135deg, rgba(241,248,245,0.98), rgba(255,255,255,0.98))",
+  "linear-gradient(135deg, rgba(247,241,255,0.98), rgba(255,255,255,0.98))",
+] as const;
+
+const getStyleGalleryPreviewBackground = (
+  origin: TreePromptStyleGalleryItemV2["origin"],
+  index: number,
+) => {
+  if (origin === "user") {
+    return "linear-gradient(135deg, rgba(239,244,255,0.98), rgba(255,255,255,0.98))";
+  }
+  if (origin === "runtime") {
+    return "linear-gradient(135deg, rgba(255,246,237,0.98), rgba(255,255,255,0.98))";
+  }
+  return STYLE_GALLERY_PREVIEW_BACKGROUNDS[
+    index % STYLE_GALLERY_PREVIEW_BACKGROUNDS.length
+  ];
+};
+
+const getStyleGalleryBadgeClass = (
+  origin: TreePromptStyleGalleryItemV2["origin"],
+) => {
+  if (origin === "user") {
+    return "bg-[#edf3ff] text-[#2457ff]";
+  }
+  if (origin === "runtime") {
+    return "bg-[#fff1e7] text-[#c76a16]";
+  }
+  return "bg-[#f3efe8] text-[#6a5f52]";
+};
+
 const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> = ({
   canUsePosterProductMode,
   effectiveStyleLibrary,
@@ -374,6 +421,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   onApplyDraft,
   onClose,
   onDeleteSelectedUserStyleLibrary,
+  onDeleteStyleLibraries,
   onSaveDetachedAsset,
   onSeedCustomStyleLibrary,
   onSelectMode,
@@ -384,8 +432,6 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   onUseSelectedUserLibrary,
   onEditSelectedUserLibrary,
   selectedUserStyleLibrary,
-  setShowStyleLibraryDetails,
-  showStyleLibraryDetails,
   styleLibraryDraft,
   styleLibraryOptions,
   userStyleLibraries,
@@ -396,6 +442,11 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   >("all");
   const [searchValue, setSearchValue] = React.useState("");
   const [portalReady, setPortalReady] = React.useState(false);
+  const [batchSelectionEnabled, setBatchSelectionEnabled] = React.useState(false);
+  const [selectedLibraryIds, setSelectedLibraryIds] = React.useState<string[]>([]);
+  const [sortMode, setSortMode] = React.useState<"recommended" | "title">(
+    "recommended",
+  );
 
   React.useEffect(() => {
     setPortalReady(true);
@@ -403,7 +454,15 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
 
   React.useEffect(() => {
     setActiveFilter("all");
+    setBatchSelectionEnabled(false);
+    setSelectedLibraryIds([]);
   }, [activeTab]);
+
+  React.useEffect(() => {
+    setSelectedLibraryIds((current) =>
+      current.filter((id) => userStyleLibraries.some((library) => library.id === id)),
+    );
+  }, [userStyleLibraries]);
 
   const builtInLibraries = React.useMemo(
     () =>
@@ -479,40 +538,45 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                 : undefined
               : builtIn?.library,
         mode: option.value,
-        origin: isCustom ? "runtime" as const : "system" as const,
+        origin: isCustom ? "runtime" : "system",
         disabled: option.disabled,
         isActive,
         sortOrder: index,
       };
     });
 
-    const userItems: TreePromptStyleGalleryItemV2[] = userStyleLibraries.map((library, index) => ({
-      key: `user-${library.id || index}`,
-      title: library.title,
-      summary: library.summary,
-      badge: LABEL_STYLE_LIBRARY_USER,
-      subBadge:
+    const userItems: TreePromptStyleGalleryItemV2[] = userStyleLibraries.map((library, index) => {
+      const origin = getStoredStyleLibraryOrigin(library);
+      const isSelectedLibrary =
         activeTab !== "gallery" &&
-        selectedUserStyleLibrary?.id &&
-        selectedUserStyleLibrary.id === library.id
+        Boolean(selectedUserStyleLibrary?.id && selectedUserStyleLibrary.id === library.id);
+      return {
+        key: `user-${library.id || index}`,
+        title: library.title,
+        summary: library.summary,
+        badge: origin === "runtime" ? LABEL_STYLE_LIBRARY_RUNTIME : LABEL_STYLE_LIBRARY_USER,
+        subBadge: isSelectedLibrary
           ? "当前使用"
-          : library.sourceMode || "custom",
-      library,
-      mode: "custom" as NonNullable<CanvasElement["genReferenceRoleMode"]>,
-      origin: "user" as const,
-      disabled: false,
-      isActive:
-        activeTab !== "gallery" &&
-        Boolean(selectedUserStyleLibrary?.id && selectedUserStyleLibrary.id === library.id),
-      sortOrder: 100 + index,
-    }));
+          : origin === "runtime"
+            ? "临时组织"
+            : library.sourceMode || "custom",
+        library,
+        mode: "custom",
+        origin,
+        disabled: false,
+        isActive: isSelectedLibrary,
+        sortOrder: 100 + index,
+      };
+    });
 
     return [...modeItems, ...userItems];
   }, [
+    activeTab,
     builtInLibraries,
     canUsePosterProductMode,
     effectiveStyleLibrary,
     normalizedStyleLibraryMode,
+    selectedUserStyleLibrary?.id,
     styleLibraryOptions,
     userStyleLibraries,
   ]);
@@ -556,7 +620,12 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
       );
     }
 
-    return items.sort((a, b) => a.sortOrder - b.sortOrder);
+    return items.sort((a, b) => {
+      if (sortMode === "title") {
+        return a.title.localeCompare(b.title, "zh-CN");
+      }
+      return a.sortOrder - b.sortOrder;
+    });
   }, [
     activeFilter,
     activeTab,
@@ -564,30 +633,8 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
     normalizedSearch,
     normalizedStyleLibraryMode,
     selectedUserStyleLibrary?.id,
+    sortMode,
   ]);
-
-  const detailItem =
-    (activeTab === "mine" && selectedUserStyleLibrary?.id
-      ? visibleGalleryItems.find((item) => item.library?.id === selectedUserStyleLibrary.id)
-      : null) ||
-    visibleGalleryItems.find((item) => item.isActive) ||
-    allGalleryItems.find((item) => item.mode === normalizedStyleLibraryMode) ||
-    visibleGalleryItems[0] ||
-    null;
-
-  const detailLibrary = detailItem?.library || currentModeLibrary;
-  const detailTitle =
-    detailItem?.title ||
-    currentModeLibrary?.title ||
-    currentModeItem?.label ||
-    "当前未启用风格库";
-  const detailSummary =
-    detailItem?.summary ||
-    currentModeLibrary?.summary ||
-    currentModeItem?.hint ||
-    "当前节点还没有附加的风格约束。";
-  const detailDirectives = detailLibrary?.planningDirectives || [];
-  const promptDirectives = detailLibrary?.promptDirectives || [];
 
   const filterChips = [
     { id: "all", label: "全部" },
@@ -598,9 +645,8 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   ] as const;
 
   const handleSelectGalleryItem = (item: TreePromptStyleGalleryItemV2) => {
-    setShowStyleLibraryDetails(true);
-    if (item.origin === "user") {
-      onSelectUserLibrary(item.library?.id || null);
+    if ((item.origin === "user" || item.origin === "runtime") && item.library) {
+      onUseSelectedUserLibrary(item.library);
       return;
     }
     if (item.mode === "custom") {
@@ -619,476 +665,450 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[260] bg-[rgba(15,23,42,0.42)] backdrop-blur-[6px]"
+      className="fixed inset-0 z-[260] bg-[rgba(17,24,39,0.26)] p-3 backdrop-blur-[2px] sm:p-4"
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={onClose}
     >
       <div
-        className="absolute inset-[16px] overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,252,0.97))] shadow-[0_28px_120px_rgba(15,23,42,0.26)]"
+        className="mx-auto flex h-full w-full max-w-[1600px] overflow-hidden rounded-[20px] border border-[#dfe4ea] bg-white shadow-[0_22px_80px_rgba(15,23,42,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="grid h-full min-h-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex min-h-0 flex-col border-r border-[#edf0f6]">
-            <div className="border-b border-[#edf0f6] px-7 pb-4 pt-6">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#9aa4b7]">
-                    STYLE LIBRARY
-                  </div>
-                  <h3 className="mt-3 text-[34px] font-semibold tracking-[-0.04em] text-[#0f172a]">
-                    风格资源广场
-                  </h3>
-                  <p className="mt-2 max-w-[520px] text-[14px] leading-6 text-[#64748b]">
-                    给关键词节点选择系统风格、用户资产，或者临时组织一套新的风格脑。
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e6eaf2] bg-white/92 text-[#6b7280] transition hover:border-[#cfd5e3] hover:text-[#111827]"
-                  onClick={onClose}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                {[
-                  { id: "gallery", label: "广场" },
-                  { id: "mine", label: "我的风格" },
-                  { id: "current", label: "当前配置" },
-                ].map((tab) => {
-                  const active = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={`rounded-[14px] px-4 py-2.5 text-[13px] font-semibold transition ${
-                        active
-                          ? "bg-[#111827] text-white shadow-[0_12px_28px_rgba(17,24,39,0.18)]"
-                          : "bg-[#f3f5f9] text-[#475569] hover:bg-[#e9edf5]"
-                      }`}
-                      onClick={() =>
-                        setActiveTab(tab.id as "gallery" | "mine" | "current")
-                      }
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-
-                <label className="ml-auto flex h-12 min-w-[280px] flex-1 items-center gap-3 rounded-[16px] border border-[#e7eaf1] bg-[#f6f8fb] px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] md:max-w-[440px] md:flex-none">
-                  <Search size={15} className="text-[#94a3b8]" />
-                  <input
-                    value={searchValue}
-                    onChange={(event) => setSearchValue(event.target.value)}
-                    placeholder="搜索风格名称、用途或约束方向"
-                    className="h-full w-full bg-transparent text-[13px] text-[#0f172a] outline-none placeholder:text-[#94a3b8]"
-                  />
-                </label>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                {filterChips.map((chip) => {
-                  const active = activeFilter === chip.id;
-                  return (
-                    <button
-                      key={chip.id}
-                      type="button"
-                      className={`rounded-[12px] px-3.5 py-2 text-[12px] font-medium transition ${
-                        active
-                          ? "bg-[#e8eefc] text-[#315efb]"
-                          : "bg-transparent text-[#556274] hover:bg-[#f3f6fb]"
-                      }`}
-                      onClick={() => setActiveFilter(chip.id)}
-                    >
-                      {chip.label}
-                    </button>
-                  );
-                })}
-              </div>
+        <div className="relative flex h-full min-h-0 w-full flex-col">
+          <div className="flex items-center gap-3 border-b border-[#eef2f7] px-4 py-4 sm:px-6">
+            <div className="flex items-center gap-2 rounded-[12px] bg-[#f4f6f9] p-1">
+              {[
+                { id: "gallery", label: "广场" },
+                { id: "mine", label: "我的收藏" },
+                { id: "current", label: "最近使用" },
+              ].map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`rounded-[10px] px-4 py-2 text-[14px] font-medium transition ${
+                      active
+                        ? "bg-white text-[#111827] shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                        : "text-[#6b7280] hover:bg-white/70"
+                    }`}
+                    onClick={() =>
+                      setActiveTab(tab.id as "gallery" | "mine" | "current")
+                    }
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              {activeTab === "mine" ? (
+            <label className="ml-auto flex h-11 min-w-0 flex-1 items-center gap-3 rounded-[12px] bg-[#f4f6f9] px-4 sm:max-w-[440px]">
+              <Search size={16} className="text-[#9ca3af]" />
+              <input
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder="输入模型名称、作者、标签搜索"
+                className="h-full w-full bg-transparent text-[14px] text-[#111827] outline-none placeholder:text-[#9ca3af]"
+              />
+            </label>
+
+            <button
+              type="button"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#6b7280] transition hover:bg-[#f3f4f6] hover:text-[#111827]"
+              onClick={onClose}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-3 border-b border-[#eef2f7] px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              {filterChips.map((chip) => {
+                const active = activeFilter === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    className={`rounded-[10px] px-4 py-1.5 text-[13px] transition ${
+                      active
+                        ? "bg-[#eef2ff] text-[#1d4ed8]"
+                        : "bg-transparent text-[#4b5563] hover:bg-[#f3f4f6]"
+                    }`}
+                    onClick={() => setActiveFilter(chip.id)}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="rounded-[10px] bg-[#f4f6f9] px-4 py-2 text-[13px] text-[#4b5563]">
+                智能图片V2
+              </div>
+              <button
+                type="button"
+                className="rounded-[10px] bg-[#f4f6f9] px-4 py-2 text-[13px] text-[#4b5563] transition hover:bg-[#eceff3]"
+                onClick={() =>
+                  setSortMode(sortMode === "recommended" ? "title" : "recommended")
+                }
+              >
+                {sortMode === "recommended" ? "推荐" : "名称排序"}
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+            {activeTab === "mine" ? (
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-dashed border-[#d9dee7] bg-[#fafbfd] px-4 py-4">
                 <button
                   type="button"
-                  className="mb-5 flex h-[88px] w-full items-center justify-center gap-3 rounded-[22px] border border-dashed border-[#d6ddeb] bg-[linear-gradient(180deg,#ffffff,#f7f9fc)] text-[14px] font-semibold text-[#315efb] transition hover:border-[#315efb] hover:shadow-[0_14px_32px_rgba(49,94,251,0.10)]"
-                  onClick={onSeedCustomStyleLibrary}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#111827] px-4 text-[13px] font-medium text-white transition hover:bg-[#1f2937]"
+                  onClick={() => {
+                    onSeedCustomStyleLibrary();
+                  }}
                 >
                   <Plus size={16} />
                   {LABEL_STYLE_LIBRARY_CREATE}
                 </button>
-              ) : null}
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-                {visibleGalleryItems.map((item, index) => {
-                  const active =
-                    item.isActive ||
-                    Boolean(
-                      selectedUserStyleLibrary?.id &&
-                        item.library?.id === selectedUserStyleLibrary.id,
-                    );
-                  return (
+                <button
+                  type="button"
+                  className={`inline-flex h-10 items-center justify-center rounded-[10px] border px-4 text-[13px] font-medium transition ${
+                    batchSelectionEnabled
+                      ? "border-[#111827] bg-[#111827] text-white"
+                      : "border-[#e5e7eb] bg-white text-[#374151] hover:bg-[#f9fafb]"
+                  }`}
+                  onClick={() => {
+                    setBatchSelectionEnabled((value) => !value);
+                    setSelectedLibraryIds([]);
+                  }}
+                >
+                  {batchSelectionEnabled ? "取消批量选择" : "批量删除"}
+                </button>
+                {batchSelectionEnabled ? (
+                  <>
                     <button
-                      key={item.key}
                       type="button"
-                      disabled={item.disabled}
-                      className={`group overflow-hidden rounded-[22px] border text-left transition ${
-                        active
-                          ? "border-[#315efb] bg-white shadow-[0_16px_38px_rgba(49,94,251,0.16)]"
-                          : "border-[#edf1f6] bg-white/96 hover:-translate-y-0.5 hover:border-[#d7dfeb] hover:shadow-[0_14px_30px_rgba(15,23,42,0.08)]"
-                      } disabled:cursor-not-allowed disabled:opacity-45`}
-                      onClick={() => handleSelectGalleryItem(item)}
+                      disabled={visibleGalleryItems.length === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-[#374151] transition hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => {
+                        setSelectedLibraryIds(
+                          visibleGalleryItems
+                            .map((item) => item.library?.id || "")
+                            .filter(Boolean),
+                        );
+                      }}
                     >
-                      <div
-                        className="relative h-[126px] overflow-hidden px-4 py-4"
-                        style={{
-                          background:
-                            item.origin === "user"
-                              ? "linear-gradient(135deg, rgba(238,242,255,0.95), rgba(255,255,255,0.96))"
-                              : item.origin === "runtime"
-                                ? "linear-gradient(135deg, rgba(255,247,237,0.96), rgba(255,255,255,0.96))"
-                                : index % 3 === 0
-                                  ? "linear-gradient(135deg, rgba(240,244,255,0.98), rgba(255,255,255,0.96))"
-                                  : index % 3 === 1
-                                    ? "linear-gradient(135deg, rgba(245,242,255,0.98), rgba(255,255,255,0.96))"
-                                    : "linear-gradient(135deg, rgba(242,248,247,0.98), rgba(255,255,255,0.96))",
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="rounded-full bg-white/86 px-2.5 py-1 text-[10px] font-semibold text-[#697386] shadow-[0_4px_10px_rgba(15,23,42,0.06)]">
-                            {item.badge}
-                          </span>
-                          {active ? (
-                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_18px_rgba(17,24,39,0.16)]">
-                              <Check size={14} />
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-7 line-clamp-2 text-[22px] font-semibold leading-[1.15] tracking-[-0.03em] text-[#0f172a]">
-                          {item.title}
-                        </div>
-                        {item.subBadge ? (
-                          <div className="mt-3 text-[11px] font-semibold tracking-[0.08em] text-[#73819b]">
-                            {item.subBadge}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="px-4 pb-4 pt-3">
-                        <div className="line-clamp-3 min-h-[66px] text-[12px] leading-6 text-[#5b6678]">
-                          {item.summary}
-                        </div>
-                      </div>
+                      全选
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      disabled={visibleGalleryItems.length === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-[#374151] transition hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => {
+                        const visibleIds = visibleGalleryItems
+                          .map((item) => item.library?.id || "")
+                          .filter(Boolean);
+                        setSelectedLibraryIds((current) =>
+                          visibleIds.filter((id) => !current.includes(id)).concat(
+                            current.filter((id) => !visibleIds.includes(id)),
+                          ),
+                        );
+                      }}
+                    >
+                      反选
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedLibraryIds.length === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-[10px] bg-[#fff1f2] px-4 text-[13px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6] disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => {
+                        onDeleteStyleLibraries(selectedLibraryIds);
+                        setSelectedLibraryIds([]);
+                      }}
+                    >
+                      删除选中（{selectedLibraryIds.length}）
+                    </button>
+                  </>
+                ) : null}
               </div>
+            ) : null}
 
-              {visibleGalleryItems.length === 0 ? (
-                <div className="flex h-[260px] items-center justify-center rounded-[24px] border border-dashed border-[#d8dfeb] bg-white/76 text-[14px] text-[#8a94a7]">
-                  当前筛选下还没有可用风格库
-                </div>
-              ) : null}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-4 xl:grid-cols-7 2xl:grid-cols-8">
+              {visibleGalleryItems.map((item, index) => {
+                const active =
+                  item.isActive ||
+                  Boolean(
+                    selectedUserStyleLibrary?.id &&
+                      item.library?.id === selectedUserStyleLibrary.id,
+                  );
+                const canSelectForBatch =
+                  activeTab === "mine" && batchSelectionEnabled && Boolean(item.library?.id);
+                const batchSelected = Boolean(
+                  item.library?.id && selectedLibraryIds.includes(item.library.id),
+                );
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    disabled={item.disabled}
+                    title={item.summary || item.title}
+                    className="group text-left disabled:cursor-not-allowed disabled:opacity-45"
+                    onClick={() => {
+                      if (canSelectForBatch && item.library?.id) {
+                        setSelectedLibraryIds((current) =>
+                          current.includes(item.library!.id!)
+                            ? current.filter((id) => id !== item.library!.id)
+                            : [...current, item.library!.id!],
+                        );
+                        return;
+                      }
+                      handleSelectGalleryItem(item);
+                    }}
+                    onDoubleClick={() => {
+                      if (item.library && item.origin !== "system") {
+                        onEditSelectedUserLibrary(item.library);
+                      }
+                    }}
+                  >
+                    <div
+                      className={`relative aspect-[0.72] overflow-hidden rounded-[12px] border bg-white transition ${
+                        active || batchSelected
+                          ? "border-[#7aa2ff] ring-2 ring-[#7aa2ff]"
+                          : "border-[#e5e7eb] hover:border-[#cfd6e0]"
+                      }`}
+                      style={{
+                        background: item.library?.coverImageUrl
+                          ? `linear-gradient(180deg, rgba(15,23,42,0.02), rgba(15,23,42,0.08)), url(${item.library.coverImageUrl}) center/cover no-repeat`
+                          : getStyleGalleryPreviewBackground(item.origin, index),
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),transparent_42%),linear-gradient(180deg,rgba(17,24,39,0.02),rgba(17,24,39,0.12))]" />
+                      {(active || batchSelected) && (
+                        <div className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.22)]">
+                          <Check size={14} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-1 pt-2">
+                      <div className="line-clamp-1 text-[14px] font-medium text-[#111827]">
+                        {item.title}
+                      </div>
+                      <div className="mt-1 line-clamp-1 text-[12px] text-[#6b7280]">
+                        {item.badge}
+                        {item.subBadge ? ` · ${item.subBadge}` : ""}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+
+            {visibleGalleryItems.length === 0 ? (
+              <div className="flex h-[240px] items-center justify-center rounded-[16px] border border-dashed border-[#d1d5db] bg-[#fafafa] text-[14px] text-[#6b7280]">
+                当前筛选下还没有可用风格库
+              </div>
+            ) : null}
           </div>
 
-          <aside
-            className={`${
-              showStyleLibraryDetails ? "flex" : "hidden xl:flex"
-            } min-h-0 flex-col border-t border-[#edf0f6] bg-[linear-gradient(180deg,rgba(251,252,255,0.98),rgba(246,248,252,0.96))] xl:border-l xl:border-t-0`}
-          >
-            <div className="border-b border-[#edf0f6] px-6 pb-5 pt-6">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#9aa4b7]">
-                LIVE DETAIL
-              </div>
-              <div className="mt-3 text-[28px] font-semibold leading-[1.18] tracking-[-0.04em] text-[#0f172a]">
-                {isEditingStyleLibrary ? "编辑风格库" : detailTitle}
-              </div>
-              <p className="mt-3 text-[13px] leading-6 text-[#64748b]">
-                {isEditingStyleLibrary
-                  ? "把参考图解释、规划约束和 Prompt 指令整理成可复用资产。"
-                  : detailSummary}
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                {!isEditingStyleLibrary && selectedUserStyleLibrary ? (
-                  <>
-                    <button
-                      type="button"
-                      className="rounded-[14px] bg-[#111827] px-4 py-2.5 text-[12px] font-semibold text-white"
-                      onClick={() => onUseSelectedUserLibrary(selectedUserStyleLibrary)}
-                    >
-                      直接使用
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] border border-[#dbe2ed] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#475569]"
-                      onClick={() => onEditSelectedUserLibrary(selectedUserStyleLibrary)}
-                    >
-                      {LABEL_STYLE_LIBRARY_EDIT}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] bg-[#fff1f2] px-4 py-2.5 text-[12px] font-semibold text-[#be123c]"
-                      onClick={onDeleteSelectedUserStyleLibrary}
-                    >
-                      {LABEL_STYLE_LIBRARY_DELETE}
-                    </button>
-                  </>
-                ) : null}
-
-                {!isEditingStyleLibrary && !selectedUserStyleLibrary ? (
-                  <>
-                    <button
-                      type="button"
-                      className="rounded-[14px] bg-[#111827] px-4 py-2.5 text-[12px] font-semibold text-white"
-                      onClick={() => setShowStyleLibraryDetails((value) => !value)}
-                    >
-                      {showStyleLibraryDetails ? "收起详情" : LABEL_STYLE_LIBRARY_DETAILS}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] border border-[#dbe2ed] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#475569]"
-                      onClick={() => {
-                        setShowStyleLibraryDetails(true);
-                        onStartEditing();
-                      }}
-                    >
-                      {normalizedStyleLibraryMode === "custom"
-                        ? LABEL_STYLE_LIBRARY_EDIT
-                        : LABEL_STYLE_LIBRARY_CONVERT}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] border border-[#dbe2ed] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#475569]"
-                      onClick={onSaveDetachedAsset}
-                    >
-                      {LABEL_STYLE_LIBRARY_SAVE_ASSET}
-                    </button>
-                  </>
-                ) : null}
-
-                {isEditingStyleLibrary ? (
-                  <>
-                    <button
-                      type="button"
-                      className="rounded-[14px] border border-[#dbe2ed] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#475569]"
-                      onClick={() => {
-                        onStopEditing();
-                        setShowStyleLibraryDetails(true);
-                      }}
-                    >
-                      返回预览
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] border border-[#dbe2ed] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#475569]"
-                      onClick={onSaveDetachedAsset}
-                    >
-                      {LABEL_STYLE_LIBRARY_SAVE_ASSET}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-[14px] bg-[#111827] px-4 py-2.5 text-[12px] font-semibold text-white"
-                      onClick={() => {
-                        if (onApplyDraft()) {
-                          onClose();
-                        }
-                      }}
-                    >
-                      {LABEL_STYLE_LIBRARY_SAVE}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              {isEditingStyleLibrary ? (
-                <div className="space-y-4">
-                  <label className="block">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      标题
+          {isEditingStyleLibrary && (
+            <div className="absolute inset-0 z-[3] flex items-center justify-center bg-[rgba(15,23,42,0.28)] p-4 backdrop-blur-[2px]">
+              <div className="flex h-[min(88vh,860px)] w-full max-w-[760px] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#e5e7eb] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+                <div className="flex items-start justify-between border-b border-[#eef2f7] px-5 py-5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#9ca3af]">
+                      STYLE EDITOR
                     </div>
-                    <input
-                      value={styleLibraryDraft.title}
-                      className="h-12 w-full rounded-[16px] border border-[#e4e8f0] bg-white px-4 text-[13px] text-[#0f172a] outline-none transition focus:border-[#315efb]"
-                      placeholder="给这套风格起一个便于复用的名字"
-                      onChange={(event) =>
-                        onStyleDraftChange((current) => ({
-                          ...current,
-                          title: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label className="block">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      用途说明
+                    <div className="mt-3 text-[22px] font-semibold text-[#111827]">
+                      编辑风格卡片
                     </div>
-                    <textarea
-                      value={styleLibraryDraft.summary}
-                      className="min-h-[108px] w-full rounded-[18px] border border-[#e4e8f0] bg-white px-4 py-3 text-[13px] leading-6 text-[#0f172a] outline-none transition focus:border-[#315efb]"
-                      placeholder="一句话说明这套风格适合什么场景"
-                      onChange={(event) =>
-                        onStyleDraftChange((current) => ({
-                          ...current,
-                          summary: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label className="block">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      参考图解释方式
-                    </div>
-                    <textarea
-                      value={styleLibraryDraft.referenceInterpretation}
-                      className="min-h-[132px] w-full rounded-[18px] border border-[#e4e8f0] bg-white px-4 py-3 text-[13px] leading-6 text-[#0f172a] outline-none transition focus:border-[#315efb]"
-                      placeholder="描述参考图应该怎样被主脑理解、拆解和使用"
-                      onChange={(event) =>
-                        onStyleDraftChange((current) => ({
-                          ...current,
-                          referenceInterpretation: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label className="block">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      规划指令
-                    </div>
-                    <textarea
-                      value={styleLibraryDraft.planningDirectivesText}
-                      className="min-h-[160px] w-full rounded-[18px] border border-[#e4e8f0] bg-white px-4 py-3 text-[13px] leading-6 text-[#0f172a] outline-none transition focus:border-[#315efb]"
-                      placeholder="每行一条，填写主脑在规划阶段必须遵守的约束"
-                      onChange={(event) =>
-                        onStyleDraftChange((current) => ({
-                          ...current,
-                          planningDirectivesText: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label className="block">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      Prompt 指令
-                    </div>
-                    <textarea
-                      value={styleLibraryDraft.promptDirectivesText}
-                      className="min-h-[160px] w-full rounded-[18px] border border-[#e4e8f0] bg-white px-4 py-3 text-[13px] leading-6 text-[#0f172a] outline-none transition focus:border-[#315efb]"
-                      placeholder="每行一条，填写最终落到提示词里的硬约束"
-                      onChange={(event) =>
-                        onStyleDraftChange((current) => ({
-                          ...current,
-                          promptDirectivesText: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="rounded-[22px] border border-[#edf1f6] bg-white p-5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-[#f3f5f9] px-3 py-1 text-[10px] font-semibold text-[#697386]">
-                        {detailItem?.badge || getStyleLibrarySourceLabel(detailLibrary)}
-                      </span>
-                      {detailItem?.subBadge ? (
-                        <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-[10px] font-semibold text-[#315efb]">
-                          {detailItem.subBadge}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      参考图解释
-                    </div>
-                    <p className="mt-3 text-[13px] leading-6 text-[#475569]">
-                      {detailLibrary?.referenceInterpretation ||
-                        "当前没有额外参考图解释，主脑会按默认语义理解。"}
+                    <p className="mt-3 text-[13px] leading-6 text-[#4b5563]">
+                      这里可以修改标题、说明、封面和规则内容。保存后会直接更新这张风格卡片。
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    className="ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6b7280] transition hover:bg-[#f3f4f6] hover:text-[#111827]"
+                    onClick={() => {
+                      onStopEditing();
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-                  {showStyleLibraryDetails ? (
-                    <>
-                      <div className="rounded-[22px] border border-[#edf1f6] bg-white p-5">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                          规划阶段约束
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          {detailDirectives.length > 0 ? (
-                            detailDirectives.map((item) => (
-                              <div
-                                key={item}
-                                className="rounded-[14px] bg-[#f8fafc] px-3.5 py-3 text-[12px] leading-5 text-[#475569]"
-                              >
-                                {item}
-                              </div>
-                            ))
-                          ) : (
-                            <div className="rounded-[14px] bg-[#f8fafc] px-3.5 py-3 text-[12px] leading-5 text-[#94a3b8]">
-                              暂无额外规划约束
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                <div className="flex flex-wrap gap-2.5 border-b border-[#eef2f7] px-5 py-4">
+                  <button
+                    type="button"
+                    className="rounded-full border border-[#e5e7eb] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#374151]"
+                    onClick={() => {
+                      onStopEditing();
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-[#e5e7eb] bg-white px-4 py-2.5 text-[12px] font-semibold text-[#374151]"
+                    onClick={onSaveDetachedAsset}
+                  >
+                    {LABEL_STYLE_LIBRARY_SAVE_ASSET}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full bg-[#111827] px-4 py-2.5 text-[12px] font-semibold text-white"
+                    onClick={() => {
+                      if (onApplyDraft()) {
+                        onStopEditing();
+                      }
+                    }}
+                  >
+                    {LABEL_STYLE_LIBRARY_SAVE}
+                  </button>
+                </div>
 
-                      <div className="rounded-[22px] border border-[#edf1f6] bg-white p-5">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                          Prompt 阶段约束
-                        </div>
-                        <div className="mt-4 space-y-2">
-                          {promptDirectives.length > 0 ? (
-                            promptDirectives.map((item) => (
-                              <div
-                                key={item}
-                                className="rounded-[14px] bg-[#f8fafc] px-3.5 py-3 text-[12px] leading-5 text-[#475569]"
-                              >
-                                {item}
-                              </div>
-                            ))
-                          ) : (
-                            <div className="rounded-[14px] bg-[#f8fafc] px-3.5 py-3 text-[12px] leading-5 text-[#94a3b8]">
-                              暂无额外 Prompt 约束
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                  <div className="space-y-4">
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">标题</div>
+                      <input
+                        value={styleLibraryDraft.title}
+                        className="h-11 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="给这套风格起一个名字"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
 
-                  <div className="rounded-[22px] border border-dashed border-[#d8dfeb] bg-[linear-gradient(180deg,#ffffff,#f7f9fc)] p-5">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#98a2b3]">
-                      当前状态
-                    </div>
-                    <div className="mt-4 grid gap-3">
-                      <div className="rounded-[16px] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#94a3b8]">
-                          Active Mode
-                        </div>
-                        <div className="mt-1 text-[13px] font-semibold text-[#0f172a]">
-                          {normalizedStyleLibraryMode}
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">用途说明</div>
+                      <textarea
+                        value={styleLibraryDraft.summary}
+                        className="min-h-[96px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="一句话说明适合什么场景"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            summary: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">封面图片</div>
+                      <div className="rounded-[12px] border border-[#e5e7eb] bg-[#fafbfc] p-3">
+                        {styleLibraryDraft.coverImageUrl ? (
+                          <div className="overflow-hidden rounded-[10px] border border-[#e5e7eb] bg-white">
+                            <img
+                              src={styleLibraryDraft.coverImageUrl}
+                              alt="风格封面"
+                              className="h-44 w-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex h-44 items-center justify-center rounded-[10px] border border-dashed border-[#d1d5db] bg-white text-[13px] text-[#9ca3af]">
+                            暂无封面，可上传一张作为卡片封面
+                          </div>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-[10px] border border-[#e5e7eb] bg-white px-4 py-2 text-[12px] font-medium text-[#374151] transition hover:bg-[#f9fafb]"
+                            onClick={async () => {
+                              const input = document.createElement("input");
+                              input.type = "file";
+                              input.accept = "image/*";
+                              input.onchange = async () => {
+                                const file = input.files?.[0];
+                                if (!file) return;
+                                try {
+                                  const nextUrl = await uploadImage(file);
+                                  onStyleDraftChange((current) => ({
+                                    ...current,
+                                    coverImageUrl: nextUrl,
+                                  }));
+                                } catch (error) {
+                                  console.error("[style-library] cover upload failed", error);
+                                }
+                              };
+                              input.click();
+                            }}
+                          >
+                            上传封面
+                          </button>
+                          {styleLibraryDraft.coverImageUrl ? (
+                            <button
+                              type="button"
+                              className="rounded-[10px] border border-[#f3d3d8] bg-[#fff5f6] px-4 py-2 text-[12px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6]"
+                              onClick={() =>
+                                onStyleDraftChange((current) => ({
+                                  ...current,
+                                  coverImageUrl: "",
+                                }))
+                              }
+                            >
+                              删除封面
+                            </button>
+                          ) : null}
                         </div>
                       </div>
-                      <div className="rounded-[16px] bg-[#f8fafc] px-4 py-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#94a3b8]">
-                          Asset ID
-                        </div>
-                        <div className="mt-1 break-all text-[12px] leading-5 text-[#475569]">
-                          {detailLibrary?.id || "runtime-only"}
-                        </div>
-                      </div>
-                    </div>
+                    </label>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">参考图解释方式</div>
+                      <textarea
+                        value={styleLibraryDraft.referenceInterpretation}
+                        className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="描述参考图应该怎样被理解和使用"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            referenceInterpretation: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">规划指令</div>
+                      <textarea
+                        value={styleLibraryDraft.planningDirectivesText}
+                        className="min-h-[140px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="每行一条"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            planningDirectivesText: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">Prompt 指令</div>
+                      <textarea
+                        value={styleLibraryDraft.promptDirectivesText}
+                        className="min-h-[140px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="每行一条"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            promptDirectivesText: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
-          </aside>
+          )}
         </div>
       </div>
     </div>
@@ -1129,8 +1149,6 @@ const TreePromptToolbar: React.FC<{
   currentStyleLibrary,
 }) => {
   const [showStyleLibraryPicker, setShowStyleLibraryPicker] = React.useState(false);
-  const [showStyleLibraryDetails, setShowStyleLibraryDetails] =
-    React.useState(false);
   const [isEditingStyleLibrary, setIsEditingStyleLibrary] = React.useState(false);
   const [styleLibraryRevision, setStyleLibraryRevision] = React.useState(0);
   const [selectedUserStyleLibraryId, setSelectedUserStyleLibraryId] =
@@ -1174,7 +1192,7 @@ const TreePromptToolbar: React.FC<{
   );
   const userStyleLibraries = React.useMemo(
     () => listUserStyleLibraries(),
-    [currentStyleLibrary, styleLibraryDraft, showStyleLibraryDetails, styleLibraryRevision],
+    [currentStyleLibrary, styleLibraryDraft, styleLibraryRevision],
   );
   const styleLibraryOptions: Array<{
     value: NonNullable<CanvasElement["genReferenceRoleMode"]>;
@@ -1262,7 +1280,6 @@ const TreePromptToolbar: React.FC<{
     onStyleLibrarySave(persistedLibrary);
     onStyleLibraryChange("custom");
     setStyleLibraryDraft(buildStyleLibraryDraft(persistedLibrary));
-    setShowStyleLibraryDetails(true);
     setIsEditingStyleLibrary(true);
     setStyleLibraryRevision((value) => value + 1);
     setSelectedUserStyleLibraryId(persistedLibrary.id || null);
@@ -1294,7 +1311,6 @@ const TreePromptToolbar: React.FC<{
     onStyleLibrarySave(persistedLibrary);
     onStyleLibraryChange("custom");
     setStyleLibraryDraft(buildStyleLibraryDraft(persistedLibrary));
-    setShowStyleLibraryDetails(true);
     setIsEditingStyleLibrary(false);
     setStyleLibraryRevision((value) => value + 1);
     setSelectedUserStyleLibraryId(persistedLibrary.id || null);
@@ -1332,7 +1348,6 @@ const TreePromptToolbar: React.FC<{
       }
       onStyleLibraryChange(mode);
       setIsEditingStyleLibrary(false);
-      setShowStyleLibraryDetails(mode !== "none");
     },
     [onStyleLibraryChange, seedCustomStyleLibrary],
   );
@@ -1343,7 +1358,6 @@ const TreePromptToolbar: React.FC<{
       onStyleLibraryChange("custom");
       setStyleLibraryDraft(buildStyleLibraryDraft(library));
       setIsEditingStyleLibrary(false);
-      setShowStyleLibraryDetails(true);
       setSelectedUserStyleLibraryId(library.id || null);
     },
     [onStyleLibraryChange, onStyleLibrarySave],
@@ -1355,7 +1369,6 @@ const TreePromptToolbar: React.FC<{
       onStyleLibraryChange("custom");
       setStyleLibraryDraft(buildStyleLibraryDraft(library));
       setIsEditingStyleLibrary(true);
-      setShowStyleLibraryDetails(true);
       setSelectedUserStyleLibraryId(library.id || null);
     },
     [onStyleLibraryChange, onStyleLibrarySave],
@@ -1368,7 +1381,6 @@ const TreePromptToolbar: React.FC<{
       createStyleLibraryDraftFromMode(normalizedStyleLibraryMode, "user");
     setStyleLibraryDraft(buildStyleLibraryDraft(draftSource));
     setIsEditingStyleLibrary(true);
-    setShowStyleLibraryDetails(true);
   }, [
     currentStyleLibrary,
     effectiveStyleLibrary,
@@ -1477,6 +1489,33 @@ const TreePromptToolbar: React.FC<{
           onApplyDraft={applyStyleLibraryDraft}
           onClose={() => setShowStyleLibraryPicker(false)}
           onDeleteSelectedUserStyleLibrary={handleDeleteSelectedUserStyleLibrary}
+          onDeleteStyleLibraries={(libraryIds) => {
+            const normalizedIds = Array.from(
+              new Set(
+                libraryIds
+                  .map((item) => String(item || "").trim())
+                  .filter(Boolean),
+              ),
+            );
+            if (normalizedIds.length === 0) return;
+            normalizedIds.forEach((id) => {
+              getStudioUserAssetApi().removeStyleLibrary(id);
+            });
+            if (
+              currentStyleLibrary?.id &&
+              normalizedIds.includes(currentStyleLibrary.id)
+            ) {
+              onStyleLibrarySave(undefined);
+              onStyleLibraryChange("default");
+            }
+            if (
+              selectedUserStyleLibrary?.id &&
+              normalizedIds.includes(selectedUserStyleLibrary.id)
+            ) {
+              setSelectedUserStyleLibraryId(null);
+            }
+            setStyleLibraryRevision((value) => value + 1);
+          }}
           onSaveDetachedAsset={handleSaveStyleLibraryAsAsset}
           onSeedCustomStyleLibrary={seedCustomStyleLibrary}
           onSelectMode={handleSelectStyleLibraryMode}
@@ -1487,8 +1526,6 @@ const TreePromptToolbar: React.FC<{
           onUseSelectedUserLibrary={handleUseSelectedUserStyleLibrary}
           onEditSelectedUserLibrary={handleEditSelectedUserStyleLibrary}
           selectedUserStyleLibrary={selectedUserStyleLibrary}
-          setShowStyleLibraryDetails={setShowStyleLibraryDetails}
-          showStyleLibraryDetails={showStyleLibraryDetails}
           styleLibraryDraft={styleLibraryDraft}
           styleLibraryOptions={styleLibraryOptions}
           userStyleLibraries={userStyleLibraries}
@@ -2392,4 +2429,3 @@ export const WorkspaceTreePromptNode: React.FC<
     </div>
   );
 };
-

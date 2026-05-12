@@ -1115,16 +1115,24 @@ export function useWorkspaceElementImageGeneration(
             genReferenceRoleMode: styleLibrary ? "custom" : currentReferenceRoleMode,
           };
           if (styleLibrary) {
+            const runtimeStyleLibrary: typeof styleLibrary = {
+              ...styleLibrary,
+              createdBy:
+                styleLibrary.createdBy === "user" || styleLibrary.createdBy === "system"
+                  ? styleLibrary.createdBy
+                  : "main-brain",
+            };
             const persistedLibrary =
-              getStudioUserAssetApi().saveStyleLibrary(styleLibrary, {
-                preferredId: styleLibrary.id,
-                sourceMode: currentReferenceRoleMode,
-              }) || styleLibrary;
+              getStudioUserAssetApi().saveStyleLibrary(runtimeStyleLibrary, {
+                preferredId: runtimeStyleLibrary.id,
+                sourceMode:
+                  currentReferenceRoleMode === "poster-product"
+                    ? "poster-product"
+                    : currentReferenceRoleMode === "custom"
+                      ? "custom"
+                      : "default",
+              }) || runtimeStyleLibrary;
             nextPatch.genStyleLibrary = persistedLibrary;
-            getStudioUserAssetApi().saveStyleLibrary(persistedLibrary, {
-              preferredId: persistedLibrary.id,
-              sourceMode: currentReferenceRoleMode,
-            });
           }
           updateElementById(sourceElement.id, nextPatch);
         };
@@ -1151,7 +1159,7 @@ export function useWorkspaceElementImageGeneration(
           });
           return planVisualTaskWithModel(
             {
-              prompt: sourceElement.genPrompt,
+              prompt: sourceElement.genPrompt || "",
               manualReferenceImages,
               referenceImages: currentReferenceImages,
               selectedGenerationModel: String(model),
@@ -1793,7 +1801,7 @@ export function useWorkspaceElementImageGeneration(
           (isSetTask ? taskUnits : [primaryTaskUnit]).map((taskUnit) =>
             planVisualGenerationWithModel(
               {
-                prompt: isSetTask ? taskUnit.prompt : sourceElement.genPrompt,
+                prompt: isSetTask ? taskUnit.prompt : sourceElement.genPrompt || "",
                 manualReferenceImages,
                 referenceImages: currentReferenceImages,
                 selectedGenerationModel: String(model),

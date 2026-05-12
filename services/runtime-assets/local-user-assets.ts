@@ -845,6 +845,7 @@ const normalizeStyleLibrary = (
   const value = raw as Record<string, unknown>;
   const title = String(value.title || "").trim().slice(0, 80);
   const summary = String(value.summary || "").trim().slice(0, 240);
+  const coverImageUrl = String(value.coverImageUrl || "").trim().slice(0, 2000);
   const referenceInterpretation = String(value.referenceInterpretation || "")
     .trim()
     .slice(0, 280);
@@ -892,6 +893,7 @@ const normalizeStyleLibrary = (
     schemaVersion: STYLE_LIBRARY_VERSION,
     title,
     summary,
+    coverImageUrl: coverImageUrl || undefined,
     referenceInterpretation,
     planningDirectives,
     promptDirectives,

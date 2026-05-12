@@ -62,6 +62,7 @@ export const cloneWorkspaceStyleLibrary = (
   slug: library.slug,
   title: library.title,
   summary: library.summary,
+  coverImageUrl: library.coverImageUrl,
   referenceInterpretation: library.referenceInterpretation,
   planningDirectives: [...library.planningDirectives],
   promptDirectives: [...library.promptDirectives],
@@ -77,6 +78,7 @@ export const normalizeWorkspaceStyleLibrary = (
   const raw = value as Record<string, unknown>;
   const title = String(raw.title || "").trim().slice(0, 80);
   const summary = String(raw.summary || "").trim().slice(0, 240);
+  const coverImageUrl = String(raw.coverImageUrl || "").trim().slice(0, 2000);
   const referenceInterpretation = String(raw.referenceInterpretation || "")
     .trim()
     .slice(0, 280);
@@ -103,6 +105,7 @@ export const normalizeWorkspaceStyleLibrary = (
     slug: slug || undefined,
     title,
     summary,
+    coverImageUrl: coverImageUrl || undefined,
     referenceInterpretation,
     planningDirectives,
     promptDirectives,

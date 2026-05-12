@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   BadgeCheck,
   Camera,
   Cloud,
@@ -23,6 +22,7 @@ import {
 import { useImageHostStore } from '../../stores/imageHost.store';
 import { uploadImage } from '../../utils/uploader';
 import { ROUTES } from '../../utils/routes';
+import Sidebar from '../../components/Sidebar';
 
 const formatDateTime = (value?: string) => {
   if (!value) {
@@ -320,25 +320,26 @@ const UserDetailPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            返回
-          </button>
-          <button
-            onClick={() => navigate(ROUTES.dashboard)}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900"
-          >
-            返回首页
-          </button>
-        </div>
+    <div className="min-h-screen bg-gray-50/50 pb-20">
+      <Sidebar />
+      <main className="mx-auto max-w-[1200px] px-4 pb-10 pt-20 sm:px-[6%] lg:pt-24">
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Account Center
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">账号中心</h1>
+              <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[12px] font-medium text-emerald-700">
+                {profile.sessionStatus}
+              </span>
+            </div>
+            <p className="max-w-2xl text-sm leading-6 text-slate-500">
+              这里统一管理账号资料、头像、账号资产同步与退出登录，页面切换方式已对齐到全站导航体系。
+            </p>
+          </div>
 
-        <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-100 px-6 py-6 sm:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-1 items-start gap-4">
@@ -401,7 +402,7 @@ const UserDetailPage: React.FC = () => {
               </div>
               <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                 <BadgeCheck className="h-4 w-4" />
-                {profile.sessionStatus}
+                当前会话有效
               </div>
             </div>
           </div>
@@ -500,6 +501,7 @@ const UserDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+      </main>
     </div>
   );
 };
