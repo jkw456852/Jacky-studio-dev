@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import { AuthSessionProvider } from './hooks/useAuthSession';
 import { ROUTES } from './utils/routes';
@@ -47,6 +48,7 @@ const App: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               <Route path="*" element={<Navigate to={ROUTES.dashboard} replace />} />
             </Routes>
           </Suspense>
+          <Analytics />
         </div>
       </Router>
     </AuthSessionProvider>
