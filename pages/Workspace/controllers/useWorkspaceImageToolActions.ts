@@ -129,7 +129,12 @@ export function useWorkspaceImageToolActions(
     ) {
       return "doubao-seedream-5-0-260128";
     }
-    if (model === "GPT Image 2" || model === "gpt-image-2") {
+    if (
+      model === "GPT Image 2" ||
+      model === "gpt-image-2" ||
+      model === "GPT Image 2 All" ||
+      model === "gpt-image-2-all"
+    ) {
       return "gpt-image-2";
     }
     if (model === "GPT Image 1.5" || model === "gpt-image-1.5-all") {

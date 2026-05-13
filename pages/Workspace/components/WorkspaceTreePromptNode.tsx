@@ -123,7 +123,9 @@ type WorkspaceTreePromptNodeProps = {
     e: React.ChangeEvent<HTMLInputElement>,
     elementId: string,
   ) => void | Promise<void>;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   onDelete: () => void;
   refUploadInputId: string;
 };
@@ -142,13 +144,10 @@ const CONTROL_BLOCK_HEIGHT = 86;
 const SINGLE_REF_BLOCK_HEIGHT = 66;
 const MULTI_REF_BLOCK_HEIGHT = 58;
 
-const getEstimatedPromptExtraHeight = (prompt: string) => {
-  const normalizedPrompt = String(prompt || "").trim();
-  const estimatedLineCount = Math.max(
-    3,
-    Math.ceil(Math.max(normalizedPrompt.length, 72) / 22),
-  );
-  return Math.max(0, estimatedLineCount - 4) * 18;
+const getEstimatedPromptExtraHeight = (_prompt: string) => {
+  // 关键词 / 提示词再长也不继续把节点整体撑高，
+  // 超出部分交给输入区内部滚动，保持节点高度稳定。
+  return 0;
 };
 
 const getTreePromptCardHeight = (
@@ -1963,7 +1962,9 @@ const TreePromptGenerateControls: React.FC<{
   }>;
   selectElement: (elementId: string) => void;
   updateSelectedElement: (updates: Partial<CanvasElement>) => void;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   className?: string;
 }> = ({
   element,
@@ -2373,11 +2374,11 @@ export const WorkspaceTreePromptNode: React.FC<
             </div>
           </div>
 
-          <div className="relative z-[1] min-h-0 flex-1">
+          <div className="relative z-[1] min-h-0 flex-1 overflow-hidden">
             <textarea
               value={promptValue}
               placeholder="generate one mockup in similar photograph angle and frame composition, clean and professional."
-              className="h-full min-h-[112px] w-full resize-none bg-transparent text-[15px] font-semibold leading-[1.75] tracking-[-0.01em] text-[#111111] outline-none placeholder:text-[#8b94a7]"
+              className="h-full min-h-[112px] w-full resize-none overflow-y-auto bg-transparent pr-1 text-[15px] font-semibold leading-[1.75] tracking-[-0.01em] text-[#111111] outline-none placeholder:text-[#8b94a7] custom-scrollbar"
               onMouseDown={(event) => {
                 activateNode();
                 event.stopPropagation();

@@ -38,6 +38,7 @@ export interface DesignSessionState {
   subjectAnchors: string[];
   subjectAnchorMode?: 'auto' | 'manual';
   consistencyCheckEnabled?: boolean;
+  preGenerationPlanningEnabled?: boolean;
   referenceSummary?: string;
   constraints: string[];
   forbiddenChanges: string[];
@@ -112,6 +113,9 @@ export interface CanvasElement {
   genRequirePlanApproval?: boolean;
   genReferenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
   genStyleLibrary?: WorkspaceStyleLibrary;
+  genVisualPlanningCacheKey?: string;
+  genVisualPlanningCachePayload?: string;
+  genVisualPlanningCacheCreatedAt?: number;
   detectedTexts?: { original: string, edited?: string }[];
 
   // Image Gen Reference

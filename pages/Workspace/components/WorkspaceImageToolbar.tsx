@@ -59,7 +59,9 @@ type WorkspaceImageToolbarProps = {
     e: React.ChangeEvent<HTMLInputElement>,
     elementId: string,
   ) => void | Promise<void>;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   showTextEditModal: boolean;
   detectedTexts: string[];
   editedTexts: string[];
@@ -123,6 +125,7 @@ type WorkspaceImageToolbarProps = {
   setFastEditPrompt: (value: string) => void;
   handleFastEditRun: () => void | Promise<void>;
   consistencyCheckEnabled: boolean;
+  preGenerationPlanningEnabled: boolean;
   currentConsistencyAnchorUrl: string | null;
   approvedConsistencyAssetIds: string[];
   handleSetConsistencyAnchorFromElement: (
@@ -586,8 +589,8 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
             isDrawingEraser={isDrawingEraser}
             canDrawMask={canDrawMask}
             selectedImageEl={selectedImageEl}
-            canvasRef={eraserCanvasRef}
-            cursorRef={eraserCursorRef}
+            canvasRef={eraserCanvasRef as React.RefObject<HTMLCanvasElement>}
+            cursorRef={eraserCursorRef as React.RefObject<HTMLDivElement>}
             onUndo={handleUndoEraser}
             onClear={handleClearEraser}
             onBrushSizeChange={setBrushSize}
@@ -662,7 +665,7 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
           top={bottomButtonTop}
           scale={1 / adaptiveScale}
           prompt={fastEditPrompt}
-          isGenerating={el.isGenerating}
+          isGenerating={Boolean(el.isGenerating)}
           setPrompt={setFastEditPrompt}
           onClose={() => setShowFastEdit(false)}
           onRun={handleFastEditRun}

@@ -1829,9 +1829,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                         </span>
                                       )}
                                     </div>
-                                    <div className="mt-1 text-[12px] leading-5 text-slate-500">
-                                      {agent.description}
-                                    </div>
                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                       {agent.capabilities.slice(0, 3).map((capability) => (
                                         <span

@@ -11,7 +11,6 @@ import {
   MapPin,
   MessageSquare,
   MousePointer2,
-  Package2,
   PenTool,
   Square,
   Star,
@@ -35,12 +34,13 @@ type WorkspaceTopToolbarProps = {
   addGenImage: () => void;
   addGenVideo: () => void;
   consistencyCheckEnabled: boolean;
+  preGenerationPlanningEnabled: boolean;
   currentConsistencyAnchorUrl: string | null;
   onToggleConsistencyCheck: (enabled: boolean) => void;
+  onTogglePreGenerationPlanning: (enabled: boolean) => void;
   onUploadConsistencyAnchor: (file: File) => void | Promise<void>;
   onClearConsistencyAnchor: () => void | Promise<void>;
   onPreviewConsistencyAnchor: (anchorUrl: string) => void;
-  onOpenEcommerceWorkflow?: () => void;
 };
 
 const TooltipButton = ({
@@ -93,12 +93,13 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
   addGenImage,
   addGenVideo,
   consistencyCheckEnabled,
+  preGenerationPlanningEnabled,
   currentConsistencyAnchorUrl,
   onToggleConsistencyCheck,
+  onTogglePreGenerationPlanning,
   onUploadConsistencyAnchor,
   onClearConsistencyAnchor,
   onPreviewConsistencyAnchor,
-  onOpenEcommerceWorkflow,
 }) => {
   const [showConsistencyPanel, setShowConsistencyPanel] = useState(false);
   const consistencyPanelRef = useRef<HTMLDivElement | null>(null);
@@ -263,12 +264,6 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
       <div className="w-px h-6 bg-gray-200/80 mx-1.5" />
 
       <TooltipButton
-        icon={Package2}
-        label="电商工作流"
-        onClick={onOpenEcommerceWorkflow}
-      />
-
-      <TooltipButton
         icon={ImagePlus}
         label="AI 图片"
         onClick={addGenImage}
@@ -298,29 +293,60 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
 
         {showConsistencyPanel ? (
           <div className="absolute bottom-full left-1/2 z-50 mb-2 w-80 -translate-x-1/2 rounded-2xl border border-gray-100 bg-white p-4 shadow-2xl">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">
-                  一致性检测
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 pr-2">
+                  <div className="text-sm font-semibold text-gray-900">
+                    生图前视觉编排
+                  </div>
+                  <div className="mt-1 text-[11px] leading-5 text-gray-500">
+                    默认开启。关闭后会跳过视觉编排，直接使用你当前填写的关键词和参考图生图。
+                  </div>
                 </div>
-                <div className="mt-1 text-[11px] leading-5 text-gray-500">
-                  控制当前锚点质检。关闭后，新生成结果不会再按锚点做一致性校验。
+                <button
+                  type="button"
+                  onClick={() =>
+                    onTogglePreGenerationPlanning(!preGenerationPlanningEnabled)
+                  }
+                  className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full px-1 transition ${
+                    preGenerationPlanningEnabled ? "bg-emerald-500" : "bg-gray-300"
+                  }`}
+                  aria-label="toggle pre-generation visual planning"
+                >
+                  <span
+                    className={`h-5 w-5 rounded-full bg-white shadow transition ${
+                      preGenerationPlanningEnabled ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="text-sm font-semibold text-gray-900">
+                      一致性检测
+                    </div>
+                    <div className="mt-1 text-[11px] leading-5 text-gray-500">
+                      控制当前锚点质检。关闭后，新生成结果不会再按锚点做一致性校验。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onToggleConsistencyCheck(!consistencyCheckEnabled)}
+                    className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full px-1 transition ${
+                      consistencyCheckEnabled ? "bg-emerald-500" : "bg-gray-300"
+                    }`}
+                    aria-label="toggle consistency check"
+                  >
+                    <span
+                      className={`h-5 w-5 rounded-full bg-white shadow transition ${
+                        consistencyCheckEnabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onToggleConsistencyCheck(!consistencyCheckEnabled)}
-                className={`inline-flex h-7 w-12 items-center rounded-full px-1 transition ${
-                  consistencyCheckEnabled ? "bg-emerald-500" : "bg-gray-300"
-                }`}
-                aria-label="toggle consistency check"
-              >
-                <span
-                  className={`h-5 w-5 rounded-full bg-white shadow transition ${
-                    consistencyCheckEnabled ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
             </div>
 
             <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50/80 p-3">

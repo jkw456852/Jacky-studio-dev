@@ -84,8 +84,10 @@ type UseWorkspacePageShellPropsArgs = {
   addGenImage: React.ComponentProps<typeof WorkspaceTopToolbar>["addGenImage"];
   addGenVideo: React.ComponentProps<typeof WorkspaceTopToolbar>["addGenVideo"];
   consistencyCheckEnabled: boolean;
+  preGenerationPlanningEnabled: boolean;
   currentConsistencyAnchorUrl: string | null;
   handleToggleConsistencyCheck: (enabled: boolean) => void;
+  handleTogglePreGenerationPlanning: (enabled: boolean) => void;
   handleUploadConsistencyAnchor: (
     file: File,
   ) => void | Promise<void>;
@@ -108,7 +110,9 @@ type UseWorkspacePageShellPropsArgs = {
     elementId: string,
     updates: Partial<CanvasElement>,
   ) => boolean;
-  handleGenImage: (elementId: string) => string | null | Promise<string | null>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   handleManualPaste: React.ComponentProps<
     typeof WorkspaceContextMenu
   >["onManualPaste"];
@@ -188,8 +192,10 @@ export const useWorkspacePageShellProps = ({
   addGenImage,
   addGenVideo,
   consistencyCheckEnabled,
+  preGenerationPlanningEnabled,
   currentConsistencyAnchorUrl,
   handleToggleConsistencyCheck,
+  handleTogglePreGenerationPlanning,
   handleUploadConsistencyAnchor,
   handleClearConsistencyAnchor,
   handlePreviewConsistencyAnchor,
@@ -761,15 +767,15 @@ export const useWorkspacePageShellProps = ({
         showAssistant,
         setActiveTool,
         handleFileUpload,
-        onOpenEcommerceWorkflow:
-          assistantSidebarProps.panelUi.onOpenEcommerceWorkflow,
         showFeatureComingSoon,
         addShape,
         addGenImage,
         addGenVideo,
         consistencyCheckEnabled,
+        preGenerationPlanningEnabled,
         currentConsistencyAnchorUrl,
         onToggleConsistencyCheck: handleToggleConsistencyCheck,
+        onTogglePreGenerationPlanning: handleTogglePreGenerationPlanning,
         onUploadConsistencyAnchor: handleUploadConsistencyAnchor,
         onClearConsistencyAnchor: handleClearConsistencyAnchor,
         onPreviewConsistencyAnchor: handlePreviewConsistencyAnchor,

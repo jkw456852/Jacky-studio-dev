@@ -31,7 +31,12 @@ const resolveSmartEditModelId = (model: string | undefined): string | undefined 
   ) {
     return 'doubao-seedream-5-0-260128';
   }
-  if (normalized === 'GPT Image 2' || normalized === 'gpt-image-2') {
+  if (
+    normalized === 'GPT Image 2' ||
+    normalized === 'gpt-image-2' ||
+    normalized === 'GPT Image 2 All' ||
+    normalized === 'gpt-image-2-all'
+  ) {
     return 'gpt-image-2';
   }
   if (normalized === 'GPT Image 1.5' || normalized === 'gpt-image-1.5-all') {

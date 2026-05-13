@@ -87,9 +87,11 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   imageModelOptions: WorkspaceImageToolbarProps["modelOptions"];
   aspectRatios: WorkspaceImageToolbarProps["aspectRatios"];
   renderRatioIcon: WorkspaceImageToolbarProps["renderRatioIcon"];
-  setTranslatePromptToEnglish: React.Dispatch<React.SetStateAction<boolean>>;
-  setEnforceChineseTextInImage: React.Dispatch<React.SetStateAction<boolean>>;
-  setRequiredChineseCopy: React.Dispatch<React.SetStateAction<string>>;
+  setTranslatePromptToEnglish:
+    WorkspaceImageToolbarProps["setTranslatePromptToEnglish"];
+  setEnforceChineseTextInImage:
+    WorkspaceImageToolbarProps["setEnforceChineseTextInImage"];
+  setRequiredChineseCopy: WorkspaceImageToolbarProps["setRequiredChineseCopy"];
   setShowModelPicker: React.Dispatch<React.SetStateAction<boolean>>;
   setShowResPicker: React.Dispatch<React.SetStateAction<boolean>>;
   setShowRatioPicker: React.Dispatch<React.SetStateAction<boolean>>;
@@ -108,7 +110,7 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   showTextEditModal: boolean;
   detectedTexts: string[];
   editedTexts: string[];
-  setEditedTexts: React.Dispatch<React.SetStateAction<string[]>>;
+  setEditedTexts: WorkspaceImageToolbarProps["setEditedTexts"];
   setShowTextEditModal: React.Dispatch<React.SetStateAction<boolean>>;
   handleApplyTextEdits: WorkspaceImageToolbarProps["handleApplyTextEdits"];
   eraserMode: WorkspaceImageToolbarProps["eraserMode"];
@@ -126,7 +128,7 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   eraserLastPointRef: React.MutableRefObject<{ x: number; y: number } | null>;
   handleUndoEraser: WorkspaceImageToolbarProps["handleUndoEraser"];
   handleClearEraser: WorkspaceImageToolbarProps["handleClearEraser"];
-  setBrushSize: React.Dispatch<React.SetStateAction<number>>;
+  setBrushSize: WorkspaceImageToolbarProps["setBrushSize"];
   setEraserMode: WorkspaceImageToolbarProps["setEraserMode"];
   handleCloseEraser: WorkspaceImageToolbarProps["handleCloseEraser"];
   handleExecuteEraser: WorkspaceImageToolbarProps["handleExecuteEraser"];
@@ -170,9 +172,10 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   showFastEdit: boolean;
   setShowFastEdit: React.Dispatch<React.SetStateAction<boolean>>;
   fastEditPrompt: string;
-  setFastEditPrompt: React.Dispatch<React.SetStateAction<string>>;
+  setFastEditPrompt: WorkspaceImageToolbarProps["setFastEditPrompt"];
   handleFastEditRun: WorkspaceImageToolbarProps["handleFastEditRun"];
   consistencyCheckEnabled: boolean;
+  preGenerationPlanningEnabled: boolean;
   currentConsistencyAnchorUrl: string | null;
   approvedConsistencyAssetIds: string[];
   handleSetConsistencyAnchorFromElement: (
@@ -340,6 +343,7 @@ export const useWorkspaceCanvasLayerProps = ({
   setFastEditPrompt,
   handleFastEditRun,
   consistencyCheckEnabled,
+  preGenerationPlanningEnabled,
   currentConsistencyAnchorUrl,
   approvedConsistencyAssetIds,
   handleSetConsistencyAnchorFromElement,
@@ -529,6 +533,7 @@ export const useWorkspaceCanvasLayerProps = ({
       setFastEditPrompt,
       handleFastEditRun,
       consistencyCheckEnabled,
+      preGenerationPlanningEnabled,
       currentConsistencyAnchorUrl,
       approvedConsistencyAssetIds,
       handleSetConsistencyAnchorFromElement,
@@ -575,7 +580,20 @@ export const useWorkspaceCanvasLayerProps = ({
       elements,
       setElementsSynced,
       textEditDraftRef,
-      getTextWidth,
+      getTextWidth: (
+        text,
+        fontSize,
+        fontFamily,
+        fontWeight,
+        letterSpacing,
+      ) =>
+        getTextWidth(
+          text,
+          fontSize ?? 14,
+          fontFamily ?? "Inter",
+          fontWeight,
+          letterSpacing,
+        ),
       fontTriggerRef,
       weightTriggerRef,
       textSettingsTriggerRef,

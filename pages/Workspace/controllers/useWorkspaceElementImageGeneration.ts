@@ -9,6 +9,8 @@ import { getVisualOrchestratorModelConfig } from "../../../services/provider-set
 import {
   planVisualGenerationWithModel,
   planVisualTaskWithModel,
+  type PlannedImageGeneration,
+  type PlannedVisualTask,
   type PlannedVisualTaskUnit,
   runVisualAgentLoop,
   type VisualPlanningBrief,
@@ -628,14 +630,6 @@ const buildPlanningBriefMessage = (args: {
       ),
     );
   }
-  if (false && planningBrief?.promptDirectives?.[0]) {
-    lines.push(
-      formatPlanningBriefLine(
-        "\u63d0\u793a\u8bcd\u7b56\u7565\uff1a",
-        planningBrief.promptDirectives[0],
-      ),
-    );
-  }
   if (isSetTask && taskUnits.length > 0) {
     lines.push("\u9875\u9762\u89c4\u5212\uff1a");
     taskUnits.slice(0, 3).forEach((unit) => {
@@ -827,6 +821,73 @@ const buildResearchCompletedLines = (args: {
   "接下来会根据这些结果重新判断页面结构、卖点优先级和 prompt 写法。",
 ];
 
+type VisualPlanningCachePayload = {
+  cacheKey: string;
+  createdAt: number;
+  taskPlan: PlannedVisualTask["taskPlan"];
+  taskUnits: PlannedVisualTaskUnit[];
+  referenceImages: string[];
+  consistencyContext?: Record<string, unknown>;
+  referenceRoleMode: NonNullable<CanvasElement["genReferenceRoleMode"]>;
+  styleLibrary?: CanvasElement["genStyleLibrary"];
+  pageGenerationPlans?: PlannedImageGeneration[];
+};
+
+const buildVisualPlanningCacheKey = (args: {
+  prompt: string;
+  manualReferenceImages: string[];
+  mergedReferenceImages: string[];
+  aspectRatio: string;
+  imageCount: number;
+  model: string;
+  imageSize: string;
+  imageQuality: string;
+  referenceRoleMode: string;
+  styleLibrary?: CanvasElement["genStyleLibrary"];
+  translatePromptToEnglish: boolean;
+  enforceChineseTextInImage: boolean;
+  requiredChineseCopy: string;
+}) =>
+  JSON.stringify({
+    prompt: String(args.prompt || "").trim(),
+    manualReferenceImages: dedupeStringList(args.manualReferenceImages || []),
+    mergedReferenceImages: dedupeStringList(args.mergedReferenceImages || []),
+    aspectRatio: String(args.aspectRatio || "").trim(),
+    imageCount: Number(args.imageCount || 1),
+    model: String(args.model || "").trim(),
+    imageSize: String(args.imageSize || "").trim(),
+    imageQuality: String(args.imageQuality || "").trim(),
+    referenceRoleMode: String(args.referenceRoleMode || "").trim(),
+    styleLibrary: args.styleLibrary || null,
+    translatePromptToEnglish: Boolean(args.translatePromptToEnglish),
+    enforceChineseTextInImage: Boolean(args.enforceChineseTextInImage),
+    requiredChineseCopy: String(args.requiredChineseCopy || "").trim(),
+  });
+
+const readVisualPlanningCachePayload = (
+  element: CanvasElement,
+  cacheKey: string,
+): VisualPlanningCachePayload | null => {
+  if (String(element.genVisualPlanningCacheKey || "") !== cacheKey) {
+    return null;
+  }
+
+  const rawPayload = String(element.genVisualPlanningCachePayload || "").trim();
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawPayload) as VisualPlanningCachePayload | null;
+    if (!parsed || parsed.cacheKey !== cacheKey || !Array.isArray(parsed.taskUnits)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
 type UseWorkspaceElementImageGenerationOptions = {
   elementsRef: MutableRefObject<CanvasElement[]>;
   nodeInteractionMode: WorkspaceNodeInteractionMode;
@@ -859,6 +920,7 @@ type UseWorkspaceElementImageGenerationOptions = {
   translatePromptToEnglish: boolean;
   enforceChineseTextInImage: boolean;
   requiredChineseCopy: string;
+  preGenerationPlanningEnabled: boolean;
   getDesignConsistencyContext: () => Record<string, unknown>;
   mergeConsistencyAnchorIntoReferences: (referenceUrls?: string[]) => string[];
   retryWithConsistencyFix: (
@@ -899,6 +961,7 @@ export function useWorkspaceElementImageGeneration(
     translatePromptToEnglish,
     enforceChineseTextInImage,
     requiredChineseCopy,
+    preGenerationPlanningEnabled,
     mergeConsistencyAnchorIntoReferences,
     getDesignConsistencyContext,
     retryWithConsistencyFix,
@@ -908,6 +971,17 @@ export function useWorkspaceElementImageGeneration(
     getClosestAspectRatio,
   } = options;
   const activeRequestsRef = useRef(new Set<string>());
+  const activePlanningKeysRef = useRef(new Set<string>());
+  const activePlanningPayloadRef = useRef(
+    new Map<
+      string,
+      {
+        promise: Promise<VisualPlanningCachePayload | null>;
+        resolve: (payload: VisualPlanningCachePayload | null) => void;
+        reject: (error: unknown) => void;
+      }
+    >(),
+  );
 
   return useCallback(
     async (elementId: string) => {
@@ -936,6 +1010,10 @@ export function useWorkspaceElementImageGeneration(
       let taskPlannerRunCount = 0;
       let shouldTrackSourceElementState = false;
       let targetElementIds: string[] = [];
+      let sourceRequestLockKey: string | null = null;
+      let planningInflightKey: string | null = null;
+      let ownsPlanningExecution = false;
+      let rejectPlanningPayloadSession: (error: unknown) => void = () => {};
       try {
         const el = elementsRef.current.find((element) => element.id === elementId);
         if (!el) return traceRequestId;
@@ -954,6 +1032,11 @@ export function useWorkspaceElementImageGeneration(
             : null;
         const sourceElement = parentPromptElement || el;
         if (!sourceElement.genPrompt) return traceRequestId;
+        sourceRequestLockKey = `source:${sourceElement.id}`;
+        if (activeRequestsRef.current.has(sourceRequestLockKey)) {
+          return null;
+        }
+        activeRequestsRef.current.add(sourceRequestLockKey);
         shouldTrackSourceElementState = !isTreePromptNode;
         if (shouldTrackSourceElementState) {
           setElementGeneratingState(elementId, true);
@@ -1097,6 +1180,73 @@ export function useWorkspaceElementImageGeneration(
           currentReferenceRoleMode === "custom"
             ? sourceElement.genStyleLibrary
             : undefined;
+        const planningCacheKey = buildVisualPlanningCacheKey({
+          prompt: sourceElement.genPrompt || "",
+          manualReferenceImages,
+          mergedReferenceImages: currentReferenceImages,
+          aspectRatio: currentAspectRatio,
+          imageCount: requestedImageCount,
+          model: String(model),
+          imageSize,
+          imageQuality,
+          referenceRoleMode: currentReferenceRoleMode,
+          styleLibrary: currentStyleLibrary,
+          translatePromptToEnglish,
+          enforceChineseTextInImage,
+          requiredChineseCopy,
+        });
+        let cachedPlanningPayload = preGenerationPlanningEnabled
+          ? readVisualPlanningCachePayload(sourceElement, planningCacheKey)
+          : null;
+        const shouldBypassPlanning = !preGenerationPlanningEnabled;
+        planningInflightKey = `${sourceElement.id}:${planningCacheKey}`;
+
+        const waitForReusablePlanningPayload = async () => {
+          if (!planningInflightKey) {
+            return null;
+          }
+          const activeSession = activePlanningPayloadRef.current.get(planningInflightKey);
+          if (!activeSession) {
+            return null;
+          }
+          try {
+            return await activeSession.promise;
+          } catch {
+            return null;
+          }
+        };
+
+        const resolvePlanningPayloadSession = (
+          payload: VisualPlanningCachePayload | null,
+        ) => {
+          if (!planningInflightKey) {
+            return;
+          }
+          const activeSession = activePlanningPayloadRef.current.get(planningInflightKey);
+          if (activeSession) {
+            activeSession.resolve(payload);
+            activePlanningPayloadRef.current.delete(planningInflightKey);
+          }
+          if (ownsPlanningExecution) {
+            activePlanningKeysRef.current.delete(planningInflightKey);
+            ownsPlanningExecution = false;
+          }
+        };
+
+        rejectPlanningPayloadSession = (error: unknown) => {
+          if (!planningInflightKey) {
+            return;
+          }
+          const activeSession = activePlanningPayloadRef.current.get(planningInflightKey);
+          if (activeSession) {
+            activeSession.reject(error);
+            activePlanningPayloadRef.current.delete(planningInflightKey);
+          }
+          if (ownsPlanningExecution) {
+            activePlanningKeysRef.current.delete(planningInflightKey);
+            ownsPlanningExecution = false;
+          }
+        };
 
         const persistSourceStyleLibrary = (
           styleLibrary: CanvasElement["genStyleLibrary"] | undefined,
@@ -1135,6 +1285,129 @@ export function useWorkspaceElementImageGeneration(
             nextPatch.genStyleLibrary = persistedLibrary;
           }
           updateElementById(sourceElement.id, nextPatch);
+        };
+
+        const buildDirectTask = (): PlannedVisualTask => ({
+          taskPlan: {
+            mode: "single" as const,
+            userGoal: sourceElement.genPrompt || "",
+            intent: "unknown",
+            reasoningSummary:
+              "已关闭生图前视觉编排，直接使用当前关键词与参考图进入生成。",
+            toolChain: ["direct-generate"],
+            planningBrief: {
+              requestType: "direct_prompt",
+              deliverableForm:
+                requestedImageCount > 1 ? "multi-variant-image" : "single-image",
+              aspectRatioStrategy: `使用当前画幅 ${currentAspectRatio}`,
+              researchFocus: [],
+              researchDecision: {
+                shouldResearch: false,
+                mode: "none" as const,
+                reason: "已关闭生图前视觉编排，直接进入生成。",
+                topics: [],
+                searchQueries: [],
+              },
+              modelFitNotes: ["直接沿用当前关键词，不做额外视觉编排。"],
+              promptDirectives: [
+                "直接使用当前关键词与参考图生成，不追加视觉编排扩写。",
+              ],
+              risks: [],
+            },
+          },
+          units: [
+            {
+              id: "single-1",
+              title: requestedImageCount > 1 ? "基础提示词" : "单图",
+              goal: sourceElement.genPrompt || "",
+              aspectRatio: currentAspectRatio,
+              prompt: sourceElement.genPrompt || "",
+              pageIndex: 0,
+              totalPages: 1,
+            },
+          ],
+        });
+
+        const buildDirectPageGenerationPlan = (
+          taskUnit: PlannedVisualTaskUnit,
+        ): PlannedImageGeneration => {
+          const promptLanguagePolicy = translatePromptToEnglish
+            ? "translate-en"
+            : "original-zh";
+          const trimmedRequiredChineseCopy = String(requiredChineseCopy || "").trim();
+          const textPolicy =
+            enforceChineseTextInImage || trimmedRequiredChineseCopy
+              ? {
+                  enforceChinese: enforceChineseTextInImage,
+                  requiredCopy: trimmedRequiredChineseCopy || undefined,
+                }
+              : undefined;
+
+          return {
+            plan: {
+              intent: "unknown",
+              strategyId: "direct-prompt",
+              userGoal: taskUnit.goal || sourceElement.genPrompt || "",
+              references: currentReferenceImages.map((url, index) => {
+                const isInjectedAnchor =
+                  consistencyAnchorInjected &&
+                  (manualReferenceImages.length === 0 || manualReferenceImages[index] !== url);
+                return {
+                  id: `direct-ref-${index + 1}`,
+                  url,
+                  role:
+                    currentReferenceRoleMode === "poster-product"
+                      ? "product"
+                      : index === 0
+                        ? "subject"
+                        : "supporting",
+                  weight: index === 0 ? 1 : 0.85,
+                  source: isInjectedAnchor ? "consistency-anchor" : "manual",
+                  notes: isInjectedAnchor
+                    ? "Injected approved consistency anchor."
+                    : "Direct generation reference.",
+                };
+              }),
+              locks: {
+                brandIdentity: false,
+                subjectShape: false,
+                packagingLayout: false,
+                composition: false,
+                textLayout: false,
+                materialTexture: false,
+              },
+              allowedEdits: [],
+              forbiddenEdits: [],
+              qualityHint: imageQuality,
+              plannerNotes: [
+                "生图前视觉编排已关闭，当前直接使用原始关键词与参考图。",
+              ],
+              requestedReferenceRoleMode: currentReferenceRoleMode,
+              effectiveReferenceRoleMode: currentReferenceRoleMode,
+            },
+            plannerMeta: {
+              source: "rule",
+            },
+            execution: {
+              basePrompt: taskUnit.prompt || sourceElement.genPrompt || "",
+              composedPrompt: taskUnit.prompt || sourceElement.genPrompt || "",
+              referenceImages: currentReferenceImages,
+              referencePriority:
+                currentReferenceImages.length > 1
+                  ? "all"
+                  : currentReferenceImages.length === 1
+                    ? "first"
+                    : undefined,
+              referenceStrength:
+                currentReferenceImages.length > 0 ? 0.85 : undefined,
+              referenceRoleMode: currentReferenceRoleMode,
+              promptLanguagePolicy,
+              textPolicy,
+              disableTransportRetries: Boolean(sourceElement.genInfiniteRetry),
+              consistencyContext:
+                currentConsistencyContext as PlannedImageGeneration["execution"]["consistencyContext"],
+            },
+          };
         };
 
         const runTaskPlanner = async () => {
@@ -1201,7 +1474,71 @@ export function useWorkspaceElementImageGeneration(
           );
         };
 
-        let plannedTask = await runTaskPlanner();
+        if (!shouldBypassPlanning && !cachedPlanningPayload && planningInflightKey) {
+          if (activePlanningPayloadRef.current.has(planningInflightKey)) {
+            planningLogStreamer.push({
+              phase: "planning",
+              title: "等待复用首个视觉编排",
+              lines: ["相同关键词与参考图的视觉编排正在执行，等待首个结果写入缓存。"],
+            });
+            const inflightPlanningPayload = await waitForReusablePlanningPayload();
+            if (inflightPlanningPayload) {
+              cachedPlanningPayload = inflightPlanningPayload;
+            }
+          }
+          if (
+            !cachedPlanningPayload &&
+            !activePlanningPayloadRef.current.has(planningInflightKey)
+          ) {
+            let resolvePlanningPayload: (
+              payload: VisualPlanningCachePayload | null,
+            ) => void = () => {};
+            let rejectPlanningPayload: (error: unknown) => void = () => {};
+            const planningPromise = new Promise<VisualPlanningCachePayload | null>(
+              (resolve, reject) => {
+                resolvePlanningPayload = resolve;
+                rejectPlanningPayload = reject;
+              },
+            );
+            activePlanningPayloadRef.current.set(planningInflightKey, {
+              promise: planningPromise,
+              resolve: resolvePlanningPayload,
+              reject: rejectPlanningPayload,
+            });
+            activePlanningKeysRef.current.add(planningInflightKey);
+            ownsPlanningExecution = true;
+          }
+        }
+
+        if (shouldBypassPlanning) {
+          planningLogStreamer.push({
+            phase: "planning",
+            title: "已跳过视觉编排",
+            lines: ["当前已关闭生图前视觉编排，将直接使用关键词与参考图生成。"],
+          });
+        } else if (cachedPlanningPayload) {
+          currentReferenceImages = cachedPlanningPayload.referenceImages;
+          currentConsistencyContext =
+            cachedPlanningPayload.consistencyContext || currentConsistencyContext;
+          currentReferenceRoleMode = cachedPlanningPayload.referenceRoleMode;
+          currentStyleLibrary = cachedPlanningPayload.styleLibrary;
+          planningLogStreamer.push({
+            phase: "planning",
+            title: "沿用上次视觉编排",
+            lines: [
+              "当前关键词、参考图和生成参数未变化，直接沿用最近一次视觉编排结果。",
+            ],
+          });
+        }
+
+        let plannedTask = shouldBypassPlanning
+          ? buildDirectTask()
+          : cachedPlanningPayload
+            ? {
+                taskPlan: cachedPlanningPayload.taskPlan,
+                units: cachedPlanningPayload.taskUnits,
+              }
+            : await runTaskPlanner();
         await planningLogStreamer.flush();
         let taskPlan = plannedTask.taskPlan;
         let repairedTaskUnits = repairPlannedTaskUnits({
@@ -1218,7 +1555,7 @@ export function useWorkspaceElementImageGeneration(
         }
 
         const researchDecision = taskPlan.planningBrief?.researchDecision;
-        if (researchDecision?.shouldResearch) {
+        if (!cachedPlanningPayload && researchDecision?.shouldResearch) {
           const researchMode = toWorkspaceResearchMode(researchDecision.mode);
           const researchQuery = buildResearchQuery({
             prompt: sourceElement.genPrompt,
@@ -1350,22 +1687,49 @@ export function useWorkspaceElementImageGeneration(
           targetElementIds = [...targetElementIds, ...extraTargetElementIds];
         }
 
-        console.info("[workspace.imggen] task-planner.success", {
-          requestId: traceRequestId,
-          run: taskPlannerRunCount,
-          elementId,
-          sourceElementId: sourceElement.id,
-          elapsedMs: Date.now() - taskPlannerStartedAt,
-          taskMode: taskPlan.mode,
-          taskIntent: taskPlan.intent,
-          plannerSource:
-            taskPlan.toolChain?.[0] === "rule-planner" ? "rule-fallback" : "model",
-          taskPageCount: taskUnits.length,
-          taskToolChain: taskPlan.toolChain,
-          taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
-          taskRoleOverlayRoles:
-            taskPlan.roleOverlay?.roles.map((item) => item.role) || [],
-        });
+        if (shouldBypassPlanning) {
+          console.info("[workspace.imggen] task-planner.skipped", {
+            requestId: traceRequestId,
+            elementId,
+            sourceElementId: sourceElement.id,
+            taskMode: taskPlan.mode,
+            taskIntent: taskPlan.intent,
+            reason: "pre-generation-planning-disabled",
+            taskPageCount: taskUnits.length,
+            taskToolChain: taskPlan.toolChain,
+          });
+        } else if (cachedPlanningPayload) {
+          console.info("[workspace.imggen] task-planner.reused", {
+            requestId: traceRequestId,
+            run: "cache",
+            elementId,
+            sourceElementId: sourceElement.id,
+            taskMode: taskPlan.mode,
+            taskIntent: taskPlan.intent,
+            taskPageCount: taskUnits.length,
+            taskToolChain: taskPlan.toolChain,
+            taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
+            taskRoleOverlayRoles:
+              taskPlan.roleOverlay?.roles.map((item) => item.role) || [],
+          });
+        } else {
+          console.info("[workspace.imggen] task-planner.success", {
+            requestId: traceRequestId,
+            run: taskPlannerRunCount,
+            elementId,
+            sourceElementId: sourceElement.id,
+            elapsedMs: Date.now() - taskPlannerStartedAt,
+            taskMode: taskPlan.mode,
+            taskIntent: taskPlan.intent,
+            plannerSource:
+              taskPlan.toolChain?.[0] === "rule-planner" ? "rule-fallback" : "model",
+            taskPageCount: taskUnits.length,
+            taskToolChain: taskPlan.toolChain,
+            taskRoleOverlaySummary: taskPlan.roleOverlay?.summary || null,
+            taskRoleOverlayRoles:
+              taskPlan.roleOverlay?.roles.map((item) => item.role) || [],
+          });
+        }
 
         if (repairedTaskUnits.notes.length > 0) {
           appendWorkspaceGenerationTraceDiagnostics(
@@ -1450,7 +1814,7 @@ export function useWorkspaceElementImageGeneration(
             pageIndex: 0,
             totalPages: 1,
           };
-        if (!isSetTask && imageCount === 1) {
+        if (!shouldBypassPlanning && !cachedPlanningPayload && !isSetTask && imageCount === 1) {
           if (!isTreePromptNode) {
             targetElementIds = [elementId];
           }
@@ -1529,21 +1893,6 @@ export function useWorkspaceElementImageGeneration(
                     : null,
                 });
 
-                addMessage({
-                  id: `gen-start-${Date.now()}`,
-                  role: "model",
-                  text: buildPlanningBriefMessage({
-                    planningBrief: taskPlan.planningBrief,
-                    roleOverlay: taskPlan.roleOverlay,
-                    taskUnits: [primaryTaskUnit],
-                    isSetTask: false,
-                    imageCount: 1,
-                    composedPrompt,
-                    selectedGenerationModel: String(model),
-                  }),
-                  timestamp: Date.now(),
-                });
-
                 const runtimePlanSummaryLines = buildExecutionPlanSummaryLines({
                   taskPlan,
                   plan,
@@ -1558,6 +1907,24 @@ export function useWorkspaceElementImageGeneration(
                   title: "执行方案已确定",
                   lines: runtimePlanSummaryLines,
                 });
+
+                const runtimePlanningPayload = {
+                  cacheKey: planningCacheKey,
+                  createdAt: Date.now(),
+                  taskPlan,
+                  taskUnits,
+                  referenceImages: currentReferenceImages,
+                  consistencyContext: currentConsistencyContext,
+                  referenceRoleMode: currentReferenceRoleMode,
+                  styleLibrary: currentStyleLibrary,
+                  pageGenerationPlans: [plannedGeneration],
+                } satisfies VisualPlanningCachePayload;
+                updateElementById(sourceElement.id, {
+                  genVisualPlanningCacheKey: planningCacheKey,
+                  genVisualPlanningCachePayload: JSON.stringify(runtimePlanningPayload),
+                  genVisualPlanningCacheCreatedAt: Date.now(),
+                });
+                resolvePlanningPayloadSession(runtimePlanningPayload);
 
                 runtimeGenerationContext = {
                   requestId: traceRequestId,
@@ -1797,29 +2164,55 @@ export function useWorkspaceElementImageGeneration(
           }
           return traceRequestId;
         }
-        const pageGenerationPlans = await Promise.all(
-          (isSetTask ? taskUnits : [primaryTaskUnit]).map((taskUnit) =>
-            planVisualGenerationWithModel(
-              {
-                prompt: isSetTask ? taskUnit.prompt : sourceElement.genPrompt || "",
-                manualReferenceImages,
-                referenceImages: currentReferenceImages,
-                selectedGenerationModel: String(model),
-                taskRoleOverlay: taskPlan.roleOverlay,
-                taskPlanningBrief: taskPlan.planningBrief,
-                styleLibrary: taskPlan.styleLibrary,
-                requestedReferenceRoleMode: currentReferenceRoleMode,
-                imageQuality,
-                translatePromptToEnglish,
-                enforceChineseTextInImage,
-                requiredChineseCopy,
-                disableTransportRetries: Boolean(sourceElement.genInfiniteRetry),
-                consistencyContext: currentConsistencyContext,
-              },
-              plannerModelConfig,
-            ),
-          ),
-        );
+        const pageGenerationPlans = shouldBypassPlanning
+          ? [buildDirectPageGenerationPlan(primaryTaskUnit)]
+          : cachedPlanningPayload?.pageGenerationPlans &&
+              cachedPlanningPayload.pageGenerationPlans.length >=
+                (isSetTask ? taskUnits.length : 1)
+            ? cachedPlanningPayload.pageGenerationPlans
+            : await Promise.all(
+                (isSetTask ? taskUnits : [primaryTaskUnit]).map((taskUnit) =>
+                  planVisualGenerationWithModel(
+                    {
+                      prompt: isSetTask
+                        ? taskUnit.prompt
+                        : sourceElement.genPrompt || "",
+                      manualReferenceImages,
+                      referenceImages: currentReferenceImages,
+                      selectedGenerationModel: String(model),
+                      taskRoleOverlay: taskPlan.roleOverlay,
+                      taskPlanningBrief: taskPlan.planningBrief,
+                      styleLibrary: taskPlan.styleLibrary,
+                      requestedReferenceRoleMode: currentReferenceRoleMode,
+                      imageQuality,
+                      translatePromptToEnglish,
+                      enforceChineseTextInImage,
+                      requiredChineseCopy,
+                      disableTransportRetries: Boolean(sourceElement.genInfiniteRetry),
+                      consistencyContext: currentConsistencyContext,
+                    },
+                    plannerModelConfig,
+                  ),
+                ),
+              );
+        if (!shouldBypassPlanning) {
+          updateElementById(sourceElement.id, {
+            genVisualPlanningCacheKey: planningCacheKey,
+            genVisualPlanningCachePayload: JSON.stringify({
+              cacheKey: planningCacheKey,
+              createdAt: Date.now(),
+              taskPlan,
+              taskUnits,
+              referenceImages: currentReferenceImages,
+              consistencyContext: currentConsistencyContext,
+              referenceRoleMode: currentReferenceRoleMode,
+              styleLibrary: currentStyleLibrary,
+              pageGenerationPlans,
+            } satisfies VisualPlanningCachePayload),
+            genVisualPlanningCacheCreatedAt: Date.now(),
+          });
+        }
+
         const plannedGeneration = pageGenerationPlans[0];
         const {
           plan,
@@ -1868,21 +2261,6 @@ export function useWorkspaceElementImageGeneration(
                 executionDirectives: taskPlan.roleOverlay.executionDirectives,
               }
             : null,
-        });
-
-        addMessage({
-          id: `gen-start-${Date.now()}`,
-          role: "model",
-          text: buildPlanningBriefMessage({
-            planningBrief: taskPlan.planningBrief,
-            roleOverlay: taskPlan.roleOverlay,
-            taskUnits,
-            isSetTask,
-            imageCount,
-            composedPrompt,
-            selectedGenerationModel: String(model),
-          }),
-          timestamp: Date.now(),
         });
 
         const generationContext = {
@@ -2281,22 +2659,18 @@ export function useWorkspaceElementImageGeneration(
           lastError: failedResults.length > 0 ? failedResults[0] : null,
         });
 
-        if (imageCount > 1 || failedResults.length > 0) {
+        if (failedResults.length > 0) {
           addMessage({
             id: `gen-summary-${Date.now()}`,
             role: "model",
-            text:
-              failedResults.length > 0
-                ? isSetTask
-                  ? `整套任务已完成 ${successCount}/${imageCount} 页，失败 ${failedResults.length} 页。`
-                  : `Generated ${successCount}/${imageCount} images. ${failedResults.length} failed.`
-                : isSetTask
-                  ? `整套任务 ${successCount}/${imageCount} 页已全部生成完成。`
-                  : `Generated ${successCount}/${imageCount} images successfully.`,
+            text: isSetTask
+              ? `整套任务已完成 ${successCount}/${imageCount} 页，失败 ${failedResults.length} 页。`
+              : `Generated ${successCount}/${imageCount} images. ${failedResults.length} failed.`,
             timestamp: Date.now(),
           });
         }
       } catch (error) {
+        rejectPlanningPayloadSession(error);
         const reason = formatGenerationError(error);
         if (taskPlannerStartedAt > 0 && plannerStartedAt === 0) {
           console.error("[workspace.imggen] task-planner.failed", {
@@ -2344,6 +2718,13 @@ export function useWorkspaceElementImageGeneration(
           timestamp: Date.now(),
         });
       } finally {
+        if (ownsPlanningExecution && planningInflightKey) {
+          activePlanningKeysRef.current.delete(planningInflightKey);
+          activePlanningPayloadRef.current.delete(planningInflightKey);
+        }
+        if (sourceRequestLockKey) {
+          activeRequestsRef.current.delete(sourceRequestLockKey);
+        }
         activeRequestsRef.current.delete(requestKey);
       }
       return traceRequestId;

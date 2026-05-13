@@ -52,7 +52,9 @@ type WorkspaceCanvasElementContentProps = {
     e: React.ChangeEvent<HTMLInputElement>,
     elementId: string,
   ) => void | Promise<void>;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   isTreeConnectionActive: boolean;
   handleTreeConnectionStart: (

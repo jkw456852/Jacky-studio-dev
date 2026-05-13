@@ -56,7 +56,9 @@ type WorkspaceImageSideToolbarProps = {
   setShowProductSwapResDropdown: React.Dispatch<React.SetStateAction<boolean>>;
   fileToDataUrl: (file: File) => Promise<string>;
   handleProductSwap: () => void | Promise<void>;
-  handleGenImage: (elementId: string) => void | Promise<void>;
+  handleGenImage: (
+    elementId: string,
+  ) => string | null | undefined | Promise<string | null | undefined>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   handleEditTextClick: () => void | Promise<void>;
   handleVectorRedraw: () => void | Promise<void>;

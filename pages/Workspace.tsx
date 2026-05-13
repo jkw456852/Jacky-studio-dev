@@ -167,7 +167,6 @@ import { WorkspaceGeneratedFilesPanel } from "./Workspace/components/WorkspaceGe
 import { WorkspaceLayersPanel } from "./Workspace/components/WorkspaceLayersPanel";
 import { WorkspacePageOverlays } from "./Workspace/components/WorkspacePageOverlays";
 import { WorkspaceSidebarLayer } from "./Workspace/components/WorkspaceSidebarLayer";
-import { EcommerceWorkflowDrawer } from "./Workspace/components/workflow/EcommerceWorkflowDrawer";
 import {
   RecipeLifecyclePanel,
   type WorkflowRecipeImportDraft,
@@ -1485,7 +1484,6 @@ const Workspace: React.FC = () => {
 
   const [showAssistant, setShowAssistant] = useState(true);
   const [isAssistantFullscreen, setIsAssistantFullscreen] = useState(false);
-  const [isEcommerceWorkflowOpen, setIsEcommerceWorkflowOpen] = useState(false);
   const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const showAssistantRef = useRef(true);
@@ -1804,16 +1802,11 @@ const Workspace: React.FC = () => {
     ensureEcommerceSession();
     setShowAssistant(true);
     setIsAssistantFullscreen(false);
-    setIsEcommerceWorkflowOpen(true);
   }, [ensureEcommerceSession]);
 
   const toggleAssistantFullscreen = useCallback(() => {
     setIsAssistantFullscreen((prev) => !prev);
     setShowAssistant(true);
-  }, []);
-
-  const closeEcommerceWorkflow = useCallback(() => {
-    setIsEcommerceWorkflowOpen(false);
   }, []);
 
   const {
@@ -1831,7 +1824,9 @@ const Workspace: React.FC = () => {
   });
   const designSession = useProjectStore((state) => state.designSession);
   const consistencyCheckEnabled =
-    designSession.consistencyCheckEnabled !== false;
+    designSession.consistencyCheckEnabled === true;
+  const preGenerationPlanningEnabled =
+    designSession.preGenerationPlanningEnabled !== false;
   const currentConsistencyAnchorUrl =
     designSession.subjectAnchors?.[designSession.subjectAnchors.length - 1] ||
     null;
@@ -1916,6 +1911,15 @@ const Workspace: React.FC = () => {
       setConsistencyCheckEnabled(enabled);
     },
     [setConsistencyCheckEnabled],
+  );
+
+  const handleTogglePreGenerationPlanning = useCallback(
+    (enabled: boolean) => {
+      projectActions.updateDesignSession({
+        preGenerationPlanningEnabled: enabled,
+      });
+    },
+    [projectActions],
   );
 
   const handlePreviewConsistencyAnchor = useCallback(
@@ -4779,6 +4783,7 @@ const Workspace: React.FC = () => {
     createGeneratingImagesNearElement,
     createGeneratingTreeImageChildren,
     getClosestAspectRatio,
+    preGenerationPlanningEnabled,
   });
 
   useEffect(() => {
@@ -5940,12 +5945,13 @@ const Workspace: React.FC = () => {
     setShowFastEdit,
     fastEditPrompt,
     setFastEditPrompt,
-     handleFastEditRun,
-     consistencyCheckEnabled,
-     currentConsistencyAnchorUrl,
-     approvedConsistencyAssetIds,
-     handleSetConsistencyAnchorFromElement,
-     handlePreviewConsistencyAnchor,
+    handleFastEditRun,
+    consistencyCheckEnabled,
+    preGenerationPlanningEnabled,
+    currentConsistencyAnchorUrl,
+    approvedConsistencyAssetIds,
+    handleSetConsistencyAnchorFromElement,
+    handlePreviewConsistencyAnchor,
     videoToolbarTab,
     setVideoToolbarTab,
     handleVideoRefUpload,
@@ -6027,8 +6033,10 @@ const Workspace: React.FC = () => {
     addGenImage,
     addGenVideo,
     consistencyCheckEnabled,
+    preGenerationPlanningEnabled,
     currentConsistencyAnchorUrl,
     handleToggleConsistencyCheck,
+    handleTogglePreGenerationPlanning,
     handleUploadConsistencyAnchor,
     handleClearConsistencyAnchor,
     handlePreviewConsistencyAnchor,
@@ -6081,75 +6089,6 @@ const Workspace: React.FC = () => {
         {!(showAssistant && isAssistantFullscreen) ? (
           <WorkspaceCanvasStage {...workspaceCanvasStageProps} />
         ) : null}
-        <EcommerceWorkflowDrawer
-          open={isEcommerceWorkflowOpen}
-          showAssistant={showAssistant}
-          workflowBusy={isTyping}
-          onClose={closeEcommerceWorkflow}
-          onStartWorkflow={({ brief, files, platformMode, workflowMode }) =>
-            handleEcommerceWorkflowSend({
-              text: brief,
-              attachments: files,
-              platformMode,
-              workflowMode,
-            })
-          }
-          onUploadCompetitorDeck={handleEcommerceUploadCompetitorDeck}
-          onImportCompetitorDeckFromUrl={
-            handleEcommerceImportCompetitorDeckFromUrl
-          }
-          onImportExtractedCompetitorDeck={
-            handleEcommerceImportExtractedCompetitorDeck
-          }
-          onSetCompetitorDecks={handleEcommerceSetCompetitorDecks}
-          onAnalyzeCompetitorDecks={handleEcommerceAnalyzeCompetitorDecks}
-          onRunCompetitorVisionSmokeTest={
-            handleEcommerceRunCompetitorVisionSmokeTest
-          }
-          onSetWorkflowStep={handleEcommerceBacktrackToStep}
-          onRefineAnalysis={handleEcommerceRefineAnalysis}
-          onConfirmTypes={handleEcommerceConfirmTypes}
-          onRetrySupplementQuestions={handleEcommerceRetrySupplementQuestions}
-          onUseSupplementFallback={handleEcommerceUseSupplementFallback}
-          onRetryPlanGroups={handleEcommerceRetryPlanGroups}
-          onUsePlanFallback={handleEcommerceUsePlanFallback}
-          onAutofillImageAnalyses={handleEcommerceAutofillImageAnalyses}
-          onConfirmImageAnalyses={handleEcommerceConfirmImageAnalyses}
-          onRetryImageAnalysis={handleEcommerceRetryImageAnalysis}
-          onRewritePlanPrompt={handleEcommerceRewritePlanPrompt}
-          onGenerateExtraPlanItem={handleEcommerceGenerateExtraPlanItem}
-          onGeneratePlanItem={handleEcommerceGeneratePlanItem}
-          onOpenResultOverlayEditor={handleEcommerceOpenOverlayEditor}
-          onCloseResultOverlayEditor={handleEcommerceCloseOverlayEditor}
-          onSaveResultOverlayDraft={handleEcommerceSaveResultOverlayDraft}
-          onApplyResultOverlay={handleEcommerceApplyResultOverlay}
-          onExportResultOverlayVariants={handleEcommerceExportResultOverlayVariants}
-          onExportSelectedOverlayVariants={handleEcommerceExportSelectedOverlayVariants}
-          onUploadResultOverlayFont={handleEcommerceUploadResultOverlayFont}
-          onUploadResultOverlayIcon={handleEcommerceUploadResultOverlayIcon}
-          onResetResultOverlay={handleEcommerceResetResultOverlay}
-          onPromoteResult={handleEcommercePromoteResult}
-          onPromoteSelectedResults={handleEcommercePromoteSelectedResults}
-          onDeleteResult={handleEcommerceDeleteResult}
-          onAutofillSupplements={handleEcommerceAutofillSupplements}
-          onAutofillPlans={handleEcommerceAutofillPlans}
-          onConfirmSupplements={handleEcommerceConfirmSupplements}
-          onConfirmPlans={handleEcommerceConfirmPlans}
-          onSelectModel={handleEcommerceSelectModel}
-          onSyncBatchPlanItemRatio={handleEcommerceSyncBatchPlanItemRatio}
-          onSyncBatchPrompt={handleEcommerceSyncBatchPrompt}
-          onPrepareBatchPrompts={handleEcommercePrepareBatchPrompts}
-          onOpenBatchWorkbench={handleEcommerceOpenBatchWorkbench}
-          onRunBatchGenerate={(promptOverrides, options) =>
-            handleEcommerceRunBatchGenerate(false, {
-              promptOverrides,
-              ...options,
-            })
-          }
-          onRetryFailedBatch={() => handleEcommerceRunBatchGenerate(true)}
-          onInsertToCanvas={insertEcommerceResultToCanvas}
-          onPreviewResult={setPreviewUrl}
-        />
       </div>
     </div>
   );
