@@ -863,6 +863,48 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
               )}
 
+              {creationMode !== "agent" ? (
+                <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50/80 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                        {creationMode === "image" ? (
+                          <ImageIcon size={16} className="text-gray-500" />
+                        ) : (
+                          <Video size={16} className="text-gray-500" />
+                        )}
+                        <span>{creationMode === "image" ? "图片任务" : "视频任务"}</span>
+                      </div>
+                      <p className="mt-1 text-[12px] leading-5 text-gray-500">
+                        {creationMode === "image"
+                          ? `当前会以图片任务方式启动工作台，后续默认沿用 ${preferredImageModelLabel}。`
+                          : `当前会以视频任务方式启动工作台，后续默认沿用 ${String(preferredVideoModel || "视频模型") }。`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelPreferenceTab(creationMode === "image" ? "image" : "video");
+                        setShowModelPreference(true);
+                      }}
+                      className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+                    >
+                      调整设置
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                    <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">
+                      模式：{creationMode === "image" ? "图片" : "视频"}
+                    </span>
+                    <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">
+                      {creationMode === "image"
+                        ? `默认模型：${preferredImageModelLabel}`
+                        : `默认模型：${String(preferredVideoModel || "未设置")}`}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex justify-between items-center mt-2">
                 <div className="flex items-center gap-3">
                   <div className="relative">

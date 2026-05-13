@@ -1,6 +1,6 @@
 export const STUDIO_REGISTRY_MANIFEST = {
   "version": 1,
-  "generatedAt": "2026-05-12T09:44:41.071Z",
+  "generatedAt": "2026-05-13T05:33:38.300Z",
   "sourceRoot": "studio-assets",
   "primaryAgentIds": [
     "cameron",

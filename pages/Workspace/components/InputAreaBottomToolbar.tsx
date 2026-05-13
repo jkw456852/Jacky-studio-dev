@@ -367,6 +367,9 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const [agentRolePickerAnchorRect, setAgentRolePickerAnchorRect] = React.useState<DOMRect | null>(
     null,
   );
+  const modelPickerTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const modelPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
+  const [modelPickerAnchorRect, setModelPickerAnchorRect] = React.useState<DOMRect | null>(null);
   const [roleInspectorAgentId, setRoleInspectorAgentId] = React.useState<AgentType | null>(null);
   const [roleInspectorRoleId, setRoleInspectorRoleId] = React.useState<string | null>(null);
   const [showRoleManagementPanel, setShowRoleManagementPanel] = React.useState(false);
@@ -377,6 +380,9 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const [showMainBrainInspector, setShowMainBrainInspector] = React.useState(false);
   const [mainBrainDraft, setMainBrainDraft] = React.useState('');
   const currentAutoRoleSession = useAgentStore((state) => state.currentAutoRoleSession);
+  const videoStartFrame = useAgentStore((state) => state.generation.videoStartFrame);
+  const videoEndFrame = useAgentStore((state) => state.generation.videoEndFrame);
+  const videoMultiRefs = useAgentStore((state) => state.generation.videoMultiRefs);
   const selectedRoleId = useAgentStore((state) => state.selectedRoleId);
   const selectedRoleSource = useAgentStore((state) => state.selectedRoleSource);
   const setSelectedRoleSelection = useAgentStore(
@@ -443,6 +449,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const syncAgentRolePickerPosition = React.useCallback(() => {
     if (!agentRolePickerTriggerRef.current) return;
     setAgentRolePickerAnchorRect(agentRolePickerTriggerRef.current.getBoundingClientRect());
+  }, []);
+  const syncModelPickerPosition = React.useCallback(() => {
+    if (!modelPickerTriggerRef.current) return;
+    setModelPickerAnchorRect(modelPickerTriggerRef.current.getBoundingClientRect());
   }, []);
   const inspectedAgentInfo = roleInspectorAgentId
     ? getAgentInfo(roleInspectorAgentId)
@@ -529,6 +539,40 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       : creationMode === 'image'
         ? '图片任务'
         : '视频任务';
+  const inlineAttachmentFiles = React.useMemo(
+    () =>
+      inputBlocks
+        .filter((block) => block.type === 'file' && block.file)
+        .map((block) => block.file as File),
+    [inputBlocks],
+  );
+  const imageTaskAttachments = React.useMemo(() => {
+    const files = [...inlineAttachmentFiles];
+    imageGenUploads.forEach((file) => {
+      if (!files.includes(file)) {
+        files.push(file);
+      }
+    });
+    return files;
+  }, [imageGenUploads, inlineAttachmentFiles]);
+  const videoTaskAttachments = React.useMemo(() => {
+    const files = [...inlineAttachmentFiles];
+    const push = (file?: File | null) => {
+      if (!file || files.includes(file)) return;
+      files.push(file);
+    };
+    push(videoStartFrame);
+    push(videoEndFrame);
+    videoMultiRefs.forEach(push);
+    return files;
+  }, [inlineAttachmentFiles, videoEndFrame, videoMultiRefs, videoStartFrame]);
+  const hasTextContent = React.useMemo(
+    () =>
+      inputBlocks.some(
+        (block) => block.type === 'text' && String(block.text || '').trim().length > 0,
+      ),
+    [inputBlocks],
+  );
   const inspectedBuiltInPrompt = roleInspectorAgentId
     ? getAgentPromptLayers(roleInspectorAgentId).systemBaselinePrompt
     : '';
@@ -637,6 +681,39 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [showAgentRolePicker, syncAgentRolePickerPosition]);
+  React.useEffect(() => {
+    if (!showModelPicker) return;
+
+    syncModelPickerPosition();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (modelPickerPanelRef.current?.contains(target)) return;
+      if (modelPickerTriggerRef.current?.contains(target)) return;
+      setShowModelPicker(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowModelPicker(false);
+      }
+    };
+    const handleViewportChange = () => {
+      syncModelPickerPosition();
+    };
+
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showModelPicker, setShowModelPicker, syncModelPickerPosition]);
   const handleSavePromptAddon = React.useCallback(() => {
     if (!roleInspectorAgentId) return;
     setAgentPromptAddon(roleInspectorAgentId, roleInspectorDraft);
@@ -1194,15 +1271,18 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           className={
             creationMode === 'agent'
               ? 'flex min-w-0 flex-1 justify-end'
-              : 'flex items-center gap-3 flex-wrap'
+              : 'flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2'
           }
         >
           {(creationMode === 'image' || creationMode === 'video') && (
             <>
               <div className="relative">
                 <button
+                  ref={modelPickerTriggerRef}
+                  type="button"
                   onClick={(event) => {
                     event.stopPropagation();
+                    setModelPickerAnchorRect(event.currentTarget.getBoundingClientRect());
                     setShowModelPicker(!showModelPicker);
                     setShowRatioPicker(false);
                     setShowVideoSettingsDropdown(false);
@@ -1219,119 +1299,136 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                     <Banana size={18} strokeWidth={2} />
                   )}
                 </button>
-                {showModelPicker && (
-                  <div className="absolute bottom-full right-0 mb-3 w-[260px] bg-white rounded-[24px] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] border border-gray-100 p-4 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <div className="px-1 mb-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                      本次任务临时覆盖
-                    </div>
-                    <div className="px-1 mb-3 text-[11px] text-gray-500 leading-5">
-                      设置映射：{activeMappingSummary}
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={
-                          creationMode === 'video'
-                            ? videoGenModel
-                            : effectiveImagePreference
-                        }
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          if (creationMode === 'video') {
-                            setVideoGenModel(value as VideoModel);
-                          } else {
-                            setPreferredImageModel(value as ImageModel);
-                            setPreferredImageProviderId(null);
+                {showModelPicker &&
+                  modelPickerAnchorRect &&
+                  typeof document !== 'undefined' &&
+                  createPortal(
+                    <div
+                      ref={modelPickerPanelRef}
+                      onClick={(event) => event.stopPropagation()}
+                      className="fixed z-[220] w-[260px] max-w-[calc(100vw-24px)] rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] animate-in fade-in slide-in-from-bottom-2 duration-300"
+                      style={{
+                        right: Math.max(12, window.innerWidth - modelPickerAnchorRect.right),
+                        bottom: Math.max(
+                          12,
+                          window.innerHeight - modelPickerAnchorRect.top + 12,
+                        ),
+                      }}
+                    >
+                      <div className="px-1 mb-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        本次任务临时覆盖
+                      </div>
+                      <div className="px-1 mb-3 text-[11px] text-gray-500 leading-5">
+                        设置映射：{activeMappingSummary}
+                      </div>
+                      <div className="flex flex-col gap-2.5">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={
+                            creationMode === 'video'
+                              ? videoGenModel
+                              : effectiveImagePreference
                           }
-                          setAutoModelSelect(false);
-                        }}
-                        placeholder={`当前默认来自设置映射：${activePrimaryModel}`}
-                        className="w-full px-4 py-2.5 bg-gray-50/50 border border-gray-200 hover:bg-white focus:bg-white rounded-xl text-[13px] font-bold text-gray-800 outline-none focus:ring-2 focus:ring-black/5 focus:border-black transition-all placeholder:font-medium placeholder:text-gray-400"
-                      />
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            if (creationMode === 'video') {
+                              setVideoGenModel(value as VideoModel);
+                            } else {
+                              setPreferredImageModel(value as ImageModel);
+                              setPreferredImageProviderId(null);
+                            }
+                            setAutoModelSelect(false);
+                          }}
+                          placeholder={`当前默认来自设置映射：${activePrimaryModel}`}
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-2.5 text-[13px] font-bold text-gray-800 outline-none transition-all placeholder:font-medium placeholder:text-gray-400 hover:bg-white focus:border-black focus:bg-white focus:ring-2 focus:ring-black/5"
+                        />
 
-                      <div className="flex flex-col gap-1 mt-1 max-h-[160px] overflow-y-auto pr-1 select-none custom-scrollbar">
-                        {(creationMode === 'video' ? visibleVideoOptions : visibleImageOptions).map(
-                          (preset) => {
-                            const isSelected =
-                              (creationMode === 'video' && videoGenModel === preset.id) ||
-                              (creationMode === 'image' &&
-                                effectiveImagePreference === preset.id &&
-                                (autoModelSelect ||
-                                  (preset.providerId || null) ===
-                                    (preferredImageProviderId || null)));
+                        <div className="mt-1 flex max-h-[160px] flex-col gap-1 overflow-y-auto pr-1 select-none custom-scrollbar">
+                          {(creationMode === 'video' ? visibleVideoOptions : visibleImageOptions).map(
+                            (preset) => {
+                              const isSelected =
+                                (creationMode === 'video' && videoGenModel === preset.id) ||
+                                (creationMode === 'image' &&
+                                  effectiveImagePreference === preset.id &&
+                                  (autoModelSelect ||
+                                    (preset.providerId || null) ===
+                                      (preferredImageProviderId || null)));
 
-                            return (
-                              <button
-                                key={preset.optionKey || preset.id}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (creationMode === 'video') {
-                                    setVideoGenModel(preset.id as VideoModel);
-                                  } else {
-                                    setPreferredImageModel(preset.id as ImageModel);
-                                    setPreferredImageProviderId(
-                                      preset.providerId || null,
-                                    );
-                                  }
-                                  setAutoModelSelect(false);
-                                  setShowModelPicker(false);
-                                }}
-                                className={`text-left px-3 py-2.5 rounded-xl transition-all w-full flex items-center justify-between group ${
-                                  isSelected ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-700'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <div
-                                    className={`w-6 h-6 rounded-md flex items-center justify-center ${
-                                      isSelected
-                                        ? 'bg-white/10 text-white'
-                                        : 'bg-white shadow-sm border border-gray-100 text-gray-600'
-                                    }`}
-                                  >
-                                    <preset.icon size={13} strokeWidth={2.5} />
-                                  </div>
-                                  <div className="flex flex-col">
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        className={`text-[13px] font-bold ${
-                                          isSelected
-                                            ? 'text-white'
-                                            : 'text-gray-900 group-hover:text-black'
-                                        }`}
-                                      >
-                                        {preset.name}
-                                      </span>
-                                      {preset.badge && (
+                              return (
+                                <button
+                                  key={preset.optionKey || preset.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (creationMode === 'video') {
+                                      setVideoGenModel(preset.id as VideoModel);
+                                    } else {
+                                      setPreferredImageModel(preset.id as ImageModel);
+                                      setPreferredImageProviderId(
+                                        preset.providerId || null,
+                                      );
+                                    }
+                                    setAutoModelSelect(false);
+                                    setShowModelPicker(false);
+                                  }}
+                                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-all ${
+                                    isSelected ? 'bg-black text-white' : 'text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2.5">
+                                    <div
+                                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${
+                                        isSelected
+                                          ? 'bg-white/10 text-white'
+                                          : 'border border-gray-100 bg-white text-gray-600 shadow-sm'
+                                      }`}
+                                    >
+                                      <preset.icon size={13} strokeWidth={2.5} />
+                                    </div>
+                                    <div className="flex min-w-0 flex-col">
+                                      <div className="flex items-center gap-1.5">
                                         <span
-                                          className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                                          className={`truncate text-[13px] font-bold ${
                                             isSelected
-                                              ? 'bg-white/20 text-white'
-                                              : 'bg-blue-50 text-blue-500 border border-blue-100/50'
+                                              ? 'text-white'
+                                              : 'text-gray-900 group-hover:text-black'
                                           }`}
                                         >
-                                          {preset.badge}
+                                          {preset.name}
                                         </span>
-                                      )}
+                                        {preset.badge && (
+                                          <span
+                                            className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                                              isSelected
+                                                ? 'bg-white/20 text-white'
+                                                : 'border border-blue-100/50 bg-blue-50 text-blue-500'
+                                            }`}
+                                          >
+                                            {preset.badge}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                                {isSelected && <Check size={14} className="text-white shrink-0" />}
-                              </button>
-                            );
-                          },
-                        )}
-                      </div>
+                                  {isSelected && (
+                                    <Check size={14} className="shrink-0 text-white" />
+                                  )}
+                                </button>
+                              );
+                            },
+                          )}
+                        </div>
 
-                      <div className="text-[10px] text-gray-400 font-medium px-1 leading-relaxed mt-1">
-                        默认会优先读取设置里的模型映射；这里选择的是本次任务的临时覆盖模型。若未找到通道可能导致响应失败。
+                        <div className="mt-1 px-1 text-[10px] font-medium leading-relaxed text-gray-400">
+                          默认会优先读取设置里的模型映射；这里选择的是本次任务的临时覆盖模型。若未找到通道可能导致响应失败。
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    </div>,
+                    document.body,
+                  )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                 {creationMode === 'image' && (
                   <>
                     <div className="relative">
@@ -1421,7 +1518,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       value={requiredChineseCopy}
                       onChange={(event) => setRequiredChineseCopy(event.target.value)}
                       placeholder="指定文案"
-                      className="h-8 w-24 px-2 rounded-full border border-gray-200 text-[11px] font-medium text-gray-700 bg-white focus:outline-none focus:border-gray-400"
+                      className="h-8 w-[120px] min-w-0 rounded-full border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-700 focus:border-gray-400 focus:outline-none sm:w-[140px]"
                       title="可选：指定画面中必须出现的中文文案"
                     />
                   </>
@@ -1430,26 +1527,38 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   onClick={() =>
                     handleSend(
                       undefined,
-                      imageGenUploads.length > 0 ? imageGenUploads : [],
+                      (creationMode === 'image'
+                        ? imageTaskAttachments
+                        : videoTaskAttachments
+                      ).length > 0
+                        ? creationMode === 'image'
+                          ? imageTaskAttachments
+                          : videoTaskAttachments
+                        : undefined,
                       undefined,
                       sendSkill,
                     )
                   }
                   disabled={
-                    imageGenUploads.length === 0 &&
-                    inputBlocks.every((block) => block.type === 'text' && !block.text)
+                    creationMode === 'image'
+                      ? imageTaskAttachments.length === 0 && !hasTextContent
+                      : videoTaskAttachments.length === 0 && !hasTextContent
                   }
-                  className="h-9 pl-3 pr-4 rounded-full flex items-center gap-2 text-[13px] font-bold transition bg-[#f3f4f6] text-[#6b7280] hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50"
+                  className="h-9 shrink-0 rounded-full bg-[#f3f4f6] pl-3 pr-4 text-[13px] font-bold text-[#6b7280] transition hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50"
                   title={creationMode === 'image' ? '开始图片任务' : '开始视频任务'}
                   aria-label={creationMode === 'image' ? '开始图片任务' : '开始视频任务'}
                 >
-                  <Zap
-                    size={14}
-                    fill="currentColor"
-                    strokeWidth={0}
-                    className="text-blue-400"
-                  />
-                  <span>{creationMode === 'image' ? '开始图片任务' : '开始视频任务'}</span>
+                  <div className="flex items-center gap-2">
+                    <Zap
+                      size={14}
+                      fill="currentColor"
+                      strokeWidth={0}
+                      className="text-blue-400"
+                    />
+                    <span className="truncate">
+                      {creationMode === 'image' ? '开始图片任务' : '开始视频任务'}
+                    </span>
+                  </div>
                 </button>
               </div>
             </>
