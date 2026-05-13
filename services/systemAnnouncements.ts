@@ -29,7 +29,7 @@ const hasAnnouncementBeenRead = (
 // Push 前把最新公告加到最前面，内容尽量用最直白的人话写清楚。
 export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
   {
-    id: "2026-05-13-sidebar-main-brain-refactor-and-announcement-unread-fix",
+    id: "2026-05-13-sidebar-main-brain-refactor-and-announcement-unread-fix-refresh-1",
     date: "2026.05.13 09:35",
     title: "侧边栏主脑重构已验收，公告未读也修好了",
     summary:
@@ -52,7 +52,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
     ],
   },
   {
-    id: "2026-05-12-evening-workspace-style-plaza-and-account-updates",
+    id: "2026-05-12-evening-workspace-style-plaza-and-account-updates-refresh-1",
     date: "2026.05.12 19:40",
     title: "新增 GPT 画廊，重做风格广场，账号中心也并回统一导航了",
     summary:
@@ -79,7 +79,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
     ],
   },
   {
-    id: "2026-05-12-projects-announcement-and-workspace-updates",
+    id: "2026-05-12-projects-announcement-and-workspace-updates-refresh-1",
     date: "2026.05.12 14:30",
     title: "公告更清爽了，项目和工作台也补齐了一批实用更新",
     summary:
@@ -101,7 +101,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
     ],
   },
   {
-    id: "2026-05-12-home-announcement-center",
+    id: "2026-05-12-home-announcement-center-refresh-1",
     date: "2026.05.12 10:30",
     title: "首页现在有系统公告了",
     summary:
@@ -120,7 +120,7 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
     ],
   },
   {
-    id: "2026-05-11-home-skill-sync",
+    id: "2026-05-11-home-skill-sync-refresh-1",
     date: "2026.05.11 19:30",
     title: "首页能力入口做了一轮清理",
     summary:
