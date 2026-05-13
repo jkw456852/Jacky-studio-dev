@@ -239,6 +239,12 @@ export interface AgentTaskMetadata {
     iconName?: string;
     config?: Record<string, unknown>;
   };
+  brandContextSummary?: string;
+  topicPinnedContext?: string;
+  conversationConstraintSummary?: string;
+  referenceIntentSummary?: string;
+  memoryCaptureSummary?: string;
+  knowledgeCaptureItems?: string[];
   multimodalContext?: AgentMultimodalContext;
 }
 

@@ -74,7 +74,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               <div className="w-full max-w-[95%] xl:max-w-[90%] rounded-3xl rounded-br-md border border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-800 shadow-sm flex flex-col gap-2 overflow-hidden">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-gray-900">
-                    {msg.skillData.name}
+                    {msg.skillData?.name || "快捷操作"}
                   </span>
                 </div>
                 {msg.inlineParts && msg.inlineParts.length > 0 ? (
@@ -137,35 +137,10 @@ export const MessageList: React.FC<MessageListProps> = ({
         </motion.div>
       ))}
       {isTyping && (
-        <div className="flex justify-start mb-6 mt-2 ml-1">
-          <div className="flex items-center gap-3">
-            {/* 拟物风格 Logo 图标 */}
-            <div className="w-7 h-7 rounded-full bg-black flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform duration-300">
-              <Sparkles
-                size={14}
-                className="text-white fill-white/20 animate-pulse"
-              />
-            </div>
-            {/* 立体文案反馈 */}
-            <div className="flex items-center gap-2 pr-4">
-              <span className="text-[13px] text-gray-400 font-medium tracking-wide">
-                思考中...
-              </span>
-              <div className="flex items-center gap-1 opacity-40">
-                <span
-                  className="w-1 h-1 bg-gray-400 rounded-full animate-[bounce_1.4s_infinite_ease-in-out_both]"
-                  style={{ animationDelay: "0s" }}
-                ></span>
-                <span
-                  className="w-1 h-1 bg-gray-400 rounded-full animate-[bounce_1.4s_infinite_ease-in-out_both]"
-                  style={{ animationDelay: "0.2s" }}
-                ></span>
-                <span
-                  className="w-1 h-1 bg-gray-400 rounded-full animate-[bounce_1.4s_infinite_ease-in-out_both]"
-                  style={{ animationDelay: "0.4s" }}
-                ></span>
-              </div>
-            </div>
+        <div className="mb-6 mt-2 ml-1 flex justify-start">
+          <div className="flex items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-[13px] text-gray-600 shadow-sm">
+            <Sparkles size={13} className="text-blue-500 animate-pulse" />
+            <span className="font-medium">我先整理一下你的要求</span>
           </div>
         </div>
       )}
@@ -174,7 +149,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           currentTask.status === "executing") && (
           <TaskProgress task={currentTask} />
         )}
-      {/* 完成/失败后保留思考过程折叠入口 */}
+      {/* 完成/失败后保留执行记录折叠入口 */}
       {currentTask &&
         (currentTask.status === "completed" ||
           currentTask.status === "failed") &&

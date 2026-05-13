@@ -251,6 +251,13 @@ export interface ChatMessage {
     postGenerationSummary?: string;
     suggestions?: string[]; // 可点击的建议按钮（如"温馨日常故事"、"科技感风格"）
     isGenerating?: boolean;
+    presentation?: {
+      kind?: 'default' | 'execution_plan' | 'execution_record' | 'research';
+      statusLabel?: string;
+      modeLabel?: string;
+      detailTitle?: string;
+      detailNotice?: string;
+    };
     research?: {
       status: 'searching' | 'completed' | 'failed';
       mode?: 'web' | 'images' | 'web+images';

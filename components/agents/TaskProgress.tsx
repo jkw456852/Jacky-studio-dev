@@ -121,9 +121,9 @@ export const TaskProgress: React.FC<TaskProgressProps> = ({ task }) => {
               <Clock size={11} className="text-blue-400" />
             )}
             <span className="underline-offset-2 group-hover:underline">
-              {expanded ? '收起' : '展开'}思考过程
+              {expanded ? '收起' : '查看'}执行记录
             </span>
-            <span className="text-gray-300">({log.length} 步)</span>
+            <span className="text-gray-300">({log.length} 条)</span>
             {expanded ? (
               <ChevronUp size={10} className="text-gray-400" />
             ) : (

@@ -225,6 +225,20 @@ const buildGoalPlannerPrompt = (args: {
     }),
   );
   const plannerModeHint = readPlannerModeHint(args.metadata);
+  const metadata = args.metadata || null;
+  const brandContextSummary = String(metadata?.brandContextSummary || "").trim();
+  const topicPinnedContext = String(metadata?.topicPinnedContext || "").trim();
+  const conversationConstraintSummary = String(
+    metadata?.conversationConstraintSummary || "",
+  ).trim();
+  const referenceIntentSummary = String(metadata?.referenceIntentSummary || "").trim();
+  const memoryCaptureSummary = String(metadata?.memoryCaptureSummary || "").trim();
+  const knowledgeCaptureItems = Array.isArray(metadata?.knowledgeCaptureItems)
+    ? metadata.knowledgeCaptureItems
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
 
   return [
     "You are a browser-native workspace execution planner.",
@@ -266,6 +280,16 @@ const buildGoalPlannerPrompt = (args: {
       available: Number(args.referenceImageCount || 0) > 0,
     }),
     "",
+    "[Sidebar Main-Brain Context]",
+    JSON.stringify({
+      brandContextSummary: brandContextSummary || null,
+      topicPinnedContext: topicPinnedContext || null,
+      conversationConstraintSummary: conversationConstraintSummary || null,
+      referenceIntentSummary: referenceIntentSummary || null,
+      memoryCaptureSummary: memoryCaptureSummary || null,
+      knowledgeCaptureItems,
+    }),
+    "",
     buildPromptListSection(
       "Shared Agent Constitution",
       getSharedPlanningConstitutionLines(),
@@ -295,6 +319,8 @@ const buildGoalPlannerPrompt = (args: {
     "[Planning Rules]",
     "- First think like a strong generalist agent, not a keyword executor. Classify the job, identify the real deliverable, note missing information, and only then decide the step sequence.",
     "- Every step must be executable with the listed tools or host actions only.",
+    "- Treat the sidebar main-brain context as authoritative carry-over memory for this turn unless the current goal explicitly overrides it.",
+    "- When brand context, pinned topic memory, conversation constraints, or reference intent are provided, reflect them in the plan instead of falling back to a generic execution template.",
     "- Use kind=tool only for listed tool ids.",
     "- Use kind=host_action only for listed host action ids.",
     "- Prefer exact ids such as workspace.read_element_capabilities or workspace.generate_image. Do not shorten ids unless they are identical to the listed ids.",
@@ -1008,7 +1034,16 @@ export const planBrowserAgentGoalSession = async (args: {
     },
     ...referenceImages
       .map((image) => toInlineImagePart(image))
-      .filter(Boolean),
+      .filter(
+        (
+          part,
+        ): part is {
+          inlineData: {
+            mimeType: string;
+            data: string;
+          };
+        } => Boolean(part),
+      ),
   ];
 
   const response = await generateJsonResponse({

@@ -15,19 +15,15 @@ export const AssistantSidebarStatusBanner: React.FC<AssistantSidebarStatusBanner
             {label && (
                 <motion.div
                     key={statusKey}
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.98 }}
-                    className="mx-5 mb-4 flex items-center gap-3 px-4 py-2.5 bg-[#F1F3F5] rounded-xl"
+                    exit={{ opacity: 0, y: -4 }}
+                    className="mx-5 mb-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm"
                 >
-                    <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center shadow-sm transform scale-90 text-white font-bold text-[9px] tracking-wide">
-                        JK
-                    </div>
-                    <span className="text-[11px] font-bold text-gray-400">{label}</span>
-                    <div className="flex items-center gap-1 opacity-10 ml-auto">
-                        <span className="w-0.5 h-0.5 bg-gray-600 rounded-full animate-bounce"></span>
-                        <span className="w-0.5 h-0.5 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                    </div>
+                    <div className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
+                    <span className="min-w-0 text-[12px] font-medium leading-5 text-gray-600 truncate">
+                        {label}
+                    </span>
                 </motion.div>
             )}
         </AnimatePresence>

@@ -273,8 +273,11 @@ const parseDirectiveText = (value: string) =>
 const buildStyleLibraryFromDraft = (
   draft: StyleLibraryDraftState,
   createdBy: WorkspaceStyleLibrary["createdBy"] = "user",
+  baseLibrary?: WorkspaceStyleLibrary | null,
 ): WorkspaceStyleLibrary | undefined =>
   normalizeWorkspaceStyleLibrary({
+    id: baseLibrary?.id,
+    slug: baseLibrary?.slug,
     title: draft.title,
     summary: draft.summary,
     coverImageUrl: String(draft.coverImageUrl || "").trim() || undefined,
@@ -291,6 +294,7 @@ const persistUserStyleLibraryAsset = (
 ) => {
   if (!library) return null;
   return getStudioUserAssetApi().saveStyleLibrary(library, {
+    preferredId: library.id,
     sourceMode: sourceMode || "custom",
   });
 };
@@ -436,7 +440,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   styleLibraryOptions,
   userStyleLibraries,
 }) => {
-  const [activeTab, setActiveTab] = React.useState<"gallery" | "mine" | "current">("gallery");
+  const [activeTab, setActiveTab] = React.useState<"gallery" | "mine" | "current">("mine");
   const [activeFilter, setActiveFilter] = React.useState<
     "all" | "system" | "user" | "runtime" | "active"
   >("all");
@@ -677,9 +681,9 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
         <div className="relative flex h-full min-h-0 w-full flex-col">
           <div className="flex items-center gap-3 border-b border-[#eef2f7] px-4 py-4 sm:px-6">
             <div className="flex items-center gap-2 rounded-[12px] bg-[#f4f6f9] p-1">
-              {[
-                { id: "gallery", label: "广场" },
+              {[ 
                 { id: "mine", label: "我的收藏" },
+                { id: "gallery", label: "广场" },
                 { id: "current", label: "最近使用" },
               ].map((tab) => {
                 const active = activeTab === tab.id;
@@ -743,9 +747,6 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="rounded-[10px] bg-[#f4f6f9] px-4 py-2 text-[13px] text-[#4b5563]">
-                智能图片V2
-              </div>
               <button
                 type="button"
                 className="rounded-[10px] bg-[#f4f6f9] px-4 py-2 text-[13px] text-[#4b5563] transition hover:bg-[#eceff3]"
@@ -1245,7 +1246,13 @@ const TreePromptToolbar: React.FC<{
   }, [effectiveStyleLibrary?.id, userStyleLibraries]);
 
   const applyStyleLibraryDraft = React.useCallback(() => {
-    const nextLibrary = buildStyleLibraryFromDraft(styleLibraryDraft, "user");
+    const nextLibrary = buildStyleLibraryFromDraft(
+      styleLibraryDraft,
+      "user",
+      normalizedStyleLibraryMode === "custom"
+        ? currentStyleLibrary || selectedUserStyleLibrary
+        : selectedUserStyleLibrary,
+    );
     if (!nextLibrary) {
       return false;
     }
@@ -1258,9 +1265,11 @@ const TreePromptToolbar: React.FC<{
     setSelectedUserStyleLibraryId(persistedLibrary.id || null);
     return true;
   }, [
+    currentStyleLibrary,
     onStyleLibraryChange,
     onStyleLibrarySave,
     normalizedStyleLibraryMode,
+    selectedUserStyleLibrary,
     styleLibraryDraft,
   ]);
 
@@ -1293,7 +1302,11 @@ const TreePromptToolbar: React.FC<{
   const handleSaveStyleLibraryAsAsset = React.useCallback(() => {
     const assetCandidate = buildDetachedStyleLibraryAsset(
       normalizedStyleLibraryMode === "custom"
-        ? buildStyleLibraryFromDraft(styleLibraryDraft, "user") || effectiveStyleLibrary
+        ? buildStyleLibraryFromDraft(
+            styleLibraryDraft,
+            "user",
+            currentStyleLibrary || selectedUserStyleLibrary,
+          ) || effectiveStyleLibrary
         : effectiveStyleLibrary,
     );
     if (!assetCandidate) {
@@ -1315,10 +1328,12 @@ const TreePromptToolbar: React.FC<{
     setStyleLibraryRevision((value) => value + 1);
     setSelectedUserStyleLibraryId(persistedLibrary.id || null);
   }, [
+    currentStyleLibrary,
     effectiveStyleLibrary,
     normalizedStyleLibraryMode,
     onStyleLibraryChange,
     onStyleLibrarySave,
+    selectedUserStyleLibrary,
     styleLibraryDraft,
   ]);
 
@@ -2292,11 +2307,9 @@ export const WorkspaceTreePromptNode: React.FC<
             }
             onStyleLibrarySave={(library) =>
               {
-                const persistedLibrary =
-                  persistUserStyleLibraryAsset(library, "custom") || library;
                 updateSelectedElement({
                   genReferenceRoleMode: "custom",
-                  genStyleLibrary: persistedLibrary,
+                  genStyleLibrary: library,
                 });
               }
             }

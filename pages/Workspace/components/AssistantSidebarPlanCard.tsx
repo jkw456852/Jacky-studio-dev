@@ -94,48 +94,46 @@ export const AssistantSidebarPlanCard: React.FC<
     "Planner";
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-4 shadow-sm">
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold tracking-[0.18em] text-amber-600">
-            PLAN
-          </div>
+          <div className="text-[11px] font-medium text-gray-500">执行前确认</div>
           <h3 className="mt-1 text-[15px] font-semibold text-slate-900">
-            {plan.title || "待确认执行计划"}
+            {plan.title || "我准备这样处理"}
           </h3>
           <p className="mt-1 text-[12px] leading-5 text-slate-600">
             {plan.description ||
-              "我先把这次任务的理解、风险和执行步骤整理出来，等你确认后再真正开始。"}
+              "我先把这轮怎么理解、准备怎么做整理出来。你确认后，我再继续执行。"}
           </p>
         </div>
-        <div className="shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[10px] font-medium text-amber-700">
+        <div className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[10px] font-medium text-gray-600">
           {plannerModelLabel}
         </div>
       </div>
 
-      <div className="mt-3 rounded-xl border border-slate-200 bg-white/90 p-3">
-        <div className="text-[12px] font-semibold text-slate-900">任务判断</div>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <div className="text-[12px] font-semibold text-slate-900">这轮判断</div>
         <div className="mt-2 space-y-2">
           <div>
-            <div className="text-[11px] text-slate-400">你的目标</div>
+            <div className="text-[11px] text-slate-400">你的要求</div>
             <div className="mt-1 text-[12px] leading-5 text-slate-700">{goal}</div>
           </div>
           {taskProfile ? (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-              <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+              <div className="rounded-lg bg-white px-2.5 py-2">
                 <div className="text-[10px] text-slate-400">任务类型</div>
                 <div className="mt-1 text-[12px] font-medium text-slate-800">
                   {taskProfile.taskType}
                 </div>
               </div>
-              <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                <div className="text-[10px] text-slate-400">成功目标</div>
+              <div className="rounded-lg bg-white px-2.5 py-2">
+                <div className="text-[10px] text-slate-400">想达成什么</div>
                 <div className="mt-1 text-[12px] leading-5 text-slate-800">
                   {taskProfile.objective}
                 </div>
               </div>
-              <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-                <div className="text-[10px] text-slate-400">准备交付</div>
+              <div className="rounded-lg bg-white px-2.5 py-2">
+                <div className="text-[10px] text-slate-400">预期产出</div>
                 <div className="mt-1 text-[12px] leading-5 text-slate-800">
                   {taskProfile.deliverable}
                 </div>
@@ -143,14 +141,14 @@ export const AssistantSidebarPlanCard: React.FC<
             </div>
           ) : null}
           {plan.rationaleSummary ? (
-            <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] leading-5 text-slate-600">
+            <div className="rounded-lg bg-white px-2.5 py-2 text-[11px] leading-5 text-slate-600">
               {plan.rationaleSummary}
             </div>
           ) : null}
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2">
           <div className="text-slate-400">目标节点</div>
           <div className="mt-1 font-medium text-slate-800">
@@ -200,17 +198,17 @@ export const AssistantSidebarPlanCard: React.FC<
         {renderListSection("潜在风险", executionStrategy?.risks, "warn")}
       </div>
 
-      <div className="mt-3 rounded-xl border border-slate-200 bg-white/90 p-3">
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
         <div className="flex items-center justify-between">
-          <div className="text-[12px] font-semibold text-slate-900">执行步骤</div>
-          <div className="text-[10px] text-slate-400">{`${plan.steps.length} 步`}</div>
+          <div className="text-[12px] font-semibold text-slate-900">准备执行的步骤</div>
+          <div className="text-[10px] text-slate-400">{`${plan.steps.length} 条`}</div>
         </div>
         {plan.steps.length > 0 ? (
           <div className="mt-2 space-y-2">
             {plan.steps.map((step, index) => (
               <div
                 key={step.id}
-                className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5"
+                className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5"
               >
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">
@@ -237,7 +235,7 @@ export const AssistantSidebarPlanCard: React.FC<
           </div>
         ) : (
           <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-500">
-            当前计划判断这轮暂时不需要继续执行。
+            按现在的信息，这轮暂时不需要继续执行。
           </div>
         )}
       </div>
@@ -248,7 +246,7 @@ export const AssistantSidebarPlanCard: React.FC<
           onClick={onDismiss}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
         >
-          {executable ? "先不执行" : "收起"}
+          {executable ? "暂不执行" : "收起"}
         </button>
         {executable ? (
           <button
@@ -257,7 +255,7 @@ export const AssistantSidebarPlanCard: React.FC<
             disabled={isExecuting}
             className="rounded-xl bg-slate-900 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isExecuting ? "正在启动执行" : "同意执行"}
+            {isExecuting ? "正在开始" : "确认执行"}
           </button>
         ) : null}
       </div>

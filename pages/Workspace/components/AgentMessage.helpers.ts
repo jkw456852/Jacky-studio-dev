@@ -85,6 +85,28 @@ export type AgentMessageResearchView = {
   suggestedQueries: string[];
 };
 
+export type AgentMessagePresentationView = {
+  kind: "default" | "execution_plan" | "execution_record" | "research";
+  statusLabel?: string;
+  modeLabel?: string;
+  detailTitle?: string;
+  detailNotice?: string;
+};
+
+const normalizePresentationKind = (
+  value: unknown,
+): AgentMessagePresentationView["kind"] => {
+  const normalized = String(value || "").trim();
+  if (
+    normalized === "execution_plan" ||
+    normalized === "execution_record" ||
+    normalized === "research"
+  ) {
+    return normalized;
+  }
+  return "default";
+};
+
 const normalizeEscapedNewlines = (value: string): string =>
   (value || "")
     .replace(/\r\n/g, "\n")
@@ -244,6 +266,32 @@ export const deriveAgentMessageImageCards = (
       title: matched?.description || matched?.title || `Image ${index + 1}`,
     };
   });
+};
+
+export const deriveAgentMessagePresentation = (
+  agentData: ChatMessage["agentData"],
+): AgentMessagePresentationView | null => {
+  const presentation = agentData?.presentation;
+  if (!presentation) return null;
+
+  const statusLabel = truncateText(presentation.statusLabel, 40) || undefined;
+  const modeLabel = truncateText(presentation.modeLabel, 40) || undefined;
+  const detailTitle = truncateText(presentation.detailTitle, 40) || undefined;
+  const detailNotice = truncateText(presentation.detailNotice, 220) || undefined;
+
+  if (!statusLabel && !modeLabel && !detailTitle && !detailNotice) {
+    return {
+      kind: normalizePresentationKind(presentation.kind),
+    };
+  }
+
+  return {
+    kind: normalizePresentationKind(presentation.kind),
+    statusLabel,
+    modeLabel,
+    detailTitle,
+    detailNotice,
+  };
 };
 
 export const deriveAgentMessageExecutionMode = (

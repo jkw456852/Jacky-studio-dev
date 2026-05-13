@@ -1,5 +1,5 @@
 import React from 'react';
-import { CirclePlus, Maximize2, Minimize2, PanelRightClose, Share2 } from 'lucide-react';
+import { CirclePlus, Maximize2, Minimize2, PanelRightClose } from 'lucide-react';
 import type { ChatMessage, ConversationSession } from '../../../types';
 import { AssistantSidebarFilesPopover } from './AssistantSidebarFilesPopover';
 import { AssistantSidebarHistoryPopover } from './AssistantSidebarHistoryPopover';
@@ -48,7 +48,7 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
       <div className="min-w-0 pr-3">
         <div className="truncate text-sm font-semibold text-gray-900">{title}</div>
         {isFullscreen ? (
-          <div className="mt-0.5 text-[11px] text-gray-500">沉浸式聊天工作区</div>
+          <div className="mt-0.5 text-[11px] text-gray-500">当前对话</div>
         ) : null}
       </div>
 
@@ -76,13 +76,6 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
             />
           </>
         ) : null}
-
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
-          title="Share"
-        >
-          <Share2 size={15} strokeWidth={1.5} />
-        </button>
 
         <AssistantSidebarFilesPopover
           open={filesOpen}
@@ -112,7 +105,8 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
         <button
           onClick={onClose}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
-          title="Collapse"
+          title="收起侧栏"
+          aria-label="收起侧栏"
         >
           <PanelRightClose size={15} strokeWidth={1.5} />
         </button>

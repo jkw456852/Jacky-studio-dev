@@ -1,7 +1,7 @@
 # Workflow Recipe Phase 3 UI Skeleton IA / UI Spec
 
 日期：2026-05-11
-阶段：Phase 3（导入 / 测试区 / 发布区骨架）
+阶段：Phase 3（导入 / 测试区 / 发布区骨架，已完成）
 关联文档：
 - `docs/product/WORKFLOW_RECIPE_NODE_PLATFORM_MASTER_PLAN_20260511.md`
 - `services/workflow-recipes/importer.ts`

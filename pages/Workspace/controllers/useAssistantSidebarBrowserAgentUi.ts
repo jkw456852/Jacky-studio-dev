@@ -17,6 +17,9 @@ import { compressImage, createImagePreviewDataUrl } from "../workspaceShared";
 import type { ChatMessage, WorkspaceInputFile } from "../../../types";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 import { useAgentStore } from "../../../stores/agent.store";
+import { useProjectStore } from "../../../stores/project.store";
+import { buildTopicPinnedContext } from "../../../services/topic-memory";
+import { getMemoryKey } from "../../../services/topicMemory/key";
 import {
   buildSidebarBrowserAgentTaskMetadata,
   getPreparedPlanContinuationStatus,
@@ -24,6 +27,8 @@ import {
 } from "./assistantSidebarBrowserAgentMetadata.ts";
 
 type UseAssistantSidebarBrowserAgentUiArgs = {
+  workspaceId: string;
+  activeConversationId: string;
   selectedElementId: string | null;
   selectedElementLabel: string | null;
   selectedElementType?: string | null;
@@ -83,6 +88,20 @@ const RUNNING_SESSION_STATUSES = new Set<BrowserAgentSessionStatus>([
 
 const DEFAULT_GOAL_TEMPLATE =
   "先查看当前节点的上下文、可用工具和最近执行痕迹，再直接执行最合适的下一步，并把关键信息回写到对话里。";
+
+const clipContextText = (value: string | null | undefined, max = 480) => {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > max ? `${normalized.slice(0, max).trim()}...` : normalized;
+};
+
+const toConversationMemoryKey = (workspaceId: string, conversationId: string) => {
+  const ws = String(workspaceId || "").trim();
+  const conv = String(conversationId || "").trim();
+  if (!ws || !conv) return "";
+  if (conv.includes(":")) return conv;
+  return getMemoryKey(ws, conv);
+};
 
 const readInitialBrowserAgentChatEnabled = () => {
   return getStudioUserAssetApi().getWorkspacePreferences().browserAgentChatEnabled;
@@ -339,6 +358,8 @@ const buildSuggestedGoal = (args: {
 };
 
 export const useAssistantSidebarBrowserAgentUi = ({
+  workspaceId,
+  activeConversationId,
   selectedElementId,
   selectedElementLabel,
   selectedElementType,
@@ -380,6 +401,8 @@ export const useAssistantSidebarBrowserAgentUi = ({
   const allowMainBrainRolePromotion = useAgentStore(
     (state) => state.allowMainBrainRolePromotion,
   );
+  const brandInfo = useProjectStore((state) => state.brandInfo);
+  const designSession = useProjectStore((state) => state.designSession);
 
   const chatEnabled = chatEnabledState;
   const setChatEnabled = React.useCallback((value: boolean) => {
@@ -472,6 +495,94 @@ export const useAssistantSidebarBrowserAgentUi = ({
       selectedElementLabel,
       selectedElementType,
       selectedTreeNodeKind,
+    ],
+  );
+
+  const buildExecutionContextMetadata = React.useCallback(
+    async (goal: string, referenceImageCount: number) => {
+      const memoryKey = toConversationMemoryKey(workspaceId, activeConversationId);
+      let topicPinnedContext = "";
+      try {
+        if (memoryKey) {
+          const pinned = await buildTopicPinnedContext(memoryKey);
+          topicPinnedContext = clipContextText(pinned.text, 1200);
+        }
+      } catch (error) {
+        console.warn("[browser-agent] failed to load topic pinned context", error);
+      }
+
+      const brandParts = [
+        brandInfo.name ? `品牌：${brandInfo.name}` : "",
+        brandInfo.style ? `风格：${brandInfo.style}` : "",
+        Array.isArray(brandInfo.colors) && brandInfo.colors.length > 0
+          ? `品牌色：${brandInfo.colors.slice(0, 4).join("、")}`
+          : "",
+        Array.isArray(brandInfo.fonts) && brandInfo.fonts.length > 0
+          ? `字体：${brandInfo.fonts.slice(0, 3).join("、")}`
+          : "",
+      ].filter(Boolean);
+
+      const constraintParts = [
+        ...(designSession.constraints || []).slice(0, 4).map((item) => `约束：${item}`),
+        ...(designSession.forbiddenChanges || [])
+          .slice(0, 4)
+          .map((item) => `禁止：${item}`),
+        ...(designSession.styleHints || []).slice(0, 4).map((item) => `风格提示：${item}`),
+      ];
+
+      const recentUserNotes = useAgentStore
+        .getState()
+        .messages.filter((message) => message.role === "user")
+        .slice(-4)
+        .map((message) => clipContextText(message.text, 120))
+        .filter(Boolean);
+
+      const brandContextSummary = clipContextText(brandParts.join("；"), 480);
+      const conversationConstraintSummary = clipContextText(
+        constraintParts.join("；"),
+        720,
+      );
+      const referenceIntentSummary = clipContextText(
+        [
+          designSession.referenceSummary ? `参考摘要：${designSession.referenceSummary}` : "",
+          referenceImageCount > 0 ? `本轮新增 ${referenceImageCount} 张参考图。` : "",
+          selectedElementLabel ? `当前围绕节点“${selectedElementLabel}”执行。` : "",
+          goal ? `当前目标：${goal}` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        720,
+      );
+      const memoryCaptureSummary = clipContextText(recentUserNotes.join("；"), 480);
+      const knowledgeCaptureItems = [
+        ...brandParts,
+        ...constraintParts,
+        ...(topicPinnedContext ? [clipContextText(topicPinnedContext, 180)] : []),
+      ]
+        .filter(Boolean)
+        .slice(0, 10);
+
+      return {
+        brandContextSummary: brandContextSummary || undefined,
+        topicPinnedContext: topicPinnedContext || undefined,
+        conversationConstraintSummary: conversationConstraintSummary || undefined,
+        referenceIntentSummary: referenceIntentSummary || undefined,
+        memoryCaptureSummary: memoryCaptureSummary || undefined,
+        knowledgeCaptureItems: knowledgeCaptureItems.length > 0 ? knowledgeCaptureItems : undefined,
+      };
+    },
+    [
+      activeConversationId,
+      brandInfo.colors,
+      brandInfo.fonts,
+      brandInfo.name,
+      brandInfo.style,
+      designSession.constraints,
+      designSession.forbiddenChanges,
+      designSession.referenceSummary,
+      designSession.styleHints,
+      selectedElementLabel,
+      workspaceId,
     ],
   );
 
@@ -934,6 +1045,10 @@ export const useAssistantSidebarBrowserAgentUi = ({
               report?: WorkspaceElementControlsReport | null;
             })
           : null;
+        const executionContextMetadata = await buildExecutionContextMetadata(
+          normalizedGoal,
+          referenceImages.length,
+        );
         const browserAgentTaskMetadata = buildSidebarBrowserAgentTaskMetadata({
           skillData,
           agentSelectionMode,
@@ -944,6 +1059,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
           roleGovernanceMode,
           allowMainBrainRoleMutation,
           allowMainBrainRolePromotion,
+          ...executionContextMetadata,
         });
         const result = (await invokeBrowserAgentTool("browser.plan_goal_session", {
           goal: normalizedGoal,
@@ -1013,6 +1129,7 @@ export const useAssistantSidebarBrowserAgentUi = ({
       allowMainBrainRoleMutation,
       allowMainBrainRolePromotion,
       baseAgentId,
+      buildExecutionContextMetadata,
       buildReferenceImagesFromAttachments,
       currentSession,
       pinnedAgentId,

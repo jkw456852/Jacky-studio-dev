@@ -44,7 +44,7 @@ export const AssistantSidebarFilesPopover: React.FC<AssistantSidebarFilesPopover
     onToggle,
 }) => {
     const files = getGeneratedFiles(messages);
-    const imageCount = messages.flatMap(message => message.agentData?.imageUrls || []).length;
+    const fileCount = files.length;
 
     return (
         <div className="relative">
@@ -54,7 +54,8 @@ export const AssistantSidebarFilesPopover: React.FC<AssistantSidebarFilesPopover
                     onToggle();
                 }}
                 className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${open ? 'text-gray-700 bg-gray-100' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
-                title="Files"
+                title="查看产出"
+                aria-label="查看产出"
             >
                 <FileIcon size={15} strokeWidth={1.5} />
             </button>
@@ -64,13 +65,13 @@ export const AssistantSidebarFilesPopover: React.FC<AssistantSidebarFilesPopover
                     onClick={(event) => event.stopPropagation()}
                 >
                     <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 bg-gray-50/50">
-                        <h3 className="font-bold text-gray-900 text-sm">已生成文件列表</h3>
-                        <span className="text-[10px] text-gray-400">{imageCount} 个文件</span>
+                        <h3 className="text-sm font-semibold text-gray-900">本次产出</h3>
+                        <span className="text-[10px] text-gray-400">{fileCount} 个文件</span>
                     </div>
                     {files.length === 0 ? (
-                        <div className="h-[250px] flex flex-col items-center justify-center text-gray-400 gap-2">
+                        <div className="h-[250px] flex flex-col items-center justify-center gap-2 text-gray-400">
                             <ImageIcon size={28} className="opacity-20" />
-                            <span className="text-xs text-gray-400">暂无生成文件</span>
+                            <span className="text-xs text-gray-500">当前对话还没有产出文件</span>
                         </div>
                     ) : (
                         <div className="max-h-[350px] overflow-y-auto no-scrollbar p-2 space-y-1">

@@ -15,6 +15,12 @@ export type SidebarBrowserAgentTaskMetadata = Pick<
   | "allowMainBrainRolePromotion"
   | "creationMode"
   | "skillData"
+  | "brandContextSummary"
+  | "topicPinnedContext"
+  | "conversationConstraintSummary"
+  | "referenceIntentSummary"
+  | "memoryCaptureSummary"
+  | "knowledgeCaptureItems"
 >;
 
 export const buildSidebarBrowserAgentTaskMetadata = (args: {
@@ -27,6 +33,12 @@ export const buildSidebarBrowserAgentTaskMetadata = (args: {
   roleGovernanceMode?: AgentTaskMetadata["roleGovernanceMode"];
   allowMainBrainRoleMutation?: AgentTaskMetadata["allowMainBrainRoleMutation"];
   allowMainBrainRolePromotion?: AgentTaskMetadata["allowMainBrainRolePromotion"];
+  brandContextSummary?: AgentTaskMetadata["brandContextSummary"];
+  topicPinnedContext?: AgentTaskMetadata["topicPinnedContext"];
+  conversationConstraintSummary?: AgentTaskMetadata["conversationConstraintSummary"];
+  referenceIntentSummary?: AgentTaskMetadata["referenceIntentSummary"];
+  memoryCaptureSummary?: AgentTaskMetadata["memoryCaptureSummary"];
+  knowledgeCaptureItems?: AgentTaskMetadata["knowledgeCaptureItems"];
 }): SidebarBrowserAgentTaskMetadata => {
   const allowAutonomousRouting = Boolean(
     args.skillData && (args.skillData as any).config?.allowAutonomousRouting,
@@ -44,6 +56,13 @@ export const buildSidebarBrowserAgentTaskMetadata = (args: {
     roleGovernanceMode: args.roleGovernanceMode,
     allowMainBrainRoleMutation: args.allowMainBrainRoleMutation,
     allowMainBrainRolePromotion: args.allowMainBrainRolePromotion,
+    brandContextSummary: args.brandContextSummary || undefined,
+    topicPinnedContext: args.topicPinnedContext || undefined,
+    conversationConstraintSummary:
+      args.conversationConstraintSummary || undefined,
+    referenceIntentSummary: args.referenceIntentSummary || undefined,
+    memoryCaptureSummary: args.memoryCaptureSummary || undefined,
+    knowledgeCaptureItems: args.knowledgeCaptureItems?.filter(Boolean) || undefined,
     creationMode: allowAutonomousRouting ? "agent" : undefined,
   };
 };

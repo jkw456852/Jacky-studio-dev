@@ -525,10 +525,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   }, [currentAutoRoleMeta, latestAutoRoleDraftMeta]);
   const assistantModeLabel =
     creationMode === 'agent'
-      ? '主脑'
+      ? '主脑对话'
       : creationMode === 'image'
-        ? '图片'
-        : '视频';
+        ? '图片任务'
+        : '视频任务';
   const inspectedBuiltInPrompt = roleInspectorAgentId
     ? getAgentPromptLayers(roleInspectorAgentId).systemBaselinePrompt
     : '';
@@ -857,11 +857,11 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           setShowModeSelector(!showModeSelector);
           setShowAgentRolePicker(false);
         }}
-        title={creationMode === 'agent' ? '统一主脑入口' : '切换到主脑、图片或视频工作流'}
+        title="切换当前工作方式"
         className={`flex h-9 items-center justify-center gap-1.5 rounded-full border px-3.5 text-[13px] font-semibold transition-all ${
           creationMode === 'agent'
-            ? 'border-blue-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(236,254,255,0.88))] text-slate-800 shadow-sm'
-            : 'border-blue-200 bg-white text-blue-500 shadow-sm hover:bg-blue-50/50 hover:border-blue-300'
+            ? 'border-slate-200 bg-white text-slate-800 shadow-sm hover:border-slate-300 hover:bg-slate-50'
+            : 'border-blue-200 bg-blue-50/70 text-slate-800 shadow-sm hover:border-blue-300 hover:bg-blue-50'
         }`}
       >
         {creationMode === 'agent' && (
@@ -871,17 +871,17 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         )}
         {creationMode === 'image' && (
           <>
-            <ImageIcon size={15} /> 图像
+            <ImageIcon size={15} /> {assistantModeLabel}
           </>
         )}
         {creationMode === 'video' && (
           <>
-            <Video size={15} /> 视频
+            <Video size={15} /> {assistantModeLabel}
           </>
         )}
       </button>
       {showModeSelector && (
-        <div className="absolute bottom-full left-0 z-[70] mb-3 w-[180px] overflow-hidden rounded-2xl border border-gray-100 bg-white py-2 shadow-xl">
+        <div className="absolute bottom-full left-0 z-[70] mb-3 w-[220px] overflow-hidden rounded-2xl border border-gray-100 bg-white py-2 shadow-xl">
           <button
             onClick={() => {
               setCreationMode('agent');
@@ -889,16 +889,21 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               setShowAgentRolePicker(false);
               setIsAgentMode(true);
             }}
-            className={`flex w-full items-center justify-between px-4 py-2.5 text-sm font-medium transition hover:bg-gray-50 ${
-              creationMode === 'agent' ? 'text-blue-500' : 'text-gray-600'
+            className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition hover:bg-gray-50 ${
+              creationMode === 'agent' ? 'text-blue-600' : 'text-gray-700'
             }`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-start gap-2.5">
               <Sparkles
                 size={14}
-                className={creationMode === 'agent' ? 'text-blue-500' : 'text-gray-400'}
+                className={creationMode === 'agent' ? 'mt-0.5 text-blue-500' : 'mt-0.5 text-gray-400'}
               />
-              主脑
+              <div>
+                <div>主脑对话</div>
+                <div className="mt-0.5 text-[11px] font-normal text-gray-400">
+                  先理解需求，再决定是否调用执行能力
+                </div>
+              </div>
             </div>
             {creationMode === 'agent' && <Check size={14} strokeWidth={2.5} />}
           </button>
@@ -909,16 +914,21 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               setShowAgentRolePicker(false);
               setIsAgentMode(false);
             }}
-            className={`flex w-full items-center justify-between px-4 py-2.5 text-sm font-medium transition hover:bg-gray-50 ${
-              creationMode === 'image' ? 'text-blue-500' : 'text-gray-600'
+            className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition hover:bg-gray-50 ${
+              creationMode === 'image' ? 'text-blue-600' : 'text-gray-700'
             }`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-start gap-2.5">
               <ImageIcon
                 size={14}
-                className={creationMode === 'image' ? 'text-blue-500' : 'text-gray-400'}
+                className={creationMode === 'image' ? 'mt-0.5 text-blue-500' : 'mt-0.5 text-gray-400'}
               />
-              图像生成器
+              <div>
+                <div>图片任务</div>
+                <div className="mt-0.5 text-[11px] font-normal text-gray-400">
+                  进入图片生成、比例、模型与质量设置
+                </div>
+              </div>
             </div>
             {creationMode === 'image' && <Check size={14} strokeWidth={2.5} />}
           </button>
@@ -929,16 +939,21 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               setShowAgentRolePicker(false);
               setIsAgentMode(false);
             }}
-            className={`flex w-full items-center justify-between px-4 py-2.5 text-sm font-medium transition hover:bg-gray-50 ${
-              creationMode === 'video' ? 'text-blue-500' : 'text-gray-600'
+            className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left text-sm font-medium transition hover:bg-gray-50 ${
+              creationMode === 'video' ? 'text-blue-600' : 'text-gray-700'
             }`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-start gap-2.5">
               <Video
                 size={14}
-                className={creationMode === 'video' ? 'text-blue-500' : 'text-gray-400'}
+                className={creationMode === 'video' ? 'mt-0.5 text-blue-500' : 'mt-0.5 text-gray-400'}
               />
-              视频生成器
+              <div>
+                <div>视频任务</div>
+                <div className="mt-0.5 text-[11px] font-normal text-gray-400">
+                  进入视频生成与时长等相关设置
+                </div>
+              </div>
             </div>
             {creationMode === 'video' && <Check size={14} strokeWidth={2.5} />}
           </button>
@@ -1425,6 +1440,8 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                     inputBlocks.every((block) => block.type === 'text' && !block.text)
                   }
                   className="h-9 pl-3 pr-4 rounded-full flex items-center gap-2 text-[13px] font-bold transition bg-[#f3f4f6] text-[#6b7280] hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50"
+                  title={creationMode === 'image' ? '开始图片任务' : '开始视频任务'}
+                  aria-label={creationMode === 'image' ? '开始图片任务' : '开始视频任务'}
                 >
                   <Zap
                     size={14}
@@ -1432,7 +1449,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                     strokeWidth={0}
                     className="text-blue-400"
                   />
-                  <span>生成</span>
+                  <span>{creationMode === 'image' ? '开始图片任务' : '开始视频任务'}</span>
                 </button>
               </div>
             </>

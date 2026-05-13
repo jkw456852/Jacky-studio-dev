@@ -38,6 +38,7 @@ import {
   deriveAgentMessageImageCards,
   deriveAgentMessageOneClickView,
   deriveAgentMessagePlanningBlock,
+  deriveAgentMessagePresentation,
   deriveAgentMessageResearchView,
 } from './AgentMessage.helpers';
 
@@ -217,30 +218,36 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
     () => deriveAgentMessageResearchView(message),
     [message],
   );
+  const presentationView = useMemo(
+    () => deriveAgentMessagePresentation(agentData),
+    [agentData],
+  );
 
   const visibleText = planningBlock?.visibleText || cleanText;
   const isWorkflowUi = message.kind === 'workflow_ui' && !!message.workflowUi;
   const workflowType = message.workflowUi?.type || '';
   const isClothingWorkflowUi = workflowType.startsWith('clothingStudio.');
   const isEcommerceWorkflowUi = workflowType.startsWith('ecomOneClick.');
-  const analysisPanelTitle =
-    executionMode === 'true_edit' ? '编辑分析' : '任务分析';
+  const analysisPanelTitle = presentationView?.detailTitle || '查看本轮判断';
+  const presentationStatusLabel = presentationView?.statusLabel || null;
   const executionModeBadgeLabel =
-    executionMode === 'true_edit'
-      ? 'True Edit'
+    presentationView?.modeLabel ||
+    (executionMode === 'true_edit'
+      ? '定向编辑'
       : executionMode === 'reference_guided_generate'
-        ? 'Ref-guided Generate'
+        ? '参考出图'
         : executionMode === 'generate'
-          ? 'Generate'
-          : null;
+          ? '生成'
+          : null);
   const executionModeNotice =
-    executionMode === 'reference_guided_generate'
-      ? '本次展示的是任务分析，不是完整思考过程。本次走的是参考图引导生成，不是严格的局部定点编辑；系统会尽量保持主体和整体结构一致。'
+    presentationView?.detailNotice ||
+    (executionMode === 'reference_guided_generate'
+      ? '这部分展示的是本轮判断依据。当前更接近参考图驱动出图，系统会优先参考你提供的画面线索，而不是只做局部定点修改。'
       : executionMode === 'true_edit'
-        ? '本次展示的是任务分析，不是完整思考过程。本次走的是编辑路径，系统会优先围绕原图结构做定向修改，而不是整张重生成。'
+        ? '这部分展示的是本轮判断依据。当前会尽量围绕原图结构做定向修改，避免直接整张重生成。'
         : executionMode === 'generate'
-          ? '本次展示的是任务分析，不是完整思考过程。当前结果走的是生成路径。'
-          : '本次展示的是任务分析，不是完整思考过程。';
+          ? '这部分展示的是本轮判断依据。当前会按生成路径组织这轮执行。'
+          : '这部分展示的是本轮判断依据。');
 
   return (
     <div className="w-full group">
@@ -708,7 +715,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           <div className="px-1">
             <button
               onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
-              className="group/btn flex items-center gap-1.5 rounded-lg border border-gray-100/50 bg-gray-100/60 px-2.5 py-1.5 transition-all hover:bg-gray-100"
+              className="group/btn flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 transition-all hover:bg-gray-50"
             >
               <Search
                 size={12}
@@ -732,7 +739,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-[12px] leading-relaxed text-gray-600 whitespace-pre-wrap">
+                  <div className="mt-1.5 rounded-lg border border-gray-200 bg-white p-2.5 text-[12px] leading-relaxed text-gray-600 whitespace-pre-wrap">
                     <div
                       className={`mb-2 rounded-md px-2 py-1.5 text-[11px] leading-5 whitespace-normal ${
                         executionMode === 'true_edit'
@@ -821,16 +828,23 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {(agentData?.model || proposals.length > 0) && (
+        {(agentData?.model || proposals.length > 0 || presentationStatusLabel) && (
           <div className="flex items-center justify-start gap-1 px-1">
-            <div className="flex items-center gap-1 text-gray-400">
-              <Eye size={12} strokeWidth={2.5} />
-              <span className="text-[10px] font-bold tracking-tight text-gray-400 uppercase opacity-50">
-                {agentData?.model || 'Nano Banana Pro'}
+            {presentationStatusLabel ? (
+              <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                {presentationStatusLabel}
               </span>
-            </div>
+            ) : null}
+            {(agentData?.model || proposals.length > 0) && (
+              <div className="flex items-center gap-1 text-gray-400">
+                <Eye size={12} strokeWidth={2.5} />
+                <span className="text-[10px] font-bold tracking-tight text-gray-400 uppercase opacity-50">
+                  {agentData?.model || 'Nano Banana Pro'}
+                </span>
+              </div>
+            )}
             {executionModeBadgeLabel && (
-              <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-500">
+              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500">
                 {executionModeBadgeLabel}
               </span>
             )}

@@ -83,20 +83,15 @@ const shouldRouteSidebarMessageToBrowserAgent = ({
   chatEnabled: boolean;
 }) => {
   const normalized = String(text || "").trim();
+  void hasSelectedElement;
+  void chatEnabled;
+
   if (!normalized) return false;
-  if (CHAT_QUERY_PATTERN.test(normalized) && !EXECUTION_INTENT_PATTERN.test(normalized)) {
-    return false;
-  }
-  if (GENERAL_WORK_PATTERN.test(normalized) && !BROWSER_SURFACE_PATTERN.test(normalized)) {
-    return false;
-  }
-  if (BROWSER_SURFACE_PATTERN.test(normalized) && EXECUTION_INTENT_PATTERN.test(normalized)) {
-    return true;
-  }
-  if (hasSelectedElement && EXECUTION_INTENT_PATTERN.test(normalized)) {
-    return true;
-  }
-  return chatEnabled && EXECUTION_INTENT_PATTERN.test(normalized);
+
+  // 侧边栏当前先恢复为 chat-first：
+  // 所有自然语言输入先交给主脑理解、吸收上下文、决定是否执行。
+  // 执行代理只保留给后续显式触发入口，不再由这里的前置规则自动接管。
+  return false;
 };
 
 const getBrowserSessionStatusLabel = (status: string | null | undefined) => {
@@ -360,6 +355,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     handleCancelSession,
     handleRefreshSession,
   } = useAssistantSidebarBrowserAgentUi({
+    workspaceId,
+    activeConversationId,
     selectedElementId: browserAgent.selectedElementId,
     selectedElementLabel: browserAgent.selectedElementLabel,
     selectedElementType: browserAgent.selectedElementType,
@@ -989,10 +986,15 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         text,
         agentData: {
           model: browserAgentModelLabel,
-          title: "\u6267\u884c\u4ee3\u7406",
+          title: "\u5904\u7406\u8bb0\u5f55",
           description: descriptionLines.join("\n") || undefined,
           imageUrls: targetPreviewUrl ? [targetPreviewUrl] : undefined,
           isGenerating: status === "pending" || status === "running",
+          presentation: {
+            kind: "execution_record" as const,
+            statusLabel: getBrowserSessionStatusLabel(status),
+            detailTitle: "查看执行记录",
+          },
           browserSession: buildBrowserAgentSessionView(session || null),
         },
         error: status === "failed",
@@ -1115,13 +1117,26 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           role: "model",
           text:
             plan.done || plan.steps.length === 0
-              ? "我先整理好了计划。当前判断这轮暂时不需要继续执行。"
-              : "我先整理好了执行计划。你确认后我再开始真正执行。",
+              ? "我先整理了这轮判断。按现在的信息，暂时不需要继续执行。"
+              : "我已经把这轮怎么做整理好了。你确认后，我再开始。",
           agentData: {
             model: browserAgentModelLabel,
-            title: "待确认计划",
-            description: plan.rationaleSummary || plan.description,
+            title: "我准备这样做",
+            description:
+              plan.rationaleSummary ||
+              plan.description ||
+              "开始前我先和你确认一下执行方式，避免这轮直接跑偏。",
             isGenerating: false,
+            presentation: {
+              kind: "execution_plan" as const,
+              statusLabel:
+                plan.done || plan.steps.length === 0 ? "无需执行" : "待你确认",
+              detailTitle: "查看本轮判断",
+              detailNotice:
+                plan.done || plan.steps.length === 0
+                  ? "按现在的信息，这轮暂时不需要继续执行。"
+                  : "我先把判断依据和执行方式整理出来，等你确认后再继续。",
+            },
           },
           timestamp: Date.now(),
         });
@@ -1131,8 +1146,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           role: "model",
           text:
             error instanceof Error
-              ? `执行代理启动失败：${error.message}`
-              : `执行代理启动失败：${String(error || "未知错误")}`,
+              ? `这一步没能开始：${error.message}`
+              : `这一步没能开始：${String(error || "未知错误")}`,
           timestamp: Date.now(),
           error: true,
         });
