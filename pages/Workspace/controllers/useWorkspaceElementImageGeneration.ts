@@ -16,7 +16,6 @@ import {
   type VisualPlanningBrief,
   type VisualRoleOverlay,
 } from "../../../services/vision-orchestrator";
-import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 import {
   announceWorkspaceGenerationRequest,
   appendWorkspaceGenerationTraceDiagnostics,
@@ -27,6 +26,7 @@ import {
 } from "../browserAgentGenerationTrace";
 import { resolveWorkspaceTreeNodeKind } from "../workspaceTreeNode";
 import { normalizeReferenceToDataUrl } from "../../../services/image-reference-resolver";
+import { getEffectiveStyleLibrary } from "../../../services/vision-orchestrator/style-library";
 import {
   executeWorkspaceResearchContext,
   type WorkspaceSendReferenceWebPage,
@@ -86,6 +86,158 @@ type RuntimeRepairNote = Omit<
 
 const dedupeStringList = (values: string[]) =>
   Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
+
+const buildDirectStyleLibraryPrompt = (args: {
+  userPrompt: string;
+  styleLibrary?: CanvasElement["genStyleLibrary"];
+}) => {
+  const normalizedLibrary = getEffectiveStyleLibrary({
+    mode: args.styleLibrary ? "custom" : "none",
+    customLibrary: args.styleLibrary || null,
+  });
+  const basePrompt = String(args.userPrompt || "").trim();
+  if (!normalizedLibrary) {
+    return basePrompt;
+  }
+
+  const styleLines = [
+    normalizedLibrary.title ? `- 当前风格库：${normalizedLibrary.title}` : "",
+    normalizedLibrary.summary ? `- 风格摘要：${normalizedLibrary.summary}` : "",
+    normalizedLibrary.referenceInterpretation
+      ? `- 参考图解释方式：${normalizedLibrary.referenceInterpretation}`
+      : "",
+    ...(normalizedLibrary.planningDirectives || []).map(
+      (item) => `- 风格规划约束：${item}`,
+    ),
+    ...((normalizedLibrary.promptBackbone || []) as string[]).map(
+      (item) => `- 提示词骨架：${item}`,
+    ),
+    ...(normalizedLibrary.promptDirectives || []).map(
+      (item) => `- 提示词约束：${item}`,
+    ),
+  ].filter(Boolean);
+
+  if (styleLines.length === 0) {
+    return basePrompt;
+  }
+
+  return [
+    "[Active Style Library]",
+    ...styleLines,
+    "",
+    "[User Request]",
+    basePrompt,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+};
+
+const cloneStyleLibraryRuntimeOverlay = (
+  overlay?: CanvasElement["genStyleLibraryRuntimeOverlay"] | null,
+): CanvasElement["genStyleLibraryRuntimeOverlay"] | undefined => {
+  if (!overlay) return undefined;
+
+  const summary = String(overlay.summary || "").trim();
+  const referenceInterpretation = String(
+    overlay.referenceInterpretation || "",
+  ).trim();
+  const planningDirectives = dedupeStringList(overlay.planningDirectives || []).slice(
+    0,
+    8,
+  );
+  const promptDirectives = dedupeStringList(overlay.promptDirectives || []).slice(
+    0,
+    8,
+  );
+  const promptBackbone = dedupeStringList(overlay.promptBackbone || []).slice(0, 8);
+  const createdBy = String(overlay.createdBy || "").trim();
+  const updatedAt = Number(overlay.updatedAt);
+
+  if (
+    !summary &&
+    !referenceInterpretation &&
+    planningDirectives.length === 0 &&
+    promptDirectives.length === 0 &&
+    promptBackbone.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    summary: summary || undefined,
+    referenceInterpretation: referenceInterpretation || undefined,
+    planningDirectives:
+      planningDirectives.length > 0 ? planningDirectives : undefined,
+    promptDirectives: promptDirectives.length > 0 ? promptDirectives : undefined,
+    promptBackbone: promptBackbone.length > 0 ? promptBackbone : undefined,
+    createdBy:
+      createdBy === "system" || createdBy === "main-brain" || createdBy === "user"
+        ? createdBy
+        : undefined,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
+  };
+};
+
+const buildEffectiveStyleLibrary = (args: {
+  baseLibrary?: CanvasElement["genStyleLibrary"];
+  runtimeOverlay?: CanvasElement["genStyleLibraryRuntimeOverlay"] | null;
+}) => {
+  const base = args.baseLibrary;
+  if (!base) {
+    return undefined;
+  }
+
+  const runtimeOverlay = cloneStyleLibraryRuntimeOverlay(args.runtimeOverlay);
+  if (!runtimeOverlay) {
+    return base;
+  }
+
+  return {
+    ...base,
+    summary: runtimeOverlay.summary || base.summary,
+    referenceInterpretation:
+      runtimeOverlay.referenceInterpretation || base.referenceInterpretation,
+    planningDirectives: dedupeStringList([
+      ...(base.planningDirectives || []),
+      ...(runtimeOverlay.planningDirectives || []),
+    ]).slice(0, 8),
+    promptDirectives: dedupeStringList([
+      ...(base.promptDirectives || []),
+      ...(runtimeOverlay.promptDirectives || []),
+    ]).slice(0, 8),
+    promptBackbone: dedupeStringList([
+      ...((base.promptBackbone as string[] | undefined) || []),
+      ...((runtimeOverlay.promptBackbone as string[] | undefined) || []),
+    ]).slice(0, 8),
+    createdBy: base.createdBy,
+    sourceMode: base.sourceMode,
+    updatedAt: runtimeOverlay.updatedAt || base.updatedAt,
+  } satisfies NonNullable<CanvasElement["genStyleLibrary"]>;
+};
+
+const buildStyleLibraryRuntimeOverlay = (
+  plannerLibrary?: CanvasElement["genStyleLibrary"],
+): CanvasElement["genStyleLibraryRuntimeOverlay"] | undefined => {
+  if (!plannerLibrary) {
+    return undefined;
+  }
+
+  return cloneStyleLibraryRuntimeOverlay({
+    summary: plannerLibrary.summary,
+    referenceInterpretation: plannerLibrary.referenceInterpretation,
+    planningDirectives: plannerLibrary.planningDirectives,
+    promptDirectives: plannerLibrary.promptDirectives,
+    promptBackbone: plannerLibrary.promptBackbone,
+    createdBy:
+      plannerLibrary.createdBy === "user" ||
+      plannerLibrary.createdBy === "system" ||
+      plannerLibrary.createdBy === "main-brain"
+        ? plannerLibrary.createdBy
+        : "main-brain",
+    updatedAt: Date.now(),
+  });
+};
 
 const toTraceDiagnostics = (
   requestId: string,
@@ -830,6 +982,7 @@ type VisualPlanningCachePayload = {
   consistencyContext?: Record<string, unknown>;
   referenceRoleMode: NonNullable<CanvasElement["genReferenceRoleMode"]>;
   styleLibrary?: CanvasElement["genStyleLibrary"];
+  styleLibraryRuntimeOverlay?: CanvasElement["genStyleLibraryRuntimeOverlay"];
   pageGenerationPlans?: PlannedImageGeneration[];
 };
 
@@ -1176,10 +1329,20 @@ export function useWorkspaceElementImageGeneration(
         let currentReferenceRoleMode: NonNullable<
           CanvasElement["genReferenceRoleMode"]
         > = sourceElement.genReferenceRoleMode || "default";
-        let currentStyleLibrary =
-          currentReferenceRoleMode === "custom"
-            ? sourceElement.genStyleLibrary
-            : undefined;
+        let currentBaseStyleLibrary = getEffectiveStyleLibrary({
+          mode: currentReferenceRoleMode,
+          customLibrary: sourceElement.genStyleLibrary,
+        });
+        let currentStyleLibraryRuntimeOverlay = cloneStyleLibraryRuntimeOverlay(
+          sourceElement.genStyleLibraryRuntimeOverlay,
+        );
+        let currentStyleLibrary = buildEffectiveStyleLibrary({
+          baseLibrary: currentBaseStyleLibrary,
+          runtimeOverlay: currentStyleLibraryRuntimeOverlay,
+        });
+        const planningBypassReason = !preGenerationPlanningEnabled
+          ? "global-pre-generation-planning-disabled"
+          : null;
         const planningCacheKey = buildVisualPlanningCacheKey({
           prompt: sourceElement.genPrompt || "",
           manualReferenceImages,
@@ -1195,10 +1358,10 @@ export function useWorkspaceElementImageGeneration(
           enforceChineseTextInImage,
           requiredChineseCopy,
         });
-        let cachedPlanningPayload = preGenerationPlanningEnabled
+        let cachedPlanningPayload = !planningBypassReason
           ? readVisualPlanningCachePayload(sourceElement, planningCacheKey)
           : null;
-        const shouldBypassPlanning = !preGenerationPlanningEnabled;
+        const shouldBypassPlanning = Boolean(planningBypassReason);
         planningInflightKey = `${sourceElement.id}:${planningCacheKey}`;
 
         const waitForReusablePlanningPayload = async () => {
@@ -1248,43 +1411,21 @@ export function useWorkspaceElementImageGeneration(
           }
         };
 
-        const persistSourceStyleLibrary = (
-          styleLibrary: CanvasElement["genStyleLibrary"] | undefined,
+        const persistSourceStyleLibraryRuntimeOverlay = (
+          runtimeOverlay: CanvasElement["genStyleLibraryRuntimeOverlay"] | undefined,
         ) => {
           const liveSourceElement =
             elementsRef.current.find((item) => item.id === sourceElement.id) || null;
-          const sameCustomLibrary =
-            Boolean(styleLibrary) &&
-            liveSourceElement?.genReferenceRoleMode === "custom" &&
-            JSON.stringify(liveSourceElement.genStyleLibrary || null) ===
-              JSON.stringify(styleLibrary);
-          if (sameCustomLibrary) {
+          const normalizedRuntimeOverlay = cloneStyleLibraryRuntimeOverlay(runtimeOverlay);
+          const sameRuntimeOverlay =
+            JSON.stringify(liveSourceElement?.genStyleLibraryRuntimeOverlay || null) ===
+            JSON.stringify(normalizedRuntimeOverlay || null);
+          if (sameRuntimeOverlay) {
             return;
           }
-          const nextPatch: Partial<CanvasElement> = {
-            genReferenceRoleMode: styleLibrary ? "custom" : currentReferenceRoleMode,
-          };
-          if (styleLibrary) {
-            const runtimeStyleLibrary: typeof styleLibrary = {
-              ...styleLibrary,
-              createdBy:
-                styleLibrary.createdBy === "user" || styleLibrary.createdBy === "system"
-                  ? styleLibrary.createdBy
-                  : "main-brain",
-            };
-            const persistedLibrary =
-              getStudioUserAssetApi().saveStyleLibrary(runtimeStyleLibrary, {
-                preferredId: runtimeStyleLibrary.id,
-                sourceMode:
-                  currentReferenceRoleMode === "poster-product"
-                    ? "poster-product"
-                    : currentReferenceRoleMode === "custom"
-                      ? "custom"
-                      : "default",
-              }) || runtimeStyleLibrary;
-            nextPatch.genStyleLibrary = persistedLibrary;
-          }
-          updateElementById(sourceElement.id, nextPatch);
+          updateElementById(sourceElement.id, {
+            genStyleLibraryRuntimeOverlay: normalizedRuntimeOverlay,
+          });
         };
 
         const buildDirectTask = (): PlannedVisualTask => ({
@@ -1390,7 +1531,10 @@ export function useWorkspaceElementImageGeneration(
             },
             execution: {
               basePrompt: taskUnit.prompt || sourceElement.genPrompt || "",
-              composedPrompt: taskUnit.prompt || sourceElement.genPrompt || "",
+              composedPrompt: buildDirectStyleLibraryPrompt({
+                userPrompt: taskUnit.prompt || sourceElement.genPrompt || "",
+                styleLibrary: currentStyleLibrary,
+              }),
               referenceImages: currentReferenceImages,
               referencePriority:
                 currentReferenceImages.length > 1
@@ -1514,14 +1658,22 @@ export function useWorkspaceElementImageGeneration(
           planningLogStreamer.push({
             phase: "planning",
             title: "已跳过视觉编排",
-            lines: ["当前已关闭生图前视觉编排，将直接使用关键词与参考图生成。"],
+            lines: ["当前已关闭全局生图前编排，本次会直接按关键词和参考图生成。"],
           });
         } else if (cachedPlanningPayload) {
           currentReferenceImages = cachedPlanningPayload.referenceImages;
           currentConsistencyContext =
             cachedPlanningPayload.consistencyContext || currentConsistencyContext;
           currentReferenceRoleMode = cachedPlanningPayload.referenceRoleMode;
-          currentStyleLibrary = cachedPlanningPayload.styleLibrary;
+          currentBaseStyleLibrary =
+            cachedPlanningPayload.styleLibrary || currentBaseStyleLibrary;
+          currentStyleLibraryRuntimeOverlay = cloneStyleLibraryRuntimeOverlay(
+            cachedPlanningPayload.styleLibraryRuntimeOverlay,
+          );
+          currentStyleLibrary = buildEffectiveStyleLibrary({
+            baseLibrary: currentBaseStyleLibrary,
+            runtimeOverlay: currentStyleLibraryRuntimeOverlay,
+          });
           planningLogStreamer.push({
             phase: "planning",
             title: "沿用上次视觉编排",
@@ -1549,9 +1701,24 @@ export function useWorkspaceElementImageGeneration(
         });
         let taskUnits = repairedTaskUnits.taskUnits;
         if (taskPlan.styleLibrary) {
-          currentReferenceRoleMode = "custom";
-          currentStyleLibrary = taskPlan.styleLibrary;
-          persistSourceStyleLibrary(taskPlan.styleLibrary);
+          if (currentBaseStyleLibrary) {
+            currentStyleLibraryRuntimeOverlay = buildStyleLibraryRuntimeOverlay(
+              taskPlan.styleLibrary,
+            );
+            currentStyleLibrary = buildEffectiveStyleLibrary({
+              baseLibrary: currentBaseStyleLibrary,
+              runtimeOverlay: currentStyleLibraryRuntimeOverlay,
+            });
+            persistSourceStyleLibraryRuntimeOverlay(currentStyleLibraryRuntimeOverlay);
+          } else {
+            currentBaseStyleLibrary = taskPlan.styleLibrary;
+            currentStyleLibraryRuntimeOverlay = undefined;
+            currentStyleLibrary = taskPlan.styleLibrary;
+          }
+          taskPlan = {
+            ...taskPlan,
+            styleLibrary: currentStyleLibrary,
+          };
         }
 
         const researchDecision = taskPlan.planningBrief?.researchDecision;
@@ -1640,9 +1807,26 @@ export function useWorkspaceElementImageGeneration(
           await planningLogStreamer.flush();
           taskPlan = plannedTask.taskPlan;
           if (taskPlan.styleLibrary) {
-            currentReferenceRoleMode = "custom";
-            currentStyleLibrary = taskPlan.styleLibrary;
-            persistSourceStyleLibrary(taskPlan.styleLibrary);
+            if (currentBaseStyleLibrary) {
+              currentStyleLibraryRuntimeOverlay = buildStyleLibraryRuntimeOverlay(
+                taskPlan.styleLibrary,
+              );
+              currentStyleLibrary = buildEffectiveStyleLibrary({
+                baseLibrary: currentBaseStyleLibrary,
+                runtimeOverlay: currentStyleLibraryRuntimeOverlay,
+              });
+              persistSourceStyleLibraryRuntimeOverlay(
+                currentStyleLibraryRuntimeOverlay,
+              );
+            } else {
+              currentBaseStyleLibrary = taskPlan.styleLibrary;
+              currentStyleLibraryRuntimeOverlay = undefined;
+              currentStyleLibrary = taskPlan.styleLibrary;
+            }
+            taskPlan = {
+              ...taskPlan,
+              styleLibrary: currentStyleLibrary,
+            };
           }
           if (taskPlan.planningBrief?.researchDecision?.shouldResearch) {
             taskPlan = {
@@ -1694,7 +1878,7 @@ export function useWorkspaceElementImageGeneration(
             sourceElementId: sourceElement.id,
             taskMode: taskPlan.mode,
             taskIntent: taskPlan.intent,
-            reason: "pre-generation-planning-disabled",
+            reason: planningBypassReason || "pre-generation-planning-disabled",
             taskPageCount: taskUnits.length,
             taskToolChain: taskPlan.toolChain,
           });
@@ -1916,7 +2100,8 @@ export function useWorkspaceElementImageGeneration(
                   referenceImages: currentReferenceImages,
                   consistencyContext: currentConsistencyContext,
                   referenceRoleMode: currentReferenceRoleMode,
-                  styleLibrary: currentStyleLibrary,
+                  styleLibrary: currentBaseStyleLibrary,
+                  styleLibraryRuntimeOverlay: currentStyleLibraryRuntimeOverlay,
                   pageGenerationPlans: [plannedGeneration],
                 } satisfies VisualPlanningCachePayload;
                 updateElementById(sourceElement.id, {
@@ -2206,7 +2391,8 @@ export function useWorkspaceElementImageGeneration(
               referenceImages: currentReferenceImages,
               consistencyContext: currentConsistencyContext,
               referenceRoleMode: currentReferenceRoleMode,
-              styleLibrary: currentStyleLibrary,
+              styleLibrary: currentBaseStyleLibrary,
+              styleLibraryRuntimeOverlay: currentStyleLibraryRuntimeOverlay,
               pageGenerationPlans,
             } satisfies VisualPlanningCachePayload),
             genVisualPlanningCacheCreatedAt: Date.now(),

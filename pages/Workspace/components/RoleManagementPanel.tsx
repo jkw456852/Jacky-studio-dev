@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCcw, X } from 'lucide-react';
+import { Camera, Loader2, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import type {
   AgentType,
   RoleGovernanceMode,
@@ -13,10 +13,18 @@ import type {
 } from '../../../services/runtime-assets/user-asset-types';
 import { buildUserCustomRoleAddonBlock } from '../../../services/agents/role-config';
 import { getAgentInfo } from '../../../services/agents';
+import {
+  getMappedPrimaryModelConfig,
+  getModelDisplayLabel,
+} from '../../../services/provider-settings';
+import { generateImageWithProvider } from '../../../services/providers';
+import { useImageHostStore } from '../../../stores/imageHost.store';
+import { uploadImage } from '../../../utils/uploader';
 
 type RoleEntityEditorDraft = {
   title: string;
   summary: string;
+  avatarUrl: string;
   tagsText: string;
   useWhenText: string;
   avoidWhenText: string;
@@ -201,6 +209,116 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
         .filter(Boolean)
         .join('\n\n')
     : inspectedEffectivePrompt;
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = React.useState(false);
+  const [avatarGenerating, setAvatarGenerating] = React.useState(false);
+  const [avatarStatus, setAvatarStatus] = React.useState('');
+  const [avatarError, setAvatarError] = React.useState('');
+  const imageHostProvider = useImageHostStore((state) => state.selectedProvider);
+  const isAvatarUploadAvailable = imageHostProvider !== 'none';
+  const primaryImageConfig = React.useMemo(() => getMappedPrimaryModelConfig('image'), []);
+  const avatarGenerationModelLabel = getModelDisplayLabel(
+    primaryImageConfig?.modelId || 'NanoBanana2',
+  );
+
+  React.useEffect(() => {
+    setAvatarStatus('');
+    setAvatarError('');
+  }, [agentId, roleId]);
+
+  const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file || !roleEntityDraft) {
+      return;
+    }
+
+    if (!isAvatarUploadAvailable) {
+      setAvatarStatus('');
+      setAvatarError('请先在设置中开启图床并配置可用密钥，再上传可同步头像。');
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarStatus('');
+    setAvatarError('');
+
+    try {
+      const uploadedAvatarUrl = await uploadImage(file);
+      if (!/^https?:\/\//i.test(uploadedAvatarUrl)) {
+        throw new Error('头像上传未返回可持久化公网地址，请检查图床配置后重试。');
+      }
+      onRoleEntityDraftChange?.({ avatarUrl: uploadedAvatarUrl });
+      setAvatarStatus('角色头像已上传，可直接保存到当前角色。');
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : '角色头像上传失败，请稍后重试');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleGenerateAvatar = async () => {
+    if (!roleEntityDraft) return;
+
+    setAvatarGenerating(true);
+    setAvatarStatus('');
+    setAvatarError('');
+
+    try {
+      const prompt = [
+        '请生成一个用于 AI 专家角色的 1:1 方形头像插画。',
+        '风格要求：现代、简洁、专业、克制，适合真实 SaaS 产品界面；中性色为主，只保留低饱和点缀色；纯净背景；半身或头像构图；不要文字、不要水印、不要装饰边框。',
+        `基础专家：${inspectedAgentInfo.name}`,
+        `角色名称：${roleEntityDraft.title || `${inspectedAgentInfo.name} 角色`}`,
+        roleEntityDraft.summary ? `角色简介：${roleEntityDraft.summary}` : '',
+        roleEntityDraft.tagsText.trim() ? `角色标签：${roleEntityDraft.tagsText}` : '',
+        roleEntityDraft.useWhenText.trim()
+          ? `适用场景：${roleEntityDraft.useWhenText.replace(/\r?\n/g, '；')}`
+          : '',
+        roleEntityDraft.durableRoleAddon.trim()
+          ? `长期规则关键词：${roleEntityDraft.durableRoleAddon.replace(/\s+/g, ' ').slice(0, 200)}`
+          : '',
+        '输出一张可直接作为产品内角色头像使用的单人角色插画。',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const resultUrl = await generateImageWithProvider(
+        {
+          prompt,
+          providerId: primaryImageConfig?.providerId || null,
+          aspectRatio: '1:1',
+          imageSize: '1K',
+          imageQuality: 'medium',
+          promptLanguagePolicy: 'original-zh',
+          textPolicy: {
+            enforceChinese: false,
+            requiredCopy: '',
+          },
+          referenceRoleMode: 'none',
+        },
+        primaryImageConfig?.modelId || 'NanoBanana2',
+      );
+
+      if (!resultUrl || !/^https?:\/\//i.test(resultUrl)) {
+        throw new Error('AI 头像生成未返回可持久化公网地址，请稍后重试。');
+      }
+
+      onRoleEntityDraftChange?.({ avatarUrl: resultUrl });
+      setAvatarStatus(`已使用 ${avatarGenerationModelLabel} 生成角色头像，可直接保存。`);
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'AI 头像生成失败，请稍后重试');
+    } finally {
+      setAvatarGenerating(false);
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    onRoleEntityDraftChange?.({ avatarUrl: '' });
+    setAvatarError('');
+    setAvatarStatus('角色头像已移除，保存后将回退为默认专家图标。');
+  };
 
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/36 p-4">
@@ -327,39 +445,131 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
 
               {roleEntityDraft ? (
                 <>
-                  <SectionCard title="1. 基础信息" description="这里就是角色最核心的设定，先把名称、标签和简介写清楚。">
+                  <SectionCard title="1. 基础信息" description="这里就是角色最核心的设定，先把名称、标签、头像和简介写清楚。">
                     <div className="grid gap-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FieldBlock label="角色名称" hint="名称要短，直接说清它负责什么。">
-                          <input
-                            type="text"
-                            value={roleEntityDraft.title}
-                            onChange={(event) => onRoleEntityDraftChange?.({ title: event.target.value })}
-                            placeholder="例如：商品视觉策略师"
-                            className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[14px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                          />
-                        </FieldBlock>
-                        <FieldBlock label="标签" hint="方便后续筛选，3 个左右就够。">
-                          <input
-                            type="text"
-                            value={roleEntityDraft.tagsText}
-                            onChange={(event) =>
-                              onRoleEntityDraftChange?.({ tagsText: event.target.value })
-                            }
-                            placeholder="例如：电商，视觉，策略"
-                            className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[14px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                          />
-                        </FieldBlock>
-                      </div>
+                      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                        <FieldBlock label="角色头像" hint="上传或生成后会跟随角色一起保存。">
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-[30px] shadow-sm">
+                                {roleEntityDraft.avatarUrl ? (
+                                  <img
+                                    src={roleEntityDraft.avatarUrl}
+                                    alt={roleEntityDraft.title || `${inspectedAgentInfo.name} 角色头像`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span>{inspectedAgentInfo.avatar}</span>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-semibold text-slate-900">
+                                  {roleEntityDraft.avatarUrl ? '已设置角色头像' : '当前使用默认专家图标'}
+                                </div>
+                                <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                                  AI 生成会使用当前默认图片模型 {avatarGenerationModelLabel}。
+                                </div>
+                              </div>
+                            </div>
 
-                      <FieldBlock label="一句话简介" hint="让人一眼看懂这个角色长期适合做什么。">
-                        <textarea
-                          value={roleEntityDraft.summary}
-                          onChange={(event) => onRoleEntityDraftChange?.({ summary: event.target.value })}
-                          placeholder="例如：负责商品图方向判断、镜头分工和视觉策略整理。"
-                          className="min-h-[96px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                        />
-                      </FieldBlock>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleAvatarFileChange}
+                            />
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={avatarUploading || avatarGenerating || !isAvatarUploadAvailable}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <Camera size={12} />
+                                {avatarUploading ? '上传中...' : '上传头像'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleGenerateAvatar}
+                                disabled={avatarUploading || avatarGenerating}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3.5 py-2 text-[12px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {avatarGenerating ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Sparkles size={12} />
+                                )}
+                                {avatarGenerating ? '生成中...' : 'AI 生成头像'}
+                              </button>
+                              {roleEntityDraft.avatarUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveAvatar}
+                                  disabled={avatarUploading || avatarGenerating}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  <Trash2 size={12} />
+                                  移除
+                                </button>
+                              ) : null}
+                            </div>
+
+                            <div
+                              className={`rounded-2xl border px-3.5 py-3 text-[12px] leading-5 ${
+                                avatarError
+                                  ? 'border-red-100 bg-red-50 text-red-600'
+                                  : avatarStatus
+                                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                                    : isAvatarUploadAvailable
+                                      ? 'border-slate-200 bg-slate-50 text-slate-500'
+                                      : 'border-amber-100 bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {avatarError ||
+                                avatarStatus ||
+                                (isAvatarUploadAvailable
+                                  ? '上传头像需要可用图床；生成头像后会直接写入当前角色草稿。'
+                                  : '当前未开启图床配置，上传入口已禁用；你仍可直接使用 AI 生成头像。')}
+                            </div>
+                          </div>
+                        </FieldBlock>
+
+                        <div className="grid gap-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <FieldBlock label="角色名称" hint="名称要短，直接说清它负责什么。">
+                              <input
+                                type="text"
+                                value={roleEntityDraft.title}
+                                onChange={(event) => onRoleEntityDraftChange?.({ title: event.target.value })}
+                                placeholder="例如：商品视觉策略师"
+                                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[14px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+                              />
+                            </FieldBlock>
+                            <FieldBlock label="标签" hint="方便后续筛选，3 个左右就够。">
+                              <input
+                                type="text"
+                                value={roleEntityDraft.tagsText}
+                                onChange={(event) =>
+                                  onRoleEntityDraftChange?.({ tagsText: event.target.value })
+                                }
+                                placeholder="例如：电商，视觉，策略"
+                                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[14px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+                              />
+                            </FieldBlock>
+                          </div>
+
+                          <FieldBlock label="一句话简介" hint="让人一眼看懂这个角色长期适合做什么。">
+                            <textarea
+                              value={roleEntityDraft.summary}
+                              onChange={(event) => onRoleEntityDraftChange?.({ summary: event.target.value })}
+                              placeholder="例如：负责商品图方向判断、镜头分工和视觉策略整理。"
+                              className="min-h-[96px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+                            />
+                          </FieldBlock>
+                        </div>
+                      </div>
                     </div>
                   </SectionCard>
 

@@ -1117,25 +1117,25 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           role: "model",
           text:
             plan.done || plan.steps.length === 0
-              ? "我先整理了这轮判断。按现在的信息，暂时不需要继续执行。"
-              : "我已经把这轮怎么做整理好了。你确认后，我再开始。",
+              ? "我先把这次思考过程整理了一下。按现在的信息，暂时不需要继续执行。"
+              : "我先把这次思考过程和执行路径整理好了。你确认后，我再开始。",
           agentData: {
             model: browserAgentModelLabel,
             title: "我准备这样做",
             description:
               plan.rationaleSummary ||
               plan.description ||
-              "开始前我先和你确认一下执行方式，避免这轮直接跑偏。",
+              "开始前我会先把真实的检查思路、目标判断和执行路径说明白，再决定是否继续。",
             isGenerating: false,
             presentation: {
               kind: "execution_plan" as const,
               statusLabel:
                 plan.done || plan.steps.length === 0 ? "无需执行" : "待你确认",
-              detailTitle: "查看本轮判断",
+              detailTitle: "查看思考过程",
               detailNotice:
                 plan.done || plan.steps.length === 0
-                  ? "按现在的信息，这轮暂时不需要继续执行。"
-                  : "我先把判断依据和执行方式整理出来，等你确认后再继续。",
+                  ? "这里展示的是当前真实思考过程；按现在的信息，这轮暂时不需要继续执行。"
+                  : "这里展示的是当前真实思考过程与执行路径，确认后我再继续。",
             },
           },
           timestamp: Date.now(),

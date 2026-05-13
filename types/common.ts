@@ -58,9 +58,20 @@ export interface WorkspaceStyleLibrary {
   referenceInterpretation: string;
   planningDirectives: string[];
   promptDirectives: string[];
+  promptBackbone?: string[];
   createdBy?: WorkspaceStyleLibraryAuthor;
   updatedAt?: number;
   sourceMode?: 'default' | 'poster-product' | 'custom';
+}
+
+export interface WorkspaceStyleLibraryRuntimeOverlay {
+  summary?: string;
+  referenceInterpretation?: string;
+  planningDirectives?: string[];
+  promptDirectives?: string[];
+  promptBackbone?: string[];
+  createdBy?: WorkspaceStyleLibraryAuthor;
+  updatedAt?: number;
 }
 
 export type ShapeType = 'square' | 'circle' | 'triangle' | 'star' | 'bubble' | 'arrow-left' | 'arrow-right';
@@ -113,6 +124,7 @@ export interface CanvasElement {
   genRequirePlanApproval?: boolean;
   genReferenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
   genStyleLibrary?: WorkspaceStyleLibrary;
+  genStyleLibraryRuntimeOverlay?: WorkspaceStyleLibraryRuntimeOverlay;
   genVisualPlanningCacheKey?: string;
   genVisualPlanningCachePayload?: string;
   genVisualPlanningCacheCreatedAt?: number;

@@ -192,6 +192,7 @@ type InputAreaBottomToolbarProps = {
 type RoleEntityEditorDraft = {
   title: string;
   summary: string;
+  avatarUrl: string;
   tagsText: string;
   useWhenText: string;
   avoidWhenText: string;
@@ -613,6 +614,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         inspectedLatestRoleDraft?.summary ||
         inspectedRoleProfile?.purpose ||
         '',
+      avatarUrl: inspectedDurableRole?.avatarUrl || '',
       tagsText: inspectedDurableRole?.tags.join('，') || '',
       useWhenText:
         inspectedDurableRole?.useWhen.join('\n') || inspectedRoleProfile?.useWhen.join('\n') || '',
@@ -791,6 +793,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         ...(inspectedDurableRole ? { id: inspectedDurableRole.id } : {}),
         title: roleEntityDraft.title,
         summary: roleEntityDraft.summary,
+        avatarUrl: roleEntityDraft.avatarUrl.trim(),
         baseAgentId: roleInspectorAgentId,
         source: inspectedDurableRole?.source || 'user',
         status: inspectedDurableRole?.status || 'active',
@@ -1784,9 +1787,9 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       </div>
 
                       <div className="space-y-3">
-                        {availableDurableRoles.length > 0 && (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
-                            <div className="px-1">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3 px-1">
+                            <div className="min-w-0 flex-1">
                               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                                 长期角色库
                               </div>
@@ -1794,6 +1797,19 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                 这里展示真实可持久化的角色实体，绑定后会一并带上治理模式、版本和审计语义。
                               </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openRoleManagementPanel(resolvedPinnedAgentId);
+                                setShowAgentRolePicker(false);
+                              }}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                            >
+                              <Sparkles size={12} />
+                              手动新建角色
+                            </button>
+                          </div>
+                          {availableDurableRoles.length > 0 ? (
                             <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
                               {availableDurableRoles.map((role) => {
                                 const isActive =
@@ -1829,8 +1845,16 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                         className="w-full text-left"
                                       >
                                         <div className="flex min-w-0 items-center gap-2">
-                                          <span className="text-base leading-none">
-                                            {roleAgentInfo.avatar}
+                                          <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-base leading-none shadow-sm">
+                                            {role.avatarUrl ? (
+                                              <img
+                                                src={role.avatarUrl}
+                                                alt={role.title}
+                                                className="h-full w-full object-cover"
+                                              />
+                                            ) : (
+                                              roleAgentInfo.avatar
+                                            )}
                                           </span>
                                           <span className="truncate text-[13px] font-semibold text-slate-800">
                                             {role.title}
@@ -1890,8 +1914,12 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                 );
                               })}
                             </div>
-                          </div>
-                        )}
+                          ) : (
+                            <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-[12px] leading-5 text-slate-500">
+                              你还没有正式角色。可以先点右上角“手动新建角色”，基于当前专家壳创建一个长期可复用角色。
+                            </div>
+                          )}
+                        </div>
 
                         <div className="px-1">
                           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">

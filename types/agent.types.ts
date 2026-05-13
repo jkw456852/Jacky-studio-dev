@@ -43,6 +43,7 @@ export interface StudioRoleEntity {
   slug: string;
   title: string;
   summary: string;
+  avatarUrl?: string;
   baseAgentId: AgentType;
   source: RoleSource;
   status: RoleStatus;

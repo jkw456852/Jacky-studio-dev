@@ -224,12 +224,18 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   );
 
   const visibleText = planningBlock?.visibleText || cleanText;
+  const sanitizedVisibleText = visibleText
+    .replace(/(^|\n)你的专属设计助手，帮你找到最合适的专家(?=\n|$)/g, '$1')
+    .trim();
   const isWorkflowUi = message.kind === 'workflow_ui' && !!message.workflowUi;
   const workflowType = message.workflowUi?.type || '';
   const isClothingWorkflowUi = workflowType.startsWith('clothingStudio.');
   const isEcommerceWorkflowUi = workflowType.startsWith('ecomOneClick.');
-  const analysisPanelTitle = presentationView?.detailTitle || '查看本轮判断';
+  const analysisPanelTitle = presentationView?.detailTitle || '查看思考过程';
   const presentationStatusLabel = presentationView?.statusLabel || null;
+  const analysisContent =
+    agentData?.analysis ||
+    (presentationView?.kind === 'execution_plan' ? agentData?.description || '' : '');
   const executionModeBadgeLabel =
     presentationView?.modeLabel ||
     (executionMode === 'true_edit'
@@ -239,42 +245,34 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         : executionMode === 'generate'
           ? '生成'
           : null);
-  const executionModeNotice =
-    presentationView?.detailNotice ||
-    (executionMode === 'reference_guided_generate'
-      ? '这部分展示的是本轮判断依据。当前更接近参考图驱动出图，系统会优先参考你提供的画面线索，而不是只做局部定点修改。'
-      : executionMode === 'true_edit'
-        ? '这部分展示的是本轮判断依据。当前会尽量围绕原图结构做定向修改，避免直接整张重生成。'
-        : executionMode === 'generate'
-          ? '这部分展示的是本轮判断依据。当前会按生成路径组织这轮执行。'
-          : '这部分展示的是本轮判断依据。');
 
   return (
-    <div className="w-full group">
-      <div className="mb-1.5 flex justify-start px-1">
-        <span className="text-[10px] font-medium text-gray-400">
-          {new Date(message.timestamp).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </span>
-      </div>
+    <div className="group inline-block max-w-full align-top">
+      <div className="overflow-hidden rounded-[24px] rounded-tl-md border border-sky-100 bg-[#eef6ff] px-3 py-3 shadow-sm">
+        <div className="mb-1.5 flex justify-start px-1">
+          <span className="text-[10px] font-medium text-gray-400">
+            {new Date(message.timestamp).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </span>
+        </div>
 
-      <div className="flex max-w-[95%] flex-col gap-2">
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mb-0.5 flex flex-wrap gap-1.5 px-0.5">
-            {message.attachments.map((att, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-gray-500 shadow-sm"
-              >
-                <ImageIcon size={10} className="text-gray-400" />
-                <span>Image_{i + 1}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="flex max-w-full flex-col gap-2">
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mb-0.5 flex flex-wrap gap-1.5 px-0.5">
+              {message.attachments.map((att, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-gray-500 shadow-sm"
+                >
+                  <ImageIcon size={10} className="text-gray-400" />
+                  <span>Image_{i + 1}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
         {researchView && (
           <div className="px-1">
@@ -513,7 +511,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {visibleText && oneClickView.sections.length === 0 && (
+        {sanitizedVisibleText && oneClickView.sections.length === 0 && (
           <div
             className={`agent-msg-text break-words px-1 ${
               message.error
@@ -521,21 +519,21 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 : ''
             }`}
           >
-            <MarkdownRenderer text={visibleText} className="text-[13px]" />
+            <MarkdownRenderer text={sanitizedVisibleText} className="text-[13px]" />
           </div>
         )}
 
-        {planningBlock && oneClickView.sections.length === 0 && (
+        {planningBlock && !analysisContent && oneClickView.sections.length === 0 && (
           <div className="px-1">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/90">
+            <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/76">
               <button
                 type="button"
                 onClick={() => setIsPlanningExpanded((value) => !value)}
-                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-100/90"
+                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-white/90"
               >
                 <div className="min-w-0">
-                  <div className="text-[12px] font-semibold text-slate-700">
-                    内部编排详情
+                  <div className="text-[12px] font-medium text-slate-600">
+                    查看思考过程
                   </div>
                   {planningBlock.previewLines.length > 0 && (
                     <div className="mt-1 text-[11px] leading-5 text-slate-500">
@@ -543,11 +541,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                     </div>
                   )}
                 </div>
-                <div className="mt-0.5 shrink-0 text-slate-500">
+                <div className="mt-0.5 shrink-0 text-slate-400">
                   {isPlanningExpanded ? (
-                    <ChevronUp size={16} />
+                    <ChevronUp size={14} />
                   ) : (
-                    <ChevronDown size={16} />
+                    <ChevronDown size={14} />
                   )}
                 </div>
               </button>
@@ -558,7 +556,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.18, ease: 'easeOut' }}
-                    className="border-t border-slate-200"
+                    className="border-t border-slate-200/70"
                   >
                     <div className="px-3 py-3">
                       <MarkdownRenderer
@@ -711,23 +709,23 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {agentData?.analysis && (
+        {analysisContent ? (
           <div className="px-1">
             <button
               onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
-              className="group/btn flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 transition-all hover:bg-gray-50"
+              className="group/btn inline-flex items-center gap-1.5 rounded-full border border-slate-200/70 bg-white/70 px-2.5 py-1 text-[11px] transition-all hover:border-slate-300 hover:bg-white"
             >
               <Search
-                size={12}
-                className="text-gray-500 transition-colors group-hover/btn:text-gray-800"
+                size={11}
+                className="text-slate-400 transition-colors group-hover/btn:text-slate-600"
               />
-              <span className="text-[12px] font-medium text-gray-600 transition-colors group-hover/btn:text-gray-900">
+              <span className="font-medium text-slate-500 transition-colors group-hover/btn:text-slate-800">
                 {analysisPanelTitle}
               </span>
               {isAnalysisExpanded ? (
-                <ChevronUp size={12} className="text-gray-400" />
+                <ChevronUp size={11} className="text-slate-400" />
               ) : (
-                <ChevronDown size={12} className="text-gray-400" />
+                <ChevronDown size={11} className="text-slate-400" />
               )}
             </button>
 
@@ -739,25 +737,14 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-1.5 rounded-lg border border-gray-200 bg-white p-2.5 text-[12px] leading-relaxed text-gray-600 whitespace-pre-wrap">
-                    <div
-                      className={`mb-2 rounded-md px-2 py-1.5 text-[11px] leading-5 whitespace-normal ${
-                        executionMode === 'true_edit'
-                          ? 'border border-emerald-100 bg-emerald-50 text-emerald-700'
-                          : executionMode === 'reference_guided_generate'
-                            ? 'border border-amber-100 bg-amber-50 text-amber-700'
-                            : 'border border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      {executionModeNotice}
-                    </div>
-                    {agentData.analysis}
+                  <div className="mt-2 rounded-2xl border border-slate-200/70 bg-white/76 px-3 py-3 text-[12px] leading-6 text-slate-600 whitespace-pre-wrap">
+                    {analysisContent}
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
-        )}
+        ) : null}
 
         {proposals.length > 0 && (
           <div className="mb-1 flex flex-col gap-1.5">
@@ -822,34 +809,28 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {agentData?.description && (
-          <div className="px-1 text-[12px] leading-relaxed text-gray-700">
-            {agentData.description}
-          </div>
-        )}
-
-        {(agentData?.model || proposals.length > 0 || presentationStatusLabel) && (
-          <div className="flex items-center justify-start gap-1 px-1">
+        {(agentData?.model || proposals.length > 0 || presentationStatusLabel) ? (
+          <div className="flex items-center justify-start gap-1 px-1 opacity-70">
             {presentationStatusLabel ? (
-              <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600">
+              <span className="rounded-full border border-slate-200/70 bg-white/75 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                 {presentationStatusLabel}
               </span>
             ) : null}
-            {(agentData?.model || proposals.length > 0) && (
-              <div className="flex items-center gap-1 text-gray-400">
-                <Eye size={12} strokeWidth={2.5} />
-                <span className="text-[10px] font-bold tracking-tight text-gray-400 uppercase opacity-50">
+            {(agentData?.model || proposals.length > 0) ? (
+              <div className="flex items-center gap-1 text-slate-400">
+                <Eye size={11} strokeWidth={2.2} />
+                <span className="text-[10px] font-medium tracking-tight text-slate-400 uppercase">
                   {agentData?.model || 'Nano Banana Pro'}
                 </span>
               </div>
-            )}
-            {executionModeBadgeLabel && (
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+            ) : null}
+            {executionModeBadgeLabel ? (
+              <span className="rounded-full border border-slate-200/70 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-400">
                 {executionModeBadgeLabel}
               </span>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
         {imageCards.length > 0 && (
           <div className="mt-1 px-1">
@@ -910,8 +891,12 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {agentData?.suggestions && agentData.suggestions.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5 px-1">
+        </div>
+      </div>
+
+      <div className="mt-2 px-3">
+        {agentData?.suggestions && agentData.suggestions.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
             {agentData.suggestions.map((suggestion, idx) => (
               <button
                 key={idx}
@@ -923,18 +908,18 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
               </button>
             ))}
           </div>
-        )}
+        ) : null}
 
-        <div className="mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <button className="p-1 text-gray-300 transition-colors hover:text-gray-500">
+        <div className="mt-2 flex items-center gap-0.5 px-1 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100">
+          <button className="p-1 transition-colors hover:text-gray-500">
             <ThumbsUp size={12} />
           </button>
-          <button className="p-1 text-gray-300 transition-colors hover:text-gray-500">
+          <button className="p-1 transition-colors hover:text-gray-500">
             <ThumbsDown size={12} />
           </button>
           <button
             onClick={handleCopy}
-            className="relative p-1 text-gray-300 transition-colors hover:text-gray-500"
+            className="relative p-1 transition-colors hover:text-gray-500"
           >
             {copied ? (
               <Check size={12} className="text-green-500" />

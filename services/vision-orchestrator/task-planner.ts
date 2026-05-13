@@ -59,6 +59,10 @@ const buildSetPagePrompt = (
       styleLibrary?.planningDirectives,
     ),
     formatLines(
+      "Style Library Prompt Backbone",
+      styleLibrary?.promptBackbone,
+    ),
+    formatLines(
       "Style Library Prompt Directives",
       styleLibrary?.promptDirectives,
     ),

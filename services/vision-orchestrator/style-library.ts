@@ -35,7 +35,7 @@ export const STYLE_LIBRARY_MODE_META: Record<
   custom: {
     label: "自定义",
     hint:
-      "由主脑或你自己临时组织出来的风格库，专门描述这次任务的参考图解释方式和生成约束。",
+      "使用你保存的风格库资产，或把当前运行时风格叠加另存为正式风格库后继续复用。",
   },
 };
 
@@ -66,6 +66,7 @@ export const cloneWorkspaceStyleLibrary = (
   referenceInterpretation: library.referenceInterpretation,
   planningDirectives: [...library.planningDirectives],
   promptDirectives: [...library.promptDirectives],
+  promptBackbone: [...(library.promptBackbone || [])],
   createdBy: library.createdBy,
   updatedAt: library.updatedAt,
   sourceMode: library.sourceMode,
@@ -84,6 +85,7 @@ export const normalizeWorkspaceStyleLibrary = (
     .slice(0, 280);
   const planningDirectives = trimLineArray(raw.planningDirectives, 8, 180);
   const promptDirectives = trimLineArray(raw.promptDirectives, 8, 180);
+  const promptBackbone = trimLineArray(raw.promptBackbone, 8, 220);
   const id = String(raw.id || "").trim();
   const slug = String(raw.slug || "").trim();
   const createdBy = String(raw.createdBy || "").trim();
@@ -109,6 +111,7 @@ export const normalizeWorkspaceStyleLibrary = (
     referenceInterpretation,
     planningDirectives,
     promptDirectives,
+    promptBackbone,
     createdBy:
       createdBy === "system" ||
       createdBy === "main-brain" ||
@@ -218,6 +221,7 @@ export const buildUserStyleLibrarySummary = (): string =>
   - Summary: ${library.summary}
   - Source mode: ${library.sourceMode || "custom"}
   - Reference interpretation: ${library.referenceInterpretation}
+  - Prompt backbone: ${(library.promptBackbone || []).slice(0, 2).join(" | ") || "None"}
   - First directive: ${promptHint || "No directive available"}`;
     })
     .join("\n");

@@ -181,6 +181,9 @@ const buildStyleLibraryLines = (styleLibrary?: VisualStyleLibrary) => {
   styleLibrary.planningDirectives.forEach((item) => {
     lines.push(`- Planning directive: ${item}`);
   });
+  styleLibrary.promptBackbone?.forEach((item) => {
+    lines.push(`- Prompt backbone: ${item}`);
+  });
   styleLibrary.promptDirectives.forEach((item) => {
     lines.push(`- Prompt directive: ${item}`);
   });

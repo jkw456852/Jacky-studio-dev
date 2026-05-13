@@ -1049,7 +1049,7 @@ const inferTaskModeFromInput = (
   ) {
     return "set";
   }
-  return Math.max(1, Number(input.requestedImageCount || 1)) > 1 ? "set" : "single";
+  return "single";
 };
 
 const inferResearchDecisionFromInput = (
@@ -1582,6 +1582,8 @@ const buildTaskPlannerPrompt = (
     "- First decide whether an existing built-in style library already fits. Reuse should be the default when the existing library is already sufficient.",
     "- If a saved user style library already matches the task, prefer reusing it or lightly refining it instead of inventing a brand-new temporary library.",
     "- Prefer refining the Current Style Library when it already carries the right upstream reference-interpretation logic and only needs small adjustments.",
+    "- If Current Style Library was explicitly selected by the user, treat it as the primary upstream constraint. Do not replace its identity, title, or core prompt backbone unless the user explicitly asks to switch styles.",
+    "- When a Current Style Library already exists, prefer returning no styleLibrary at all, or only a minimal refinement that keeps the same core style identity and prompt backbone.",
     "- Only return styleLibrary when the built-in style-library modes are not enough and the task clearly needs a task-specific upstream reference-interpretation policy.",
     "- If you return styleLibrary, it must describe how to interpret the references and what prompt/planning constraints must stay active downstream.",
     "- If Current Style Library is already present and still fits the task, you may keep or refine it instead of discarding it.",

@@ -73,6 +73,72 @@ const dedupeLines = (values: Array<string | undefined | null>, limit = 8) => {
   return result;
 };
 
+const chunkPromptParagraph = (paragraph: string, maxLength = 170) => {
+  const normalized = String(paragraph || "").trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxLength) return [normalized];
+
+  const sentenceLikeParts = normalized
+    .replace(/([。！？!?；;])/gu, "$1\n")
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const grouped: string[] = [];
+  let current = "";
+  sentenceLikeParts.forEach((part) => {
+    const next = current ? `${current} ${part}` : part;
+    if (next.length > maxLength && current) {
+      grouped.push(current);
+      current = part;
+      return;
+    }
+    current = next;
+  });
+  if (current) grouped.push(current);
+  return grouped.length > 0 ? grouped : [normalized.slice(0, maxLength)];
+};
+
+const splitPromptBackboneLines = (prompt: string, limit = 4) => {
+  const paragraphs = String(prompt || "")
+    .replace(/\r/g, "\n")
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const lines: string[] = [];
+  paragraphs.forEach((paragraph) => {
+    chunkPromptParagraph(paragraph).forEach((line) => {
+      if (lines.length < limit) {
+        lines.push(line);
+      }
+    });
+  });
+  return lines.slice(0, limit);
+};
+
+const buildPromptBackboneLines = (prompt: string) => {
+  const backbone = splitPromptBackboneLines(prompt, 4);
+  if (backbone.length === 0) return [];
+  return [
+    "尽量保留原始提示词中真正起作用的镜头、透视、动作、材质、特效和氛围关键词，只替换主体相关变量。",
+    ...backbone.map((line, index) =>
+      index === 0 ? `原始提示词骨架：${line}` : `继续沿用这段提示词骨架：${line}`,
+    ),
+  ];
+};
+
+const buildPresetTitle = (value: string, fallback = "导入风格") => {
+  const base = String(value || "").trim() || fallback;
+  const cleaned = base
+    .replace(/\s*风格提炼$/u, "")
+    .replace(/\s*案例迁移模板$/u, "")
+    .replace(/\s*案例迁移$/u, "")
+    .replace(/\s*风格预设$/u, "")
+    .trim();
+  return `${cleaned || fallback} 风格预设`;
+};
+
 const buildCaseLibrary = (
   item: GptImageInspirationCase,
   payload: GptImageInspirationPayload | null,
@@ -95,32 +161,35 @@ const buildCaseLibrary = (
   return {
     preferredId: `gpt-image-case-${item.id}`,
     library: {
-      title: `${item.title} 风格提炼`,
+      title: buildPresetTitle(item.title, `案例 ${item.id}`),
       slug: slugify(`${item.title}-case-${item.id}`),
-      summary: `从案例 ${item.id} 提炼出的可复用风格库。保留视觉语言，不复刻原案例主体。`,
+      summary: `从参考图 ${item.id} 整理出的可复用风格预设。保留视觉语言与组织方式，但不绑定原始主体、品牌或一次性文案。`,
       coverImageUrl: item.image,
       referenceInterpretation: isEditLikeCase
-        ? `把这个案例理解为一种“编辑方式和视觉呈现方法”，不是固定成图。优先借鉴 ${categoryLabel} 的画面组织、光线、材质和编辑逻辑，但必须替换原案例中的具体主体、品牌、文案和场景。`
-        : `把这个案例理解为一种“视觉风格和构图语言”，不是固定示例。优先继承 ${categoryLabel} 的气质、镜头感、版式和材料表现，但不能直接复刻原案例中的人物、商品、标题和叙事。`,
+        ? `把这组参考图理解为一种可复用的编辑方式与视觉呈现方法。优先继承 ${categoryLabel} 的画面组织、光线、材质和编辑逻辑；如果用户提供新的主体、品牌、文案或场景，应以用户内容为准。`
+        : `把这组参考图理解为一种可复用的视觉风格与构图语言。优先继承 ${categoryLabel} 的气质、镜头感、版式和材料表现；如果用户提供新的主体或产品，应只保留风格语言，不复刻原图叙事。`,
       planningDirectives: dedupeLines([
-        `优先抽取 ${categoryLabel} 的构图、光线、材质和版式规则，而不是原案例里的具体对象。`,
+        "先继承原始提示词骨架中的构图、镜头、透视、空间关系、特效分布与氛围，再替换主体身份。",
+        `优先抽取 ${categoryLabel} 的构图、光线、材质和版式规则，而不是参考图中的具体对象。`,
         styleLabels.length ? `保留风格特征：${styleLabels.join("、")}。` : "",
         sceneLabels.length ? `保留场景气质：${sceneLabels.join("、")}。` : "",
         isEditLikeCase
-          ? "如果用户提供新主体，只借用编辑策略和视觉规则，不保留原案例主体身份。"
-          : "如果用户提供新主体，只借用风格和画面结构，不保留原案例叙事内容。",
-        "将案例中的专有名词、人名、品牌名、账号名、产品型号与一次性文案全部视为不可继承信息。",
-        "如用户任务目标与案例内容冲突，优先保留风格语言，放弃案例原始叙事。",
+          ? "如果用户提供新主体，只借用编辑策略和视觉规则，不保留参考图原主体身份。"
+          : "如果用户提供新主体，只借用风格和画面结构，不保留参考图原始叙事。",
+        "不要把原始提示词里的强视觉关键词泛化成普通商业描述。",
+        "将参考图中的专有名词、人名、品牌名、账号名、产品型号与一次性文案全部视为不可继承信息。",
+        "如用户任务目标与参考内容冲突，优先保留风格语言，放弃原参考图叙事。",
       ]),
+      promptBackbone: dedupeLines(buildPromptBackboneLines(item.prompt), 6),
       promptDirectives: dedupeLines([
-        `输出时强调 ${categoryLabel} 的视觉语言，不直接复刻案例中的人物、商品、品牌或文案。`,
+        `输出时强调 ${categoryLabel} 的视觉语言，不直接复刻参考图中的人物、商品、品牌或文案。`,
         styleLabels.length ? `可保留的风格标签：${styleLabels.join("、")}。` : "",
         sceneLabels.length ? `可保留的氛围标签：${sceneLabels.join("、")}。` : "",
-        "把案例里的具体对象改写成可替换占位主体，如“主体 / 产品 / 场景 / 文案区”。",
-        "除非用户明确要求，否则不要生成与原案例高度相似的构图、姿态、标题或故事设定。",
+        "把参考图里的具体对象改写成可替换占位主体，如“主体 / 产品 / 场景 / 文案区”。",
+        "除非用户明确要求，否则不要生成与原参考图高度相似的构图、姿态、标题或故事设定。",
         isEditLikeCase
           ? "遇到编辑类任务时，优先锁定修改目标与不改区域，只继承编辑逻辑。"
-          : "遇到生成类任务时，优先沿用画面结构和审美语气，而不是原案例内容。",
+          : "遇到生成类任务时，优先沿用画面结构和审美语气，而不是原参考图内容。",
       ]),
       createdBy: "user",
       updatedAt: Date.now(),
@@ -143,17 +212,26 @@ const buildTemplateLibrary = (
   return {
     preferredId: `gpt-image-template-${item.id}`,
     library: {
-      title: `${title} 风格提炼`,
+      title: buildPresetTitle(title, item.id),
       slug: slugify(`${title}-template`),
-      summary: description || `从模板 ${title} 提炼出的可复用风格库。`,
+      summary:
+        description ||
+        `从 ${title} 整理出的可复用风格预设，可直接作为后续生成时的风格与结构约束。`,
       coverImageUrl: item.cover,
       referenceInterpretation: `把这个模板理解为一套稳定的 ${categoryLabel} 视觉组织方式。优先继承它的画面结构、风格语言和约束边界，但不要复刻模板封面或示例中的固定主体。`,
       planningDirectives: dedupeLines([
         useWhen,
         ...guidance,
+        "优先保留模板原始提示词中的版式、镜头、风格和使用边界，不要重写成宽泛说明。",
         `优先抽取 ${categoryLabel} 任务中可复用的画面结构，再结合当前主体和目标重组内容。`,
         "模板只提供风格和组织方式，不替代当前任务对象定义。",
       ]),
+      promptBackbone: dedupeLines(
+        buildPromptBackboneLines(
+          [useWhen, ...guidance, ...pitfalls].filter(Boolean).join("\n"),
+        ),
+        6,
+      ),
       promptDirectives: dedupeLines([
         ...guidance,
         ...pitfalls.map((line) => `避免：${line}`),
@@ -174,4 +252,3 @@ export const buildImportedStyleLibrary = (
   preview.type === "case"
     ? buildCaseLibrary(preview.item, payload)
     : buildTemplateLibrary(preview.item, payload);
-

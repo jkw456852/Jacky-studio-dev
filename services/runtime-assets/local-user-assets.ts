@@ -861,6 +861,12 @@ const normalizeStyleLibrary = (
         .filter(Boolean)
         .slice(0, 8)
     : [];
+  const promptBackbone = Array.isArray(value.promptBackbone)
+    ? value.promptBackbone
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
   if (
     !title ||
     !summary ||
@@ -897,6 +903,7 @@ const normalizeStyleLibrary = (
     referenceInterpretation,
     planningDirectives,
     promptDirectives,
+    promptBackbone,
     createdBy,
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
     sourceMode,

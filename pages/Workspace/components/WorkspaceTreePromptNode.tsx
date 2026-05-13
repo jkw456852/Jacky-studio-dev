@@ -17,6 +17,7 @@ import type {
   CanvasElement,
   ImageModel,
   WorkspaceStyleLibrary,
+  WorkspaceStyleLibraryRuntimeOverlay,
 } from "../../../types";
 import { uploadImage } from "../../../utils/uploader";
 import {
@@ -312,6 +313,90 @@ const buildDetachedStyleLibraryAsset = (
   };
 };
 
+const dedupeStyleLibraryLines = (values: Array<string | undefined | null>) =>
+  Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
+
+const normalizeStyleLibraryRuntimeOverlay = (
+  overlay?: WorkspaceStyleLibraryRuntimeOverlay | null,
+): WorkspaceStyleLibraryRuntimeOverlay | undefined => {
+  if (!overlay) return undefined;
+
+  const summary = String(overlay.summary || "").trim();
+  const referenceInterpretation = String(overlay.referenceInterpretation || "").trim();
+  const planningDirectives = dedupeStyleLibraryLines(overlay.planningDirectives || []).slice(
+    0,
+    8,
+  );
+  const promptDirectives = dedupeStyleLibraryLines(overlay.promptDirectives || []).slice(
+    0,
+    8,
+  );
+  const promptBackbone = dedupeStyleLibraryLines(overlay.promptBackbone || []).slice(0, 8);
+  const createdBy = String(overlay.createdBy || "").trim();
+  const updatedAt = Number(overlay.updatedAt);
+
+  if (
+    !summary &&
+    !referenceInterpretation &&
+    planningDirectives.length === 0 &&
+    promptDirectives.length === 0 &&
+    promptBackbone.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    summary: summary || undefined,
+    referenceInterpretation: referenceInterpretation || undefined,
+    planningDirectives:
+      planningDirectives.length > 0 ? planningDirectives : undefined,
+    promptDirectives: promptDirectives.length > 0 ? promptDirectives : undefined,
+    promptBackbone: promptBackbone.length > 0 ? promptBackbone : undefined,
+    createdBy:
+      createdBy === "system" || createdBy === "main-brain" || createdBy === "user"
+        ? createdBy
+        : undefined,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
+  };
+};
+
+const buildEffectiveRuntimeStyleLibrary = (args: {
+  baseLibrary?: WorkspaceStyleLibrary | null;
+  runtimeOverlay?: WorkspaceStyleLibraryRuntimeOverlay | null;
+}) => {
+  const normalizedBase = normalizeWorkspaceStyleLibrary(args.baseLibrary);
+  if (!normalizedBase) return undefined;
+
+  const runtimeOverlay = normalizeStyleLibraryRuntimeOverlay(args.runtimeOverlay);
+  if (!runtimeOverlay) {
+    return normalizedBase;
+  }
+
+  return (
+    normalizeWorkspaceStyleLibrary({
+      ...normalizedBase,
+      summary: runtimeOverlay.summary || normalizedBase.summary,
+      referenceInterpretation:
+        runtimeOverlay.referenceInterpretation || normalizedBase.referenceInterpretation,
+      planningDirectives: dedupeStyleLibraryLines([
+        ...(normalizedBase.planningDirectives || []),
+        ...(runtimeOverlay.planningDirectives || []),
+      ]).slice(0, 8),
+      promptDirectives: dedupeStyleLibraryLines([
+        ...(normalizedBase.promptDirectives || []),
+        ...(runtimeOverlay.promptDirectives || []),
+      ]).slice(0, 8),
+      promptBackbone: dedupeStyleLibraryLines([
+        ...((normalizedBase.promptBackbone as string[] | undefined) || []),
+        ...((runtimeOverlay.promptBackbone as string[] | undefined) || []),
+      ]).slice(0, 8),
+      createdBy: normalizedBase.createdBy,
+      updatedAt: runtimeOverlay.updatedAt || normalizedBase.updatedAt,
+      sourceMode: normalizedBase.sourceMode,
+    }) || normalizedBase
+  );
+};
+
 const getStoredStyleLibraryOrigin = (
   library: WorkspaceStyleLibrary | null | undefined,
 ): "user" | "runtime" => {
@@ -341,6 +426,7 @@ type TreePromptStyleLibraryModalProps = {
   onClose: () => void;
   onDeleteSelectedUserStyleLibrary: () => void;
   onDeleteStyleLibraries: (libraryIds: string[]) => void;
+  onDisableStyleLibrary: () => void;
   onSaveDetachedAsset: () => void;
   onSeedCustomStyleLibrary: () => void;
   onSelectMode: (mode: NonNullable<CanvasElement["genReferenceRoleMode"]>) => void;
@@ -425,6 +511,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
   onClose,
   onDeleteSelectedUserStyleLibrary,
   onDeleteStyleLibraries,
+  onDisableStyleLibrary,
   onSaveDetachedAsset,
   onSeedCustomStyleLibrary,
   onSelectMode,
@@ -746,6 +833,17 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {normalizedStyleLibraryMode !== "none" ? (
+                <button
+                  type="button"
+                  className="rounded-[10px] border border-[#fecaca] bg-[#fff1f2] px-4 py-2 text-[13px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6]"
+                  onClick={() => {
+                    onDisableStyleLibrary();
+                  }}
+                >
+                  停用当前风格
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="rounded-[10px] bg-[#f4f6f9] px-4 py-2 text-[13px] text-[#4b5563] transition hover:bg-[#eceff3]"
@@ -884,7 +982,6 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                           : getStyleGalleryPreviewBackground(item.origin, index),
                       }}
                     >
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.95),transparent_42%),linear-gradient(180deg,rgba(17,24,39,0.02),rgba(17,24,39,0.12))]" />
                       {(active || batchSelected) && (
                         <div className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#111827] text-white shadow-[0_8px_20px_rgba(15,23,42,0.22)]">
                           <Check size={14} />
@@ -1075,6 +1172,13 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                       />
                     </label>
 
+                    <div className="rounded-[12px] border border-[#e5e7eb] bg-[#fafbfc] px-4 py-3">
+                      <div className="text-[13px] font-medium text-[#111827]">编排治理说明</div>
+                      <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
+                        风格库现在只负责定义参考图解释方式、规划约束和提示词骨架；是否执行生图前编排统一由全局开关控制，不再由单个风格库单独关闭。
+                      </div>
+                    </div>
+
                     <label className="block">
                       <div className="mb-2 text-[12px] font-medium text-[#6b7280]">规划指令</div>
                       <textarea
@@ -1130,11 +1234,15 @@ const TreePromptToolbar: React.FC<{
     mode: NonNullable<CanvasElement["genReferenceRoleMode"]>,
   ) => void;
   onStyleLibrarySave: (library: WorkspaceStyleLibrary | undefined) => void;
+  onStyleLibraryRuntimeOverlayChange: (
+    runtimeOverlay: WorkspaceStyleLibraryRuntimeOverlay | undefined,
+  ) => void;
   onToggleBerserkRetry: () => void;
   onCopy: () => void;
   onDelete: () => void;
   styleLibraryMode?: CanvasElement["genReferenceRoleMode"];
   currentStyleLibrary?: WorkspaceStyleLibrary;
+  currentStyleLibraryRuntimeOverlay?: WorkspaceStyleLibraryRuntimeOverlay;
 }> = ({
   activeTone,
   canUsePosterProductMode,
@@ -1142,11 +1250,13 @@ const TreePromptToolbar: React.FC<{
   onToneChange,
   onStyleLibraryChange,
   onStyleLibrarySave,
+  onStyleLibraryRuntimeOverlayChange,
   onToggleBerserkRetry,
   onCopy,
   onDelete,
   styleLibraryMode,
   currentStyleLibrary,
+  currentStyleLibraryRuntimeOverlay,
 }) => {
   const [showStyleLibraryPicker, setShowStyleLibraryPicker] = React.useState(false);
   const [isEditingStyleLibrary, setIsEditingStyleLibrary] = React.useState(false);
@@ -1179,9 +1289,15 @@ const TreePromptToolbar: React.FC<{
     styleLibraryLabel.length > 10
       ? `${styleLibraryLabel.slice(0, 10).trim()}...`
       : styleLibraryLabel;
-  const effectiveStyleLibrary = getEffectiveStyleLibrary({
+  const styleLibraryEnabled = normalizedStyleLibraryMode !== "none";
+  const styleLibraryStatusLabel = styleLibraryEnabled ? "已启用" : "未启用";
+  const baseStyleLibrary = getEffectiveStyleLibrary({
     mode: normalizedStyleLibraryMode,
     customLibrary: currentStyleLibrary,
+  });
+  const effectiveStyleLibrary = buildEffectiveRuntimeStyleLibrary({
+    baseLibrary: baseStyleLibrary,
+    runtimeOverlay: currentStyleLibraryRuntimeOverlay,
   });
   const selectedUserStyleLibrary = React.useMemo(
     () =>
@@ -1258,6 +1374,7 @@ const TreePromptToolbar: React.FC<{
     const persistedLibrary =
       persistUserStyleLibraryAsset(nextLibrary, "custom") || nextLibrary;
     onStyleLibrarySave(persistedLibrary);
+    onStyleLibraryRuntimeOverlayChange(undefined);
     onStyleLibraryChange("custom");
     setIsEditingStyleLibrary(false);
     setStyleLibraryRevision((value) => value + 1);
@@ -1266,6 +1383,7 @@ const TreePromptToolbar: React.FC<{
   }, [
     currentStyleLibrary,
     onStyleLibraryChange,
+    onStyleLibraryRuntimeOverlayChange,
     onStyleLibrarySave,
     normalizedStyleLibraryMode,
     selectedUserStyleLibrary,
@@ -1286,6 +1404,7 @@ const TreePromptToolbar: React.FC<{
       persistUserStyleLibraryAsset(seededLibrary, seedSourceMode) ||
       seededLibrary;
     onStyleLibrarySave(persistedLibrary);
+    onStyleLibraryRuntimeOverlayChange(undefined);
     onStyleLibraryChange("custom");
     setStyleLibraryDraft(buildStyleLibraryDraft(persistedLibrary));
     setIsEditingStyleLibrary(true);
@@ -1295,6 +1414,7 @@ const TreePromptToolbar: React.FC<{
     currentStyleLibrary,
     normalizedStyleLibraryMode,
     onStyleLibraryChange,
+    onStyleLibraryRuntimeOverlayChange,
     onStyleLibrarySave,
   ]);
 
@@ -1321,6 +1441,7 @@ const TreePromptToolbar: React.FC<{
       persistUserStyleLibraryAsset(assetCandidate, assetSourceMode) ||
       assetCandidate;
     onStyleLibrarySave(persistedLibrary);
+    onStyleLibraryRuntimeOverlayChange(undefined);
     onStyleLibraryChange("custom");
     setStyleLibraryDraft(buildStyleLibraryDraft(persistedLibrary));
     setIsEditingStyleLibrary(false);
@@ -1331,6 +1452,7 @@ const TreePromptToolbar: React.FC<{
     effectiveStyleLibrary,
     normalizedStyleLibraryMode,
     onStyleLibraryChange,
+    onStyleLibraryRuntimeOverlayChange,
     onStyleLibrarySave,
     selectedUserStyleLibrary,
     styleLibraryDraft,
@@ -1343,13 +1465,15 @@ const TreePromptToolbar: React.FC<{
     getStudioUserAssetApi().removeStyleLibrary(selectedUserStyleLibrary.id);
     if (currentStyleLibrary?.id === selectedUserStyleLibrary.id) {
       onStyleLibrarySave(undefined);
-      onStyleLibraryChange("default");
+      onStyleLibraryRuntimeOverlayChange(undefined);
+      onStyleLibraryChange("none");
     }
     setStyleLibraryRevision((value) => value + 1);
     setSelectedUserStyleLibraryId(null);
   }, [
     currentStyleLibrary?.id,
     onStyleLibraryChange,
+    onStyleLibraryRuntimeOverlayChange,
     onStyleLibrarySave,
     selectedUserStyleLibrary?.id,
   ]);
@@ -1369,23 +1493,33 @@ const TreePromptToolbar: React.FC<{
   const handleUseSelectedUserStyleLibrary = React.useCallback(
     (library: WorkspaceStyleLibrary) => {
       onStyleLibrarySave(library);
+      onStyleLibraryRuntimeOverlayChange(undefined);
       onStyleLibraryChange("custom");
       setStyleLibraryDraft(buildStyleLibraryDraft(library));
       setIsEditingStyleLibrary(false);
       setSelectedUserStyleLibraryId(library.id || null);
     },
-    [onStyleLibraryChange, onStyleLibrarySave],
+    [onStyleLibraryChange, onStyleLibraryRuntimeOverlayChange, onStyleLibrarySave],
   );
+
+  const handleDisableStyleLibrary = React.useCallback(() => {
+    onStyleLibrarySave(undefined);
+    onStyleLibraryRuntimeOverlayChange(undefined);
+    onStyleLibraryChange("none");
+    setSelectedUserStyleLibraryId(null);
+    setIsEditingStyleLibrary(false);
+  }, [onStyleLibraryChange, onStyleLibraryRuntimeOverlayChange, onStyleLibrarySave]);
 
   const handleEditSelectedUserStyleLibrary = React.useCallback(
     (library: WorkspaceStyleLibrary) => {
       onStyleLibrarySave(library);
+      onStyleLibraryRuntimeOverlayChange(undefined);
       onStyleLibraryChange("custom");
       setStyleLibraryDraft(buildStyleLibraryDraft(library));
       setIsEditingStyleLibrary(true);
       setSelectedUserStyleLibraryId(library.id || null);
     },
-    [onStyleLibraryChange, onStyleLibrarySave],
+    [onStyleLibraryChange, onStyleLibraryRuntimeOverlayChange, onStyleLibrarySave],
   );
 
   const handleStartEditingStyleLibrary = React.useCallback(() => {
@@ -1488,7 +1622,22 @@ const TreePromptToolbar: React.FC<{
           }}
         >
           <span>{LABEL_STYLE_LIBRARY}</span>
-          <span className="rounded-full bg-[#f3efff] px-2 py-0.5 text-[10px] font-semibold text-[#6b4eff]">
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              styleLibraryEnabled
+                ? "bg-[#ecfdf3] text-[#15803d]"
+                : "bg-[#f3f4f6] text-[#6b7280]"
+            }`}
+          >
+            {styleLibraryStatusLabel}
+          </span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              styleLibraryEnabled
+                ? "bg-[#f3efff] text-[#6b4eff]"
+                : "bg-[#f9fafb] text-[#9ca3af]"
+            }`}
+          >
             {compactStyleLibraryLabel}
           </span>
           <ChevronDown size={12} className="opacity-50" />
@@ -1520,7 +1669,8 @@ const TreePromptToolbar: React.FC<{
               normalizedIds.includes(currentStyleLibrary.id)
             ) {
               onStyleLibrarySave(undefined);
-              onStyleLibraryChange("default");
+              onStyleLibraryRuntimeOverlayChange(undefined);
+              onStyleLibraryChange("none");
             }
             if (
               selectedUserStyleLibrary?.id &&
@@ -1530,6 +1680,7 @@ const TreePromptToolbar: React.FC<{
             }
             setStyleLibraryRevision((value) => value + 1);
           }}
+          onDisableStyleLibrary={handleDisableStyleLibrary}
           onSaveDetachedAsset={handleSaveStyleLibraryAsAsset}
           onSeedCustomStyleLibrary={seedCustomStyleLibrary}
           onSelectMode={handleSelectStyleLibraryMode}
@@ -2304,16 +2455,24 @@ export const WorkspaceTreePromptNode: React.FC<
             isBerserkRetryEnabled={Boolean(element.genInfiniteRetry)}
             onToneChange={(tone) => updateSelectedElement({ treeNodeTone: tone })}
             onStyleLibraryChange={(mode) =>
-              updateSelectedElement({ genReferenceRoleMode: mode })
+              updateSelectedElement({
+                genReferenceRoleMode: mode,
+                ...(mode === "custom"
+                  ? null
+                  : { genStyleLibraryRuntimeOverlay: undefined }),
+              })
             }
-            onStyleLibrarySave={(library) =>
-              {
-                updateSelectedElement({
-                  genReferenceRoleMode: "custom",
-                  genStyleLibrary: library,
-                });
-              }
-            }
+            onStyleLibrarySave={(library) => {
+              updateSelectedElement({
+                genReferenceRoleMode: library ? "custom" : "none",
+                genStyleLibrary: library,
+              });
+            }}
+            onStyleLibraryRuntimeOverlayChange={(runtimeOverlay) => {
+              updateSelectedElement({
+                genStyleLibraryRuntimeOverlay: runtimeOverlay,
+              });
+            }}
             onToggleBerserkRetry={() =>
               updateSelectedElement({
                 genInfiniteRetry: !element.genInfiniteRetry,
@@ -2323,6 +2482,7 @@ export const WorkspaceTreePromptNode: React.FC<
             onDelete={onDelete}
             styleLibraryMode={element.genReferenceRoleMode}
             currentStyleLibrary={element.genStyleLibrary}
+            currentStyleLibraryRuntimeOverlay={element.genStyleLibraryRuntimeOverlay}
           />
         ) : null}
         <div
