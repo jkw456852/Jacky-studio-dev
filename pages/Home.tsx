@@ -31,6 +31,7 @@ import Sidebar from "../components/Sidebar";
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
+  subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from "../services/systemAnnouncements";
 import { useWorkspaceModelPreferences } from "./Workspace/controllers/useWorkspaceModelPreferences";
@@ -599,7 +600,11 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   }, []);
 
   useEffect(() => {
-    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    const syncUnreadCount = () => {
+      setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    };
+    syncUnreadCount();
+    return subscribeAnnouncementUnreadUpdates(syncUnreadCount);
   }, []);
 
   useEffect(() => {

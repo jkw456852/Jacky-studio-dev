@@ -21,6 +21,7 @@ import SystemAnnouncementModal from '../components/SystemAnnouncementModal';
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
+  subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from '../services/systemAnnouncements';
 import { createNewWorkspacePath, workspacePath } from '../utils/routes';
@@ -252,7 +253,11 @@ const Projects: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   }, []);
 
   useEffect(() => {
-    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    const syncUnreadCount = () => {
+      setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    };
+    syncUnreadCount();
+    return subscribeAnnouncementUnreadUpdates(syncUnreadCount);
   }, []);
 
   const handleOpenAnnouncements = () => {

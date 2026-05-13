@@ -116,6 +116,7 @@ import { resolveProjectThumbnail } from "../services/project-thumbnail";
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
+  subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from "../services/systemAnnouncements";
 import {
@@ -1508,7 +1509,11 @@ const Workspace: React.FC = () => {
   }, [isAssistantFullscreen, showAssistant]);
 
   useEffect(() => {
-    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    const syncUnreadCount = () => {
+      setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    };
+    syncUnreadCount();
+    return subscribeAnnouncementUnreadUpdates(syncUnreadCount);
   }, []);
 
   const handleOpenAnnouncements = useCallback(() => {

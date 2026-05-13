@@ -9,7 +9,9 @@ export interface SystemAnnouncement {
 }
 
 export const SYSTEM_ANNOUNCEMENTS_STORAGE_KEY =
-  "jkai-system-announcements-read";
+  "jkai-system-announcements-read-v2";
+export const SYSTEM_ANNOUNCEMENTS_SYNC_EVENT =
+  "jkai-system-announcements-sync";
 
 const buildAnnouncementReadKey = (announcement: SystemAnnouncement): string =>
   [announcement.id, announcement.date, announcement.title].join("::");
@@ -141,6 +143,11 @@ export const SYSTEM_ANNOUNCEMENTS: SystemAnnouncement[] = [
 const canUseLocalStorage = (): boolean =>
   typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
+const notifyAnnouncementSync = (): void => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SYSTEM_ANNOUNCEMENTS_SYNC_EVENT));
+};
+
 export const getReadAnnouncementIds = (): string[] => {
   if (!canUseLocalStorage()) return [];
   try {
@@ -162,7 +169,43 @@ export const markAllAnnouncementsAsRead = (): string[] => {
     SYSTEM_ANNOUNCEMENTS_STORAGE_KEY,
     JSON.stringify(readKeys),
   );
+  notifyAnnouncementSync();
   return readKeys;
+};
+
+export const subscribeAnnouncementUnreadUpdates = (
+  callback: () => void,
+): (() => void) => {
+  if (typeof window === "undefined") return () => {};
+
+  const handleWindowSync = () => callback();
+  const handleVisibilityChange = () => {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      callback();
+    }
+  };
+
+  window.addEventListener("focus", handleWindowSync);
+  window.addEventListener("storage", handleWindowSync);
+  window.addEventListener(
+    SYSTEM_ANNOUNCEMENTS_SYNC_EVENT,
+    handleWindowSync as EventListener,
+  );
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
+
+  return () => {
+    window.removeEventListener("focus", handleWindowSync);
+    window.removeEventListener("storage", handleWindowSync);
+    window.removeEventListener(
+      SYSTEM_ANNOUNCEMENTS_SYNC_EVENT,
+      handleWindowSync as EventListener,
+    );
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }
+  };
 };
 
 export const getUnreadAnnouncementCount = (): number => {

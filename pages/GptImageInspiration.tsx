@@ -26,6 +26,7 @@ import { getStudioUserAssetApi } from "../services/runtime-assets/api";
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
+  subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from "../services/systemAnnouncements";
 import {
@@ -628,7 +629,11 @@ const GptImageInspiration: React.FC = () => {
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
 
   useEffect(() => {
-    setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    const syncUnreadCount = () => {
+      setUnreadAnnouncementCount(getUnreadAnnouncementCount());
+    };
+    syncUnreadCount();
+    return subscribeAnnouncementUnreadUpdates(syncUnreadCount);
   }, []);
 
   useEffect(() => {
