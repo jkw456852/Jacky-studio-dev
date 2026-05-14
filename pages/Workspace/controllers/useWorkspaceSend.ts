@@ -179,6 +179,85 @@ const buildAgentResearchPayload = ({
 const isTransientAttachmentPreviewUrl = (value: string | null | undefined) =>
   /^blob:/i.test(String(value || "").trim());
 
+const dedupeWorkspaceAttachmentFiles = (files: WorkspaceInputFile[]) => {
+  const seen = new Set<string>();
+  return files.filter((file, index) => {
+    const key =
+      typeof file._attachmentId === "string" && file._attachmentId
+        ? file._attachmentId
+        : `${file.name}:${file.size}:${file.type}:${index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const cloneWorkspaceInputFileFromBlob = (
+  sourceFile: WorkspaceInputFile,
+  blob: Blob,
+): WorkspaceInputFile => {
+  const nextFile = new File(
+    [blob],
+    sourceFile.name || `attachment-${Date.now()}.png`,
+    {
+      type: blob.type || sourceFile.type || "image/png",
+      lastModified: Date.now(),
+    },
+  ) as WorkspaceInputFile;
+  nextFile.markerId = sourceFile.markerId;
+  nextFile.markerName = sourceFile.markerName;
+  nextFile.markerInfo = sourceFile.markerInfo;
+  nextFile.lastAiAnalysis = sourceFile.lastAiAnalysis;
+  nextFile._canvasAutoInsert = sourceFile._canvasAutoInsert;
+  nextFile._canvasElId = sourceFile._canvasElId;
+  nextFile._canvasWidth = sourceFile._canvasWidth;
+  nextFile._canvasHeight = sourceFile._canvasHeight;
+  nextFile._attachmentId = sourceFile._attachmentId;
+  nextFile._chipPreviewUrl = sourceFile._chipPreviewUrl;
+  return nextFile;
+};
+
+const hydrateCanvasAttachmentFile = async (
+  file: WorkspaceInputFile,
+  elementsSnapshot: CanvasElement[],
+  getElementSourceUrl: (el: CanvasElement) => string | undefined,
+): Promise<WorkspaceInputFile | null> => {
+  if (!(file._canvasElId || file._canvasAutoInsert)) {
+    return file;
+  }
+
+  if (file.size > 32) {
+    return file;
+  }
+
+  const matchedElement =
+    typeof file._canvasElId === "string" && file._canvasElId
+      ? elementsSnapshot.find((element) => element.id === file._canvasElId)
+      : undefined;
+
+  const sourceCandidates = [
+    String(file._chipPreviewUrl || "").trim(),
+    String(
+      matchedElement
+        ? getElementSourceUrl(matchedElement) || matchedElement.url || ""
+        : "",
+    ).trim(),
+  ].filter(Boolean);
+
+  for (const candidate of sourceCandidates) {
+    try {
+      const response = await fetch(candidate);
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      if (!blob.size) continue;
+      return cloneWorkspaceInputFileFromBlob(file, blob);
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
+};
 
 const buildRequestMetadata = ({
   topicId,
@@ -357,14 +436,38 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           .map((block) => block.text)
           .join(" ")
           .trim();
-      const allAttachmentFiles =
+      const selectedIdsSnapshot =
+        selectedElementIds.length > 0
+          ? [...selectedElementIds]
+          : selectedElementId
+            ? [selectedElementId]
+            : [];
+      const elementsSnapshot = [...elementsRef.current];
+      const pendingAttachments =
+        useAgentStore.getState().composer.pendingAttachments || [];
+      const confirmedAttachmentFiles =
         overrideAttachments ??
-        (currentBlocks
+        ((currentBlocks
           .filter((block) => block.type === "file" && block.file)
-          .map((block) => block.file!) as File[]);
-      const attachments = allAttachmentFiles.filter(
-        (file) => !(file as WorkspaceInputFile)._canvasElId,
-      );
+          .map((block) => block.file!) as WorkspaceInputFile[]));
+      const allAttachmentFiles =
+        overrideAttachments !== undefined
+          ? (overrideAttachments as WorkspaceInputFile[])
+          : dedupeWorkspaceAttachmentFiles([
+              ...confirmedAttachmentFiles,
+              ...pendingAttachments.map((item) => item.file as WorkspaceInputFile),
+            ]);
+      const attachments = (
+        await Promise.all(
+          allAttachmentFiles.map((file) =>
+            hydrateCanvasAttachmentFile(
+              file as WorkspaceInputFile,
+              elementsSnapshot,
+              getElementSourceUrl,
+            ),
+          ),
+        )
+      ).filter(Boolean) as WorkspaceInputFile[];
       const isWeb = overrideWeb ?? webEnabled;
 
       if (handleSpecialSkillData) {
@@ -382,18 +485,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
 
       if (!text && attachments.length === 0) return;
 
-      const selectedIdsSnapshot =
-        selectedElementIds.length > 0
-          ? [...selectedElementIds]
-          : selectedElementId
-            ? [selectedElementId]
-            : [];
-      const elementsSnapshot = [...elementsRef.current];
-
       const effectiveConversationId = ensureConversationId();
       const effectiveTopicId = buildMemoryKey(effectiveConversationId);
-      const pendingAttachments =
-        useAgentStore.getState().composer.pendingAttachments || [];
       const userMessagePayload =
         overridePrompt === undefined && overrideAttachments === undefined
           ? await buildUserChatMessagePayloadFromInputBlocks({
@@ -485,7 +578,6 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
             attachments.length;
           if (attachments.length > 0) {
             requestMetadata.multimodalContext.referencePolicy = "uploaded-only";
-            requestMetadata.multimodalContext.referenceImageUrls = [];
             if (requestMetadata.taskMode === "chat") {
               requestMetadata.multimodalContext.isolateVisualQa = true;
             }
