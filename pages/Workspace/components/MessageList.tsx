@@ -116,9 +116,9 @@ export const MessageList: React.FC<MessageListProps> = ({
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             {msg.role === "user" ? (
-              <div className="ml-auto flex w-fit max-w-[92%] items-end gap-3">
+              <div className="ml-auto flex w-full justify-end items-end gap-3 pl-10">
                 {shouldShowUserSkillBadge(msg) ? (
-                  <div className="inline-flex w-auto max-w-[min(100%,560px)] flex-none flex-col gap-2 overflow-hidden rounded-[24px] rounded-br-md border border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-800 shadow-sm">
+                  <div className="inline-flex min-w-0 w-auto max-w-[min(calc(100%-56px),560px)] flex-none flex-col gap-2 overflow-hidden rounded-[24px] rounded-br-md border border-gray-200 bg-white px-4 py-3 text-[13px] text-gray-800 shadow-sm">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-gray-900">
                         {msg.skillData?.name || "快捷操作"}
@@ -147,7 +147,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     )}
                   </div>
                 ) : (
-                  <div className="inline-flex w-auto max-w-[min(100%,560px)] flex-none flex-col gap-2 overflow-hidden rounded-[24px] rounded-br-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <div className="inline-flex min-w-0 w-auto max-w-[min(calc(100%-56px),560px)] flex-none flex-col gap-2 overflow-hidden rounded-[24px] rounded-br-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
                     {msg.inlineParts && msg.inlineParts.length > 0 ? (
                       <UserMessageInlineContent
                         inlineParts={msg.inlineParts}

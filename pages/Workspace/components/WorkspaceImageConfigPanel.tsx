@@ -16,6 +16,14 @@ import {
 } from "lucide-react";
 import type { CanvasElement, ImageModel } from "../../../types";
 import { normalizeMappedModelId } from "../../../services/provider-settings";
+import {
+  getAspectRatioPreviewSize,
+  getImageModelSupportState,
+  getNormalizedAspectRatioForImageModel,
+  isGptImage2AllModel,
+  type WorkspaceImageResolutionPreset,
+  type WorkspaceImageSupportStatus,
+} from "../../../services/openai-image-presets";
 import { isLikelyGeneratedReferencePreview } from "../workspaceShared";
 
 const IMAGE_QUALITY_OPTIONS = ["high", "medium", "low"] as const;
@@ -33,6 +41,25 @@ type AspectRatioOption = {
   label: string;
   value: string;
   size: string;
+};
+
+const getOptionToneClass = (
+  status: WorkspaceImageSupportStatus,
+  active: boolean,
+) => {
+  if (status === "disabled") {
+    return active
+      ? "border border-[#d7dde7] bg-[#f2f4f7] text-[#b7bfcb]"
+      : "border border-transparent bg-transparent text-[#c3cad5]";
+  }
+  if (status === "warning") {
+    return active
+      ? "border border-[#f3cf74] bg-[#fff7db] text-[#9a6700]"
+      : "border border-transparent bg-[#fff8e6] text-[#b7791f] hover:bg-[#fff2c2]";
+  }
+  return active
+    ? "border border-transparent bg-white text-[#111827] shadow-[0_8px_18px_rgba(15,23,42,0.08)]"
+    : "border border-transparent text-[#6b7280] hover:bg-gray-50 hover:text-[#111827]";
 };
 
 type WorkspaceImageConfigPanelProps = {
@@ -173,6 +200,49 @@ const WorkspaceImageConfigPanelImpl: React.FC<
     );
   }, [element.genProviderId, modelOptions, normalizedCurrentModelId]);
   const normalizedCurrentProviderId = currentModelOption.providerId || null;
+  const currentResolution = (element.genResolution || "1K") as WorkspaceImageResolutionPreset;
+  const currentAspectRatio = element.genAspectRatio || "1:1";
+  const normalizedAspectRatioForModel = useMemo(
+    () =>
+      getNormalizedAspectRatioForImageModel(
+        normalizedCurrentModelId,
+        currentAspectRatio,
+      ),
+    [currentAspectRatio, normalizedCurrentModelId],
+  );
+
+  const resolutionOptions = useMemo(
+    () =>
+      (["1K", "2K", "4K"] as const).map((resolution) => ({
+        value: resolution,
+        support: getImageModelSupportState({
+          model: normalizedCurrentModelId,
+          aspectRatio: normalizedAspectRatioForModel,
+          resolution,
+        }),
+      })),
+    [normalizedAspectRatioForModel, normalizedCurrentModelId],
+  );
+
+  const aspectRatioOptions = useMemo(
+    () =>
+      aspectRatios.map((ratio) => {
+        const support = getImageModelSupportState({
+          model: normalizedCurrentModelId,
+          aspectRatio: ratio.value,
+          resolution: currentResolution,
+        });
+        return {
+          ...ratio,
+          actualSize:
+            support.actualSize ||
+            getAspectRatioPreviewSize(ratio.value, currentResolution) ||
+            ratio.size.replace("*", "x"),
+          support,
+        };
+      }),
+    [aspectRatios, currentResolution, normalizedCurrentModelId],
+  );
 
   useEffect(() => {
     setShowReferenceThumbnails(false);
@@ -277,6 +347,16 @@ const WorkspaceImageConfigPanelImpl: React.FC<
     panel.style.left = `${screenPosition?.left ?? -100000}px`;
     panel.style.top = `${screenPosition?.top ?? -100000}px`;
   }, [isScreenPositioned, screenPosition]);
+
+  useEffect(() => {
+    const nextAspectRatio = getNormalizedAspectRatioForImageModel(
+      normalizedCurrentModelId,
+      currentAspectRatio,
+    );
+    if (nextAspectRatio !== currentAspectRatio) {
+      updateSelectedElement({ genAspectRatio: nextAspectRatio });
+    }
+  }, [currentAspectRatio, normalizedCurrentModelId, updateSelectedElement]);
 
   if (!shouldRender) {
     return null;
@@ -415,9 +495,14 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                   <button
                     key={`${model.providerName || "default"}-${model.id}-${index}`}
                     onClick={() => {
+                      const nextAspectRatio = getNormalizedAspectRatioForImageModel(
+                        model.id,
+                        currentAspectRatio,
+                      );
                       updateSelectedElement({
                         genModel: model.id as ImageModel,
                         genProviderId: model.providerId || null,
+                        genAspectRatio: nextAspectRatio,
                       });
                       setShowModelPicker(false);
                       setShowQualityPicker(false);
@@ -514,25 +599,36 @@ const WorkspaceImageConfigPanelImpl: React.FC<
               }}
               className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-black transition px-2 py-1.5 hover:bg-gray-50 rounded-lg"
             >
-              {element.genResolution || "1K"}
+              {currentResolution}
               <ChevronDown size={10} className="opacity-50" />
             </button>
             {showResPicker && (
-              <div className="absolute bottom-full mb-2 right-0 w-28 bg-white rounded-xl shadow-xl border border-gray-100 p-1 z-[60]">
-                {["1K", "2K", "4K"].map((resolution) => (
+              <div className="absolute bottom-full mb-2 right-0 w-40 bg-white rounded-xl shadow-xl border border-gray-100 p-1 z-[60]">
+                {resolutionOptions.map(({ value, support }) => {
+                  const isActive = currentResolution === value;
+                  const disabled = support.status === "disabled";
+                  return (
                   <button
-                    key={resolution}
+                    key={value}
                     onClick={() => {
+                      if (disabled) return;
                       updateSelectedElement({
-                        genResolution: resolution as "1K" | "2K" | "4K",
+                        genResolution: value,
                       });
                       setShowResPicker(false);
                     }}
-                    className={`w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg text-xs transition ${element.genResolution === resolution ? "text-blue-600 font-bold bg-blue-50/30" : "text-gray-600"}`}
+                    disabled={disabled}
+                    title={support.reason || undefined}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs transition ${getOptionToneClass(support.status, isActive)} ${disabled ? "cursor-not-allowed" : ""}`}
                   >
-                    {resolution}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{value}</span>
+                      <span className="text-[10px] font-mono opacity-80">
+                        {support.actualSize || "--"}
+                      </span>
+                    </div>
                   </button>
-                ))}
+                )})}
               </div>
             )}
           </div>
@@ -548,7 +644,7 @@ const WorkspaceImageConfigPanelImpl: React.FC<
               }}
               className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-black transition px-2 py-1.5 hover:bg-gray-50 rounded-lg"
             >
-              {element.genAspectRatio || "1:1"}
+              {currentAspectRatio}
               <ChevronDown size={10} className="opacity-50" />
             </button>
             {showRatioPicker && (
@@ -556,33 +652,59 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                 <div className="px-2 py-1.5 text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">
                   比例
                 </div>
-                {aspectRatios.map((ratio) => {
-                  const isActive = element.genAspectRatio === ratio.value;
+                {aspectRatioOptions.map((ratio) => {
+                  const isActive = currentAspectRatio === ratio.value;
+                  const disabled = ratio.support.status === "disabled";
                   return (
                     <button
                       key={ratio.value}
                       onClick={() => {
+                        if (disabled) return;
                         updateSelectedElement({ genAspectRatio: ratio.value });
                         setShowRatioPicker(false);
                       }}
-                      className={`w-full text-left px-2 py-1.5 hover:bg-gray-50 rounded-lg text-xs transition flex items-center justify-between group ${isActive ? "text-blue-600 bg-blue-50/50 font-bold" : "text-gray-700 font-medium"}`}
+                      disabled={disabled}
+                      title={ratio.support.reason || undefined}
+                      className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition flex items-center justify-between group border ${getOptionToneClass(ratio.support.status, isActive)} ${disabled ? "cursor-not-allowed" : ""}`}
                     >
                       <div className="flex items-center gap-2">
                         <div
-                          className={`text-gray-400 ${isActive ? "text-blue-600" : "group-hover:text-gray-600"}`}
+                          className={`${
+                            ratio.support.status === "disabled"
+                              ? "text-[#b7bfcb]"
+                              : isActive
+                                ? "text-blue-600"
+                                : "text-gray-400"
+                          }`}
                         >
                           {renderRatioIcon(ratio.value, isActive)}
                         </div>
                         <span>{ratio.label}</span>
                       </div>
                       <span
-                        className={`text-[10px] font-mono ${isActive ? "text-blue-400/80" : "text-gray-400/80"}`}
+                        className={`text-[10px] font-mono ${
+                          ratio.support.status === "warning"
+                            ? "text-[#b7791f]"
+                            : ratio.support.status === "disabled"
+                              ? "text-[#b7bfcb]"
+                              : isActive
+                                ? "text-blue-400/80"
+                                : "text-gray-400/80"
+                        }`}
                       >
-                        {ratio.size}
+                        {ratio.support.actualSize
+                          ? ratio.actualSize
+                          : "\u4e0d\u53ef\u7528"}
                       </span>
                     </button>
                   );
                 })}
+                {normalizedCurrentModelId === "gpt-image-2" ||
+                isGptImage2AllModel(normalizedCurrentModelId) ? (
+                  <div className="px-2 pt-2 text-[10px] leading-4 text-[#b7791f]">
+                    {"\u9ec4\u8272\u8868\u793a\u5b98\u65b9\u53ef\u7528\uff0c\u4f46\u4e91\u96fe\u6587\u6863\u672a\u5217\u4e3a\u5f53\u524d\u6a21\u578b\u7684\u6807\u51c6\u5c3a\u5bf8\u3002"}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

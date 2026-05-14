@@ -1,5 +1,9 @@
 import React from "react";
 import type { CanvasElement } from "../../types";
+import {
+  getAspectRatioPreviewSize,
+  WORKSPACE_IMAGE_ASPECT_RATIO_VALUES,
+} from "../../services/openai-image-presets";
 
 export const FONTS = [
   "Inter",
@@ -15,22 +19,17 @@ export const FONTS = [
   "Times New Roman",
 ];
 
-export const ASPECT_RATIOS = [
-  { label: "8:1", value: "8:1", size: "1024*128", width: 1024, height: 128 },
-  { label: "4:1", value: "4:1", size: "1024*256", width: 1024, height: 256 },
-  { label: "21:9", value: "21:9", size: "1568*672", width: 1568, height: 672 },
-  { label: "16:9", value: "16:9", size: "1456*816", width: 1456, height: 816 },
-  { label: "3:2", value: "3:2", size: "1344*896", width: 1344, height: 896 },
-  { label: "4:3", value: "4:3", size: "1232*928", width: 1232, height: 928 },
-  { label: "5:4", value: "5:4", size: "1280*1024", width: 1280, height: 1024 },
-  { label: "1:1", value: "1:1", size: "1024*1024", width: 1024, height: 1024 },
-  { label: "4:5", value: "4:5", size: "1024*1280", width: 1024, height: 1280 },
-  { label: "3:4", value: "3:4", size: "928*1232", width: 928, height: 1232 },
-  { label: "2:3", value: "2:3", size: "896*1344", width: 896, height: 1344 },
-  { label: "9:16", value: "9:16", size: "816*1456", width: 816, height: 1456 },
-  { label: "1:4", value: "1:4", size: "256*1024", width: 256, height: 1024 },
-  { label: "1:8", value: "1:8", size: "128*1024", width: 128, height: 1024 },
-];
+export const ASPECT_RATIOS = WORKSPACE_IMAGE_ASPECT_RATIO_VALUES.map((value) => {
+  const size = getAspectRatioPreviewSize(value, "1K") || "1024x1024";
+  const [widthText, heightText] = size.split("x");
+  return {
+    label: value,
+    value,
+    size: size.replace("x", "*"),
+    width: Number(widthText) || 1024,
+    height: Number(heightText) || 1024,
+  };
+});
 
 export const DEFAULT_PROXY_MAX_DIM = 2560;
 

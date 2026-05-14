@@ -10,6 +10,11 @@ import {
 } from './image-reference-resolver';
 import { parseMappedModelStorageEntry, resolveImageModelPostPath } from './provider-settings';
 import { getStudioUserAssetApi } from './runtime-assets/api.ts';
+import {
+    getOfficialGptImage2Size,
+    getNormalizedAspectRatioForImageModel,
+    isGptImage2FamilyModel,
+} from './openai-image-presets';
 
 const isNetworkFetchError = (error: unknown): boolean => {
     const msg = ((error as any)?.message || '').toLowerCase();
@@ -2682,29 +2687,23 @@ const getOpenAIImageRequestMode = (
     return 'standard-openai';
 };
 
-const normalizeOpenAIImageAspectRatio = (aspectRatio: string): string => {
+const normalizeOpenAIImageAspectRatio = (
+    model: string,
+    aspectRatio: string,
+): string => {
     const normalized = String(aspectRatio || '').trim();
-    if (
-        normalized === '1:1'
-        || normalized === '3:4'
-        || normalized === '4:3'
-        || normalized === '9:16'
-        || normalized === '16:9'
-        || normalized === '2:3'
-        || normalized === '3:2'
-        || normalized === '4:5'
-        || normalized === '5:4'
-    ) {
+    if (getOfficialGptImage2Size(normalized, '1K')) {
         return normalized;
     }
-
+    if (isGptImage2FamilyModel(model)) {
+        return getNormalizedAspectRatioForImageModel(model, normalized);
+    }
     if (normalized === '21:9' || normalized === '8:1' || normalized === '4:1') {
         return '16:9';
     }
     if (normalized === '1:4' || normalized === '1:8') {
         return '9:16';
     }
-
     return '1:1';
 };
 
@@ -2713,51 +2712,16 @@ const resolveOpenAIImageSize = (
     aspectRatio: string,
     imageSize?: '1K' | '2K' | '4K',
 ): string => {
-    const ratio = normalizeOpenAIImageAspectRatio(aspectRatio);
+    const ratio = normalizeOpenAIImageAspectRatio(model, aspectRatio);
     const preset = imageSize || '1K';
     const requestMode = getOpenAIImageRequestMode(model, preset);
 
-    const map: Record<'1K' | '2K' | '4K', Record<string, string>> = {
-        '1K': {
-            '1:1': '1024x1024',
-            '3:4': '768x1024',
-            '4:3': '1024x768',
-            '9:16': '864x1536',
-            '16:9': '1536x864',
-            '2:3': '1024x1536',
-            '3:2': '1536x1024',
-            '4:5': '1024x1280',
-            '5:4': '1280x1024',
-        },
-        '2K': {
-            '1:1': '1440x1440',
-            '3:4': '1224x1632',
-            '4:3': '1632x1224',
-            '9:16': '1152x2048',
-            '16:9': '2048x1152',
-            '2:3': '1152x1728',
-            '3:2': '1728x1152',
-            '4:5': '1280x1600',
-            '5:4': '1600x1280',
-        },
-        '4K': {
-            '1:1': '2880x2880',
-            '3:4': '2448x3264',
-            '4:3': '3264x2448',
-            '9:16': '2304x4096',
-            '16:9': '4096x2304',
-            '2:3': '2304x3456',
-            '3:2': '3456x2304',
-            '4:5': '2560x3200',
-            '5:4': '3200x2560',
-        },
-    };
-
-    if (requestMode === 'reverse-compat') {
-        return map['1K'][ratio] || map['1K']['1:1'];
-    }
-
-    return map[preset][ratio] || map[preset]['1:1'];
+    const resolvedPreset = requestMode === 'reverse-compat' ? '1K' : preset;
+    return (
+        getOfficialGptImage2Size(ratio, resolvedPreset) ||
+        getOfficialGptImage2Size('1:1', resolvedPreset) ||
+        '1024x1024'
+    );
 };
 
 const mimeTypeToFileExtension = (mimeType: string): string => {
@@ -2981,7 +2945,7 @@ const requestOpenAICompatibleImage = async (opts: {
         });
     const requestMode = getOpenAIImageRequestMode(opts.model, opts.imageSize);
     const size = resolveOpenAIImageSize(opts.model, opts.aspectRatio, opts.imageSize);
-    const normalizedAspectRatio = normalizeOpenAIImageAspectRatio(opts.aspectRatio);
+    const normalizedAspectRatio = normalizeOpenAIImageAspectRatio(opts.model, opts.aspectRatio);
     const requestTuning = getOpenAIImageRequestTuning(isEditRequest ? 'edit' : 'generate', requestMode, {
         disableTransportRetries: opts.disableTransportRetries,
     });

@@ -29,6 +29,13 @@ import {
 import { TREE_NODE_CARD_WIDTH } from "../workspaceTreeNode";
 import { normalizeMappedModelId } from "../../../services/provider-settings";
 import {
+  getImageModelSupportState,
+  getNormalizedAspectRatioForImageModel,
+  isGptImage2AllModel,
+  type WorkspaceImageResolutionPreset,
+  type WorkspaceImageSupportStatus,
+} from "../../../services/openai-image-presets";
+import {
   STYLE_LIBRARY_MODE_META,
   createStyleLibraryDraftFromMode,
   getEffectiveStyleLibrary,
@@ -100,6 +107,25 @@ const IMAGE_QUALITY_SHORT_LABEL: Record<
   low: "L",
 };
 const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+
+const getSupportPillClass = (
+  status: WorkspaceImageSupportStatus,
+  active: boolean,
+) => {
+  if (status === "disabled") {
+    return active
+      ? "border border-[#d7dde7] bg-[#f2f4f7] text-[#b7bfcb]"
+      : "border border-transparent bg-transparent text-[#c3cad5]";
+  }
+  if (status === "warning") {
+    return active
+      ? "border border-[#f3cf74] bg-[#fff7db] text-[#9a6700]"
+      : "border border-transparent bg-[#fff8e6] text-[#b7791f] hover:bg-[#fff2c2]";
+  }
+  return active
+    ? "border border-transparent bg-white text-[#111827] shadow-[0_8px_18px_rgba(15,23,42,0.08)]"
+    : "border border-transparent text-[#6b7280] hover:bg-white/78 hover:text-[#111827]";
+};
 
 type WorkspaceTreePromptNodeProps = {
   element: CanvasElement;
@@ -2408,18 +2434,20 @@ const TreePromptSettingsModal: React.FC<{
     size: string;
   }>;
   anchorRect: DOMRect | null;
+  currentModelId: string;
   currentAspectRatio: string;
   currentImageCount: number;
   currentQuality: (typeof IMAGE_QUALITY_OPTIONS)[number];
-  currentResolution: "1K" | "2K" | "4K";
+  currentResolution: WorkspaceImageResolutionPreset;
   onClose: () => void;
   onSelectAspectRatio: (value: string) => void;
   onSelectImageCount: (value: number) => void;
   onSelectQuality: (value: (typeof IMAGE_QUALITY_OPTIONS)[number]) => void;
-  onSelectResolution: (value: "1K" | "2K" | "4K") => void;
+  onSelectResolution: (value: WorkspaceImageResolutionPreset) => void;
 }> = ({
   aspectRatios,
   anchorRect,
+  currentModelId,
   currentAspectRatio,
   currentImageCount,
   currentQuality,
@@ -2453,6 +2481,26 @@ const TreePromptSettingsModal: React.FC<{
   const panelBottom = anchorRect
     ? window.innerHeight - anchorRect.top + 10
     : window.innerHeight / 2 + 34;
+  const normalizedAspectRatio = getNormalizedAspectRatioForImageModel(
+    currentModelId,
+    currentAspectRatio,
+  );
+  const resolutionOptions = (["1K", "2K", "4K"] as const).map((resolution) => ({
+    value: resolution,
+    support: getImageModelSupportState({
+      model: currentModelId,
+      aspectRatio: normalizedAspectRatio,
+      resolution,
+    }),
+  }));
+  const aspectRatioOptions = aspectRatios.map((ratio) => ({
+    ...ratio,
+    support: getImageModelSupportState({
+      model: currentModelId,
+      aspectRatio: ratio.value,
+      resolution: currentResolution,
+    }),
+  }));
 
   return createPortal(
     <div
@@ -2481,20 +2529,25 @@ const TreePromptSettingsModal: React.FC<{
                   分辨率
                 </div>
                 <div className="grid grid-cols-3 gap-2 rounded-[18px] bg-[#f4f6fa] p-1.5">
-                  {(["1K", "2K", "4K"] as const).map((resolution) => {
-                    const active = currentResolution === resolution;
+                  {resolutionOptions.map(({ value, support }) => {
+                    const active = currentResolution === value;
+                    const disabled = support.status === "disabled";
                     return (
                       <button
-                        key={resolution}
+                        key={value}
                         type="button"
-                        className={`rounded-[14px] px-3 py-2.5 text-[13px] font-semibold transition ${
-                          active
-                            ? "bg-white text-[#111827] shadow-[0_8px_18px_rgba(15,23,42,0.08)]"
-                            : "text-[#6b7280] hover:text-[#111827]"
-                        }`}
-                        onClick={() => onSelectResolution(resolution)}
+                        disabled={disabled}
+                        title={support.reason || undefined}
+                        className={`rounded-[14px] px-3 py-2.5 text-[13px] font-semibold transition ${getSupportPillClass(support.status, active)} ${disabled ? "cursor-not-allowed" : ""}`}
+                        onClick={() => {
+                          if (disabled) return;
+                          onSelectResolution(value);
+                        }}
                       >
-                        {resolution}
+                        <span className="block">{value}</span>
+                        <span className="mt-1 block text-[10px] font-mono opacity-80">
+                          {support.actualSize || "--"}
+                        </span>
                       </button>
                     );
                   })}
@@ -2506,24 +2559,35 @@ const TreePromptSettingsModal: React.FC<{
                   比例
                 </div>
                 <div className="grid grid-cols-4 gap-2 rounded-[18px] bg-[#f7f8fb] p-1.5">
-                  {aspectRatios.map((ratio) => {
+                  {aspectRatioOptions.map((ratio) => {
                     const active = currentAspectRatio === ratio.value;
+                    const disabled = ratio.support.status === "disabled";
                     return (
                       <button
                         key={ratio.value}
                         type="button"
-                        className={`flex min-h-[58px] items-center justify-center rounded-[14px] px-2 py-2 text-center text-[13px] font-semibold transition ${
-                          active
-                            ? "bg-white text-[#111827] shadow-[0_8px_18px_rgba(15,23,42,0.08)]"
-                            : "text-[#6b7280] hover:bg-white/78 hover:text-[#111827]"
-                        }`}
-                        onClick={() => onSelectAspectRatio(ratio.value)}
+                        disabled={disabled}
+                        title={ratio.support.reason || undefined}
+                        className={`flex min-h-[58px] flex-col items-center justify-center rounded-[14px] px-2 py-2 text-center text-[13px] font-semibold transition ${getSupportPillClass(ratio.support.status, active)} ${disabled ? "cursor-not-allowed" : ""}`}
+                        onClick={() => {
+                          if (disabled) return;
+                          onSelectAspectRatio(ratio.value);
+                        }}
                       >
-                        {ratio.label}
+                        <span>{ratio.label}</span>
+                        <span className="mt-1 text-[10px] font-mono opacity-80">
+                          {ratio.support.actualSize || "--"}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
+                {currentModelId === "gpt-image-2" ||
+                isGptImage2AllModel(currentModelId) ? (
+                  <div className="mt-2 px-1 text-[10px] leading-4 text-[#b7791f]">
+                    {"\u9ec4\u8272\u8868\u793a\u5b98\u65b9\u53ef\u7528\uff0c\u4f46\u4e91\u96fe\u6587\u6863\u672a\u5217\u4e3a\u5f53\u524d\u6a21\u578b\u7684\u6807\u51c6\u5c3a\u5bf8\u3002"}
+                  </div>
+                ) : null}
               </section>
 
               <section>
@@ -2639,7 +2703,7 @@ const TreePromptGenerateControls: React.FC<{
   const imageCount = element.genImageCount || 1;
   const imageQuality = element.genImageQuality || "medium";
   const currentModelLabel = getModelControlLabel(currentModelOption);
-  const currentResolution = (element.genResolution || "1K") as "1K" | "2K" | "4K";
+  const currentResolution = (element.genResolution || "1K") as WorkspaceImageResolutionPreset;
   const currentAspectRatio = element.genAspectRatio || "1:1";
   const settingsSummary = `${currentResolution} | ${currentAspectRatio} | ${imageCount}p`;
 
@@ -2655,6 +2719,16 @@ const TreePromptGenerateControls: React.FC<{
   const activateNode = () => {
     selectElement(element.id);
   };
+
+  React.useEffect(() => {
+    const nextAspectRatio = getNormalizedAspectRatioForImageModel(
+      normalizedCurrentModelId,
+      currentAspectRatio,
+    );
+    if (nextAspectRatio !== currentAspectRatio) {
+      updateSelectedElement({ genAspectRatio: nextAspectRatio });
+    }
+  }, [currentAspectRatio, normalizedCurrentModelId, updateSelectedElement]);
 
   React.useEffect(() => {
     if (!showSettingsPicker) {
@@ -2706,9 +2780,14 @@ const TreePromptGenerateControls: React.FC<{
               onClose={() => setShowModelPicker(false)}
               onSelect={(model) => {
                 activateNode();
+                const nextAspectRatio = getNormalizedAspectRatioForImageModel(
+                  model.id,
+                  currentAspectRatio,
+                );
                 updateSelectedElement({
                   genModel: model.id as ImageModel,
                   genProviderId: model.providerId || null,
+                  genAspectRatio: nextAspectRatio,
                 });
                 closeAllPickers();
               }}
@@ -2749,6 +2828,7 @@ const TreePromptGenerateControls: React.FC<{
             <TreePromptSettingsModal
               anchorRect={settingsAnchorRect}
               aspectRatios={aspectRatios}
+              currentModelId={normalizedCurrentModelId}
               currentAspectRatio={currentAspectRatio}
               currentImageCount={imageCount}
               currentQuality={imageQuality}

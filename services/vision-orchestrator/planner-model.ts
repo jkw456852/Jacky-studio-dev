@@ -1038,15 +1038,30 @@ const buildTaskPlannerResultThoughtsClean = (
   return lines.slice(0, 10);
 };
 
+const EXPLICIT_SET_MODE_PATTERN =
+  /详情页|詳情頁|detail page|campaign set|套图|组图|系列|一套|成套|多页|多屏|multi[\s-]?page|四页|4页|第一页|第二页|第三页|第四页|page\s*1|page\s*2|page\s*3|page\s*4|封面主视觉|核心卖点|功能细节|使用场景|参数图|规格图|卖点页/;
+
+const isExplicitSetModePrompt = (prompt: string) =>
+  EXPLICIT_SET_MODE_PATTERN.test(String(prompt || "").toLowerCase());
+
+const SET_ROLE_KEYWORDS = [
+  "封面主视觉",
+  "核心卖点",
+  "功能细节",
+  "使用场景",
+  "参数图",
+  "规格图",
+];
+
 const inferTaskModeFromInput = (
   input: PlanVisualTaskInput,
 ): VisualExecutionMode => {
   const prompt = String(input.prompt || "").toLowerCase();
-  if (
-    /详情页|詳情頁|detail page|campaign set|套图|组图|系列|multi[\s-]?page|cover|卖点页/.test(
-      prompt,
-    )
-  ) {
+  const matchedRoleCount = SET_ROLE_KEYWORDS.reduce(
+    (count, keyword) => (prompt.includes(keyword) ? count + 1 : count),
+    0,
+  );
+  if (isExplicitSetModePrompt(prompt) || matchedRoleCount >= 2) {
     return "set";
   }
   return "single";
@@ -1148,7 +1163,11 @@ const buildMainBrainFallbackPlanningBrief = (
       patch.intent ||
       (mode === "set" ? "visual_set_generation" : "single_visual_generation"),
     deliverableForm:
-      mode === "set" ? `${count} 张成组视觉输出` : "1 张单图视觉输出",
+      mode === "set"
+        ? `${count} 张成组视觉输出`
+        : count > 1
+          ? `${count} 张同目标抽卡候选图`
+          : "1 张单图视觉输出",
     aspectRatioStrategy:
       mode === "set"
         ? `先按页面职责决定比例，当前可先以 ${ratio} 作为默认起点。`
@@ -1166,15 +1185,23 @@ const buildMainBrainFallbackPlanningBrief = (
     promptDirectives:
       mode === "set"
         ? ["每张图只承担当前页面职责，不把整套内容混进单张图。"]
-        : [
-            "先区分每张参考图分别在提供什么信息，再决定哪些保留、哪些替换。",
-            "如果版式参考和产品参考冲突，保留版式结构，但把产品真值、品牌和外观改成产品参考与文字需求指定的版本。",
-            "只围绕当前目标输出单张结果，不额外展开成套版式。",
-          ],
+        : count > 1
+          ? [
+              "当前是同目标抽卡模式：所有图片保持同一任务目标，只做构图、镜头和视觉节奏变化，不拆页面职责。",
+              "先区分每张参考图分别在提供什么信息，再决定哪些保留、哪些替换。",
+              "如果版式参考和产品参考冲突，保留版式结构，但把产品真值、品牌和外观改成产品参考与文字需求指定的版本。",
+            ]
+          : [
+              "先区分每张参考图分别在提供什么信息，再决定哪些保留、哪些替换。",
+              "如果版式参考和产品参考冲突，保留版式结构，但把产品真值、品牌和外观改成产品参考与文字需求指定的版本。",
+              "只围绕当前目标输出单张结果，不额外展开成套版式。",
+            ],
     risks: [
       mode === "set"
         ? "如果页面职责不够分离，容易退化成重复页面。"
-        : "如果主体边界不清，模型容易把多参考图混成错误主体。",
+        : count > 1
+          ? "如果把抽卡误判成套图任务，4 张图会被拆成不同职责而不是候选变体。"
+          : "如果主体边界不清，模型容易把多参考图混成错误主体。",
     ],
   };
 };
@@ -1474,6 +1501,9 @@ const buildTaskPlannerPrompt = (
     "You must also return roleOverlay for this exact task.",
     "When the built-in style-library modes are not enough, you may also return styleLibrary.",
     "If mode=set, also return sharedStyleGuide and pages.",
+    "Do not interpret requestedImageCount > 1 as mode=set by default.",
+    "If the user mainly wants multiple candidates,抽卡, options, or same-goal variations, keep mode=single and treat the count as variant sampling.",
+    "Use mode=set only when the user clearly asks for a structured set, multi-page deliverable, or distinct page duties.",
     "",
     "[User Prompt]",
     input.prompt,

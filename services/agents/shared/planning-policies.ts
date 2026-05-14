@@ -6,24 +6,45 @@ export type VisualTaskPlaybook =
 
 const DETAIL_PAGE_KEYWORDS = [
   "详情页",
-  "电商",
+  "电商详情页",
   "商品页",
-  "卖点",
-  "主图",
   "套图",
   "多页",
   "多屏",
-  "产品介绍",
+  "产品介绍页",
   "首屏",
   "白底图",
   "参数图",
-  "场景图",
   "detail page",
-  "e-commerce",
-  "ecommerce",
-  "selling point",
-  "listing",
+  "e-commerce detail page",
+  "ecommerce detail page",
+  "listing page",
   "product page",
+];
+
+const VARIANT_SAMPLING_KEYWORDS = [
+  "抽卡",
+  "抽4张",
+  "抽四张",
+  "四张候选",
+  "4张候选",
+  "多出几张",
+  "出4张",
+  "出四张",
+  "候选图",
+  "候选方案",
+  "同一需求",
+  "同目标",
+  "变体",
+  "候选",
+  "任选",
+  "随机来几张",
+  "variants",
+  "variation",
+  "variations",
+  "candidates",
+  "same-goal variations",
+  "multiple candidates",
 ];
 
 const POSTER_EDIT_KEYWORDS = [
@@ -59,10 +80,26 @@ const MULTI_PAGE_SET_KEYWORDS = [
   "一套",
   "组图",
   "成套",
-  "多张",
+  "四页",
+  "4页",
+  "第一页",
+  "第二页",
+  "第三页",
+  "第四页",
+  "每页",
+  "逐页",
   "pages",
-  "set",
+  "campaign set",
   "series",
+];
+
+const SET_ROLE_KEYWORDS = [
+  "封面主视觉",
+  "核心卖点",
+  "功能细节",
+  "使用场景",
+  "参数图",
+  "规格图",
 ];
 
 const PRODUCT_NOUNS = [
@@ -91,6 +128,12 @@ const EDIT_ACTION_KEYWORDS = [
 
 const includesAnyKeyword = (text: string, keywords: string[]) =>
   keywords.some((keyword) => text.includes(keyword));
+
+const countMatchingKeywords = (text: string, keywords: string[]) =>
+  keywords.reduce(
+    (count, keyword) => (text.includes(keyword) ? count + 1 : count),
+    0,
+  );
 
 export const buildPromptListSection = (title: string, lines: string[]) =>
   [`[${title}]`, ...lines.map((line) => `- ${line}`)].join("\n");
@@ -155,12 +198,16 @@ export const inferVisualTaskPlaybooks = (args: {
   const normalized = String(args.prompt || "").toLowerCase();
   const requestedImageCount = Math.max(0, Number(args.requestedImageCount || 0));
   const referenceCount = Math.max(0, Number(args.referenceCount || 0));
+  const isVariantSamplingIntent = includesAnyKeyword(
+    normalized,
+    VARIANT_SAMPLING_KEYWORDS,
+  );
+  const hasExplicitSetIntent =
+    includesAnyKeyword(normalized, MULTI_PAGE_SET_KEYWORDS) ||
+    countMatchingKeywords(normalized, SET_ROLE_KEYWORDS) >= 2;
   const playbooks: VisualTaskPlaybook[] = [];
 
-  if (
-    includesAnyKeyword(normalized, DETAIL_PAGE_KEYWORDS) ||
-    (requestedImageCount > 1 && includesAnyKeyword(normalized, PRODUCT_NOUNS))
-  ) {
+  if (includesAnyKeyword(normalized, DETAIL_PAGE_KEYWORDS)) {
     playbooks.push("detail_page_set");
   }
 
@@ -175,10 +222,7 @@ export const inferVisualTaskPlaybooks = (args: {
     playbooks.push("product_scene");
   }
 
-  if (
-    requestedImageCount > 1 ||
-    includesAnyKeyword(normalized, MULTI_PAGE_SET_KEYWORDS)
-  ) {
+  if (hasExplicitSetIntent && !isVariantSamplingIntent) {
     playbooks.push("multi_page_set");
   }
 
