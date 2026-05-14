@@ -11,7 +11,7 @@ type UseInputAreaFileHandlingArgs = {
   videoMultiRefs: File[];
   pendingAttachments: Array<{ file: File }>;
   selectedChipId: string | null;
-  appendInputFile: (file: File) => void;
+  insertInputFile: (file: File) => void;
   setImageGenUploads: (files: File[]) => void;
   confirmPendingAttachments: () => void;
   setSelectedChipId: (id: string | null) => void;
@@ -30,7 +30,7 @@ export const useInputAreaFileHandling = ({
   videoMultiRefs,
   pendingAttachments,
   selectedChipId,
-  appendInputFile,
+  insertInputFile,
   setImageGenUploads,
   confirmPendingAttachments,
   setSelectedChipId,
@@ -119,7 +119,7 @@ export const useInputAreaFileHandling = ({
 
     files.forEach((file) => {
       if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-        appendInputFile(file);
+        insertInputFile(file);
       }
     });
   };

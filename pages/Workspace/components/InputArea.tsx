@@ -167,9 +167,10 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const {
     setInputBlocks,
     removeInputBlock,
-    appendInputFile,
+    insertInputFile,
     updateInputBlock,
     setActiveBlockId,
+    setSelectionIndex,
     setVideoGenRatio,
     setVideoGenDuration,
     setVideoGenModel,
@@ -211,7 +212,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
     videoMultiRefs,
     pendingAttachments,
     selectedChipId,
-    appendInputFile,
+    insertInputFile,
     setImageGenUploads,
     confirmPendingAttachments,
     setSelectedChipId,
@@ -301,6 +302,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
           clearAllInputBlocks={clearAllInputBlocks}
           updateInputBlock={updateInputBlock}
           setActiveBlockId={setActiveBlockId}
+          setSelectionIndex={setSelectionIndex}
           setInputBlocks={setInputBlocks}
           handleSend={handleSend}
           removeInputBlock={removeInputBlock}

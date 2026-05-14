@@ -120,6 +120,51 @@ const appendFileBlockToInput = (
   state.inputBlocks = normalizeInputBlocks(state.inputBlocks);
 };
 
+const insertFileBlockAtSelection = (
+  state: InputComposerState,
+  file: WorkspaceInputFile,
+) => {
+  const activeIndex = state.inputBlocks.findIndex(
+    (b) => b.id === state.activeBlockId,
+  );
+
+  if (activeIndex === -1) {
+    const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
+    const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+    state.inputBlocks.push(fileBlock, textBlock);
+    state.activeBlockId = textBlock.id;
+    state.selectionIndex = 0;
+    return;
+  }
+
+  const activeBlock = state.inputBlocks[activeIndex];
+
+  if (activeBlock.type === 'text') {
+    const text = activeBlock.text || '';
+    const idx = state.selectionIndex !== null ? state.selectionIndex : text.length;
+    const preText = text.slice(0, idx);
+    const postText = text.slice(idx);
+    const newTextBlockId = `text-${Date.now() + 1}`;
+
+    const newBlocks: InputBlock[] = [
+      { ...activeBlock, text: preText },
+      { id: `file-${Date.now()}`, type: 'file', file },
+      { id: newTextBlockId, type: 'text', text: postText },
+    ];
+
+    state.inputBlocks.splice(activeIndex, 1, ...newBlocks);
+    state.activeBlockId = newTextBlockId;
+    state.selectionIndex = 0;
+    return;
+  }
+
+  const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
+  const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+  state.inputBlocks.push(fileBlock, textBlock);
+  state.activeBlockId = textBlock.id;
+  state.selectionIndex = 0;
+};
+
 // ─── Pure helper: normalize input blocks ───
 export function normalizeInputBlocks(blocks: InputBlock[]): InputBlock[] {
   if (blocks.length === 0) return [{ id: `text-${Date.now()}`, type: 'text', text: '' }];
@@ -473,44 +518,7 @@ export const useAgentStore = create<AgentState>()(
         }),
 
         insertInputFile: (file) => set((state) => {
-          const activeIndex = state.composer.inputBlocks.findIndex(b => b.id === state.composer.activeBlockId);
-
-          if (activeIndex === -1) {
-            const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
-            const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
-            state.composer.inputBlocks.push(fileBlock, textBlock);
-            state.composer.activeBlockId = textBlock.id;
-            state.composer.selectionIndex = 0;
-            return;
-          }
-
-          const activeBlock = state.composer.inputBlocks[activeIndex];
-
-          if (activeBlock.type === 'text') {
-            const text = activeBlock.text || '';
-            const idx = state.composer.selectionIndex !== null ? state.composer.selectionIndex : text.length;
-            const preText = text.slice(0, idx);
-            const postText = text.slice(idx);
-            const newTextBlockId = `text-${Date.now() + 1}`;
-
-            const newBlocks: InputBlock[] = [
-              { ...activeBlock, text: preText },
-              { id: `file-${Date.now()}`, type: 'file', file },
-              { id: newTextBlockId, type: 'text', text: postText }
-            ];
-
-            state.composer.inputBlocks.splice(activeIndex, 1, ...newBlocks);
-            state.composer.activeBlockId = newTextBlockId;
-            state.composer.selectionIndex = 0;
-            // Focus is handled reactively via useEffect on activeBlockId in the UI
-          } else {
-            const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
-            const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
-            state.composer.inputBlocks.push(fileBlock, textBlock);
-            state.composer.activeBlockId = textBlock.id;
-            state.composer.selectionIndex = 0;
-          }
-
+          insertFileBlockAtSelection(state.composer, file as WorkspaceInputFile);
           state.composer.confirmedAttachments = collectConfirmedAttachmentsFromBlocks(state.composer.inputBlocks);
         }),
 
@@ -539,7 +547,7 @@ export const useAgentStore = create<AgentState>()(
 
           for (const pending of pendings) {
             pending.file._canvasAutoInsert = false;
-            appendFileBlockToInput(state.composer, pending.file);
+            insertFileBlockAtSelection(state.composer, pending.file);
           }
 
           state.composer.confirmedAttachments = collectConfirmedAttachmentsFromBlocks(state.composer.inputBlocks);

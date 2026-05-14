@@ -130,6 +130,7 @@ interface AgentMessageProps {
   onPreview: (url: string) => void;
   onAction?: (action: string) => void;
   onSmartGenerate?: (prompt: string, proposalId?: string) => void;
+  onReuseToComposer?: (message: ChatMessage) => void | Promise<void>;
   clothingActions?: AgentMessageClothingActionsProps;
   ecommerceActions?: AgentMessageEcommerceActionsProps;
 }
@@ -139,6 +140,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   onPreview,
   onAction,
   onSmartGenerate,
+  onReuseToComposer,
   clothingActions,
   ecommerceActions,
 }) => {
@@ -924,6 +926,14 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </button>
           <button className="p-1 transition-colors hover:text-gray-500">
             <ThumbsDown size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onReuseToComposer?.(message)}
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 hover:text-gray-600"
+            title="回填到输入框继续编辑"
+          >
+            回填
           </button>
           <button
             onClick={handleCopy}

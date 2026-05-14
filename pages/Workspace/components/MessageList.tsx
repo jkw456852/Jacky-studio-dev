@@ -20,6 +20,7 @@ interface MessageListProps {
   onSend: (text: string) => void;
   onSmartGenerate: (prompt: string, proposalId?: string) => void;
   onPreview: (url: string) => void;
+  onReuseToComposer?: (message: ChatMessage) => void | Promise<void>;
   clothingActions?: AgentMessageClothingActionsProps;
   ecommerceActions?: AgentMessageEcommerceActionsProps;
 }
@@ -39,6 +40,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   onSend,
   onSmartGenerate,
   onPreview,
+  onReuseToComposer,
   clothingActions,
   ecommerceActions,
 }) => {
@@ -107,6 +109,18 @@ export const MessageList: React.FC<MessageListProps> = ({
             )}
           </div>
         );
+        const userReuseActionNode = onReuseToComposer ? (
+          <div className="mt-2 flex justify-end px-0.5">
+            <button
+              type="button"
+              onClick={() => void onReuseToComposer(msg)}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-800"
+              title="回填到输入框继续编辑"
+            >
+              回填到输入框
+            </button>
+          </div>
+        ) : null;
 
         return (
           <motion.div
@@ -145,6 +159,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                         </div>
                       </>
                     )}
+                    {userReuseActionNode}
                   </div>
                 ) : (
                   <div className="inline-flex min-w-0 w-auto max-w-[min(calc(100%-56px),560px)] flex-none flex-col gap-2 overflow-hidden rounded-[24px] rounded-br-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -165,6 +180,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                         </div>
                       </>
                     )}
+                    {userReuseActionNode}
                   </div>
                 )}
                 {userAvatarNode}
@@ -185,6 +201,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     onPreview={onPreview}
                     onAction={onSend}
                     onSmartGenerate={onSmartGenerate}
+                    onReuseToComposer={onReuseToComposer}
                     clothingActions={clothingActions}
                     ecommerceActions={ecommerceActions}
                   />

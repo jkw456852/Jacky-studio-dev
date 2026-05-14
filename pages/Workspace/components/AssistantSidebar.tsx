@@ -26,7 +26,7 @@ import type {
   InputAreaModelPreferencesProps,
 } from "./InputArea";
 
-import { ConversationSession, Marker } from "../../../types";
+import { ConversationSession, Marker, InputBlock } from "../../../types";
 import type { ChatMessage } from "../../../types";
 import type { WorkspaceInputFile } from "../../../types";
 import type {
@@ -376,6 +376,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     clearMessages,
     setIsTyping,
     setInputBlocks,
+    setActiveBlockId,
     clearPendingAttachments,
   } = useAgentStore((s) => s.actions);
   const {
@@ -442,6 +443,121 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       inlineParts: undefined,
     };
   }, []);
+  const restoreMessageToComposer = React.useCallback(
+    async (message: ChatMessage) => {
+      const inlineParts = Array.isArray(message.inlineParts)
+        ? message.inlineParts
+        : [];
+      const fallbackAttachmentParts =
+        inlineParts.length === 0 && Array.isArray(message.attachments)
+          ? message.attachments.map((url, index) => ({
+              type: "attachment" as const,
+              url,
+              label:
+                String(message.attachmentMetadata?.[index]?.markerName || "").trim() ||
+                `参考内容${index + 1}`,
+              markerInfo: message.attachmentMetadata?.[index]?.markerInfo,
+            }))
+          : [];
+      const sourceParts =
+        inlineParts.length > 0
+          ? inlineParts
+          : [
+              ...(String(message.text || "")
+                ? [{ type: "text" as const, text: String(message.text || "") }]
+                : []),
+              ...fallbackAttachmentParts,
+            ];
+
+      const buildFileName = (label: string, mimeType?: string) => {
+        const normalizedLabel = String(label || "").trim() || "参考内容";
+        const safeBase =
+          normalizedLabel.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 48) || "reference";
+        const extension = mimeType?.includes("jpeg") || mimeType?.includes("jpg")
+          ? ".jpg"
+          : mimeType?.includes("webp")
+            ? ".webp"
+            : mimeType?.includes("gif")
+              ? ".gif"
+              : ".png";
+        return safeBase.endsWith(extension) ? safeBase : `${safeBase}${extension}`;
+      };
+
+      const nextBlocks: InputBlock[] = [];
+      let nextActiveBlockId: string | null = null;
+
+      for (const part of sourceParts) {
+        if (part.type === "text") {
+          if (!String(part.text || "").length) continue;
+          const blockId = `text-${Date.now()}-${nextBlocks.length}`;
+          nextBlocks.push({
+            id: blockId,
+            type: "text",
+            text: String(part.text || ""),
+          });
+          nextActiveBlockId = blockId;
+          continue;
+        }
+
+        try {
+          const response = await fetch(part.url);
+          if (!response.ok) {
+            throw new Error(`Failed to restore attachment: ${response.status}`);
+          }
+          const blob = await response.blob();
+          if (!blob.size) continue;
+
+          const file = new File(
+            [blob],
+            buildFileName(part.label, blob.type),
+            {
+              type: blob.type || "image/png",
+              lastModified: Date.now(),
+            },
+          ) as WorkspaceInputFile;
+          file._chipPreviewUrl = part.url;
+          if (part.markerInfo) {
+            file.markerName = String(part.label || "").trim() || "区域";
+            file.markerInfo = part.markerInfo;
+          }
+
+          nextBlocks.push({
+            id: `file-${Date.now()}-${nextBlocks.length}`,
+            type: "file",
+            file,
+          });
+        } catch (error) {
+          console.warn("[assistant-sidebar] restore message attachment failed", error);
+        }
+      }
+
+      if (nextBlocks.length === 0) {
+        const textId = `text-${Date.now()}`;
+        nextBlocks.push({
+          id: textId,
+          type: "text",
+          text: String(message.text || ""),
+        });
+        nextActiveBlockId = textId;
+      } else if (nextBlocks[nextBlocks.length - 1]?.type !== "text") {
+        const trailingTextId = `text-${Date.now()}-${nextBlocks.length}`;
+        nextBlocks.push({
+          id: trailingTextId,
+          type: "text",
+          text: "",
+        });
+        nextActiveBlockId = trailingTextId;
+      }
+
+      clearPendingAttachments();
+      setInputBlocks(nextBlocks);
+      if (nextActiveBlockId) {
+        setActiveBlockId(nextActiveBlockId);
+      }
+      setIsTyping(false);
+    },
+    [clearPendingAttachments, setActiveBlockId, setInputBlocks, setIsTyping],
+  );
   const readLatestObservationFromSession = React.useCallback(
     (session: typeof currentSession) => {
       const steps = session?.steps || [];
@@ -1219,6 +1335,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
             onSend={handleSidebarSend}
             onSmartGenerate={handleSmartGenerate}
             onPreview={setPreviewUrl}
+            onReuseToComposer={restoreMessageToComposer}
             clothingActions={clothingActions}
             ecommerceActions={ecommerceActions}
           />

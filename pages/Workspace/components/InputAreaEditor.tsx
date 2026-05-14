@@ -65,6 +65,7 @@ type InputAreaEditorProps = {
   clearAllInputBlocks: () => void;
   updateInputBlock: (id: string, updates: Partial<InputBlock>) => void;
   setActiveBlockId: (id: string) => void;
+  setSelectionIndex: (index: number | null) => void;
   setInputBlocks: (blocks: InputBlock[]) => void;
   handleSend: (
     overridePrompt?: string,
@@ -100,6 +101,7 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   clearAllInputBlocks,
   updateInputBlock,
   setActiveBlockId,
+  setSelectionIndex,
   setInputBlocks,
   handleSend,
   sendSkill,
@@ -119,6 +121,19 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
       if (leftEl) {
         setCECursorPos(leftEl, 0);
       }
+    });
+  };
+
+  const syncSelectionToStore = (el: HTMLElement, blockId: string) => {
+    setActiveBlockId(blockId);
+    setSelectionIndex(getCECursorPos(el));
+  };
+
+  const scheduleSelectionSync = (el: HTMLElement | null, blockId: string) => {
+    if (!el) return;
+    requestAnimationFrame(() => {
+      if (!document.body.contains(el)) return;
+      syncSelectionToStore(el, blockId);
     });
   };
 
@@ -254,12 +269,26 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
                 if (isAllInputSelected) setIsAllInputSelected(false);
                 updateInputBlock(block.id, { text: event.currentTarget.textContent || '' });
                 if (selectedChipId) setSelectedChipId(null);
+                scheduleSelectionSync(event.currentTarget, block.id);
               }}
-              onPaste={(event) => handleEditorPaste(event, block.id)}
-              onFocus={() => {
+              onPaste={(event) => {
+                handleEditorPaste(event, block.id);
+                scheduleSelectionSync(event.currentTarget, block.id);
+              }}
+              onFocus={(event) => {
                 commitPendingAttachments();
-                setActiveBlockId(block.id);
                 setIsInputFocused(true);
+                scheduleSelectionSync(event.currentTarget, block.id);
+              }}
+              onClick={(event) => {
+                if (selectedChipId) setSelectedChipId(null);
+                scheduleSelectionSync(event.currentTarget, block.id);
+              }}
+              onMouseUp={(event) => {
+                scheduleSelectionSync(event.currentTarget, block.id);
+              }}
+              onKeyUp={(event) => {
+                scheduleSelectionSync(event.currentTarget, block.id);
               }}
               onBlur={() => setIsInputFocused(false)}
               onKeyDown={(event) => {
