@@ -1,5 +1,6 @@
 import type { AgentRoleDraft, AgentType } from "../../types/agent.types";
 import type { WorkspaceStyleLibrary } from "../../types/common";
+import { normalizeWorkspaceStyleLibrary } from "../vision-orchestrator/style-library.ts";
 import type { StudioUserAssetApi } from "./api.ts";
 import type {
   StudioEvolutionApprovalStatus,
@@ -14,6 +15,7 @@ import type {
   StudioSkillPreferencesAsset,
   StudioStoredRoleDraft,
   StudioStoredStyleLibrary,
+  StudioStyleLibraryCandidateAsset,
   StudioUserAssetAuditEntry,
   StudioUserAssetState,
   StudioUserProfileAsset,
@@ -161,6 +163,7 @@ const createEmptyState = (): StudioUserAssetState => ({
   roleVersions: {},
   roleAuditEntries: {},
   styleLibraries: {},
+  styleLibraryCandidates: {},
   evolutionRecords: {},
 });
 
@@ -293,24 +296,62 @@ const normalizeStyleLibrary = (
     preferredId?: string;
   },
 ): StudioStoredStyleLibrary | null => {
-  const title = String(library.title || "").trim();
-  if (!title) return null;
+  const normalized = normalizeWorkspaceStyleLibrary(library);
+  if (!normalized) return null;
   const id =
     String(options?.preferredId || "").trim() ||
-    String((library as { id?: string }).id || "").trim() ||
+    String(normalized.id || "").trim() ||
     `style_${Date.now()}`;
   const slug =
-    String((library as { slug?: string }).slug || "")
+    String(normalized.slug || "")
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
       .replace(/^-+|-+$/g, "") || id;
   return {
-    ...library,
+    ...normalized,
     id,
     slug,
     schemaVersion: 1,
-    sourceMode: options?.sourceMode || "custom",
+    sourceMode: options?.sourceMode || normalized.sourceMode || "custom",
+  };
+};
+
+const normalizeStyleLibraryCandidate = (
+  library: WorkspaceStyleLibrary,
+  options?: {
+    preferredId?: string;
+    status?: StudioStyleLibraryCandidateAsset["status"];
+    sourcePreviewKey?: string;
+    sourcePreviewType?: "case" | "template";
+    sourceMode?: "default" | "poster-product" | "custom";
+  },
+): StudioStyleLibraryCandidateAsset | null => {
+  const normalized = normalizeWorkspaceStyleLibrary(library);
+  if (!normalized) return null;
+  const id =
+    String(options?.preferredId || "").trim() ||
+    String(normalized.id || "").trim() ||
+    `style_candidate_${Date.now()}`;
+  const slug =
+    String(normalized.slug || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+      .replace(/^-+|-+$/g, "") || id;
+  const fallbackStatus: StudioStyleLibraryCandidateAsset["status"] =
+    (normalized.testCases?.length || 0) > 0 ? "ready_for_test" : "draft";
+  return {
+    ...normalized,
+    id,
+    slug,
+    schemaVersion: 1,
+    status: options?.status || fallbackStatus,
+    sourcePreviewKey: String(options?.sourcePreviewKey || "").trim() || undefined,
+    sourcePreviewType: options?.sourcePreviewType,
+    sourceMode: options?.sourceMode || normalized.sourceMode || "custom",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
 };
 
@@ -563,6 +604,24 @@ export const createRemoteStudioUserAssetApi = (
     },
 
     removeStyleLibrary: (_id) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync writes.");
+    },
+
+    listStyleLibraryCandidates: () => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+
+    getStyleLibraryCandidateById: (_id) => {
+      throw new Error("Remote StudioUserAssetApi does not support sync reads.");
+    },
+
+    saveStyleLibraryCandidate: (library, candidateOptions) => {
+      throw new Error(
+        `Remote StudioUserAssetApi does not support sync writes. Persist style library candidate via replaceSnapshot or a remote orchestration layer. Requested candidate=${normalizeStyleLibraryCandidate(library, candidateOptions)?.id || "unknown"}.`,
+      );
+    },
+
+    removeStyleLibraryCandidate: (_id) => {
       throw new Error("Remote StudioUserAssetApi does not support sync writes.");
     },
 

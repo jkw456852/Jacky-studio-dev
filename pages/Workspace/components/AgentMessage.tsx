@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown,
@@ -20,8 +20,14 @@ import {
 import { ChatMessage } from '../../../types';
 import { AgentBrowserSessionCard } from './AgentBrowserSessionCard';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { ClothingStudioCards } from './workflow/ClothingStudioCards';
-import { EcommerceOneClickCards } from './workflow/EcommerceOneClickCards';
+const ClothingStudioCards = lazy(async () => {
+  const module = await import('./workflow/ClothingStudioCards');
+  return { default: module.ClothingStudioCards };
+});
+const EcommerceOneClickCards = lazy(async () => {
+  const module = await import('./workflow/EcommerceOneClickCards');
+  return { default: module.EcommerceOneClickCards };
+});
 import type {
   EcommerceImageAnalysis,
   EcommerceOverlayState,
@@ -582,61 +588,62 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
 
         {isWorkflowUi && message.workflowUi && (
           <div className="mt-1 px-1">
-            {isClothingWorkflowUi ? (
-              <ClothingStudioCards
-                message={message.workflowUi}
-                onSubmitRequirements={(data) =>
-                  onClothingSubmitRequirements?.(data)
-                }
-                onGenerateModel={(data) => onClothingGenerateModel?.(data)}
-                onPickModelCandidate={(url) =>
-                  onClothingPickModelCandidate?.(url)
-                }
-                onInsertToCanvas={(url, label) =>
-                  onClothingInsertToCanvas?.(url, label)
-                }
-                onRetryFailed={() => onClothingRetryFailed?.()}
-              />
-            ) : null}
+            <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[12px] text-slate-500">正在加载工作流卡片…</div>}>
+              {isClothingWorkflowUi ? (
+                <ClothingStudioCards
+                  message={message.workflowUi}
+                  onSubmitRequirements={(data) =>
+                    onClothingSubmitRequirements?.(data)
+                  }
+                  onGenerateModel={(data) => onClothingGenerateModel?.(data)}
+                  onPickModelCandidate={(url) =>
+                    onClothingPickModelCandidate?.(url)
+                  }
+                  onInsertToCanvas={(url, label) =>
+                    onClothingInsertToCanvas?.(url, label)
+                  }
+                  onRetryFailed={() => onClothingRetryFailed?.()}
+                />
+              ) : null}
 
-            {isEcommerceWorkflowUi ? (
-              <EcommerceOneClickCards
-                message={message.workflowUi}
-                onRefineAnalysis={(feedback) =>
-                  onEcommerceRefineAnalysis?.(feedback)
-                }
-                onConfirmTypes={(items) => onEcommerceConfirmTypes?.(items)}
-                onConfirmImageAnalyses={(items) =>
-                  onEcommerceConfirmImageAnalyses?.(items)
-                }
-                onRetryImageAnalysis={(imageId) =>
-                  onEcommerceRetryImageAnalysis?.(imageId)
-                }
-                onRewritePlanPrompt={(groups, planItemId, feedback) =>
-                  onEcommerceRewritePlanPrompt?.(
-                    groups,
-                    planItemId,
-                    feedback,
-                  ) ?? Promise.resolve(null)
-                }
-                onGeneratePlanItem={(groups, planItemId) =>
-                  onEcommerceGeneratePlanItem?.(groups, planItemId) ??
-                  Promise.resolve()
-                }
-                onGenerateExtraPlanItem={(groups, typeId) =>
-                  onEcommerceGenerateExtraPlanItem?.(groups, typeId) ??
-                  Promise.resolve()
-                }
-                onOpenResultOverlayEditor={(url) =>
-                  onEcommerceOpenResultOverlayEditor?.(url)
-                }
-                onCloseResultOverlayEditor={() =>
-                  onEcommerceCloseResultOverlayEditor?.()
-                }
-                onSaveResultOverlayDraft={(url, overlayState) =>
-                  onEcommerceSaveResultOverlayDraft?.(url, overlayState) ??
-                  Promise.resolve()
-                }
+              {isEcommerceWorkflowUi ? (
+                <EcommerceOneClickCards
+                  message={message.workflowUi}
+                  onRefineAnalysis={(feedback) =>
+                    onEcommerceRefineAnalysis?.(feedback)
+                  }
+                  onConfirmTypes={(items) => onEcommerceConfirmTypes?.(items)}
+                  onConfirmImageAnalyses={(items) =>
+                    onEcommerceConfirmImageAnalyses?.(items)
+                  }
+                  onRetryImageAnalysis={(imageId) =>
+                    onEcommerceRetryImageAnalysis?.(imageId)
+                  }
+                  onRewritePlanPrompt={(groups, planItemId, feedback) =>
+                    onEcommerceRewritePlanPrompt?.(
+                      groups,
+                      planItemId,
+                      feedback,
+                    ) ?? Promise.resolve(null)
+                  }
+                  onGeneratePlanItem={(groups, planItemId) =>
+                    onEcommerceGeneratePlanItem?.(groups, planItemId) ??
+                    Promise.resolve()
+                  }
+                  onGenerateExtraPlanItem={(groups, typeId) =>
+                    onEcommerceGenerateExtraPlanItem?.(groups, typeId) ??
+                    Promise.resolve()
+                  }
+                  onOpenResultOverlayEditor={(url) =>
+                    onEcommerceOpenResultOverlayEditor?.(url)
+                  }
+                  onCloseResultOverlayEditor={() =>
+                    onEcommerceCloseResultOverlayEditor?.()
+                  }
+                  onSaveResultOverlayDraft={(url, overlayState) =>
+                    onEcommerceSaveResultOverlayDraft?.(url, overlayState) ??
+                    Promise.resolve()
+                  }
                 onApplyResultOverlay={(url, overlayState) =>
                   onEcommerceApplyResultOverlay?.(url, overlayState) ??
                   Promise.resolve()
@@ -677,8 +684,9 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 onInsertToCanvas={(url, label) =>
                   onEcommerceInsertToCanvas?.(url, label)
                 }
-              />
-            ) : null}
+                />
+              ) : null}
+            </Suspense>
           </div>
         )}
 

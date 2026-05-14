@@ -31,6 +31,7 @@ import type {
   StudioStoredPromptAddonAsset,
   StudioStoredStyleLibrary,
   StudioStoredRoleDraft,
+  StudioStyleLibraryCandidateAsset,
   StudioUserAssetState,
   StudioUserProfileAsset,
   StudioUserPromptAddonMap,
@@ -56,6 +57,7 @@ import {
   STUDIO_WORKSPACE_PREFERENCES_ASSET_VERSION as WORKSPACE_PREFERENCES_VERSION,
 } from "./user-asset-types.ts";
 import { normalizeMainBrainPreferences } from "./main-brain-shared.ts";
+import { normalizeWorkspaceStyleLibrary } from "../vision-orchestrator/style-library.ts";
 
 const USER_ASSET_STORAGE_KEY = "studio_user_assets_v1";
 const USER_ASSET_AUDIT_STORAGE_KEY = "studio_user_asset_audit_v1";
@@ -841,72 +843,16 @@ const normalizeEvolutionRecordMap = (
 const normalizeStyleLibrary = (
   raw: unknown,
 ): StudioStoredStyleLibrary | null => {
-  if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
-  const title = String(value.title || "").trim().slice(0, 80);
-  const summary = String(value.summary || "").trim().slice(0, 240);
-  const coverImageUrl = String(value.coverImageUrl || "").trim().slice(0, 2000);
-  const referenceInterpretation = String(value.referenceInterpretation || "")
-    .trim()
-    .slice(0, 280);
-  const planningDirectives = Array.isArray(value.planningDirectives)
-    ? value.planningDirectives
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-        .slice(0, 8)
-    : [];
-  const promptDirectives = Array.isArray(value.promptDirectives)
-    ? value.promptDirectives
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-        .slice(0, 8)
-    : [];
-  const promptBackbone = Array.isArray(value.promptBackbone)
-    ? value.promptBackbone
-        .map((item) => String(item || "").trim())
-        .filter(Boolean)
-        .slice(0, 8)
-    : [];
-  if (
-    !title ||
-    !summary ||
-    !referenceInterpretation ||
-    planningDirectives.length === 0 ||
-    promptDirectives.length === 0
-  ) {
-    return null;
-  }
-  const id = String(value.id || "").trim() || `style-${Date.now()}`;
-  const slug = String(value.slug || "").trim() || slugify(title);
-  const createdByRaw = String(value.createdBy || "").trim();
-  const createdBy =
-    createdByRaw === "system" ||
-    createdByRaw === "main-brain" ||
-    createdByRaw === "user"
-      ? createdByRaw
-      : "user";
-  const updatedAt = Number(value.updatedAt || Date.now());
-  const sourceModeRaw = String(value.sourceMode || "").trim();
-  const sourceMode =
-    sourceModeRaw === "default" ||
-    sourceModeRaw === "poster-product" ||
-    sourceModeRaw === "custom"
-      ? sourceModeRaw
-      : "custom";
+  const normalized = normalizeWorkspaceStyleLibrary(raw);
+  if (!normalized) return null;
+  const id = String(normalized.id || "").trim() || `style-${Date.now()}`;
+  const slug = String(normalized.slug || "").trim() || slugify(normalized.title);
   return {
+    ...normalized,
     id,
     slug,
     schemaVersion: STYLE_LIBRARY_VERSION,
-    title,
-    summary,
-    coverImageUrl: coverImageUrl || undefined,
-    referenceInterpretation,
-    planningDirectives,
-    promptDirectives,
-    promptBackbone,
-    createdBy,
-    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
-    sourceMode,
+    sourceMode: normalized.sourceMode || "custom",
   };
 };
 
@@ -918,6 +864,65 @@ const normalizeStyleLibraryMap = (
     Record<string, StudioStoredStyleLibrary>
   >((acc, item) => {
     const normalized = normalizeStyleLibrary(item);
+    if (!normalized) return acc;
+    acc[normalized.id] = normalized;
+    return acc;
+  }, {});
+};
+
+const normalizeStyleLibraryCandidateStatus = (
+  value: unknown,
+  fallback: StudioStyleLibraryCandidateAsset["status"],
+): StudioStyleLibraryCandidateAsset["status"] => {
+  const normalized = String(value || "").trim();
+  if (
+    normalized === "draft" ||
+    normalized === "ready_for_test" ||
+    normalized === "ready_to_save"
+  ) {
+    return normalized;
+  }
+  return fallback;
+};
+
+const normalizeStyleLibraryCandidate = (
+  raw: unknown,
+): StudioStyleLibraryCandidateAsset | null => {
+  const normalized = normalizeWorkspaceStyleLibrary(raw);
+  if (!normalized) return null;
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const id = String(normalized.id || "").trim() || `style-candidate-${Date.now()}`;
+  const slug = String(normalized.slug || "").trim() || slugify(normalized.title);
+  const createdAt = Number(value.createdAt || normalized.updatedAt || Date.now());
+  const updatedAt = Number(value.updatedAt || normalized.updatedAt || Date.now());
+  const fallbackStatus = (normalized.testCases?.length || 0) > 0 ? "ready_for_test" : "draft";
+  const sourcePreviewKey = String(value.sourcePreviewKey || "").trim();
+  const sourcePreviewType = String(value.sourcePreviewType || "").trim();
+  return {
+    ...normalized,
+    id,
+    slug,
+    schemaVersion: STYLE_LIBRARY_VERSION,
+    status: normalizeStyleLibraryCandidateStatus(value.status, fallbackStatus),
+    sourcePreviewKey: sourcePreviewKey || undefined,
+    sourcePreviewType:
+      sourcePreviewType === "case" || sourcePreviewType === "template"
+        ? (sourcePreviewType as "case" | "template")
+        : undefined,
+    sourceMode: normalized.sourceMode || "custom",
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+  };
+};
+
+const normalizeStyleLibraryCandidateMap = (
+  raw: unknown,
+): Record<string, StudioStyleLibraryCandidateAsset> => {
+  if (!raw || typeof raw !== "object") return {};
+  return Object.values(raw as Record<string, unknown>).reduce<
+    Record<string, StudioStyleLibraryCandidateAsset>
+  >((acc, item) => {
+    const normalized = normalizeStyleLibraryCandidate(item);
     if (!normalized) return acc;
     acc[normalized.id] = normalized;
     return acc;
@@ -1230,6 +1235,7 @@ const createEmptyState = (): StudioUserAssetState => ({
   roleVersions: {},
   roleAuditEntries: {},
   styleLibraries: {},
+  styleLibraryCandidates: {},
   evolutionRecords: {},
 });
 
@@ -1281,6 +1287,9 @@ const parseUnifiedState = (raw: string | null): StudioUserAssetState => {
       roleVersions: normalizeRoleVersionMap(parsed.roleVersions),
       roleAuditEntries: normalizeRoleVersionMap(parsed.roleAuditEntries),
       styleLibraries: normalizeStyleLibraryMap(parsed.styleLibraries),
+      styleLibraryCandidates: normalizeStyleLibraryCandidateMap(
+        parsed.styleLibraryCandidates,
+      ),
       evolutionRecords: normalizeEvolutionRecordMap(parsed.evolutionRecords),
     };
   } catch {
@@ -1824,6 +1833,9 @@ const writeUnifiedState = (state: StudioUserAssetState): void => {
     roleVersions: normalizeRoleVersionMap(state.roleVersions),
     roleAuditEntries: normalizeRoleVersionMap(state.roleAuditEntries),
     styleLibraries: normalizeStyleLibraryMap(state.styleLibraries),
+    styleLibraryCandidates: normalizeStyleLibraryCandidateMap(
+      state.styleLibraryCandidates,
+    ),
     evolutionRecords: normalizeEvolutionRecordMap(state.evolutionRecords),
   };
 
@@ -1992,6 +2004,9 @@ const readState = (): StudioUserAssetState => {
     roleVersions: normalizeRoleVersionMap(unified.roleVersions),
     roleAuditEntries: normalizeRoleVersionMap(unified.roleAuditEntries),
     styleLibraries: normalizeStyleLibraryMap(unified.styleLibraries),
+    styleLibraryCandidates: normalizeStyleLibraryCandidateMap(
+      unified.styleLibraryCandidates,
+    ),
     evolutionRecords: normalizeEvolutionRecordMap(unified.evolutionRecords),
   };
 
@@ -2590,6 +2605,69 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
       summary: normalizedId
         ? `Removed style library ${normalizedId}.`
         : "Removed style library entry.",
+    });
+  },
+
+  listStyleLibraryCandidates: () =>
+    Object.values(readState().styleLibraryCandidates).sort(
+      (left, right) => (right.updatedAt || 0) - (left.updatedAt || 0),
+    ),
+
+  getStyleLibraryCandidateById: (id) => {
+    const normalizedId = String(id || "").trim();
+    if (!normalizedId) return null;
+    return readState().styleLibraryCandidates[normalizedId] || null;
+  },
+
+  saveStyleLibraryCandidate: (library, options) => {
+    const preferredId = String(options?.preferredId || library.id || "").trim();
+    const normalized = normalizeStyleLibraryCandidate({
+      ...library,
+      id: preferredId || undefined,
+      slug: slugify(String(library.title || "")),
+      sourceMode: options?.sourceMode || library.sourceMode || "custom",
+      createdBy: library.createdBy || "user",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: options?.status,
+      sourcePreviewKey: options?.sourcePreviewKey,
+      sourcePreviewType: options?.sourcePreviewType,
+    });
+    if (!normalized) return null;
+    const state = readState();
+    const existing = state.styleLibraryCandidates[normalized.id] || null;
+    state.styleLibraryCandidates[normalized.id] = {
+      ...normalized,
+      createdAt: existing?.createdAt || normalized.createdAt,
+      status: options?.status || existing?.status || normalized.status,
+      sourcePreviewKey:
+        options?.sourcePreviewKey || existing?.sourcePreviewKey || normalized.sourcePreviewKey,
+      sourcePreviewType:
+        options?.sourcePreviewType || existing?.sourcePreviewType || normalized.sourcePreviewType,
+    };
+    return (
+      commitUnifiedState(state, {
+        action: "update",
+        targetKind: "style-library-candidate",
+        targetId: normalized.id,
+        summary: `Saved style library candidate ${normalized.title}.`,
+      }).styleLibraryCandidates[normalized.id] || null
+    );
+  },
+
+  removeStyleLibraryCandidate: (id) => {
+    const normalizedId = String(id || "").trim();
+    const state = readState();
+    if (normalizedId) {
+      delete state.styleLibraryCandidates[normalizedId];
+    }
+    return commitUnifiedState(state, {
+      action: "remove",
+      targetKind: "style-library-candidate",
+      targetId: normalizedId || undefined,
+      summary: normalizedId
+        ? `Removed style library candidate ${normalizedId}.`
+        : "Removed style library candidate entry.",
     });
   },
 

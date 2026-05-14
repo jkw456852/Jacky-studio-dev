@@ -1,5 +1,5 @@
-import React from "react";
-import { AssistantSidebar } from "../components";
+﻿import React from "react";
+import type { AssistantSidebarProps } from "../components/AssistantSidebar";
 import { WorkspaceLeftPanel } from "../components/WorkspaceLeftPanel";
 import type { ImageModel } from "../../../types";
 
@@ -45,38 +45,22 @@ type UseWorkspaceSidebarPropsArgs = {
     typeof WorkspaceLeftPanel
   >["workflowRecipesPanel"];
   id: string | undefined;
-  conversations: React.ComponentProps<
-    typeof AssistantSidebar
-  >["session"]["conversations"];
-  setConversations: React.ComponentProps<
-    typeof AssistantSidebar
-  >["session"]["setConversations"];
-  activeConversationId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["session"]["activeConversationId"];
-  setActiveConversationId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["session"]["setActiveConversationId"];
+  conversations: AssistantSidebarProps["session"]["conversations"];
+  setConversations: AssistantSidebarProps["session"]["setConversations"];
+  activeConversationId: AssistantSidebarProps["session"]["activeConversationId"];
+  setActiveConversationId: AssistantSidebarProps["session"]["setActiveConversationId"];
   showAssistant: boolean;
-  setShowAssistant: React.ComponentProps<
-    typeof AssistantSidebar
-  >["panelUi"]["setShowAssistant"];
+  setShowAssistant: AssistantSidebarProps["panelUi"]["setShowAssistant"];
   isAssistantFullscreen: boolean;
   setIsAssistantFullscreen: NonNullable<
-    React.ComponentProps<typeof AssistantSidebar>["panelUi"]["setIsFullscreen"]
+    AssistantSidebarProps["panelUi"]["setIsFullscreen"]
   >;
   onToggleAssistantFullscreen: NonNullable<
-    React.ComponentProps<typeof AssistantSidebar>["panelUi"]["onToggleFullscreen"]
+    AssistantSidebarProps["panelUi"]["onToggleFullscreen"]
   >;
-  onOpenEcommerceWorkflow: React.ComponentProps<
-    typeof AssistantSidebar
-  >["panelUi"]["onOpenEcommerceWorkflow"];
-  handleSend: React.ComponentProps<
-    typeof AssistantSidebar
-  >["messageActions"]["handleSend"];
-  handleSmartGenerate: React.ComponentProps<
-    typeof AssistantSidebar
-  >["messageActions"]["handleSmartGenerate"];
+  onOpenEcommerceWorkflow: AssistantSidebarProps["panelUi"]["onOpenEcommerceWorkflow"];
+  handleSend: AssistantSidebarProps["messageActions"]["handleSend"];
+  handleSmartGenerate: AssistantSidebarProps["messageActions"]["handleSmartGenerate"];
   addGenImage: (input?: {
     genPrompt?: string;
     genModel?: ImageModel;
@@ -93,235 +77,187 @@ type UseWorkspaceSidebarPropsArgs = {
   imageGenRatio: string;
   imageGenRes: "1K" | "2K" | "4K";
   nodeInteractionMode: "classic" | "branch";
-  creationMode: React.ComponentProps<
-    typeof AssistantSidebar
-  >["composer"]["creationMode"];
-  setCreationMode: React.ComponentProps<
-    typeof AssistantSidebar
-  >["composer"]["setCreationMode"];
-  setPrompt: React.ComponentProps<
-    typeof AssistantSidebar
-  >["composer"]["setPrompt"];
-  handleModeSwitch: React.ComponentProps<
-    typeof AssistantSidebar
-  >["composer"]["handleModeSwitch"];
-  fileInputRef: React.ComponentProps<
-    typeof AssistantSidebar
-  >["composer"]["fileInputRef"];
-  selectedChipId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["selectedChipId"];
-  setSelectedChipId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setSelectedChipId"];
-  hoveredChipId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["hoveredChipId"];
-  setHoveredChipId: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setHoveredChipId"];
-  showModeSelector: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["showModeSelector"];
-  setShowModeSelector: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setShowModeSelector"];
-  showRatioPicker: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["showRatioPicker"];
-  setShowRatioPicker: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setShowRatioPicker"];
-  showModelPicker: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["showModelPicker"];
-  setShowModelPicker: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setShowModelPicker"];
-  isInputFocused: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["isInputFocused"];
-  setIsInputFocused: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setIsInputFocused"];
-  isDragOver: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["isDragOver"];
-  setIsDragOver: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setIsDragOver"];
-  isVideoPanelHovered: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["isVideoPanelHovered"];
-  setIsVideoPanelHovered: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setIsVideoPanelHovered"];
-  showVideoSettingsDropdown: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["showVideoSettingsDropdown"];
-  setShowVideoSettingsDropdown: React.ComponentProps<
-    typeof AssistantSidebar
-  >["inputUi"]["setShowVideoSettingsDropdown"];
-  modelPreferences: React.ComponentProps<
-    typeof AssistantSidebar
-  >["modelPreferences"];
-  markers: React.ComponentProps<typeof AssistantSidebar>["markers"];
+  creationMode: AssistantSidebarProps["composer"]["creationMode"];
+  setCreationMode: AssistantSidebarProps["composer"]["setCreationMode"];
+  setPrompt: AssistantSidebarProps["composer"]["setPrompt"];
+  handleModeSwitch: AssistantSidebarProps["composer"]["handleModeSwitch"];
+  fileInputRef: AssistantSidebarProps["composer"]["fileInputRef"];
+  selectedChipId: AssistantSidebarProps["inputUi"]["selectedChipId"];
+  setSelectedChipId: AssistantSidebarProps["inputUi"]["setSelectedChipId"];
+  hoveredChipId: AssistantSidebarProps["inputUi"]["hoveredChipId"];
+  setHoveredChipId: AssistantSidebarProps["inputUi"]["setHoveredChipId"];
+  showModeSelector: AssistantSidebarProps["inputUi"]["showModeSelector"];
+  setShowModeSelector: AssistantSidebarProps["inputUi"]["setShowModeSelector"];
+  showRatioPicker: AssistantSidebarProps["inputUi"]["showRatioPicker"];
+  setShowRatioPicker: AssistantSidebarProps["inputUi"]["setShowRatioPicker"];
+  showModelPicker: AssistantSidebarProps["inputUi"]["showModelPicker"];
+  setShowModelPicker: AssistantSidebarProps["inputUi"]["setShowModelPicker"];
+  isInputFocused: AssistantSidebarProps["inputUi"]["isInputFocused"];
+  setIsInputFocused: AssistantSidebarProps["inputUi"]["setIsInputFocused"];
+  isDragOver: AssistantSidebarProps["inputUi"]["isDragOver"];
+  setIsDragOver: AssistantSidebarProps["inputUi"]["setIsDragOver"];
+  isVideoPanelHovered: AssistantSidebarProps["inputUi"]["isVideoPanelHovered"];
+  setIsVideoPanelHovered: AssistantSidebarProps["inputUi"]["setIsVideoPanelHovered"];
+  showVideoSettingsDropdown: AssistantSidebarProps["inputUi"]["showVideoSettingsDropdown"];
+  setShowVideoSettingsDropdown: AssistantSidebarProps["inputUi"]["setShowVideoSettingsDropdown"];
+  modelPreferences: AssistantSidebarProps["modelPreferences"];
+  markers: AssistantSidebarProps["markers"];
   handleSaveMarkerLabel: NonNullable<
-    React.ComponentProps<typeof AssistantSidebar>["onSaveMarkerLabel"]
+    AssistantSidebarProps["onSaveMarkerLabel"]
   >;
   handleClothingSubmitRequirements: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["clothingActions"]
+      AssistantSidebarProps["clothingActions"]
     >["onClothingSubmitRequirements"]
   >;
   handleClothingGenerateModel: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["clothingActions"]
+      AssistantSidebarProps["clothingActions"]
     >["onClothingGenerateModel"]
   >;
   handleClothingPickModel: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["clothingActions"]
+      AssistantSidebarProps["clothingActions"]
     >["onClothingPickModelCandidate"]
   >;
   insertResultToCanvas: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["clothingActions"]
+      AssistantSidebarProps["clothingActions"]
     >["onClothingInsertToCanvas"]
   >;
   handleClothingRetryFailed: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["clothingActions"]
+      AssistantSidebarProps["clothingActions"]
     >["onClothingRetryFailed"]
   >;
   handleEcommerceRefineAnalysis: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceRefineAnalysis"]
   >;
   handleEcommerceConfirmTypes: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceConfirmTypes"]
   >;
   handleEcommerceConfirmImageAnalyses: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceConfirmImageAnalyses"]
   >;
   handleEcommerceRetryImageAnalysis: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceRetryImageAnalysis"]
   >;
   handleEcommerceRewritePlanPrompt: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceRewritePlanPrompt"]
   >;
   handleEcommerceGeneratePlanItem: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceGeneratePlanItem"]
   >;
   handleEcommerceOpenOverlayEditor: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceOpenResultOverlayEditor"]
   >;
   handleEcommerceCloseOverlayEditor: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceCloseResultOverlayEditor"]
   >;
   handleEcommerceSaveResultOverlayDraft: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceSaveResultOverlayDraft"]
   >;
   handleEcommerceApplyResultOverlay: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceApplyResultOverlay"]
   >;
   handleEcommerceUploadResultOverlayFont: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceUploadResultOverlayFont"]
   >;
   handleEcommerceUploadResultOverlayIcon: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceUploadResultOverlayIcon"]
   >;
   handleEcommerceResetResultOverlay: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceResetResultOverlay"]
   >;
   handleEcommerceGenerateExtraPlanItem: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceGenerateExtraPlanItem"]
   >;
   handleEcommercePromoteResult: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommercePromoteResult"]
   >;
   handleEcommercePromoteSelectedResults: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommercePromoteSelectedResults"]
   >;
   handleEcommerceDeleteResult: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceDeleteResult"]
   >;
   handleEcommerceConfirmPlans: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceConfirmPlans"]
   >;
   handleEcommerceConfirmSupplements: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceConfirmSupplements"]
   >;
   handleEcommerceSelectModel: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceSelectModel"]
   >;
   handleEcommerceSyncBatchPlanItemRatio: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceSyncBatchPlanItemRatio"]
   >;
   handleEcommerceSyncBatchPrompt: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceSyncBatchPrompt"]
   >;
   handleEcommerceOpenBatchWorkbench: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceOpenBatchWorkbench"]
   >;
   handleEcommerceRunBatchGenerate: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceRunBatchGenerate"]
   >;
   handleEcommerceRetryFailedBatch: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceRetryFailedBatch"]
   >;
   handleEcommerceInsertToCanvas: NonNullable<
     NonNullable<
-      React.ComponentProps<typeof AssistantSidebar>["ecommerceActions"]
+      AssistantSidebarProps["ecommerceActions"]
     >["onEcommerceInsertToCanvas"]
   >;
 };
@@ -521,7 +457,7 @@ export const useWorkspaceSidebarProps = ({
   );
 
   const assistantSidebarProps = React.useMemo<
-    React.ComponentProps<typeof AssistantSidebar>
+    AssistantSidebarProps
   >(
     () => ({
       session: {
@@ -567,7 +503,7 @@ export const useWorkspaceSidebarProps = ({
             .trim();
           const shortLabel = preview ? preview.slice(0, 48) : selectedElement.type;
           return selectedElement.treeNodeKind
-            ? `${selectedElement.treeNodeKind} · ${shortLabel}`
+            ? `${selectedElement.treeNodeKind} 路 ${shortLabel}`
             : shortLabel;
         })(),
         resolveElementAsset: (elementId: string) => {
@@ -752,3 +688,4 @@ export const useWorkspaceSidebarProps = ({
     assistantSidebarProps,
   };
 };
+

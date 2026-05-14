@@ -173,6 +173,22 @@ const buildStyleLibraryLines = (styleLibrary?: VisualStyleLibrary) => {
   if (styleLibrary.summary) {
     lines.push(`- Library summary: ${styleLibrary.summary}`);
   }
+  if (styleLibrary.promptText) {
+    lines.push(`- Fixed style prompt: ${styleLibrary.promptText}`);
+  }
+  if (styleLibrary.tags?.length) {
+    lines.push(`- Fixed style tags: ${styleLibrary.tags.join(", ")}`);
+  } else if (styleLibrary.keywords?.length) {
+    lines.push(`- Fixed style tags: ${styleLibrary.keywords.join(", ")}`);
+  }
+  if (styleLibrary.description) {
+    lines.push(`- Fixed style principles: ${styleLibrary.description}`);
+  }
+  if (styleLibrary.referenceImageUrls?.length) {
+    lines.push(
+      `- Style reference images are active for downstream generation: ${styleLibrary.referenceImageUrls.length}`,
+    );
+  }
   if (styleLibrary.referenceInterpretation) {
     lines.push(
       `- Reference interpretation: ${styleLibrary.referenceInterpretation}`,
@@ -187,6 +203,9 @@ const buildStyleLibraryLines = (styleLibrary?: VisualStyleLibrary) => {
   styleLibrary.promptDirectives.forEach((item) => {
     lines.push(`- Prompt directive: ${item}`);
   });
+  lines.push(
+    "- Treat the style library as an upstream style template. Preserve the user subject/task intent, but let style, lighting, materials, mood, and composition follow this template first.",
+  );
   return lines;
 };
 

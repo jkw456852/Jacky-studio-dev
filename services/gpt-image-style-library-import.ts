@@ -165,6 +165,41 @@ const buildCaseLibrary = (
       slug: slugify(`${item.title}-case-${item.id}`),
       summary: `从参考图 ${item.id} 整理出的可复用风格预设。保留视觉语言与组织方式，但不绑定原始主体、品牌或一次性文案。`,
       coverImageUrl: item.image,
+      kind: isEditLikeCase ? "edit_template" : "case_transfer",
+      referenceImageUrls: item.image ? [item.image] : [],
+      keywords: dedupeLines([categoryLabel, ...styleLabels, ...sceneLabels], 12),
+      description: item.promptPreview || item.prompt,
+      useCases: dedupeLines(
+        [
+          `适合 ${categoryLabel} 相关任务。`,
+          isEditLikeCase
+            ? "适合局部编辑、元素替换、保留主体身份的精修任务。"
+            : "适合保留构图、镜头、动势与氛围的高保真迁移任务。",
+          ...sceneLabels.map((label) => `适用场景：${label}。`),
+        ],
+        6,
+      ),
+      warnings: dedupeLines(
+        [
+          isEditLikeCase
+            ? "该预设偏向编辑逻辑复用，使用时应明确哪些区域必须保留、哪些区域允许修改。"
+            : "该预设包含较强的构图与动势信号；如果当前任务目标差异较大，应主动降低迁移强度。",
+          "参考图中的品牌、人名、产品型号与一次性文案不应直接继承到新任务中。",
+        ],
+        6,
+      ),
+      testCases: [
+        {
+          id: `case-${item.id}-baseline`,
+          title: isEditLikeCase ? "编辑边界回归测试" : "构图迁移回归测试",
+          prompt: item.prompt,
+          referenceImageUrls: item.image ? [item.image] : undefined,
+          imageCount: 1,
+          expectedFocus: isEditLikeCase
+            ? "验证保留区、替换区和编辑边界是否稳定。"
+            : "验证镜头、构图、动作和氛围骨架是否能稳定迁移。",
+        },
+      ],
       referenceInterpretation: isEditLikeCase
         ? `把这组参考图理解为一种可复用的编辑方式与视觉呈现方法。优先继承 ${categoryLabel} 的画面组织、光线、材质和编辑逻辑；如果用户提供新的主体、品牌、文案或场景，应以用户内容为准。`
         : `把这组参考图理解为一种可复用的视觉风格与构图语言。优先继承 ${categoryLabel} 的气质、镜头感、版式和材料表现；如果用户提供新的主体或产品，应只保留风格语言，不复刻原图叙事。`,
@@ -208,6 +243,13 @@ const buildTemplateLibrary = (
   const guidance = linesFor(item.guidance);
   const pitfalls = linesFor(item.pitfalls);
   const categoryLabel = facetLabel(item.category, payload?.categories || []);
+  const styleLabels = item.styles.map((tag) =>
+    facetLabel(tag, payload?.styles || []),
+  );
+  const sceneLabels = item.scenes.map((tag) =>
+    facetLabel(tag, payload?.scenes || []),
+  );
+  const templatePrompt = [useWhen, ...guidance, ...pitfalls].filter(Boolean).join("\n");
 
   return {
     preferredId: `gpt-image-template-${item.id}`,
@@ -218,6 +260,24 @@ const buildTemplateLibrary = (
         description ||
         `从 ${title} 整理出的可复用风格预设，可直接作为后续生成时的风格与结构约束。`,
       coverImageUrl: item.cover,
+      kind: "style_library",
+      referenceImageUrls: item.cover ? [item.cover] : [],
+      keywords: dedupeLines([categoryLabel, ...styleLabels, ...sceneLabels], 12),
+      description: description || templatePrompt,
+      useCases: dedupeLines([useWhen, ...guidance], 6),
+      warnings: dedupeLines(pitfalls.map((line) => `避免：${line}`), 6),
+      testCases: templatePrompt
+        ? [
+            {
+              id: `template-${item.id}-baseline`,
+              title: "模板复用回归测试",
+              prompt: templatePrompt,
+              referenceImageUrls: item.cover ? [item.cover] : undefined,
+              imageCount: 1,
+              expectedFocus: "验证模板的版式、镜头、风格边界和默认约束是否稳定复用。",
+            },
+          ]
+        : undefined,
       referenceInterpretation: `把这个模板理解为一套稳定的 ${categoryLabel} 视觉组织方式。优先继承它的画面结构、风格语言和约束边界，但不要复刻模板封面或示例中的固定主体。`,
       planningDirectives: dedupeLines([
         useWhen,
@@ -226,12 +286,7 @@ const buildTemplateLibrary = (
         `优先抽取 ${categoryLabel} 任务中可复用的画面结构，再结合当前主体和目标重组内容。`,
         "模板只提供风格和组织方式，不替代当前任务对象定义。",
       ]),
-      promptBackbone: dedupeLines(
-        buildPromptBackboneLines(
-          [useWhen, ...guidance, ...pitfalls].filter(Boolean).join("\n"),
-        ),
-        6,
-      ),
+      promptBackbone: dedupeLines(buildPromptBackboneLines(templatePrompt), 6),
       promptDirectives: dedupeLines([
         ...guidance,
         ...pitfalls.map((line) => `避免：${line}`),

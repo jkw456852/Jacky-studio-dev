@@ -87,6 +87,62 @@ type RuntimeRepairNote = Omit<
 const dedupeStringList = (values: string[]) =>
   Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
 
+const isSafeStyleReferenceImageUrl = (value: string): boolean => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  return /^data:image\//i.test(normalized) || /^blob:/i.test(normalized) || /^https?:\/\//i.test(normalized);
+};
+
+const pickPrimaryStyleReferenceImage = (
+  styleLibrary?: CanvasElement["genStyleLibrary"],
+  seed?: number,
+): string | undefined => {
+  const normalizedLibrary = getEffectiveStyleLibrary({
+    mode: styleLibrary ? "custom" : "none",
+    customLibrary: styleLibrary || null,
+  });
+  if (!normalizedLibrary) return undefined;
+  const candidates = dedupeStringList([
+    normalizedLibrary.coverImageUrl || "",
+    ...(normalizedLibrary.referenceImageUrls || []),
+  ]).filter(isSafeStyleReferenceImageUrl);
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+  const normalizedSeed = Number(seed);
+  if (!Number.isFinite(normalizedSeed)) {
+    return candidates[0];
+  }
+  const index = Math.abs(Math.floor(normalizedSeed)) % candidates.length;
+  return candidates[index];
+};
+
+const mergeStyleReferenceIntoExecutionRefs = (args: {
+  referenceImages: string[];
+  styleLibrary?: CanvasElement["genStyleLibrary"];
+  styleReferenceImage?: string;
+}) => {
+  const primaryStyleReference =
+    args.styleReferenceImage || pickPrimaryStyleReferenceImage(args.styleLibrary);
+  if (!primaryStyleReference) {
+    return {
+      referenceImages: dedupeStringList(args.referenceImages || []),
+      injected: false,
+      styleReferenceImage: undefined,
+    };
+  }
+
+  const merged = dedupeStringList([
+    primaryStyleReference,
+    ...(args.referenceImages || []),
+  ]);
+
+  return {
+    referenceImages: merged,
+    injected: !dedupeStringList(args.referenceImages || []).includes(primaryStyleReference),
+    styleReferenceImage: primaryStyleReference,
+  };
+};
+
 const buildDirectStyleLibraryPrompt = (args: {
   userPrompt: string;
   styleLibrary?: CanvasElement["genStyleLibrary"];
@@ -100,30 +156,43 @@ const buildDirectStyleLibraryPrompt = (args: {
     return basePrompt;
   }
 
-  const styleLines = [
-    normalizedLibrary.title ? `- 当前风格库：${normalizedLibrary.title}` : "",
-    normalizedLibrary.summary ? `- 风格摘要：${normalizedLibrary.summary}` : "",
+  const templateLines = [
+    normalizedLibrary.title ? `- 当前风格模板：${normalizedLibrary.title}` : "",
+    normalizedLibrary.summary ? `- 模板摘要：${normalizedLibrary.summary}` : "",
+    normalizedLibrary.promptText
+      ? `- 固定风格 Prompt：${normalizedLibrary.promptText}`
+      : "",
+    normalizedLibrary.tags && normalizedLibrary.tags.length > 0
+      ? `- 固定风格标签：${normalizedLibrary.tags.join("、")}`
+      : normalizedLibrary.keywords && normalizedLibrary.keywords.length > 0
+        ? `- 固定风格标签：${normalizedLibrary.keywords.join("、")}`
+        : "",
+    normalizedLibrary.description
+      ? `- 固定风格原则：${normalizedLibrary.description}`
+      : "",
     normalizedLibrary.referenceInterpretation
-      ? `- 参考图解释方式：${normalizedLibrary.referenceInterpretation}`
+      ? `- 风格图使用方式：${normalizedLibrary.referenceInterpretation}`
       : "",
     ...(normalizedLibrary.planningDirectives || []).map(
-      (item) => `- 风格规划约束：${item}`,
+      (item) => `- 模板规划约束：${item}`,
     ),
     ...((normalizedLibrary.promptBackbone || []) as string[]).map(
-      (item) => `- 提示词骨架：${item}`,
+      (item) => `- 模板提示词骨架：${item}`,
     ),
     ...(normalizedLibrary.promptDirectives || []).map(
-      (item) => `- 提示词约束：${item}`,
+      (item) => `- 模板提示词约束：${item}`,
     ),
+    "- 生成时先遵守这张风格卡片定义的风格模板，再融合用户当前主体、商品和任务目标。",
+    "- 保留用户任务的主体内容，但风格、镜头、光线、材质、氛围与构图组织优先向当前风格模板靠拢。",
   ].filter(Boolean);
 
-  if (styleLines.length === 0) {
+  if (templateLines.length === 0) {
     return basePrompt;
   }
 
   return [
-    "[Active Style Library]",
-    ...styleLines,
+    "[Style Template Priority]",
+    ...templateLines,
     "",
     "[User Request]",
     basePrompt,
@@ -151,6 +220,9 @@ const cloneStyleLibraryRuntimeOverlay = (
     8,
   );
   const promptBackbone = dedupeStringList(overlay.promptBackbone || []).slice(0, 8);
+  const promptText = String(overlay.promptText || "").trim();
+  const tags = dedupeStringList(overlay.tags || []).slice(0, 12);
+  const description = String(overlay.description || "").trim();
   const createdBy = String(overlay.createdBy || "").trim();
   const updatedAt = Number(overlay.updatedAt);
 
@@ -159,7 +231,10 @@ const cloneStyleLibraryRuntimeOverlay = (
     !referenceInterpretation &&
     planningDirectives.length === 0 &&
     promptDirectives.length === 0 &&
-    promptBackbone.length === 0
+    promptBackbone.length === 0 &&
+    !promptText &&
+    tags.length === 0 &&
+    !description
   ) {
     return undefined;
   }
@@ -171,6 +246,9 @@ const cloneStyleLibraryRuntimeOverlay = (
       planningDirectives.length > 0 ? planningDirectives : undefined,
     promptDirectives: promptDirectives.length > 0 ? promptDirectives : undefined,
     promptBackbone: promptBackbone.length > 0 ? promptBackbone : undefined,
+    promptText: promptText || undefined,
+    tags: tags.length > 0 ? tags : undefined,
+    description: description || undefined,
     createdBy:
       createdBy === "system" || createdBy === "main-brain" || createdBy === "user"
         ? createdBy
@@ -210,6 +288,9 @@ const buildEffectiveStyleLibrary = (args: {
       ...((base.promptBackbone as string[] | undefined) || []),
       ...((runtimeOverlay.promptBackbone as string[] | undefined) || []),
     ]).slice(0, 8),
+    promptText: runtimeOverlay.promptText || base.promptText,
+    tags: dedupeStringList([...(base.tags || []), ...(runtimeOverlay.tags || [])]).slice(0, 12),
+    description: runtimeOverlay.description || base.description,
     createdBy: base.createdBy,
     sourceMode: base.sourceMode,
     updatedAt: runtimeOverlay.updatedAt || base.updatedAt,
@@ -229,6 +310,9 @@ const buildStyleLibraryRuntimeOverlay = (
     planningDirectives: plannerLibrary.planningDirectives,
     promptDirectives: plannerLibrary.promptDirectives,
     promptBackbone: plannerLibrary.promptBackbone,
+    promptText: plannerLibrary.promptText,
+    tags: plannerLibrary.tags,
+    description: plannerLibrary.description,
     createdBy:
       plannerLibrary.createdBy === "user" ||
       plannerLibrary.createdBy === "system" ||
@@ -1340,6 +1424,15 @@ export function useWorkspaceElementImageGeneration(
           baseLibrary: currentBaseStyleLibrary,
           runtimeOverlay: currentStyleLibraryRuntimeOverlay,
         });
+        let currentStyleReferenceImage = pickPrimaryStyleReferenceImage(
+          currentStyleLibrary,
+          requestStartedAt,
+        );
+        currentReferenceImages = mergeStyleReferenceIntoExecutionRefs({
+          referenceImages: currentReferenceImages,
+          styleLibrary: currentStyleLibrary,
+          styleReferenceImage: currentStyleReferenceImage,
+        }).referenceImages;
         const planningBypassReason = !preGenerationPlanningEnabled
           ? "global-pre-generation-planning-disabled"
           : null;
@@ -1483,13 +1576,18 @@ export function useWorkspaceElementImageGeneration(
                   requiredCopy: trimmedRequiredChineseCopy || undefined,
                 }
               : undefined;
+          const mergedExecutionReferences = mergeStyleReferenceIntoExecutionRefs({
+            referenceImages: currentReferenceImages,
+            styleLibrary: currentStyleLibrary,
+            styleReferenceImage: currentStyleReferenceImage,
+          }).referenceImages;
 
           return {
             plan: {
               intent: "unknown",
               strategyId: "direct-prompt",
               userGoal: taskUnit.goal || sourceElement.genPrompt || "",
-              references: currentReferenceImages.map((url, index) => {
+              references: mergedExecutionReferences.map((url, index) => {
                 const isInjectedAnchor =
                   consistencyAnchorInjected &&
                   (manualReferenceImages.length === 0 || manualReferenceImages[index] !== url);
@@ -1535,15 +1633,15 @@ export function useWorkspaceElementImageGeneration(
                 userPrompt: taskUnit.prompt || sourceElement.genPrompt || "",
                 styleLibrary: currentStyleLibrary,
               }),
-              referenceImages: currentReferenceImages,
+              referenceImages: mergedExecutionReferences,
               referencePriority:
-                currentReferenceImages.length > 1
+                mergedExecutionReferences.length > 1
                   ? "all"
-                  : currentReferenceImages.length === 1
+                  : mergedExecutionReferences.length === 1
                     ? "first"
                     : undefined,
               referenceStrength:
-                currentReferenceImages.length > 0 ? 0.85 : undefined,
+                mergedExecutionReferences.length > 0 ? 0.85 : undefined,
               referenceRoleMode: currentReferenceRoleMode,
               promptLanguagePolicy,
               textPolicy,
@@ -1674,6 +1772,15 @@ export function useWorkspaceElementImageGeneration(
             baseLibrary: currentBaseStyleLibrary,
             runtimeOverlay: currentStyleLibraryRuntimeOverlay,
           });
+          currentStyleReferenceImage = pickPrimaryStyleReferenceImage(
+            currentStyleLibrary,
+            requestStartedAt,
+          );
+          currentReferenceImages = mergeStyleReferenceIntoExecutionRefs({
+            referenceImages: currentReferenceImages,
+            styleLibrary: currentStyleLibrary,
+            styleReferenceImage: currentStyleReferenceImage,
+          }).referenceImages;
           planningLogStreamer.push({
             phase: "planning",
             title: "沿用上次视觉编排",
@@ -1715,10 +1822,19 @@ export function useWorkspaceElementImageGeneration(
             currentStyleLibraryRuntimeOverlay = undefined;
             currentStyleLibrary = taskPlan.styleLibrary;
           }
+          currentStyleReferenceImage = pickPrimaryStyleReferenceImage(
+            currentStyleLibrary,
+            requestStartedAt,
+          );
           taskPlan = {
             ...taskPlan,
             styleLibrary: currentStyleLibrary,
           };
+          currentReferenceImages = mergeStyleReferenceIntoExecutionRefs({
+            referenceImages: currentReferenceImages,
+            styleLibrary: currentStyleLibrary,
+            styleReferenceImage: currentStyleReferenceImage,
+          }).referenceImages;
         }
 
         const researchDecision = taskPlan.planningBrief?.researchDecision;
@@ -1823,10 +1939,19 @@ export function useWorkspaceElementImageGeneration(
               currentStyleLibraryRuntimeOverlay = undefined;
               currentStyleLibrary = taskPlan.styleLibrary;
             }
+            currentStyleReferenceImage = pickPrimaryStyleReferenceImage(
+              currentStyleLibrary,
+              requestStartedAt,
+            );
             taskPlan = {
               ...taskPlan,
               styleLibrary: currentStyleLibrary,
             };
+            currentReferenceImages = mergeStyleReferenceIntoExecutionRefs({
+              referenceImages: currentReferenceImages,
+              styleLibrary: currentStyleLibrary,
+              styleReferenceImage: currentStyleReferenceImage,
+            }).referenceImages;
           }
           if (taskPlan.planningBrief?.researchDecision?.shouldResearch) {
             taskPlan = {
@@ -2363,7 +2488,10 @@ export function useWorkspaceElementImageGeneration(
                         ? taskUnit.prompt
                         : sourceElement.genPrompt || "",
                       manualReferenceImages,
-                      referenceImages: currentReferenceImages,
+                      referenceImages: mergeStyleReferenceIntoExecutionRefs({
+                        referenceImages: currentReferenceImages,
+                        styleLibrary: taskPlan.styleLibrary,
+                      }).referenceImages,
                       selectedGenerationModel: String(model),
                       taskRoleOverlay: taskPlan.roleOverlay,
                       taskPlanningBrief: taskPlan.planningBrief,

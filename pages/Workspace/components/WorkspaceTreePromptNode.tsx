@@ -38,6 +38,15 @@ import {
   listUserStyleLibraries,
   normalizeWorkspaceStyleLibrary,
 } from "../../../services/vision-orchestrator/style-library";
+import {
+  buildStyleLibraryDraft,
+  buildStyleLibraryFromDraft,
+  createEmptyStyleLibraryDraftTestCase,
+  createEmptyStyleLibraryDraftTestResult,
+  type StyleLibraryDraftState,
+  type StyleLibraryDraftTestCase,
+  type StyleLibraryDraftTestResult,
+} from "../../../services/vision-orchestrator/style-library-draft";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 
 const LABEL_COPY = "\u590d\u5236\u5185\u5bb9";
@@ -238,55 +247,6 @@ const TreePromptReferenceUploadTrigger: React.FC<{
   </label>
 );
 
-type StyleLibraryDraftState = {
-  title: string;
-  summary: string;
-  coverImageUrl: string;
-  referenceInterpretation: string;
-  planningDirectivesText: string;
-  promptDirectivesText: string;
-};
-
-const toDirectiveText = (values: string[] | undefined) =>
-  Array.isArray(values) ? values.join("\n") : "";
-
-const buildStyleLibraryDraft = (
-  library?: WorkspaceStyleLibrary | null,
-): StyleLibraryDraftState => {
-  const normalized = normalizeWorkspaceStyleLibrary(library);
-  return {
-    title: normalized?.title || "",
-    summary: normalized?.summary || "",
-    coverImageUrl: normalized?.coverImageUrl || "",
-    referenceInterpretation: normalized?.referenceInterpretation || "",
-    planningDirectivesText: toDirectiveText(normalized?.planningDirectives),
-    promptDirectivesText: toDirectiveText(normalized?.promptDirectives),
-  };
-};
-
-const parseDirectiveText = (value: string) =>
-  String(value || "")
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-const buildStyleLibraryFromDraft = (
-  draft: StyleLibraryDraftState,
-  createdBy: WorkspaceStyleLibrary["createdBy"] = "user",
-  baseLibrary?: WorkspaceStyleLibrary | null,
-): WorkspaceStyleLibrary | undefined =>
-  normalizeWorkspaceStyleLibrary({
-    id: baseLibrary?.id,
-    slug: baseLibrary?.slug,
-    title: draft.title,
-    summary: draft.summary,
-    coverImageUrl: String(draft.coverImageUrl || "").trim() || undefined,
-    referenceInterpretation: draft.referenceInterpretation,
-    planningDirectives: parseDirectiveText(draft.planningDirectivesText),
-    promptDirectives: parseDirectiveText(draft.promptDirectivesText),
-    createdBy,
-    updatedAt: Date.now(),
-  });
 
 const persistUserStyleLibraryAsset = (
   library: WorkspaceStyleLibrary | undefined,
@@ -332,6 +292,9 @@ const normalizeStyleLibraryRuntimeOverlay = (
     8,
   );
   const promptBackbone = dedupeStyleLibraryLines(overlay.promptBackbone || []).slice(0, 8);
+  const promptText = String(overlay.promptText || "").trim();
+  const tags = dedupeStyleLibraryLines(overlay.tags || []).slice(0, 12);
+  const description = String(overlay.description || "").trim();
   const createdBy = String(overlay.createdBy || "").trim();
   const updatedAt = Number(overlay.updatedAt);
 
@@ -340,7 +303,10 @@ const normalizeStyleLibraryRuntimeOverlay = (
     !referenceInterpretation &&
     planningDirectives.length === 0 &&
     promptDirectives.length === 0 &&
-    promptBackbone.length === 0
+    promptBackbone.length === 0 &&
+    !promptText &&
+    tags.length === 0 &&
+    !description
   ) {
     return undefined;
   }
@@ -352,6 +318,9 @@ const normalizeStyleLibraryRuntimeOverlay = (
       planningDirectives.length > 0 ? planningDirectives : undefined,
     promptDirectives: promptDirectives.length > 0 ? promptDirectives : undefined,
     promptBackbone: promptBackbone.length > 0 ? promptBackbone : undefined,
+    promptText: promptText || undefined,
+    tags: tags.length > 0 ? tags : undefined,
+    description: description || undefined,
     createdBy:
       createdBy === "system" || createdBy === "main-brain" || createdBy === "user"
         ? createdBy
@@ -390,6 +359,12 @@ const buildEffectiveRuntimeStyleLibrary = (args: {
         ...((normalizedBase.promptBackbone as string[] | undefined) || []),
         ...((runtimeOverlay.promptBackbone as string[] | undefined) || []),
       ]).slice(0, 8),
+      promptText: runtimeOverlay.promptText || normalizedBase.promptText,
+      tags: dedupeStyleLibraryLines([
+        ...(normalizedBase.tags || []),
+        ...(runtimeOverlay.tags || []),
+      ]).slice(0, 12),
+      description: runtimeOverlay.description || normalizedBase.description,
       createdBy: normalizedBase.createdBy,
       updatedAt: runtimeOverlay.updatedAt || normalizedBase.updatedAt,
       sourceMode: normalizedBase.sourceMode,
@@ -858,77 +833,23 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
             {activeTab === "mine" ? (
-              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[14px] border border-dashed border-[#d9dee7] bg-[#fafbfd] px-4 py-4">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-dashed border-[#d9dee7] bg-[#fafbfd] px-4 py-4">
+                <div>
+                  <div className="text-[13px] font-medium text-[#111827]">节点侧只保留轻量应用</div>
+                  <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
+                    资产的新建、编辑、删除和批量治理后续统一迁入独立风格库中心；这里仅负责快速选择并应用。
+                  </div>
+                </div>
                 <button
                   type="button"
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#111827] px-4 text-[13px] font-medium text-white transition hover:bg-[#1f2937]"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-[#374151] transition hover:bg-[#f9fafb]"
                   onClick={() => {
-                    onSeedCustomStyleLibrary();
+                    window.open("/style-library-center", "_blank", "noopener,noreferrer");
                   }}
                 >
                   <Plus size={16} />
-                  {LABEL_STYLE_LIBRARY_CREATE}
+                  打开风格库中心
                 </button>
-                <button
-                  type="button"
-                  className={`inline-flex h-10 items-center justify-center rounded-[10px] border px-4 text-[13px] font-medium transition ${
-                    batchSelectionEnabled
-                      ? "border-[#111827] bg-[#111827] text-white"
-                      : "border-[#e5e7eb] bg-white text-[#374151] hover:bg-[#f9fafb]"
-                  }`}
-                  onClick={() => {
-                    setBatchSelectionEnabled((value) => !value);
-                    setSelectedLibraryIds([]);
-                  }}
-                >
-                  {batchSelectionEnabled ? "取消批量选择" : "批量删除"}
-                </button>
-                {batchSelectionEnabled ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={visibleGalleryItems.length === 0}
-                      className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-[#374151] transition hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-45"
-                      onClick={() => {
-                        setSelectedLibraryIds(
-                          visibleGalleryItems
-                            .map((item) => item.library?.id || "")
-                            .filter(Boolean),
-                        );
-                      }}
-                    >
-                      全选
-                    </button>
-                    <button
-                      type="button"
-                      disabled={visibleGalleryItems.length === 0}
-                      className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white px-4 text-[13px] font-medium text-[#374151] transition hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-45"
-                      onClick={() => {
-                        const visibleIds = visibleGalleryItems
-                          .map((item) => item.library?.id || "")
-                          .filter(Boolean);
-                        setSelectedLibraryIds((current) =>
-                          visibleIds.filter((id) => !current.includes(id)).concat(
-                            current.filter((id) => !visibleIds.includes(id)),
-                          ),
-                        );
-                      }}
-                    >
-                      反选
-                    </button>
-                    <button
-                      type="button"
-                      disabled={selectedLibraryIds.length === 0}
-                      className="inline-flex h-10 items-center justify-center rounded-[10px] bg-[#fff1f2] px-4 text-[13px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6] disabled:cursor-not-allowed disabled:opacity-45"
-                      onClick={() => {
-                        onDeleteStyleLibraries(selectedLibraryIds);
-                        setSelectedLibraryIds([]);
-                      }}
-                    >
-                      删除选中（{selectedLibraryIds.length}）
-                    </button>
-                  </>
-                ) : null}
               </div>
             ) : null}
 
@@ -966,7 +887,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                     }}
                     onDoubleClick={() => {
                       if (item.library && item.origin !== "system") {
-                        onEditSelectedUserLibrary(item.library);
+                        window.open("/style-library-center", "_blank", "noopener,noreferrer");
                       }
                     }}
                   >
@@ -1021,7 +942,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                       编辑风格卡片
                     </div>
                     <p className="mt-3 text-[13px] leading-6 text-[#4b5563]">
-                      这里可以修改标题、说明、封面和规则内容。保存后会直接更新这张风格卡片。
+                      这里可以修改标题、定位、标签、参考图集和规则内容。保存后会直接更新这张风格卡片。
                     </p>
                   </div>
                   <button
@@ -1097,6 +1018,56 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                       />
                     </label>
 
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block">
+                        <div className="mb-2 text-[12px] font-medium text-[#6b7280]">资产类型</div>
+                        <select
+                          value={styleLibraryDraft.kind}
+                          className="h-11 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                          onChange={(event) =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              kind: event.target.value as NonNullable<WorkspaceStyleLibrary["kind"]>,
+                            }))
+                          }
+                        >
+                          <option value="style_library">抽象风格库</option>
+                          <option value="case_transfer">强迁移预设</option>
+                          <option value="edit_template">编辑型预设</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <div className="mb-2 text-[12px] font-medium text-[#6b7280]">关键词标签</div>
+                        <textarea
+                          value={styleLibraryDraft.keywordsText}
+                          className="min-h-[96px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                          placeholder="每行一个关键词，如：低机位 / 强透视 / 科技感"
+                          onChange={(event) =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              keywordsText: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">详细描述</div>
+                      <textarea
+                        value={styleLibraryDraft.description}
+                        className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="补充这套风格的视觉语言、使用边界和典型特征"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            description: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
                     <label className="block">
                       <div className="mb-2 text-[12px] font-medium text-[#6b7280]">封面图片</div>
                       <div className="rounded-[12px] border border-[#e5e7eb] bg-[#fafbfc] p-3">
@@ -1158,6 +1129,53 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                     </label>
 
                     <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">参考图集</div>
+                      <textarea
+                        value={styleLibraryDraft.referenceImageUrlsText}
+                        className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="每行一个参考图 URL，可用于保存这套风格资产自己的图集"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            referenceImageUrlsText: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block">
+                        <div className="mb-2 text-[12px] font-medium text-[#6b7280]">适用场景</div>
+                        <textarea
+                          value={styleLibraryDraft.useCasesText}
+                          className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                          placeholder="每行一个使用场景"
+                          onChange={(event) =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              useCasesText: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+
+                      <label className="block">
+                        <div className="mb-2 text-[12px] font-medium text-[#6b7280]">风险提醒</div>
+                        <textarea
+                          value={styleLibraryDraft.warningsText}
+                          className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                          placeholder="每行一条风险或使用边界"
+                          onChange={(event) =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              warningsText: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block">
                       <div className="mb-2 text-[12px] font-medium text-[#6b7280]">参考图解释方式</div>
                       <textarea
                         value={styleLibraryDraft.referenceInterpretation}
@@ -1178,6 +1196,21 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                         风格库现在只负责定义参考图解释方式、规划约束和提示词骨架；是否执行生图前编排统一由全局开关控制，不再由单个风格库单独关闭。
                       </div>
                     </div>
+
+                    <label className="block">
+                      <div className="mb-2 text-[12px] font-medium text-[#6b7280]">Prompt 骨架</div>
+                      <textarea
+                        value={styleLibraryDraft.promptBackboneText}
+                        className="min-h-[120px] w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                        placeholder="每行一段高信号提示词骨架，如镜头、透视、动作、材质、氛围"
+                        onChange={(event) =>
+                          onStyleDraftChange((current) => ({
+                            ...current,
+                            promptBackboneText: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
 
                     <label className="block">
                       <div className="mb-2 text-[12px] font-medium text-[#6b7280]">规划指令</div>
@@ -1208,6 +1241,456 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                         }
                       />
                     </label>
+
+                    <div className="rounded-[16px] border border-[#e5e7eb] bg-[#fafbfc] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[13px] font-semibold text-[#111827]">测试样例</div>
+                          <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
+                            为这套风格保存几条回归样例，后续做导入验证和版本对比时会直接复用。
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-[12px] font-medium text-[#374151] transition hover:bg-[#f9fafb]"
+                          onClick={() =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              testCases: [...current.testCases, createEmptyStyleLibraryDraftTestCase()],
+                            }))
+                          }
+                        >
+                          新增测试样例
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {styleLibraryDraft.testCases.length === 0 ? (
+                          <div className="rounded-[12px] border border-dashed border-[#d1d5db] bg-white px-4 py-4 text-[12px] leading-5 text-[#6b7280]">
+                            还没有测试样例。建议至少保存一条“标准复现样例”，方便后续验证这套风格是否稳定。
+                          </div>
+                        ) : (
+                          styleLibraryDraft.testCases.map((item, index) => (
+                            <div
+                              key={item.id}
+                              className="rounded-[12px] border border-[#e5e7eb] bg-white p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[13px] font-medium text-[#111827]">
+                                  测试样例 {index + 1}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-[8px] border border-[#f3d3d8] bg-[#fff5f6] px-2.5 py-1.5 text-[11px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6]"
+                                  onClick={() =>
+                                    onStyleDraftChange((current) => ({
+                                      ...current,
+                                      testCases: current.testCases.filter((caseItem) => caseItem.id !== item.id),
+                                    }))
+                                  }
+                                >
+                                  删除
+                                </button>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">样例标题</div>
+                                  <input
+                                    value={item.title}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="如：构图迁移基线"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        testCases: current.testCases.map((caseItem) =>
+                                          caseItem.id === item.id
+                                            ? { ...caseItem, title: event.target.value }
+                                            : caseItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">期望重点</div>
+                                  <input
+                                    value={item.expectedFocus}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="如：保持低机位、强透视和外溅动势"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        testCases: current.testCases.map((caseItem) =>
+                                          caseItem.id === item.id
+                                            ? { ...caseItem, expectedFocus: event.target.value }
+                                            : caseItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+                              </div>
+
+                              <label className="mt-3 block">
+                                <div className="mb-2 text-[12px] font-medium text-[#6b7280]">测试 Prompt</div>
+                                <textarea
+                                  value={item.prompt}
+                                  className="min-h-[120px] w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                                  placeholder="填写这条样例的测试提示词"
+                                  onChange={(event) =>
+                                    onStyleDraftChange((current) => ({
+                                      ...current,
+                                      testCases: current.testCases.map((caseItem) =>
+                                        caseItem.id === item.id
+                                          ? { ...caseItem, prompt: event.target.value }
+                                          : caseItem,
+                                      ),
+                                    }))
+                                  }
+                                />
+                              </label>
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                <label className="block md:col-span-2">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">参考图 URL</div>
+                                  <textarea
+                                    value={item.referenceImageUrlsText}
+                                    className="min-h-[96px] w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="每行一个 URL"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        testCases: current.testCases.map((caseItem) =>
+                                          caseItem.id === item.id
+                                            ? {
+                                                ...caseItem,
+                                                referenceImageUrlsText: event.target.value,
+                                              }
+                                            : caseItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <div className="grid gap-3">
+                                  <label className="block">
+                                    <div className="mb-2 text-[12px] font-medium text-[#6b7280]">张数</div>
+                                    <select
+                                      value={item.imageCount}
+                                      className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                      onChange={(event) =>
+                                        onStyleDraftChange((current) => ({
+                                          ...current,
+                                          testCases: current.testCases.map((caseItem) =>
+                                            caseItem.id === item.id
+                                              ? {
+                                                  ...caseItem,
+                                                  imageCount: event.target.value as StyleLibraryDraftTestCase["imageCount"],
+                                                }
+                                              : caseItem,
+                                          ),
+                                        }))
+                                      }
+                                    >
+                                      <option value="">默认</option>
+                                      <option value="1">1</option>
+                                      <option value="2">2</option>
+                                      <option value="3">3</option>
+                                      <option value="4">4</option>
+                                    </select>
+                                  </label>
+
+                                  <label className="block">
+                                    <div className="mb-2 text-[12px] font-medium text-[#6b7280]">比例</div>
+                                    <input
+                                      value={item.aspectRatio}
+                                      className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                      placeholder="如 4:5"
+                                      onChange={(event) =>
+                                        onStyleDraftChange((current) => ({
+                                          ...current,
+                                          testCases: current.testCases.map((caseItem) =>
+                                            caseItem.id === item.id
+                                              ? { ...caseItem, aspectRatio: event.target.value }
+                                              : caseItem,
+                                          ),
+                                        }))
+                                      }
+                                    />
+                                  </label>
+
+                                  <label className="block">
+                                    <div className="mb-2 text-[12px] font-medium text-[#6b7280]">模型</div>
+                                    <input
+                                      value={item.model}
+                                      className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                      placeholder="如 Nano Banana Pro"
+                                      onChange={(event) =>
+                                        onStyleDraftChange((current) => ({
+                                          ...current,
+                                          testCases: current.testCases.map((caseItem) =>
+                                            caseItem.id === item.id
+                                              ? { ...caseItem, model: event.target.value }
+                                              : caseItem,
+                                          ),
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[16px] border border-[#e5e7eb] bg-[#fafbfc] p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[13px] font-semibold text-[#111827]">最近验证结果</div>
+                          <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
+                            保存最近几次验证结论，让这套风格不只是“看起来像”，而是“被验证过”。
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-[12px] font-medium text-[#374151] transition hover:bg-[#f9fafb]"
+                          onClick={() =>
+                            onStyleDraftChange((current) => ({
+                              ...current,
+                              latestTestResults: [
+                                ...current.latestTestResults,
+                                createEmptyStyleLibraryDraftTestResult(),
+                              ],
+                            }))
+                          }
+                        >
+                          新增验证结果
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {styleLibraryDraft.latestTestResults.length === 0 ? (
+                          <div className="rounded-[12px] border border-dashed border-[#d1d5db] bg-white px-4 py-4 text-[12px] leading-5 text-[#6b7280]">
+                            还没有验证记录。后续做风格回归时，可以把通过/失败结论直接沉淀到这里。
+                          </div>
+                        ) : (
+                          styleLibraryDraft.latestTestResults.map((item, index) => (
+                            <div
+                              key={`${item.caseId || "result"}-${index}`}
+                              className="rounded-[12px] border border-[#e5e7eb] bg-white p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[13px] font-medium text-[#111827]">
+                                  验证结果 {index + 1}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-[8px] border border-[#f3d3d8] bg-[#fff5f6] px-2.5 py-1.5 text-[11px] font-medium text-[#be123c] transition hover:bg-[#ffe4e6]"
+                                  onClick={() =>
+                                    onStyleDraftChange((current) => ({
+                                      ...current,
+                                      latestTestResults: current.latestTestResults.filter(
+                                        (_, resultIndex) => resultIndex !== index,
+                                      ),
+                                    }))
+                                  }
+                                >
+                                  删除
+                                </button>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">对应样例 ID</div>
+                                  <input
+                                    value={item.caseId}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="如 case-001"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? { ...resultItem, caseId: event.target.value }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">结论</div>
+                                  <select
+                                    value={item.passed}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? {
+                                                  ...resultItem,
+                                                  passed: event.target.value as StyleLibraryDraftTestResult["passed"],
+                                                }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  >
+                                    <option value="pending">待判断</option>
+                                    <option value="passed">通过</option>
+                                    <option value="failed">失败</option>
+                                  </select>
+                                </label>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">时间戳</div>
+                                  <input
+                                    value={item.createdAt}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="默认自动生成"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? { ...resultItem, createdAt: event.target.value }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">比例</div>
+                                  <input
+                                    value={item.aspectRatio}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="如 3:4"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? { ...resultItem, aspectRatio: event.target.value }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">张数</div>
+                                  <select
+                                    value={item.imageCount}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? {
+                                                  ...resultItem,
+                                                  imageCount: event.target.value as StyleLibraryDraftTestResult["imageCount"],
+                                                }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  >
+                                    <option value="">默认</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                  </select>
+                                </label>
+                              </div>
+
+                              <label className="mt-3 block">
+                                <div className="mb-2 text-[12px] font-medium text-[#6b7280]">输出图片 URL</div>
+                                <textarea
+                                  value={item.outputImageUrlsText}
+                                  className="min-h-[96px] w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                                  placeholder="每行一个结果图 URL"
+                                  onChange={(event) =>
+                                    onStyleDraftChange((current) => ({
+                                      ...current,
+                                      latestTestResults: current.latestTestResults.map(
+                                        (resultItem, resultIndex) =>
+                                          resultIndex === index
+                                            ? {
+                                                ...resultItem,
+                                                outputImageUrlsText: event.target.value,
+                                              }
+                                            : resultItem,
+                                      ),
+                                    }))
+                                  }
+                                />
+                              </label>
+
+                              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">备注</div>
+                                  <textarea
+                                    value={item.note}
+                                    className="min-h-[96px] w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-3 text-[13px] leading-6 text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="记录为什么通过 / 失败，便于后续回归定位"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? { ...resultItem, note: event.target.value }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <div className="mb-2 text-[12px] font-medium text-[#6b7280]">模型</div>
+                                  <input
+                                    value={item.model}
+                                    className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
+                                    placeholder="如 Nano Banana Pro"
+                                    onChange={(event) =>
+                                      onStyleDraftChange((current) => ({
+                                        ...current,
+                                        latestTestResults: current.latestTestResults.map(
+                                          (resultItem, resultIndex) =>
+                                            resultIndex === index
+                                              ? { ...resultItem, model: event.target.value }
+                                              : resultItem,
+                                        ),
+                                      }))
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

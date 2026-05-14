@@ -24,6 +24,7 @@ import type {
   StudioWorkspacePreferencesAsset,
   StudioStoredStyleLibrary,
   StudioStoredRoleDraft,
+  StudioStyleLibraryCandidateAsset,
   StudioUserAssetState,
 } from "./user-asset-types.ts";
 
@@ -133,6 +134,19 @@ export interface StudioUserAssetApi {
     },
   ): StudioStoredStyleLibrary | null;
   removeStyleLibrary(id: string): StudioUserAssetState;
+  listStyleLibraryCandidates(): StudioStyleLibraryCandidateAsset[];
+  getStyleLibraryCandidateById(id: string): StudioStyleLibraryCandidateAsset | null;
+  saveStyleLibraryCandidate(
+    library: WorkspaceStyleLibrary,
+    options?: {
+      preferredId?: string;
+      status?: StudioStyleLibraryCandidateAsset["status"];
+      sourcePreviewKey?: string;
+      sourcePreviewType?: "case" | "template";
+      sourceMode?: "default" | "poster-product" | "custom";
+    },
+  ): StudioStyleLibraryCandidateAsset | null;
+  removeStyleLibraryCandidate(id: string): StudioUserAssetState;
   listEvolutionRecords(): StudioEvolutionRecord[];
   getEvolutionRecordById(id: string): StudioEvolutionRecord | null;
   saveEvolutionRecord(

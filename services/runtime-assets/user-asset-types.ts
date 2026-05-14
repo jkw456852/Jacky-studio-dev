@@ -56,6 +56,23 @@ export interface StudioStoredStyleLibrary extends WorkspaceStyleLibrary {
   sourceMode?: "default" | "poster-product" | "custom";
 }
 
+export type StudioStyleLibraryCandidateStatus =
+  | "draft"
+  | "ready_for_test"
+  | "ready_to_save";
+
+export interface StudioStyleLibraryCandidateAsset extends WorkspaceStyleLibrary {
+  id: string;
+  slug: string;
+  schemaVersion: StudioAssetVersion;
+  status: StudioStyleLibraryCandidateStatus;
+  sourcePreviewKey?: string;
+  sourcePreviewType?: "case" | "template";
+  sourceMode?: "default" | "poster-product" | "custom";
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface StudioMainBrainPreferencesAsset {
   schemaVersion: StudioAssetVersion;
   updatedAt: number;
@@ -329,6 +346,7 @@ export interface StudioUserAssetState {
   roleVersions: Record<string, StudioRoleVersionRecord[]>;
   roleAuditEntries: Record<string, StudioRoleVersionRecord[]>;
   styleLibraries: Record<string, StudioStoredStyleLibrary>;
+  styleLibraryCandidates: Record<string, StudioStyleLibraryCandidateAsset>;
   evolutionRecords: Record<string, StudioEvolutionRecord>;
 }
 
@@ -356,6 +374,7 @@ export type StudioUserAssetAuditTargetKind =
   | "temporary-role-draft"
   | "role-version"
   | "style-library"
+  | "style-library-candidate"
   | "evolution-record"
   | "rollback";
 

@@ -3,6 +3,7 @@ export const ROUTES = {
   dashboard: '/dashboard',
   projects: '/projects',
   gptImageInspiration: '/gpt-image-inspiration',
+  styleLibraryCenter: '/style-library-center',
   workspace: '/workspace',
   workspaceNew: '/workspace-new',
   settings: '/settings',

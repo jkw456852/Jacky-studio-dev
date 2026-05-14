@@ -1,11 +1,16 @@
-import React, { memo } from "react";
+import React, { lazy, memo, Suspense } from "react";
 import { AnimatePresence } from "framer-motion";
-import { AssistantSidebar } from ".";
+import type { AssistantSidebarProps } from "./AssistantSidebar";
 import { WorkspaceLeftPanel } from "./WorkspaceLeftPanel";
+
+const AssistantSidebar = lazy(async () => {
+  const module = await import("./AssistantSidebar");
+  return { default: module.AssistantSidebar };
+});
 
 type WorkspaceSidebarLayerProps = {
   leftPanel: React.ComponentProps<typeof WorkspaceLeftPanel>;
-  assistant: React.ComponentProps<typeof AssistantSidebar>;
+  assistant: AssistantSidebarProps;
   showAssistant: boolean;
 };
 
@@ -22,9 +27,11 @@ export const WorkspaceSidebarLayer: React.FC<WorkspaceSidebarLayerProps> = memo(
   return (
     <>
       {!isAssistantFullscreen ? <WorkspaceLeftPanel {...leftPanel} /> : null}
-      <AnimatePresence>
-        {shouldShowAssistant ? <AssistantSidebar {...assistant} /> : null}
-      </AnimatePresence>
+      <Suspense fallback={null}>
+        <AnimatePresence>
+          {shouldShowAssistant ? <AssistantSidebar {...assistant} /> : null}
+        </AnimatePresence>
+      </Suspense>
     </>
   );
 });

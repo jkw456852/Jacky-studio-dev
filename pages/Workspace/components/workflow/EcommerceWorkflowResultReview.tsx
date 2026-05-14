@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import JSZip from "jszip";
 import type {
   EcommerceBatchJob,
   EcommercePlanGroup,
@@ -50,9 +49,10 @@ const getGenerationMetaChips = (meta?: WorkflowResultImage["generationMeta"]) =>
     });
   }
 
-  if ((meta.attemptedModels || []).length > 0) {
+  const attemptedModels = meta.attemptedModels || [];
+  if (attemptedModels.length > 0) {
     chips.push({
-      text: `已自动切换 ${meta.attemptedModels.length} 次`,
+      text: `已自动切换 ${attemptedModels.length} 次`,
       className: "bg-amber-100 text-amber-700",
     });
   }
@@ -598,6 +598,7 @@ export const EcommerceWorkflowResultReview: React.FC<Props> = ({
   ) => {
     if (items.length === 0) return;
 
+    const { default: JSZip } = await import("jszip");
     const zip = new JSZip();
     const manifest = buildManifestPayload(items, groupTitle);
 

@@ -1,5 +1,6 @@
 import { Type } from "@google/genai";
-import { generateJsonResponse, getBestModelId } from "./gemini";
+import { generateJsonResponse, getBestModelSelection } from "./gemini";
+import { getVisualOrchestratorModelConfig } from "./provider-settings";
 import type { WorkspaceStyleLibrary } from "../types/common";
 import type {
   GptImageInspirationCase,
@@ -48,6 +49,24 @@ const SMART_IMPORT_RESPONSE_SCHEMA = {
       properties: {
         title: { type: Type.STRING },
         summary: { type: Type.STRING },
+        description: { type: Type.STRING },
+        promptText: { type: Type.STRING },
+        tags: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        keywords: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        useCases: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        warnings: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
         referenceInterpretation: { type: Type.STRING },
         promptBackbone: {
           type: Type.ARRAY,
@@ -65,6 +84,9 @@ const SMART_IMPORT_RESPONSE_SCHEMA = {
       required: [
         "title",
         "summary",
+        "promptText",
+        "tags",
+        "description",
         "referenceInterpretation",
         "promptBackbone",
         "planningDirectives",
@@ -300,6 +322,9 @@ const buildImportPrompt = (
 - warnings 写潜在风险，没有可为空数组。
 - library.title 必须是用户能看懂的中文标题。
 - library.summary 必须说明这个导入项的用途。
+- library.promptText 必须输出为后续可直接用于图像生成模型的固定风格 Prompt，尽量保留原始 prompt 中真正起效果的高信号骨架。
+- library.tags 必须输出 4 到 8 个短标签，用于浏览和分类，不要写成长句。
+- library.description 不要写成普通说明文，必须写成“风格原则卡”，聚焦主体呈现、镜头视角、构图骨架、光线色彩、材质渲染、氛围控制、漂移禁区。
 - library.referenceInterpretation 必须明确说明后续生成时应该如何同时使用“参考图”和“用户上传图”。
 - library.promptBackbone 必须尽量保留原始 prompt 中真正起效果的骨架段落，优先保留镜头角度、透视关系、动作姿态、空间结构、材质词、特效词、光线词、氛围词、平台 UI 语义、构图节奏。
 - planningDirectives / promptDirectives 必须是下游可直接消费的明确约束。
@@ -335,6 +360,53 @@ const normalizeImportedLibrary = (
         : textFor(preview.item.title, preview.item.id),
     );
   const mode = normalizeMode(analysis?.mode);
+  const previewCategory = facetLabel(
+    preview.item.category,
+    (preview.type === "case" ? analysis?.payload?.categories : analysis?.payload?.categories) || [],
+  );
+  const styleLabels = preview.item.styles.map((item) =>
+    facetLabel(item, []),
+  );
+  const sceneLabels = preview.item.scenes.map((item) =>
+    facetLabel(item, []),
+  );
+  const coverImageUrl =
+    preview.type === "case" ? preview.item.image : preview.item.cover;
+  const fullPrompt =
+    preview.type === "case"
+      ? preview.item.prompt
+      : [
+          textFor(preview.item.useWhen),
+          ...(Array.isArray((preview.item.guidance as { zh?: string[] })?.zh)
+            ? ((preview.item.guidance as { zh?: string[] }).zh || [])
+            : []),
+          ...(Array.isArray((preview.item.pitfalls as { zh?: string[] })?.zh)
+            ? ((preview.item.pitfalls as { zh?: string[] }).zh || [])
+            : []),
+        ]
+          .filter(Boolean)
+          .join("\n");
+  const useCases = dedupeLines(
+    sanitizeLines(analysis?.library?.useCases, []).concat(
+      preview.type === "case"
+        ? [
+            mode === "edit_template"
+              ? "适合局部编辑、替换元素、保持主体身份的任务。"
+              : "适合保留构图、镜头和氛围骨架的迁移任务。",
+          ]
+        : [textFor(preview.item.useWhen)],
+    ),
+    6,
+  );
+  const libraryWarnings = dedupeLines(
+    sanitizeLines(analysis?.library?.warnings, []).concat(
+      sanitizeLines(analysis?.warnings, []),
+      mode === "edit_template"
+        ? ["使用该预设时需要明确哪些区域必须保留、哪些区域允许修改。"]
+        : ["如当前任务目标与参考内容差异较大，应主动降低迁移强度，避免误把参考图当成复刻目标。"],
+    ),
+    6,
+  );
   return {
     mode,
     confidence: Number(analysis?.confidence || 0.72),
@@ -350,10 +422,57 @@ const normalizeImportedLibrary = (
       summary:
         String(analysis?.library?.summary || "").trim() ||
         "从参考内容中智能转换得到的可复用风格预设，可直接约束后续生成的风格、结构与主体替换方式。",
-      coverImageUrl:
-        preview.type === "case"
-          ? preview.item.image
-          : preview.item.cover,
+      coverImageUrl,
+      kind: mode,
+      referenceImageUrls: coverImageUrl ? [coverImageUrl] : [],
+      keywords: dedupeLines(
+        sanitizeLines(analysis?.library?.keywords, []).concat(
+          previewCategory,
+          ...styleLabels,
+          ...sceneLabels,
+        ),
+        12,
+      ),
+      promptText:
+        String(analysis?.library?.promptText || "").trim() || fullPrompt,
+      tags: dedupeLines(
+        sanitizeLines(analysis?.library?.tags, []).concat(
+          sanitizeLines(analysis?.library?.keywords, []),
+          previewCategory,
+          ...styleLabels,
+          ...sceneLabels,
+        ),
+        12,
+      ),
+      description:
+        String(analysis?.library?.description || "").trim() ||
+        (preview.type === "case"
+          ? preview.item.promptPreview || preview.item.prompt
+          : textFor(preview.item.description) || fullPrompt),
+      useCases: useCases.length > 0 ? useCases : undefined,
+      warnings: libraryWarnings.length > 0 ? libraryWarnings : undefined,
+      testCases: fullPrompt
+        ? [
+            {
+              id: `${mode}-${slugify(title)}-baseline`,
+              title:
+                mode === "edit_template"
+                  ? "编辑边界回归测试"
+                  : mode === "case_transfer"
+                    ? "迁移效果回归测试"
+                    : "风格复用回归测试",
+              prompt: fullPrompt,
+              referenceImageUrls: coverImageUrl ? [coverImageUrl] : undefined,
+              imageCount: 1,
+              expectedFocus:
+                mode === "edit_template"
+                  ? "验证修改边界、保留区和替换区是否稳定。"
+                  : mode === "case_transfer"
+                    ? "验证构图、镜头、动作和氛围骨架是否稳定迁移。"
+                    : "验证风格语言、版式和关键词骨架是否可复用。",
+            },
+          ]
+        : undefined,
       referenceInterpretation:
         String(analysis?.library?.referenceInterpretation || "").trim() ||
         "生成时同时参考参考图与用户上传图，优先保留参考内容里真正起作用的提示词骨架，并以用户主体身份、产品信息和当前任务目标为准，只替换主体相关变量。",
@@ -391,8 +510,11 @@ export const analyzeSmartStyleImport = async (
   preview: SmartImportPreview,
   payload: GptImageInspirationPayload | null,
 ): Promise<SmartImportAnalysis> => {
+  const analysisModel = getVisualOrchestratorModelConfig();
+  const fallbackModel = getBestModelSelection("text");
   const response = await generateJsonResponse({
-    model: getBestModelId("text"),
+    model: analysisModel?.modelId || fallbackModel.modelId,
+    providerId: analysisModel?.providerId || fallbackModel.providerId || null,
     parts: [{ text: buildImportPrompt(preview, payload) }],
     temperature: 0.25,
     responseSchema: SMART_IMPORT_RESPONSE_SCHEMA,

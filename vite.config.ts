@@ -1260,9 +1260,40 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         output: {
-          manualChunks: {
-            "react-vendor": ["react", "react-dom", "react-router-dom"],
-            "ui-vendor": ["lucide-react", "framer-motion"],
+          manualChunks(id) {
+            const normalizedId = id.replace(/\\/g, "/");
+
+            if (!normalizedId.includes("/node_modules/")) {
+              return undefined;
+            }
+
+            if (normalizedId.includes("/node_modules/react/") ||
+              normalizedId.includes("/node_modules/react-dom/") ||
+              normalizedId.includes("/node_modules/react-router-dom/")) {
+              return "react-vendor";
+            }
+
+            if (normalizedId.includes("/node_modules/lucide-react/") ||
+              normalizedId.includes("/node_modules/framer-motion/")) {
+              return "ui-vendor";
+            }
+
+            if (normalizedId.includes("/node_modules/@google/genai/") ||
+              normalizedId.includes("/node_modules/zod/")) {
+              return "ai-vendor";
+            }
+
+            if (normalizedId.includes("/node_modules/@supabase/supabase-js/")) {
+              return "supabase-vendor";
+            }
+
+            if (normalizedId.includes("/node_modules/jspdf/") ||
+              normalizedId.includes("/node_modules/html2canvas/") ||
+              normalizedId.includes("/node_modules/jszip/")) {
+              return "export-vendor";
+            }
+
+            return undefined;
           },
         },
       },

@@ -294,7 +294,7 @@ type AssistantSidebarEcommerceActionsProps = {
   onEcommerceInsertToCanvas?: (result: EcommerceResultItem | string, label?: string) => void;
 };
 
-interface AssistantSidebarProps {
+export interface AssistantSidebarProps {
   session: AssistantSidebarSessionProps;
   panelUi: AssistantSidebarPanelUiProps;
   messageActions: AssistantSidebarMessageActionsProps;

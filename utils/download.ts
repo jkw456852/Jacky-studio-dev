@@ -1,5 +1,3 @@
-import JSZip from "jszip";
-
 const DATA_OR_BLOB_URL_RE = /^(data:|blob:)/i;
 
 const sanitizeFilenamePart = (value: string): string =>
@@ -196,6 +194,7 @@ export const downloadUrlGroupsAsZip = async (
     return;
   }
 
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
 
   await Promise.all(

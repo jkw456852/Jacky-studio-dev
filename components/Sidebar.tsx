@@ -6,6 +6,7 @@ import { useAuthSession } from "../hooks/useAuthSession";
 import {
   Home as HomeIcon,
   Folder,
+  FolderKanban,
   Image as ImageIcon,
   Plus,
   Settings,
@@ -83,6 +84,17 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
             <ImageIcon size={20} />
           </button>
           <button
+            onClick={() => navigate(ROUTES.styleLibraryCenter)}
+            className={`rounded-full p-2 transition ${
+              isActive(ROUTES.styleLibraryCenter)
+                ? "bg-gray-100 text-black shadow-sm"
+                : "text-gray-400 hover:bg-gray-50 hover:text-black"
+            }`}
+            title="风格库中心"
+          >
+            <FolderKanban size={20} />
+          </button>
+          <button
             onClick={() => navigate(ROUTES.settings)}
             className={`rounded-full p-2 transition ${
               isActive(ROUTES.settings)
@@ -153,6 +165,20 @@ const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           />
           <span className="text-[10px] font-black uppercase tracking-tighter">
             灵感库
+          </span>
+        </button>
+        <button
+          onClick={() => navigate(ROUTES.styleLibraryCenter)}
+          className={`flex flex-col items-center gap-1 ${
+            isActive(ROUTES.styleLibraryCenter) ? "text-black" : "text-gray-400"
+          }`}
+        >
+          <FolderKanban
+            size={20}
+            strokeWidth={isActive(ROUTES.styleLibraryCenter) ? 2.5 : 2}
+          />
+          <span className="text-[10px] font-black uppercase tracking-tighter">
+            风格库
           </span>
         </button>
 

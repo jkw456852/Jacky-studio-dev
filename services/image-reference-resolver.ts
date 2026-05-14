@@ -3,6 +3,8 @@ import { fetchWithResilience } from './http/api-client';
 import { getProviderConfig } from './provider-config';
 import { useImageHostStore } from '../stores/imageHost.store';
 
+const referenceDataUrlCache = new Map<string, Promise<string | null> | string | null>();
+
 const isNetworkFetchError = (error: unknown): boolean => {
   const msg = ((error as any)?.message || '').toLowerCase();
   return (
@@ -146,6 +148,15 @@ const fetchReferenceViaServer = async (imageUrl: string): Promise<string | null>
 export const normalizeReferenceToDataUrl = async (input: string): Promise<string | null> => {
   if (!input || typeof input !== 'string') return null;
   if (/^data:image\/.+;base64,/.test(input)) return input;
+  const normalizedInput = String(input || '').trim();
+  if (!normalizedInput) return null;
+  const cached = referenceDataUrlCache.get(normalizedInput);
+  if (typeof cached === 'string' || cached === null) {
+    return cached;
+  }
+  if (cached) {
+    return cached;
+  }
 
   // Debug: make it obvious when we silently drop references.
   // Keep logs lightweight; do not print full data URLs.
@@ -160,67 +171,79 @@ export const normalizeReferenceToDataUrl = async (input: string): Promise<string
   const selectedProvider = useImageHostStore.getState().selectedProvider;
   const preferHostedUrls = selectedProvider !== 'none';
 
-  if (/^blob:/i.test(input)) {
-    try {
-      console.log(`${logPrefix} resolving blob reference:`, safePreview(input));
-      const res = await fetchWithResilience(
-        input,
-        {},
-        { operation: 'generateImage.resolveBlobReference', retries: 0, timeoutMs: 20000 },
-      );
-      if (!res.ok) return null;
-      const blob = await res.blob();
-      if (!blob.type.startsWith('image/')) return null;
-      return await blobToDataUrl(blob);
-    } catch {
-      console.warn(`${logPrefix} blob reference failed, dropping:`, safePreview(input));
-      return null;
-    }
-  }
-
-  if (/^https?:\/\//i.test(input)) {
-    console.log(`${logPrefix} resolving url reference:`, safePreview(input));
-    if (preferHostedUrls && /(^https?:\/\/i\.ibb\.co\/)|(^https?:\/\/ibb\.co\/)/i.test(input)) {
-      const serverDataUrl = await fetchReferenceViaServer(input);
-      if (serverDataUrl) {
-        return serverDataUrl;
+  const resolvePromise = (async (): Promise<string | null> => {
+    if (/^blob:/i.test(normalizedInput)) {
+      try {
+        console.log(`${logPrefix} resolving blob reference:`, safePreview(normalizedInput));
+        const res = await fetchWithResilience(
+          normalizedInput,
+          {},
+          { operation: 'generateImage.resolveBlobReference', retries: 0, timeoutMs: 20000 },
+        );
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        if (!blob.type.startsWith('image/')) return null;
+        return await blobToDataUrl(blob);
+      } catch {
+        console.warn(`${logPrefix} blob reference failed, dropping:`, safePreview(normalizedInput));
+        return null;
       }
     }
 
-    try {
-      const res = await fetchWithResilience(
-        input,
-        {},
-        { operation: 'generateImage.resolveReferenceUrl', retries: 1, timeoutMs: 30000 },
-      );
-      if (!res.ok) {
-        console.warn(`${logPrefix} url fetch not ok (${res.status}), will try fallback:`, safePreview(input));
-        if ([401, 403, 404, 408, 429, 500, 502, 503, 504].includes(res.status)) {
-          const serverDataUrl = await fetchReferenceViaServer(input);
-          if (serverDataUrl) return serverDataUrl;
+    if (/^https?:\/\//i.test(normalizedInput)) {
+      console.log(`${logPrefix} resolving url reference:`, safePreview(normalizedInput));
+      if (preferHostedUrls && /(^https?:\/\/i\.ibb\.co\/)|(^https?:\/\/ibb\.co\/)/i.test(normalizedInput)) {
+        const serverDataUrl = await fetchReferenceViaServer(normalizedInput);
+        if (serverDataUrl) {
+          return serverDataUrl;
         }
+      }
+
+      try {
+        const res = await fetchWithResilience(
+          normalizedInput,
+          {},
+          { operation: 'generateImage.resolveReferenceUrl', retries: 1, timeoutMs: 30000 },
+        );
+        if (!res.ok) {
+          console.warn(`${logPrefix} url fetch not ok (${res.status}), will try fallback:`, safePreview(normalizedInput));
+          if ([401, 403, 404, 408, 429, 500, 502, 503, 504].includes(res.status)) {
+            const serverDataUrl = await fetchReferenceViaServer(normalizedInput);
+            if (serverDataUrl) return serverDataUrl;
+          }
+          return null;
+        }
+
+        const blob = await res.blob();
+        if (!blob.type.startsWith('image/')) return null;
+        return await blobToDataUrl(blob);
+      } catch (error) {
+        if (!isNetworkFetchError(error)) {
+          return null;
+        }
+
+        const serverDataUrl = await fetchReferenceViaServer(normalizedInput);
+        if (serverDataUrl) {
+          return serverDataUrl;
+        }
+
+        console.warn(`${logPrefix} All attempts failed, continuing without reference:`, safePreview(normalizedInput));
         return null;
       }
-
-      const blob = await res.blob();
-      if (!blob.type.startsWith('image/')) return null;
-      return await blobToDataUrl(blob);
-    } catch (error) {
-      if (!isNetworkFetchError(error)) {
-        return null;
-      }
-
-      const serverDataUrl = await fetchReferenceViaServer(input);
-      if (serverDataUrl) {
-        return serverDataUrl;
-      }
-
-      console.warn(`${logPrefix} All attempts failed, continuing without reference:`, safePreview(input));
-      return null;
     }
-  }
 
-  return null;
+    return null;
+  })();
+
+  referenceDataUrlCache.set(normalizedInput, resolvePromise);
+  try {
+    const resolved = await resolvePromise;
+    referenceDataUrlCache.set(normalizedInput, resolved);
+    return resolved;
+  } catch (error) {
+    referenceDataUrlCache.delete(normalizedInput);
+    throw error;
+  }
 };
 
 export const normalizeReferenceToModelInputDataUrl = async (

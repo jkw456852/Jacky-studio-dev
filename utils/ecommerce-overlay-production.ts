@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import type {
   EcommerceOverlayBulletStyle,
   EcommerceOverlayPlatformPresetId,
@@ -171,6 +170,7 @@ export const exportOverlayImagesZip = async (options: {
   filename: string;
 }): Promise<void> => {
   if (options.items.length === 0) return;
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
   await Promise.all(
     options.items.map(async (item, index) => {

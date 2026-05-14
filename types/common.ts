@@ -49,12 +49,59 @@ export interface DesignSessionState {
 
 export type WorkspaceStyleLibraryAuthor = 'system' | 'main-brain' | 'user';
 
+export type WorkspaceStyleLibraryKind =
+  | 'style_library'
+  | 'case_transfer'
+  | 'edit_template';
+
+export type WorkspaceStyleLibraryValidationStatus =
+  | 'untested'
+  | 'pending'
+  | 'passed'
+  | 'failed';
+
+export interface WorkspaceStyleLibraryTestCase {
+  id: string;
+  title: string;
+  prompt: string;
+  referenceImageUrls?: string[];
+  aspectRatio?: string;
+  imageCount?: 1 | 2 | 3 | 4;
+  model?: string;
+  expectedFocus?: string;
+}
+
+export interface WorkspaceStyleLibraryTestResult {
+  caseId: string;
+  outputImageUrls: string[];
+  createdAt: number;
+  model?: string;
+  aspectRatio?: string;
+  imageCount?: 1 | 2 | 3 | 4;
+  passed?: boolean;
+  note?: string;
+  libraryVersion?: number;
+}
+
 export interface WorkspaceStyleLibrary {
   id?: string;
   slug?: string;
   title: string;
   summary: string;
   coverImageUrl?: string;
+  kind?: WorkspaceStyleLibraryKind;
+  referenceImageUrls?: string[];
+  keywords?: string[];
+  promptText?: string;
+  tags?: string[];
+  description?: string;
+  useCases?: string[];
+  warnings?: string[];
+  testCases?: WorkspaceStyleLibraryTestCase[];
+  latestTestResults?: WorkspaceStyleLibraryTestResult[];
+  validationStatus?: WorkspaceStyleLibraryValidationStatus;
+  latestValidatedAt?: number;
+  version?: number;
   referenceInterpretation: string;
   planningDirectives: string[];
   promptDirectives: string[];
@@ -70,6 +117,9 @@ export interface WorkspaceStyleLibraryRuntimeOverlay {
   planningDirectives?: string[];
   promptDirectives?: string[];
   promptBackbone?: string[];
+  promptText?: string;
+  tags?: string[];
+  description?: string;
   createdBy?: WorkspaceStyleLibraryAuthor;
   updatedAt?: number;
 }
