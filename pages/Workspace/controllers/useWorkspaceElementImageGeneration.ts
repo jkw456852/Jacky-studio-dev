@@ -1070,6 +1070,8 @@ type VisualPlanningCachePayload = {
   pageGenerationPlans?: PlannedImageGeneration[];
 };
 
+const VISUAL_PLANNING_CACHE_SCHEMA_VERSION = 2;
+
 const buildVisualPlanningCacheKey = (args: {
   prompt: string;
   manualReferenceImages: string[];
@@ -1086,6 +1088,7 @@ const buildVisualPlanningCacheKey = (args: {
   requiredChineseCopy: string;
 }) =>
   JSON.stringify({
+    schemaVersion: VISUAL_PLANNING_CACHE_SCHEMA_VERSION,
     prompt: String(args.prompt || "").trim(),
     manualReferenceImages: dedupeStringList(args.manualReferenceImages || []),
     mergedReferenceImages: dedupeStringList(args.mergedReferenceImages || []),
@@ -1336,6 +1339,18 @@ export function useWorkspaceElementImageGeneration(
           imageCount: requestedImageCount,
           diagnostics: [],
           variantResults: [],
+        });
+        console.info("[workspace.imggen] request.start", {
+          requestId: traceRequestId,
+          elementId,
+          sourceElementId: sourceElement.id,
+          requestedImageCount,
+          model,
+          aspectRatio: currentAspectRatio,
+          imageSize,
+          imageQuality,
+          manualReferenceCount: manualReferenceImages.length,
+          referenceCount: referenceImages.length,
         });
 
         if (repairedReferenceInput.notes.length > 0) {
@@ -2350,6 +2365,28 @@ export function useWorkspaceElementImageGeneration(
                 status: "generating",
                 targetElementIds: [singleTargetElementId],
               });
+              console.info("[workspace.imggen] variant.start", {
+                ...(runtimeGenerationContext || {
+                  requestId: traceRequestId,
+                  elementId,
+                  sourceElementId: sourceElement.id,
+                  imageCount: 1,
+                  model,
+                  aspectRatio: currentAspectRatio,
+                  imageSize,
+                  imageQuality,
+                }),
+                variant: "1/1",
+                attempt: 1,
+                targetElementId: singleTargetElementId,
+                taskUnitId: taskUnit.id,
+                taskUnitTitle: taskUnit.title,
+                promptPreview:
+                  composedPrompt.length > 220
+                    ? `${composedPrompt.slice(0, 220)}...`
+                    : composedPrompt,
+                referenceCount: plannedReferenceImages.length,
+              });
 
               try {
                 const resultUrl = await imageGenSkill({
@@ -2784,6 +2821,18 @@ export function useWorkspaceElementImageGeneration(
             patchWorkspaceGenerationTrace(traceRequestId, {
               updatedAt: Date.now(),
               status: enteredInfiniteRetry ? "retrying" : "generating",
+            });
+            console.info("[workspace.imggen] variant.start", {
+              ...generationContext,
+              variant: variantLabel,
+              attempt,
+              targetElementId,
+              taskUnitId: taskUnit.id,
+              taskUnitTitle: taskUnit.title,
+              promptPreview: clipLiveLogText(buildVariantPrompt(index), 220),
+              referenceCount:
+                pageGenerationPlans[index]?.execution.referenceImages.length ??
+                plannedReferenceImages.length,
             });
 
             if (attempt === 1 && imageCount > 1) {
