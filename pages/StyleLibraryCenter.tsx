@@ -79,6 +79,7 @@ type NoticeState = {
 };
 
 type StyleCardScope = "user" | "candidate" | "builtIn";
+type SelectableStyleCardScope = Extract<StyleCardScope, "user" | "candidate">;
 
 type StyleCardItem = {
   scope: StyleCardScope;
@@ -87,6 +88,15 @@ type StyleCardItem = {
   subBadge?: string;
   library: WorkspaceStyleLibrary;
 };
+
+const isSelectableStyleCardScope = (
+  scope: StyleCardScope,
+): scope is SelectableStyleCardScope => scope === "user" || scope === "candidate";
+
+const buildStyleCardSelectionKey = (
+  scope: SelectableStyleCardScope,
+  id: string,
+) => `${scope}::${id}`;
 
 type EditorMode = "create" | "edit" | "import";
 
@@ -671,6 +681,8 @@ const StyleLibraryCenter: React.FC = () => {
     aspectRatio: "3:4",
     count: 1,
   });
+  const [isSelectionMode, setIsSelectionMode] = React.useState(false);
+  const [selectedCardKeys, setSelectedCardKeys] = React.useState<string[]>([]);
 
   const builtInLibraries = React.useMemo(() => listBuiltInStyleLibraries(), []);
   const userLibraries = React.useMemo(() => {
@@ -727,6 +739,20 @@ const StyleLibraryCenter: React.FC = () => {
   const filteredUserCards = React.useMemo(() => filterCards(userCards), [filterCards, userCards]);
   const filteredCandidateCards = React.useMemo(() => filterCards(candidateCards), [candidateCards, filterCards]);
   const filteredBuiltInCards = React.useMemo(() => filterCards(builtInCards), [builtInCards, filterCards]);
+  const manageableCards = React.useMemo(() => [...userCards, ...candidateCards], [candidateCards, userCards]);
+  const visibleSelectableCards = React.useMemo(
+    () => [...filteredUserCards, ...filteredCandidateCards],
+    [filteredCandidateCards, filteredUserCards],
+  );
+  const visibleSelectableKeys = React.useMemo(
+    () =>
+      visibleSelectableCards.map((item) =>
+        buildStyleCardSelectionKey(item.scope as SelectableStyleCardScope, item.id),
+      ),
+    [visibleSelectableCards],
+  );
+  const selectedCardKeySet = React.useMemo(() => new Set(selectedCardKeys), [selectedCardKeys]);
+  const selectedCardCount = selectedCardKeys.length;
 
   const galleryCards = React.useMemo(() => buildGalleryCards(galleryPayload), [galleryPayload]);
   const filteredGalleryCards = React.useMemo(() => {
@@ -742,6 +768,18 @@ const StyleLibraryCenter: React.FC = () => {
     const timer = window.setTimeout(() => setNotice(null), 2400);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  React.useEffect(() => {
+    const validKeys = new Set(
+      manageableCards.map((item) =>
+        buildStyleCardSelectionKey(item.scope as SelectableStyleCardScope, item.id),
+      ),
+    );
+    setSelectedCardKeys((current) => {
+      const next = current.filter((key) => validKeys.has(key));
+      return next.length === current.length ? current : next;
+    });
+  }, [manageableCards]);
 
   React.useEffect(() => {
     if (!showGalleryPicker) return;
@@ -792,6 +830,82 @@ const StyleLibraryCenter: React.FC = () => {
   const handleOpenCard = React.useCallback((item: StyleCardItem) => {
     setEditor(buildEditorFromLibrary(item));
   }, []);
+
+  const handleToggleSelectionMode = React.useCallback(() => {
+    setIsSelectionMode((current) => {
+      if (current) {
+        setSelectedCardKeys([]);
+      }
+      return !current;
+    });
+  }, []);
+
+  const handleToggleCardSelection = React.useCallback((item: StyleCardItem) => {
+    if (!isSelectableStyleCardScope(item.scope)) {
+      return;
+    }
+    const key = buildStyleCardSelectionKey(item.scope, item.id);
+    setSelectedCardKeys((current) =>
+      current.includes(key)
+        ? current.filter((value) => value !== key)
+        : [...current, key],
+    );
+  }, []);
+
+  const handleSelectAllVisible = React.useCallback(() => {
+    setSelectedCardKeys(visibleSelectableKeys);
+  }, [visibleSelectableKeys]);
+
+  const handleInvertVisible = React.useCallback(() => {
+    setSelectedCardKeys((current) => {
+      const visibleKeySet = new Set(visibleSelectableKeys);
+      const retained = current.filter((key) => !visibleKeySet.has(key));
+      const invertedVisible = visibleSelectableKeys.filter((key) => !current.includes(key));
+      return [...retained, ...invertedVisible];
+    });
+  }, [visibleSelectableKeys]);
+
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedCardKeys([]);
+  }, []);
+
+  const handleBatchDelete = React.useCallback(() => {
+    if (selectedCardKeys.length === 0) {
+      return;
+    }
+    const confirmed = window.confirm(`确认删除已选 ${selectedCardKeys.length} 张风格卡片吗？`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const api = getStudioUserAssetApi();
+      selectedCardKeys.forEach((key) => {
+        if (key.startsWith("candidate::")) {
+          api.removeStyleLibraryCandidate(key.slice("candidate::".length));
+          return;
+        }
+        if (key.startsWith("user::")) {
+          api.removeStyleLibrary(key.slice("user::".length));
+        }
+      });
+      const currentEditorKey =
+        editor?.id && (editor.scope === "user" || editor.scope === "candidate")
+          ? buildStyleCardSelectionKey(editor.scope, editor.id)
+          : null;
+      if (currentEditorKey && selectedCardKeys.includes(currentEditorKey)) {
+        setEditor(null);
+      }
+      setRevision((current) => current + 1);
+      setSelectedCardKeys([]);
+      setIsSelectionMode(false);
+      setNotice({ tone: "success", text: `已删除 ${selectedCardKeys.length} 张风格卡片。` });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : "批量删除失败。",
+      });
+    }
+  }, [editor, selectedCardKeys]);
 
   const handleReplaceImageSet = React.useCallback(async () => {
     const files = await pickFiles({ multiple: true });
@@ -1127,21 +1241,50 @@ const StyleLibraryCenter: React.FC = () => {
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]">
         {items.map((item, index) => {
           const previewUrl = item.library.coverImageUrl || item.library.referenceImageUrls?.[0] || "";
+          const selectable = isSelectableStyleCardScope(item.scope);
+          const selectionKey = selectable
+            ? buildStyleCardSelectionKey(
+                item.scope as SelectableStyleCardScope,
+                item.id,
+              )
+            : null;
+          const selected = selectionKey ? selectedCardKeySet.has(selectionKey) : false;
           return (
             <button
               key={`${item.scope}-${item.id}`}
               type="button"
-              onClick={() => handleOpenCard(item)}
+              onClick={() => {
+                if (isSelectionMode && selectable) {
+                  handleToggleCardSelection(item);
+                  return;
+                }
+                handleOpenCard(item);
+              }}
               className="group text-left"
             >
               <div
-                className="relative aspect-[0.72] overflow-hidden rounded-[14px] border border-slate-200 bg-white transition group-hover:border-slate-300 group-hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)]"
+                className={`relative aspect-[0.72] overflow-hidden rounded-[14px] border bg-white transition group-hover:border-slate-300 group-hover:shadow-[0_16px_36px_rgba(15,23,42,0.10)] ${
+                  selected ? "border-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.14)]" : "border-slate-200"
+                }`}
                 style={{
                   background: previewUrl
                     ? `linear-gradient(180deg, rgba(15,23,42,0.02), rgba(15,23,42,0.10)), url(${previewUrl}) center/cover no-repeat`
                     : getCardPreviewBackground(index),
                 }}
               >
+                {isSelectionMode && selectable ? (
+                  <div className="absolute left-3 top-3 z-10">
+                    <span
+                      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur ${
+                        selected
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-white/90 bg-white/92 text-slate-700"
+                      }`}
+                    >
+                      {selected ? "已选择" : "选择"}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent px-3 pb-3 pt-10">
                   <div className="inline-flex rounded-full bg-white/88 px-2.5 py-1 text-[11px] font-medium text-slate-700 backdrop-blur">
                     {item.badge}
@@ -1239,6 +1382,58 @@ const StyleLibraryCenter: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className={`${shellCardClass} mb-6 flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between`}>
+          <div>
+            <div className="text-[14px] font-medium text-slate-900">批量管理</div>
+            <div className="mt-1 text-[12px] leading-6 text-slate-500">
+              {isSelectionMode
+                ? `已选 ${selectedCardCount} 张风格卡片，可对当前搜索结果执行全选、反选和删除。`
+                : "进入批量管理后，可对“我的风格”和“待完成”执行全选、反选与批量删除。"}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={subtleButtonClass} onClick={handleToggleSelectionMode}>
+              {isSelectionMode ? "退出批量管理" : "批量管理"}
+            </button>
+            {isSelectionMode ? (
+              <>
+                <button
+                  type="button"
+                  className={subtleButtonClass}
+                  onClick={handleSelectAllVisible}
+                  disabled={visibleSelectableKeys.length === 0}
+                >
+                  全选当前结果
+                </button>
+                <button
+                  type="button"
+                  className={subtleButtonClass}
+                  onClick={handleInvertVisible}
+                  disabled={visibleSelectableKeys.length === 0}
+                >
+                  反选当前结果
+                </button>
+                <button
+                  type="button"
+                  className={subtleButtonClass}
+                  onClick={handleClearSelection}
+                  disabled={selectedCardCount === 0}
+                >
+                  清空选择
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-rose-200 bg-rose-50 px-4 text-[13px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleBatchDelete}
+                  disabled={selectedCardCount === 0}
+                >
+                  删除所选
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 

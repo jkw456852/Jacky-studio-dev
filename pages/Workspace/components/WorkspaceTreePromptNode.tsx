@@ -1903,22 +1903,12 @@ const TreePromptToolbar: React.FC<{
     const seededLibrary =
       normalizeWorkspaceStyleLibrary(currentStyleLibrary) ||
       createStyleLibraryDraftFromMode(normalizedStyleLibraryMode, "user");
-    const seedSourceMode =
-      normalizedStyleLibraryMode === "poster-product"
-        ? "poster-product"
-        : normalizedStyleLibraryMode === "custom"
-          ? "custom"
-          : "default";
-    const persistedLibrary =
-      persistUserStyleLibraryAsset(seededLibrary, seedSourceMode) ||
-      seededLibrary;
-    onStyleLibrarySave(persistedLibrary);
+    onStyleLibrarySave(seededLibrary);
     onStyleLibraryRuntimeOverlayChange(undefined);
     onStyleLibraryChange("custom");
-    setStyleLibraryDraft(buildStyleLibraryDraft(persistedLibrary));
+    setStyleLibraryDraft(buildStyleLibraryDraft(seededLibrary));
     setIsEditingStyleLibrary(true);
-    setStyleLibraryRevision((value) => value + 1);
-    setSelectedUserStyleLibraryId(persistedLibrary.id || null);
+    setSelectedUserStyleLibraryId(null);
   }, [
     currentStyleLibrary,
     normalizedStyleLibraryMode,
