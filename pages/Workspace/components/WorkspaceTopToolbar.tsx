@@ -102,7 +102,9 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
   onPreviewConsistencyAnchor,
 }) => {
   const [showConsistencyPanel, setShowConsistencyPanel] = useState(false);
+  const [showInsertMenu, setShowInsertMenu] = useState(false);
   const consistencyPanelRef = useRef<HTMLDivElement | null>(null);
+  const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const anchorUploadRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -122,6 +124,26 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
       window.removeEventListener("mousedown", handlePointerDown);
     };
   }, [showConsistencyPanel]);
+
+  useEffect(() => {
+    if (!showInsertMenu) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (
+        insertMenuRef.current &&
+        !insertMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowInsertMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [showInsertMenu]);
 
   let NavIcon = MousePointer2;
   if (activeTool === "hand") NavIcon = Hand;
@@ -168,13 +190,17 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
         active={activeTool === "mark"}
       />
 
-      <div className="relative group/ins">
+      <div className="relative group/ins" ref={insertMenuRef}>
         <button
-          className={`p-2.5 rounded-xl transition ${activeTool === "insert" ? "bg-gray-800 text-white" : "text-gray-500 hover:text-black hover:bg-gray-100"}`}
+          type="button"
+          onClick={() => setShowInsertMenu((current) => !current)}
+          className={`p-2.5 rounded-xl transition ${activeTool === "insert" || showInsertMenu ? "bg-gray-800 text-white" : "text-gray-500 hover:text-black hover:bg-gray-100"}`}
         >
           <ImagePlus size={18} />
         </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 z-50 hidden group-hover/ins:block">
+        <div
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 pb-2 z-50 ${showInsertMenu ? "block" : "hidden group-hover/ins:block"}`}
+        >
           <div className="w-44 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <label className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition text-left w-full">
               <ImageIcon size={16} /> 上传图片
@@ -183,7 +209,10 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
                 accept="image/*"
                 multiple
                 className="hidden"
-                onChange={(e) => handleFileUpload(e, "image")}
+                onChange={(e) => {
+                  setShowInsertMenu(false);
+                  handleFileUpload(e, "image");
+                }}
               />
             </label>
             <label className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 cursor-pointer transition text-left w-full">
@@ -193,7 +222,10 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
                 accept="video/*"
                 multiple
                 className="hidden"
-                onChange={(e) => handleFileUpload(e, "video")}
+                onChange={(e) => {
+                  setShowInsertMenu(false);
+                  handleFileUpload(e, "video");
+                }}
               />
             </label>
           </div>

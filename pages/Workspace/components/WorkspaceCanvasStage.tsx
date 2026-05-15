@@ -223,7 +223,10 @@ export const WorkspaceCanvasStage: React.FC<WorkspaceCanvasStageProps> = ({
                     ? "grabbing"
                     : "grab"
                   : "default",
+          touchAction: "none",
+          overscrollBehavior: "none",
           WebkitUserSelect: "none",
+          WebkitTouchCallout: "none",
         }}
       >
         <WorkspaceTopToolbar {...topToolbar} />
@@ -279,6 +282,7 @@ export const WorkspaceCanvasStage: React.FC<WorkspaceCanvasStageProps> = ({
             transformOrigin: "0 0",
             willChange: isPanning ? "transform" : "auto",
             pointerEvents: isMarqueeSelecting ? "none" : "auto",
+            touchAction: "none",
             WebkitFontSmoothing: "antialiased",
             textRendering: "optimizeLegibility",
           }}
