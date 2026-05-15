@@ -454,7 +454,7 @@ export function useWorkspaceCanvasPointer(
   const cutterLastCanvasPointRef = useRef<Point | null>(null);
   const cutterTrailPointsRef = useRef<Point[]>([]);
   const cutEdgeKeysRef = useRef<Set<string>>(new Set());
-  const touchGestureModeRef = useRef<"none" | "pan" | "drag">("none");
+  const touchGestureModeRef = useRef<"none" | "pan" | "pinch" | "drag">("none");
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartZoomRef = useRef(zoom);
   const pinchStartCanvasPointRef = useRef<Point | null>(null);
@@ -1405,7 +1405,7 @@ export function useWorkspaceCanvasPointer(
       }
 
       e.preventDefault();
-      touchGestureModeRef.current = "pan";
+      touchGestureModeRef.current = "pinch";
       pinchStartDistanceRef.current = distance;
       pinchStartZoomRef.current = zoom;
       pinchStartCanvasPointRef.current = getCanvasPointFromClient(
@@ -1572,7 +1572,7 @@ export function useWorkspaceCanvasPointer(
       }
 
       e.preventDefault();
-      touchGestureModeRef.current = "pan";
+      touchGestureModeRef.current = "pinch";
       const nextZoom = clampZoom(
         pinchStartZoomRef.current * (distance / Math.max(pinchStartDistanceRef.current || 1, 1)),
       );
@@ -1587,13 +1587,16 @@ export function useWorkspaceCanvasPointer(
       };
       panRef.current = nextPan;
       panChangedRef.current = true;
-      setZoom?.(nextZoom);
+      const layer = canvasLayerRef.current;
+      if (layer) {
+        layer.style.willChange = "transform";
+      }
+      flushSync(() => {
+        setPan(nextPan);
+        setZoom?.(nextZoom);
+      });
       cancelAnimationFrame(panRafIdRef.current);
       panRafIdRef.current = requestAnimationFrame(() => {
-        const layer = canvasLayerRef.current;
-        if (!layer) return;
-        layer.style.transform = `translate3d(${nextPan.x}px, ${nextPan.y}px, 0) scale(${nextZoom / 100})`;
-        layer.style.willChange = "transform";
         syncFloatingToolbarPosition(selectedElementId);
       });
       return;
