@@ -75,6 +75,9 @@ type UseWorkspacePageShellPropsArgs = {
   handleMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   handleMouseMove: (event: React.MouseEvent<HTMLDivElement>) => void;
   handleMouseUp: () => void;
+  handleTouchStart?: (event: React.TouchEvent<HTMLDivElement>) => void;
+  handleTouchMove?: (event: React.TouchEvent<HTMLDivElement>) => void;
+  handleTouchEnd?: () => void;
   handleCanvasDrop: (event: React.DragEvent<HTMLDivElement>) => void;
   handleFileUpload: React.ComponentProps<typeof WorkspaceTopToolbar>["handleFileUpload"];
   showFeatureComingSoon: React.ComponentProps<
@@ -185,6 +188,9 @@ export const useWorkspacePageShellProps = ({
   handleMouseDown,
   handleMouseMove,
   handleMouseUp,
+  handleTouchStart,
+  handleTouchMove,
+  handleTouchEnd,
   handleCanvasDrop,
   handleFileUpload,
   showFeatureComingSoon,
@@ -761,6 +767,9 @@ export const useWorkspacePageShellProps = ({
       onMouseDown: handleMouseDown,
       onMouseMove: handleMouseMove,
       onMouseUp: handleMouseUp,
+      onTouchStart: handleTouchStart,
+      onTouchMove: handleTouchMove,
+      onTouchEnd: handleTouchEnd,
       onCanvasDrop: handleCanvasDrop,
       topToolbar: {
         activeTool,
@@ -814,6 +823,9 @@ export const useWorkspacePageShellProps = ({
       handleMouseDown,
       handleMouseMove,
       handleMouseUp,
+      handleTouchEnd,
+      handleTouchMove,
+      handleTouchStart,
       handleOpenAssistant,
       handlePreviewConsistencyAnchor,
       handleToggleConsistencyCheck,

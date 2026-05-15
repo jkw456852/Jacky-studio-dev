@@ -26,6 +26,37 @@ const compactJson = (value: unknown, maxChars: number): string => {
   }
 };
 
+// 构造 inlineParts 的文本描述，帮助后端理解文本和附件的相对位置
+const buildInlinePartsDescription = (
+  inlineParts: Array<
+    { type: 'text'; text: string } |
+    { type: 'image'; attachmentIndex?: number; attachmentLabel?: string }
+  > | undefined,
+): string => {
+  if (!Array.isArray(inlineParts) || inlineParts.length === 0) {
+    return '';
+  }
+
+  const parts = inlineParts
+    .map((part, index) => {
+      if (part.type === 'text') {
+        const truncated = part.text.length > 100
+          ? `${part.text.slice(0, 97)}...`
+          : part.text;
+        return `  ${index + 1}. [文本] ${truncated}`;
+      } else if (part.type === 'image') {
+        const label = part.attachmentLabel ? ` (${part.attachmentLabel})` : '';
+        return `  ${index + 1}. [图片]${label}`;
+      }
+      return '';
+    })
+    .filter(Boolean);
+
+  return parts.length > 0
+    ? `用户请求结构:\n${parts.join('\n')}`
+    : '';
+};
+
 export interface AnalyzePlanPromptInput {
   agentId: string;
   systemPrompt: string;
@@ -167,6 +198,11 @@ ${multimodalRefUrls
 ${truncateText(metadata.topicPinnedContext, MAX_TOPIC_CONTEXT_CHARS)}
 `
       : '';
+
+  // 从 inlineParts 构造结构化的请求描述
+  const inlinePartsDescription = buildInlinePartsDescription(
+    metadata?.multimodalContext?.inlineParts,
+  );
 
   const isolateVisualQa = metadata?.multimodalContext?.isolateVisualQa === true;
   const designSession = context.designSession;
@@ -424,6 +460,7 @@ ${capabilityTruthSnapshot}
 
 [Current User Request]
 ${message}
+${inlinePartsDescription ? `\n[Request Structure]\n${inlinePartsDescription}` : ''}
 
 ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}${visualQaIsolationSection}${visualQaJsonContract}${autonomousDecisionContract}${capabilityBoundaryAnsweringSection}${roleGovernanceSection}
 [Response Contract]

@@ -47,6 +47,9 @@ type WorkspaceCanvasStageProps = {
   onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   onMouseMove: (event: React.MouseEvent<HTMLDivElement>) => void;
   onMouseUp: () => void;
+  onTouchStart?: (event: React.TouchEvent<HTMLDivElement>) => void;
+  onTouchMove?: (event: React.TouchEvent<HTMLDivElement>) => void;
+  onTouchEnd?: () => void;
   onCanvasDrop: (event: React.DragEvent<HTMLDivElement>) => void;
   topToolbar: React.ComponentProps<typeof WorkspaceTopToolbar>;
   isMarqueeSelecting: boolean;
@@ -81,6 +84,9 @@ export const WorkspaceCanvasStage: React.FC<WorkspaceCanvasStageProps> = ({
   onMouseDown,
   onMouseMove,
   onMouseUp,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
   onCanvasDrop,
   topToolbar,
   isMarqueeSelecting,
@@ -159,17 +165,25 @@ export const WorkspaceCanvasStage: React.FC<WorkspaceCanvasStageProps> = ({
     const handleGlobalPointerRelease = () => {
       onMouseUp();
     };
+    const handleGlobalTouchRelease = () => {
+      onTouchEnd?.();
+      onMouseUp();
+    };
 
     window.addEventListener("mouseup", handleGlobalPointerRelease);
     window.addEventListener("pointerup", handleGlobalPointerRelease);
+    window.addEventListener("touchend", handleGlobalTouchRelease);
+    window.addEventListener("touchcancel", handleGlobalTouchRelease);
     window.addEventListener("blur", handleGlobalPointerRelease);
 
     return () => {
       window.removeEventListener("mouseup", handleGlobalPointerRelease);
       window.removeEventListener("pointerup", handleGlobalPointerRelease);
+      window.removeEventListener("touchend", handleGlobalTouchRelease);
+      window.removeEventListener("touchcancel", handleGlobalTouchRelease);
       window.removeEventListener("blur", handleGlobalPointerRelease);
     };
-  }, [onMouseUp]);
+  }, [onMouseUp, onTouchEnd]);
 
   return (
     <div
@@ -189,6 +203,10 @@ export const WorkspaceCanvasStage: React.FC<WorkspaceCanvasStageProps> = ({
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
         onDragOver={(event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";

@@ -17,6 +17,7 @@ type WorkspaceCanvasElementShellProps = {
   editingTextId: string | null;
   isDraggingElement: boolean;
   onMouseDown: (event: React.MouseEvent) => void;
+  onTouchStart?: (event: React.TouchEvent) => void;
   onDoubleClick: () => void;
   onDelete: () => void;
   children: React.ReactNode;
@@ -34,6 +35,7 @@ export const WorkspaceCanvasElementShell: React.FC<
   editingTextId,
   isDraggingElement,
   onMouseDown,
+  onTouchStart,
   onDoubleClick,
   onDelete,
   children,
@@ -77,6 +79,7 @@ export const WorkspaceCanvasElementShell: React.FC<
           element.type === "text" || isTreeNode ? "visible" : "hidden",
       }}
       onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
       onDoubleClick={onDoubleClick}
     >
       {showSelectionOutline && (

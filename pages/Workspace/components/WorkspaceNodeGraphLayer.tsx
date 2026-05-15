@@ -20,14 +20,57 @@ type WorkspaceNodeGraphLayerProps = {
   onDisconnectEdge?: (parentId: string, childId: string) => void;
 };
 
+type GraphEdge = {
+  child: CanvasElement;
+  parent: CanvasElement;
+  points: ReturnType<typeof getNodeGraphEdgePoints>;
+};
+
+type SelectedEdge = {
+  parentId: string;
+  childId: string;
+};
+
+const getEdgePathD = (
+  points: ReturnType<typeof getNodeGraphEdgePoints>,
+  minX: number,
+  minY: number,
+): string =>
+  `M ${points.startX - minX} ${points.startY - minY} C ${
+    points.control1X - minX
+  } ${points.control1Y - minY}, ${points.control2X - minX} ${
+    points.control2Y - minY
+  }, ${points.endX - minX} ${points.endY - minY}`;
+
+const getBezierMidpoint = (
+  points: ReturnType<typeof getNodeGraphEdgePoints>,
+): { x: number; y: number } => {
+  const t = 0.5;
+  const mt = 1 - t;
+  const x =
+    mt * mt * mt * points.startX +
+    3 * mt * mt * t * points.control1X +
+    3 * mt * t * t * points.control2X +
+    t * t * t * points.endX;
+  const y =
+    mt * mt * mt * points.startY +
+    3 * mt * mt * t * points.control1Y +
+    3 * mt * t * t * points.control2Y +
+    t * t * t * points.endY;
+
+  return { x, y };
+};
+
 export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = ({
   elements,
   isDraggingElement,
   dragOffsetsRef,
   zoom,
   connectionDraft,
+  onDisconnectEdge,
 }) => {
   const [dragFrameVersion, setDragFrameVersion] = React.useState(0);
+  const [selectedEdge, setSelectedEdge] = React.useState<SelectedEdge | null>(null);
 
   React.useEffect(() => {
     if (!isDraggingElement && !connectionDraft) {
@@ -72,7 +115,7 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
 
         return parentIds.map((parentId) => {
           const parent = elementMap.get(parentId);
-          if (!canUseNodeGraphParent(parent)) return null;
+          if (!parent || !canUseNodeGraphParent(parent)) return null;
           return {
             child,
             parent,
@@ -80,15 +123,7 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
           };
         });
       })
-      .filter(
-        (
-          edge,
-        ): edge is {
-          child: CanvasElement;
-          parent: CanvasElement;
-          points: ReturnType<typeof getNodeGraphEdgePoints>;
-        } => Boolean(edge),
-      );
+      .filter((edge): edge is GraphEdge => Boolean(edge));
 
     if (edges.length === 0) {
       return null;
@@ -106,7 +141,7 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
       edge.points.control1Y,
       edge.points.control2Y,
     ]);
-    const padding = 48;
+    const padding = 64;
     const minX = Math.min(...coords) - padding;
     const minY = Math.min(...verticalCoords) - padding;
     const maxX = Math.max(...coords) + padding;
@@ -121,20 +156,36 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
     };
   }, [dragFrameVersion, dragOffsetsRef, elements, isDraggingElement]);
 
+  React.useEffect(() => {
+    if (!selectedEdge) {
+      return;
+    }
+
+    if (!onDisconnectEdge || connectionDraft || !graph) {
+      setSelectedEdge(null);
+      return;
+    }
+
+    const stillExists = graph.edges.some(
+      ({ parent, child }) =>
+        parent.id === selectedEdge.parentId && child.id === selectedEdge.childId,
+    );
+
+    if (!stillExists) {
+      setSelectedEdge(null);
+    }
+  }, [connectionDraft, graph, onDisconnectEdge, selectedEdge]);
+
   if (!graph && !connectionDraft) {
     return null;
   }
 
   const draftGraph = connectionDraft
     ? {
-        minX:
-          Math.min(connectionDraft.fromX, connectionDraft.toX) - 48,
-        minY:
-          Math.min(connectionDraft.fromY, connectionDraft.toY) - 48,
-        width:
-          Math.abs(connectionDraft.toX - connectionDraft.fromX) + 96,
-        height:
-          Math.abs(connectionDraft.toY - connectionDraft.fromY) + 96,
+        minX: Math.min(connectionDraft.fromX, connectionDraft.toX) - 48,
+        minY: Math.min(connectionDraft.fromY, connectionDraft.toY) - 48,
+        width: Math.abs(connectionDraft.toX - connectionDraft.fromX) + 96,
+        height: Math.abs(connectionDraft.toY - connectionDraft.fromY) + 96,
       }
     : null;
 
@@ -146,6 +197,8 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
   const maxY = graph
     ? Math.max(graph.minY + graph.height, (draftGraph?.minY || 0) + (draftGraph?.height || 0))
     : draftGraph!.minY + draftGraph!.height;
+  const graphWidth = maxX - minX;
+  const graphHeight = maxY - minY;
 
   return (
     <svg
@@ -153,11 +206,11 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
       style={{
         left: minX,
         top: minY,
-        width: maxX - minX,
-        height: maxY - minY,
+        width: graphWidth,
+        height: graphHeight,
         pointerEvents: "none",
       }}
-      viewBox={`0 0 ${maxX - minX} ${maxY - minY}`}
+      viewBox={`0 0 ${graphWidth} ${graphHeight}`}
       fill="none"
     >
       {graph?.edges.map(({ child, parent, points }) => {
@@ -165,60 +218,124 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
           child.nodeLinkKind === "generation" &&
           child.treeNodeKind === "image" &&
           Boolean(child.genInfiniteRetry);
-        const d = `M ${points.startX - minX} ${points.startY - minY} C ${
-          points.control1X - minX
-        } ${points.control1Y - minY}, ${points.control2X - minX} ${
-          points.control2Y - minY
-        }, ${points.endX - minX} ${points.endY - minY}`;
+        const isSelectedEdge =
+          selectedEdge?.parentId === parent.id &&
+          selectedEdge?.childId === child.id;
+        const d = getEdgePathD(points, minX, minY);
+        const midpoint = getBezierMidpoint(points);
+        const chipX = Math.min(Math.max(midpoint.x - minX, 40), graphWidth - 40);
+        const chipY = Math.min(Math.max(midpoint.y - minY, 18), graphHeight - 18);
 
         return (
-          <path
-            key={`glow-${parent.id}-${child.id}-${points.startX}-${points.endX}-${zoom}`}
-            d={d}
-            stroke={
-              isBerserkEdge
-                ? WORKSPACE_NODE_BERSERK_EDGE_GLOW
-                : "rgba(124,92,255,0.22)"
-            }
-            strokeWidth={isBerserkEdge ? 8 : 6}
-            strokeLinecap="round"
-            pointerEvents="none"
-          />
-        );
-      })}
-      {graph?.edges.map(({ child, parent, points }) => {
-        const isBerserkEdge =
-          child.nodeLinkKind === "generation" &&
-          child.treeNodeKind === "image" &&
-          Boolean(child.genInfiniteRetry);
-        const d = `M ${points.startX - minX} ${points.startY - minY} C ${
-          points.control1X - minX
-        } ${points.control1Y - minY}, ${points.control2X - minX} ${
-          points.control2Y - minY
-        }, ${points.endX - minX} ${points.endY - minY}`;
-
-        return (
-          <path
-            key={`${parent.id}-${child.id}-${points.startX}-${points.endX}-${zoom}`}
-            d={d}
-            stroke={
-              isBerserkEdge
-                ? WORKSPACE_NODE_BERSERK_EDGE_STROKE
-                : child.nodeLinkKind === "branch"
-                ? "rgba(124,92,255,0.98)"
-                : "rgba(79,70,229,0.98)"
-            }
-            strokeDasharray={
-              isBerserkEdge
-                ? "3 8"
-                : child.nodeLinkKind === "branch"
-                  ? "10 12"
-                  : "6 9"
-            }
-            strokeWidth={isBerserkEdge ? 3.4 : 3}
-            strokeLinecap="round"
-            pointerEvents="none"
-          />
+          <React.Fragment key={`${parent.id}-${child.id}-${points.startX}-${points.endX}-${zoom}`}>
+            <path
+              d={d}
+              stroke={
+                isBerserkEdge
+                  ? WORKSPACE_NODE_BERSERK_EDGE_GLOW
+                  : "rgba(124,92,255,0.22)"
+              }
+              strokeWidth={isBerserkEdge ? 8 : 6}
+              strokeLinecap="round"
+              pointerEvents="none"
+            />
+            {isSelectedEdge ? (
+              <path
+                d={d}
+                stroke="rgba(79,70,229,0.18)"
+                strokeWidth={12}
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            ) : null}
+            <path
+              d={d}
+              stroke={
+                isBerserkEdge
+                  ? WORKSPACE_NODE_BERSERK_EDGE_STROKE
+                  : child.nodeLinkKind === "branch"
+                    ? "rgba(124,92,255,0.98)"
+                    : "rgba(79,70,229,0.98)"
+              }
+              strokeDasharray={
+                isBerserkEdge
+                  ? "3 8"
+                  : child.nodeLinkKind === "branch"
+                    ? "10 12"
+                    : "6 9"
+              }
+              strokeWidth={isBerserkEdge ? 3.4 : 3}
+              strokeLinecap="round"
+              pointerEvents="none"
+            />
+            {onDisconnectEdge ? (
+              <path
+                d={d}
+                fill="none"
+                stroke="rgba(99,102,241,0.001)"
+                strokeWidth={24}
+                strokeLinecap="round"
+                pointerEvents="stroke"
+                onPointerDown={(event) => {
+                  if (event.pointerType !== "touch" && event.pointerType !== "pen") {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSelectedEdge((current) =>
+                    current?.parentId === parent.id && current?.childId === child.id
+                      ? null
+                      : {
+                          parentId: parent.id,
+                          childId: child.id,
+                        },
+                  );
+                }}
+              />
+            ) : null}
+            {onDisconnectEdge && isSelectedEdge ? (
+              <g
+                transform={`translate(${chipX}, ${chipY})`}
+                pointerEvents="all"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onDisconnectEdge(parent.id, child.id);
+                  setSelectedEdge(null);
+                }}
+              >
+                <rect
+                  x={-32}
+                  y={-14}
+                  width={64}
+                  height={28}
+                  rx={10}
+                  fill="rgba(255,255,255,0.96)"
+                  stroke="rgba(79,70,229,0.18)"
+                />
+                <line
+                  x1={-22}
+                  y1={0}
+                  x2={-14}
+                  y2={0}
+                  stroke="rgba(79,70,229,0.92)"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                />
+                <text
+                  x={2}
+                  y={0}
+                  fill="rgba(55,65,81,0.92)"
+                  fontSize={11}
+                  fontWeight={600}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                >
+                  断开
+                </text>
+              </g>
+            ) : null}
+          </React.Fragment>
         );
       })}
       {connectionDraft ? (
@@ -228,7 +345,9 @@ export const WorkspaceNodeGraphLayer: React.FC<WorkspaceNodeGraphLayerProps> = (
           const endX = connectionDraft.toX - minX;
           const endY = connectionDraft.toY - minY;
           const controlOffset = Math.max(54, Math.abs(endY - startY) * 0.32);
-          const d = `M ${startX} ${startY} C ${startX} ${startY + controlOffset}, ${endX} ${endY - controlOffset}, ${endX} ${endY}`;
+          const d = `M ${startX} ${startY} C ${startX} ${
+            startY + controlOffset
+          }, ${endX} ${endY - controlOffset}, ${endX} ${endY}`;
 
           return (
             <path

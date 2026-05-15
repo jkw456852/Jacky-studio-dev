@@ -9,8 +9,7 @@ import {
   makeImageProxyDataUrl,
 } from "../workspaceShared";
 import {
-  getWorkspaceImageNodeHeight,
-  WORKSPACE_IMAGE_NODE_WIDTH,
+  getWorkspaceImageNodeDisplaySize,
 } from "../workspaceTreeNode";
 
 type PlacementPoint = {
@@ -60,9 +59,13 @@ export function useWorkspaceCanvasAssetImport(
           originalWidth,
           originalHeight,
         } = await makeImageProxyDataUrl(file, DEFAULT_PROXY_MAX_DIM, viewport);
+        const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
+          originalWidth,
+          originalHeight,
+        );
         const placement = getPlacement({
-          width: WORKSPACE_IMAGE_NODE_WIDTH,
-          height: getWorkspaceImageNodeHeight(originalWidth, originalHeight),
+          width: imageDisplaySize.width,
+          height: imageDisplaySize.height,
         });
 
         return {
@@ -73,8 +76,8 @@ export function useWorkspaceCanvasAssetImport(
           proxyUrl: displayUrl !== originalUrl ? displayUrl : undefined,
           x: placement.x,
           y: placement.y,
-          width: WORKSPACE_IMAGE_NODE_WIDTH,
-          height: getWorkspaceImageNodeHeight(originalWidth, originalHeight),
+          width: imageDisplaySize.width,
+          height: imageDisplaySize.height,
           zIndex: baseZIndex + index + 1,
           genAspectRatio: `${originalWidth}:${originalHeight}`,
           nodeInteractionMode:
@@ -90,10 +93,14 @@ export function useWorkspaceCanvasAssetImport(
           next.onerror = () => reject(new Error("Failed to load fallback image"));
           next.src = fallbackUrl;
         });
+        const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
+          img.width,
+          img.height,
+        );
         const viewport = getCanvasViewportSize(showAssistant);
         const placement = getPlacement({
-          width: WORKSPACE_IMAGE_NODE_WIDTH,
-          height: getWorkspaceImageNodeHeight(img.width, img.height),
+          width: imageDisplaySize.width,
+          height: imageDisplaySize.height,
         });
 
         return {
@@ -103,8 +110,8 @@ export function useWorkspaceCanvasAssetImport(
           originalUrl: fallbackUrl,
           x: placement.x,
           y: placement.y,
-          width: WORKSPACE_IMAGE_NODE_WIDTH,
-          height: getWorkspaceImageNodeHeight(img.width, img.height),
+          width: imageDisplaySize.width,
+          height: imageDisplaySize.height,
           zIndex: baseZIndex + index + 1,
           genAspectRatio: `${Math.max(1, img.width)}:${Math.max(1, img.height)}`,
           nodeInteractionMode:

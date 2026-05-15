@@ -1245,6 +1245,11 @@ export function useWorkspaceElementImageGeneration(
         .toString(36)
         .slice(2, 8)}`;
       announceWorkspaceGenerationRequest(elementId, traceRequestId);
+      console.info("[workspace.imggen] request.queued", {
+        requestId: traceRequestId,
+        elementId,
+        queuedAt: requestStartedAt,
+      });
       let plannerStartedAt = 0;
       let taskPlannerStartedAt = 0;
       let taskPlannerRunCount = 0;

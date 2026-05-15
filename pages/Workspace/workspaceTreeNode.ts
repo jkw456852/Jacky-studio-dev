@@ -34,6 +34,26 @@ export const getWorkspaceImageNodeHeight = (
   );
 };
 
+export const getWorkspaceImageNodeDisplaySize = (
+  sourceWidth: number,
+  sourceHeight: number,
+): { width: number; height: number } => {
+  const safeWidth = Math.max(1, Math.round(sourceWidth));
+  const safeHeight = Math.max(1, Math.round(sourceHeight));
+
+  if (safeWidth <= WORKSPACE_IMAGE_NODE_WIDTH) {
+    return {
+      width: safeWidth,
+      height: safeHeight,
+    };
+  }
+
+  return {
+    width: WORKSPACE_IMAGE_NODE_WIDTH,
+    height: getWorkspaceImageNodeHeight(safeWidth, safeHeight),
+  };
+};
+
 export const getTreeImageNodeHeight = getWorkspaceImageNodeHeight;
 
 export const resolveWorkspaceTreeNodeKind = (

@@ -10,9 +10,8 @@ import {
 } from "../workspaceShared";
 import {
   getAllNodeParentIds,
-  getWorkspaceImageNodeHeight,
+  getWorkspaceImageNodeDisplaySize,
   TREE_PROMPT_PARENT_REFERENCE_LIMIT,
-  WORKSPACE_IMAGE_NODE_WIDTH,
 } from "../workspaceTreeNode";
 
 const REFERENCE_IMAGE_MAX_DIM = 1280;
@@ -117,14 +116,18 @@ export function useWorkspaceElementReferenceUploads(
               originalWidth,
               originalHeight,
             } = await makeImageProxyDataUrl(file, DEFAULT_PROXY_MAX_DIM);
+            const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
+              originalWidth,
+              originalHeight,
+            );
             return {
               id: `tree-ref-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
               type: "image" as const,
               url: displayUrl,
               originalUrl,
               proxyUrl: displayUrl !== originalUrl ? displayUrl : undefined,
-              width: WORKSPACE_IMAGE_NODE_WIDTH,
-              height: getWorkspaceImageNodeHeight(originalWidth, originalHeight),
+              width: imageDisplaySize.width,
+              height: imageDisplaySize.height,
               genAspectRatio: `${originalWidth}:${originalHeight}`,
             };
           }),

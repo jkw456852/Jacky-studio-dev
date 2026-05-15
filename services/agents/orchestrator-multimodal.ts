@@ -157,11 +157,7 @@ export const resolveMultimodalReferences = ({
       ]);
 
   const isolateVisualQa =
-    metadata?.multimodalContext?.isolateVisualQa === true ||
-    (inferredTaskMode === 'chat' &&
-      (uploadedUrls.length > 0 ||
-        uploadedAttachmentCount > 0 ||
-        attachmentCount > 0));
+    metadata?.multimodalContext?.isolateVisualQa === true;
 
   const effectiveReferenceUrls = isolateVisualQa
     ? directReferenceUrls

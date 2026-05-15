@@ -246,6 +246,7 @@ import {
   isWorkspaceTreeNode,
   resolveWorkspaceTreeNodeKind,
   TREE_PROMPT_PARENT_REFERENCE_LIMIT,
+  getWorkspaceImageNodeDisplaySize,
   getWorkspaceImageNodeHeight,
   WORKSPACE_IMAGE_NODE_WIDTH,
 } from "./Workspace/workspaceTreeNode";
@@ -4159,11 +4160,12 @@ const Workspace: React.FC = () => {
         viewport,
       );
 
-      const width = WORKSPACE_IMAGE_NODE_WIDTH;
-      const height = getWorkspaceImageNodeHeight(
+      const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
         proxied.originalWidth,
         proxied.originalHeight,
       );
+      const width = imageDisplaySize.width;
+      const height = imageDisplaySize.height;
 
       nextElements.push({
         id: asset.id || `agent-result-${createdAt}-${index}`,
@@ -4886,6 +4888,9 @@ const Workspace: React.FC = () => {
     handleMouseDown: canvasHandleMouseDown,
     handleMouseMove: canvasHandleMouseMove,
     handleMouseUp: canvasHandleMouseUp,
+    handleTouchStart: canvasHandleTouchStart,
+    handleTouchMove: canvasHandleTouchMove,
+    handleTouchEnd: canvasHandleTouchEnd,
   } = useWorkspaceCanvasPointer({
     contextMenu,
     setContextMenu,
@@ -4948,6 +4953,7 @@ const Workspace: React.FC = () => {
     setIsResizing,
     setResizeHandle,
     setPan,
+    setZoom,
     setIsDraggingElement,
     beginAltDragDuplicate,
     onDisconnectEdge: handleTreeConnectionDisconnect,
@@ -4975,6 +4981,33 @@ const Workspace: React.FC = () => {
     ],
   );
 
+  const handleCanvasTouchMove = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      if (!touch) {
+        return;
+      }
+
+      lastPointerClientRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+      setIsCtrlMarkTargetHovered(
+        isMarkableCanvasElementAtPoint(touch.clientX, touch.clientY),
+      );
+      if (treeConnectionDraft) {
+        handleTreeConnectionDrag(touch.clientX, touch.clientY);
+      }
+      canvasHandleTouchMove(event);
+    },
+    [
+      canvasHandleTouchMove,
+      handleTreeConnectionDrag,
+      isMarkableCanvasElementAtPoint,
+      treeConnectionDraft,
+    ],
+  );
+
   const handleCanvasMouseUp = useCallback(() => {
     if (treeConnectionDraft) {
       if (treeConnectionDraft.targetId) {
@@ -4991,8 +5024,25 @@ const Workspace: React.FC = () => {
     treeConnectionDraft,
   ]);
 
+  const handleCanvasTouchEnd = useCallback(() => {
+    if (treeConnectionDraft) {
+      if (treeConnectionDraft.targetId) {
+        handleTreeConnectionComplete(treeConnectionDraft.targetId);
+      } else {
+        handleTreeConnectionCancel();
+      }
+    }
+    canvasHandleTouchEnd();
+  }, [
+    canvasHandleTouchEnd,
+    handleTreeConnectionCancel,
+    handleTreeConnectionComplete,
+    treeConnectionDraft,
+  ]);
+
   const {
     handleElementMouseDown: canvasHandleElementMouseDown,
+    handleElementTouchStart: canvasHandleElementTouchStart,
     handleResizeStart: canvasHandleResizeStart,
   } = useWorkspaceCanvasElementInteraction({
     isSpacePressedRef,
@@ -5852,6 +5902,7 @@ const Workspace: React.FC = () => {
     getElementDisplayUrl,
     getElementSourceUrl,
     handleElementMouseDown: canvasHandleElementMouseDown,
+    handleElementTouchStart: canvasHandleElementTouchStart,
     handleUngroupSelected,
     deleteSelectedElement,
     markers,
@@ -6026,6 +6077,9 @@ const Workspace: React.FC = () => {
     handleMouseDown: canvasHandleMouseDown,
     handleMouseMove: handleCanvasMouseMove,
     handleMouseUp: handleCanvasMouseUp,
+    handleTouchStart: canvasHandleTouchStart,
+    handleTouchMove: canvasHandleTouchMove,
+    handleTouchEnd: canvasHandleTouchEnd,
     handleCanvasDrop,
     handleFileUpload,
     showFeatureComingSoon,

@@ -69,6 +69,7 @@ type WorkspaceCanvasElementsLayerProps = {
   ) => void;
   handleTreeConnectionComplete: (elementId: string) => void;
   handleElementMouseDown: (event: React.MouseEvent, elementId: string) => void;
+  handleElementTouchStart: (event: React.TouchEvent, elementId: string) => void;
   handleUngroupSelected: () => void;
   deleteSelectedElement: () => void;
 };
@@ -107,6 +108,7 @@ type WorkspaceCanvasElementItemProps = {
   handleTreeConnectionStart: WorkspaceCanvasElementsLayerProps["handleTreeConnectionStart"];
   handleTreeConnectionComplete: WorkspaceCanvasElementsLayerProps["handleTreeConnectionComplete"];
   handleElementMouseDown: WorkspaceCanvasElementsLayerProps["handleElementMouseDown"];
+  handleElementTouchStart: WorkspaceCanvasElementsLayerProps["handleElementTouchStart"];
   handleUngroupSelected: WorkspaceCanvasElementsLayerProps["handleUngroupSelected"];
   deleteSelectedElement: WorkspaceCanvasElementsLayerProps["deleteSelectedElement"];
 };
@@ -146,6 +148,7 @@ const WorkspaceCanvasElementItem = memo(
     handleTreeConnectionStart,
     handleTreeConnectionComplete,
     handleElementMouseDown,
+    handleElementTouchStart,
     handleUngroupSelected,
     deleteSelectedElement,
   }: WorkspaceCanvasElementItemProps) => {
@@ -193,6 +196,9 @@ const WorkspaceCanvasElementItem = memo(
         isDraggingElement={isDraggingElement && isSelected}
         onMouseDown={(event) =>
           !isLocked && handleElementMouseDown(event, element.id)
+        }
+        onTouchStart={(event) =>
+          !isLocked && handleElementTouchStart(event, element.id)
         }
         onDoubleClick={() => {
           if (element.type === "text") {
@@ -265,6 +271,7 @@ const WorkspaceCanvasElementItem = memo(
       return false;
     }
     if (prev.handleElementMouseDown !== next.handleElementMouseDown) return false;
+    if (prev.handleElementTouchStart !== next.handleElementTouchStart) return false;
     if (prev.handleResizeStart !== next.handleResizeStart) return false;
     if (prev.deleteSelectedElement !== next.deleteSelectedElement) return false;
     if (prev.setEditingTextId !== next.setEditingTextId) return false;
@@ -322,6 +329,7 @@ export const WorkspaceCanvasElementsLayer: React.FC<
   handleTreeConnectionStart,
   handleTreeConnectionComplete,
   handleElementMouseDown,
+  handleElementTouchStart,
   handleUngroupSelected,
   deleteSelectedElement,
 }) => {
@@ -375,9 +383,10 @@ export const WorkspaceCanvasElementsLayer: React.FC<
             isTreeConnectionActive={isTreeConnectionActive}
             handleTreeConnectionStart={handleTreeConnectionStart}
             handleTreeConnectionComplete={handleTreeConnectionComplete}
-          handleElementMouseDown={handleElementMouseDown}
-          handleUngroupSelected={handleUngroupSelected}
-          deleteSelectedElement={deleteSelectedElement}
+            handleElementMouseDown={handleElementMouseDown}
+            handleElementTouchStart={handleElementTouchStart}
+            handleUngroupSelected={handleUngroupSelected}
+            deleteSelectedElement={deleteSelectedElement}
           />
         );
       })}

@@ -328,8 +328,9 @@ const GenerationFailureState: React.FC<{
 
 const PendingImageNode: React.FC<{
   element: CanvasElement;
+  isSelected: boolean;
   onRetry?: () => void;
-}> = ({ element, onRetry }) => {
+}> = ({ element, isSelected, onRetry }) => {
   const generationStatusTitle = element.genStatusTitle || LABEL_GENERATING;
   const generationStatusLines = Array.isArray(element.genStatusLines)
     ? element.genStatusLines.filter(Boolean).slice(-8)
@@ -347,6 +348,7 @@ const PendingImageNode: React.FC<{
           title={generationStatusTitle}
           lines={generationStatusLines}
           tone={statusTone}
+          density={isSelected ? "full" : "compact"}
           className="h-full w-full rounded-[inherit]"
         />
       ) : element.genError ? (
@@ -453,7 +455,7 @@ const TreeNodePorts: React.FC<{
   onStart,
 }) => {
   const handleStart = (
-    event: React.MouseEvent,
+    event: React.MouseEvent | React.TouchEvent,
     port: "input" | "output",
   ) => {
     event.stopPropagation();
@@ -475,6 +477,7 @@ const TreeNodePorts: React.FC<{
           aria-label="Tree input port"
           className={`${portClassName} top-0 h-4 w-4 -translate-y-1/2`}
           onMouseDown={(event) => handleStart(event, "input")}
+          onTouchStart={(event) => handleStart(event, "input")}
         >
           <span className="h-[6px] w-[6px] rounded-full bg-[#7C5CFF]" />
         </button>
@@ -485,6 +488,7 @@ const TreeNodePorts: React.FC<{
           aria-label="Tree output port"
           className={`${portClassName} top-full h-4 w-4 -translate-y-1/2`}
           onMouseDown={(event) => handleStart(event, "output")}
+          onTouchStart={(event) => handleStart(event, "output")}
         >
           <span className="h-[6px] w-[6px] rounded-full bg-[#7C5CFF]" />
         </button>
@@ -685,6 +689,7 @@ const WorkspaceCanvasImageElementImpl: React.FC<
         <>
           <PendingImageNode
             element={element}
+            isSelected={isSelected}
             onRetry={() => {
               void handleGenImage(element.id);
             }}

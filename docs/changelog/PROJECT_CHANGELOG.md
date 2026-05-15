@@ -1,4 +1,33 @@
 # 更新记录
+ 
+## 2026-05-15
+
+### 1) Workspace 安卓平板触控补齐
+- Workspace 画布补齐双指缩放 / 平移、单指节点拖动、空白区框选、端口触控连线、`mark` 点按落点和连线点按断开。
+- 画布舞台接入完整 touch start / move / end 生命周期，同时继续保留桌面鼠标网页行为，不做替代式改造。
+
+### 2) 图片节点尺寸与生成态展示统一
+- 图片导入、引用上传、生成回写、Agent 结果入画统一改成按原图比例计算展示尺寸，不再只按固定宽高落板。
+- 生成中的树节点与画布图片节点新增紧凑态状态卡，未选中时噪声更低，选中时仍保留完整进度信息。
+
+### 3) 主脑多模态与联网研究上下文补强
+- 工作台发送链路补齐 `inlineParts`、`referencePolicy`、`uploadedAttachmentCount` 等元数据，主脑更容易理解图文混排请求、真实已上传附件和研究上下文。
+- 分析提示词补强了 `workspaceSearch` 的能力边界描述，避免本轮明明已开启联网却还误答“不能搜索”。
+
+### 4) 生成活动追踪与回溯修复
+- 正式发起生成请求前新增 `request.queued` 活动日志，能更清楚区分“编排完成”和“真正开始请求”。
+- 最近生成活动读取支持按 `requestId` / `elementId` 回退本地 trace，排查某次生图链路时更直接。
+
+### 5) 关键文件
+- `pages/Workspace/controllers/useWorkspaceCanvasPointer.ts`
+- `pages/Workspace/components/WorkspaceCanvasStage.tsx`
+- `pages/Workspace/components/WorkspaceNodeGraphLayer.tsx`
+- `pages/Workspace/controllers/useWorkspaceCanvasElementInteraction.ts`
+- `pages/Workspace/controllers/useWorkspaceSend.ts`
+- `pages/Workspace/browserAgentHost.ts`
+- `pages/Workspace/controllers/useWorkspaceElementMutationHelpers.ts`
+- `services/systemAnnouncements.ts`
+- `docs/changelog/PROJECT_CHANGELOG.md`
 
 ## 2026-04-27
 

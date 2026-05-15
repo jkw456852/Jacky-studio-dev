@@ -22,6 +22,7 @@ import {
   resolveNodeGraphPlacement,
 } from "../workspaceNodeGraph";
 import {
+  getWorkspaceImageNodeDisplaySize,
   getWorkspaceImageNodeHeight,
   WORKSPACE_IMAGE_NODE_WIDTH,
   resolveWorkspaceTreeNodeKind,
@@ -156,6 +157,10 @@ export function useWorkspaceElementMutationHelpers(
           element.type === "image" &&
           element.treeNodeKind === "image" &&
           Boolean(element.nodeParentId);
+        const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
+          originalWidth,
+          originalHeight,
+        );
         return {
           ...element,
           isGenerating: false,
@@ -173,13 +178,13 @@ export function useWorkspaceElementMutationHelpers(
               : undefined,
           width:
             element.type === "image" || element.type === "gen-image"
-              ? WORKSPACE_IMAGE_NODE_WIDTH
+              ? imageDisplaySize.width
               : keepCurrentSize
                 ? element.width
                 : displayWidth,
           height:
             element.type === "image" || element.type === "gen-image"
-              ? getWorkspaceImageNodeHeight(originalWidth, originalHeight)
+              ? imageDisplaySize.height
               : keepCurrentSize
                 ? element.height
                 : displayHeight,
@@ -459,39 +464,42 @@ export function useWorkspaceElementMutationHelpers(
           0,
         ) + 1;
 
-      const newElements: CanvasElement[] = proxied.map((asset, index) => ({
-        id: `image-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-        type: "image",
-        url: asset.displayUrl,
-        originalUrl: asset.originalUrl,
-        proxyUrl:
-          asset.displayUrl !== asset.originalUrl ? asset.displayUrl : undefined,
-        x:
-          sourceElement.x +
-          (WORKSPACE_IMAGE_NODE_WIDTH + GENERATED_IMAGE_GAP) * (index + 1),
-        y: sourceElement.y,
-        width: WORKSPACE_IMAGE_NODE_WIDTH,
-        height: getWorkspaceImageNodeHeight(
+      const newElements: CanvasElement[] = proxied.map((asset, index) => {
+        const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
           asset.originalWidth,
           asset.originalHeight,
-        ),
-        zIndex: baseZIndex + index,
-        genPrompt: sourceElement.genPrompt,
-        genModel: sourceElement.genModel,
-        genProviderId: sourceElement.genProviderId,
-        genAspectRatio: `${asset.originalWidth}:${asset.originalHeight}`,
-        genResolution: sourceElement.genResolution,
-        genImageQuality: sourceElement.genImageQuality,
-        genImageCount: sourceElement.genImageCount,
-        genInfiniteRetry: sourceElement.genInfiniteRetry,
-        genReferenceRoleMode: sourceElement.genReferenceRoleMode,
-        genStyleLibrary: sourceElement.genStyleLibrary,
-        hasFreshGeneratedGlow: true,
-        genRefImage: sourceElement.genRefImage,
-        genRefImages: sourceElement.genRefImages,
-        genRefPreviewImage: sourceElement.genRefPreviewImage,
-        genRefPreviewImages: sourceElement.genRefPreviewImages,
-      }));
+        );
+        return {
+          id: `image-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "image",
+          url: asset.displayUrl,
+          originalUrl: asset.originalUrl,
+          proxyUrl:
+            asset.displayUrl !== asset.originalUrl ? asset.displayUrl : undefined,
+          x:
+            sourceElement.x +
+            (WORKSPACE_IMAGE_NODE_WIDTH + GENERATED_IMAGE_GAP) * (index + 1),
+          y: sourceElement.y,
+          width: imageDisplaySize.width,
+          height: imageDisplaySize.height,
+          zIndex: baseZIndex + index,
+          genPrompt: sourceElement.genPrompt,
+          genModel: sourceElement.genModel,
+          genProviderId: sourceElement.genProviderId,
+          genAspectRatio: `${asset.originalWidth}:${asset.originalHeight}`,
+          genResolution: sourceElement.genResolution,
+          genImageQuality: sourceElement.genImageQuality,
+          genImageCount: sourceElement.genImageCount,
+          genInfiniteRetry: sourceElement.genInfiniteRetry,
+          genReferenceRoleMode: sourceElement.genReferenceRoleMode,
+          genStyleLibrary: sourceElement.genStyleLibrary,
+          hasFreshGeneratedGlow: true,
+          genRefImage: sourceElement.genRefImage,
+          genRefImages: sourceElement.genRefImages,
+          genRefPreviewImage: sourceElement.genRefPreviewImage,
+          genRefPreviewImages: sourceElement.genRefPreviewImages,
+        };
+      });
 
       const nextElements = [...elementsRef.current, ...newElements];
       setElementsSynced(nextElements);

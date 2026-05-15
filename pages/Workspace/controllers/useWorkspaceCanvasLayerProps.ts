@@ -65,6 +65,7 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   getElementDisplayUrl: (element: CanvasElement) => string | undefined;
   getElementSourceUrl: (element: CanvasElement) => string | undefined;
   handleElementMouseDown: (event: React.MouseEvent, elementId: string) => void;
+  handleElementTouchStart: (event: React.TouchEvent, elementId: string) => void;
   handleUngroupSelected: () => void;
   deleteSelectedElement: WorkspaceCanvasElementsLayerProps["deleteSelectedElement"];
   markers: WorkspaceCanvasMarkersLayerProps["markers"];
@@ -248,6 +249,7 @@ export const useWorkspaceCanvasLayerProps = ({
   getElementDisplayUrl,
   getElementSourceUrl,
   handleElementMouseDown,
+  handleElementTouchStart,
   handleUngroupSelected,
   deleteSelectedElement,
   markers,
@@ -419,6 +421,7 @@ export const useWorkspaceCanvasLayerProps = ({
     handleTreeConnectionStart,
     handleTreeConnectionComplete,
     handleElementMouseDown,
+    handleElementTouchStart,
     handleUngroupSelected,
     deleteSelectedElement,
   };

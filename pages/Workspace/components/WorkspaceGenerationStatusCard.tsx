@@ -4,6 +4,7 @@ type WorkspaceGenerationStatusCardProps = {
   title: string;
   lines?: string[];
   tone?: "default" | "berserk";
+  density?: "full" | "compact";
   className?: string;
 };
 
@@ -247,20 +248,32 @@ const buildViewModel = (title: string, lines?: string[]) => {
 
 export const WorkspaceGenerationStatusCard: React.FC<
   WorkspaceGenerationStatusCardProps
-> = ({ title, lines, tone = "default", className = "" }) => {
+> = ({
+  title,
+  lines,
+  tone = "default",
+  density = "full",
+  className = "",
+}) => {
   const surfaceToneClass =
     tone === "berserk"
       ? "workspace-gen-surface-berserk"
       : "workspace-gen-surface-default";
+  const isCompact = density === "compact";
 
   const viewModel = useMemo(() => buildViewModel(title, lines), [lines, title]);
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
+    if (isCompact) {
+      setVisibleCount(0);
+      return;
+    }
     setVisibleCount((current) => Math.min(current, viewModel.streamLines.length));
-  }, [viewModel.streamLines.length]);
+  }, [isCompact, viewModel.streamLines.length]);
 
   useEffect(() => {
+    if (isCompact) return;
     if (visibleCount >= viewModel.streamLines.length) return;
     const timer = window.setTimeout(
       () => {
@@ -271,14 +284,18 @@ export const WorkspaceGenerationStatusCard: React.FC<
       visibleCount === 0 ? 280 : 520,
     );
     return () => window.clearTimeout(timer);
-  }, [viewModel.streamLines.length, visibleCount]);
+  }, [isCompact, viewModel.streamLines.length, visibleCount]);
 
   const renderedLines = useMemo(
-    () =>
-      viewModel.streamLines
+    () => {
+      if (isCompact) {
+        return viewModel.streamLines.slice(-2);
+      }
+      return viewModel.streamLines
         .slice(0, visibleCount)
-        .slice(-MAX_VISIBLE_LINES),
-    [viewModel.streamLines, visibleCount],
+        .slice(-MAX_VISIBLE_LINES);
+    },
+    [isCompact, viewModel.streamLines, visibleCount],
   );
 
   const showCurrentStep =
@@ -295,8 +312,14 @@ export const WorkspaceGenerationStatusCard: React.FC<
       </div>
 
       <div className="workspace-gen-field">
-        {renderDots("workspace-gen-dot-layer-base")}
-        {renderDots("workspace-gen-dot-layer-active workspace-gen-dot-layer-center")}
+        {isCompact ? (
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_58%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0))]" />
+        ) : (
+          <>
+            {renderDots("workspace-gen-dot-layer-base")}
+            {renderDots("workspace-gen-dot-layer-active workspace-gen-dot-layer-center")}
+          </>
+        )}
 
         <div className="workspace-gen-stream-shell">
           {showCurrentStep ? (
@@ -320,7 +343,9 @@ export const WorkspaceGenerationStatusCard: React.FC<
                   key={`${title}-${line}-${index}`}
                   className="workspace-gen-stream-item"
                   style={{
-                    animationDelay: `${Math.min(index * 120, 360)}ms`,
+                    animationDelay: isCompact
+                      ? "0ms"
+                      : `${Math.min(index * 120, 360)}ms`,
                   }}
                 >
                   <span className="workspace-gen-stream-marker" />

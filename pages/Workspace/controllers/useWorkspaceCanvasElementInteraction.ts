@@ -178,6 +178,151 @@ export function useWorkspaceCanvasElementInteraction(
     [],
   );
 
+  const handleMarkPlacement = useCallback(
+    async (
+      eventTarget: HTMLElement,
+      elementId: string,
+      clientX: number,
+      clientY: number,
+    ) => {
+      const imgEl = eventTarget.querySelector("img");
+      const rect = imgEl
+        ? imgEl.getBoundingClientRect()
+        : eventTarget.getBoundingClientRect();
+      const x = Math.max(
+        0,
+        Math.min(100, ((clientX - rect.left) / rect.width) * 100),
+      );
+      const y = Math.max(
+        0,
+        Math.min(100, ((clientY - rect.top) / rect.height) * 100),
+      );
+
+      const newMarkerId = (Date.now() + Math.random()).toString();
+      const el = elementById.get(elementId);
+      let cropUrl: string | undefined;
+
+      try {
+        if (el && (el.type === "image" || el.type === "gen-image") && el.url) {
+          const cropWidth = 300;
+          const cropHeight = 300;
+          const crop = await cropImageRegion(
+            el.url,
+            x,
+            y,
+            cropWidth,
+            cropHeight,
+          );
+          if (crop) {
+            cropUrl = crop;
+
+            if (!showAssistant) {
+              setShowAssistant(true);
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+
+            const file = dataURLtoFile(
+              crop,
+              `marker-${markers.length + 1}.png`,
+            ) as WorkspaceInputFile;
+            file.markerId = newMarkerId;
+            file.markerName = "Selection";
+            file.markerInfo = {
+              fullImageUrl: el.url,
+              x: (x / 100) * el.width - cropWidth / 2,
+              y: (y / 100) * el.height - cropHeight / 2,
+              width: cropWidth,
+              height: cropHeight,
+              imageWidth: el.width,
+              imageHeight: el.height,
+            };
+
+            if (creationMode === "agent") {
+              setTimeout(() => {
+                insertInputFile(file);
+              }, 150);
+            }
+
+            analyzeImageRegion(crop)
+              .then((name) => {
+                const trimmed = name.trim().slice(0, 10);
+                if (
+                  trimmed &&
+                  trimmed !== "Could not analyze selection." &&
+                  trimmed !== "Analysis failed."
+                ) {
+                  file.markerName = trimmed;
+                  file.lastAiAnalysis = trimmed;
+                  setInputBlocks([...useAgentStore.getState().composer.inputBlocks]);
+                  setMarkersSynced((prev) =>
+                    prev.map((m) =>
+                      m.id === newMarkerId ? { ...m, analysis: trimmed } : m,
+                    ),
+                  );
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn("Mark crop failed, continuing with marker placement", err);
+      }
+
+      const newMarkers = [
+        ...markersRef.current,
+        { id: newMarkerId, x, y, elementId, cropUrl },
+      ];
+      updateMarkersAndSaveHistory(newMarkers);
+
+      if (el && containerRef.current) {
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const targetZoom = 100;
+        const scale = targetZoom / 100;
+        const markerCanvasX = el.x + (el.width * x) / 100;
+        const markerCanvasY = el.y + (el.height * y) / 100;
+        const targetPanX = containerRect.width / 2 - markerCanvasX * scale;
+        const targetPanY = containerRect.height / 2 - markerCanvasY * scale;
+        const startZoom = zoom;
+        const startPanX = pan.x;
+        const startPanY = pan.y;
+        const duration = 400;
+        const startTime = performance.now();
+
+        const animate = (now: number) => {
+          const elapsed = now - startTime;
+          const t = Math.min(elapsed / duration, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          setZoom(startZoom + (targetZoom - startZoom) * ease);
+          setPan({
+            x: startPanX + (targetPanX - startPanX) * ease,
+            y: startPanY + (targetPanY - startPanY) * ease,
+          });
+          if (t < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+      }
+    },
+    [
+      containerRef,
+      creationMode,
+      cropImageRegion,
+      dataURLtoFile,
+      elementById,
+      insertInputFile,
+      markers.length,
+      markersRef,
+      pan,
+      setInputBlocks,
+      setMarkersSynced,
+      setPan,
+      setShowAssistant,
+      setZoom,
+      showAssistant,
+      updateMarkersAndSaveHistory,
+      zoom,
+    ],
+  );
+
   const handleElementMouseDown = useCallback(
     async (e: React.MouseEvent, id: string) => {
       if (isSpacePressedRef.current || activeTool === "hand") return;
@@ -253,123 +398,12 @@ export function useWorkspaceCanvasElementInteraction(
         activeTool === "mark" ||
         (modifierMarkRequested && isMarkableElement(elObj))
       ) {
-        const imgEl = (e.currentTarget as HTMLElement).querySelector("img");
-        const rect = imgEl
-          ? imgEl.getBoundingClientRect()
-          : e.currentTarget.getBoundingClientRect();
-        const x = Math.max(
-          0,
-          Math.min(100, ((e.clientX - rect.left) / rect.width) * 100),
+        await handleMarkPlacement(
+          e.currentTarget as HTMLElement,
+          id,
+          e.clientX,
+          e.clientY,
         );
-        const y = Math.max(
-          0,
-          Math.min(100, ((e.clientY - rect.top) / rect.height) * 100),
-        );
-
-        const newMarkerId = (Date.now() + Math.random()).toString();
-        const el = elementById.get(id);
-        let cropUrl: string | undefined;
-
-        try {
-          if (el && (el.type === "image" || el.type === "gen-image") && el.url) {
-            const cropWidth = 300;
-            const cropHeight = 300;
-            const crop = await cropImageRegion(
-              el.url,
-              x,
-              y,
-              cropWidth,
-              cropHeight,
-            );
-            if (crop) {
-              cropUrl = crop;
-
-              if (!showAssistant) {
-                setShowAssistant(true);
-                await new Promise((resolve) => setTimeout(resolve, 100));
-              }
-
-              const file = dataURLtoFile(
-                crop,
-                `marker-${markers.length + 1}.png`,
-              ) as WorkspaceInputFile;
-              file.markerId = newMarkerId;
-              file.markerName = "Selection";
-              file.markerInfo = {
-                fullImageUrl: el.url,
-                x: (x / 100) * el.width - cropWidth / 2,
-                y: (y / 100) * el.height - cropHeight / 2,
-                width: cropWidth,
-                height: cropHeight,
-                imageWidth: el.width,
-                imageHeight: el.height,
-              };
-
-              if (creationMode === "agent") {
-                setTimeout(() => {
-                  insertInputFile(file);
-                }, 150);
-              }
-
-              analyzeImageRegion(crop)
-                .then((name) => {
-                  const trimmed = name.trim().slice(0, 10);
-                  if (
-                    trimmed &&
-                  trimmed !== "Could not analyze selection." &&
-                  trimmed !== "Analysis failed."
-                ) {
-                    file.markerName = trimmed;
-                    file.lastAiAnalysis = trimmed;
-                    setInputBlocks([...useAgentStore.getState().composer.inputBlocks]);
-                    setMarkersSynced((prev) =>
-                      prev.map((m) =>
-                        m.id === newMarkerId ? { ...m, analysis: trimmed } : m,
-                      ),
-                    );
-                  }
-                })
-                .catch(() => {});
-            }
-          }
-        } catch (err) {
-          console.warn("Mark crop failed, continuing with marker placement", err);
-        }
-
-        const newMarkers = [
-          ...markersRef.current,
-          { id: newMarkerId, x, y, elementId: id, cropUrl },
-        ];
-        updateMarkersAndSaveHistory(newMarkers);
-
-        if (el && containerRef.current) {
-          const containerRect = containerRef.current.getBoundingClientRect();
-          const targetZoom = 100;
-          const scale = targetZoom / 100;
-          const markerCanvasX = el.x + (el.width * x) / 100;
-          const markerCanvasY = el.y + (el.height * y) / 100;
-          const targetPanX = containerRect.width / 2 - markerCanvasX * scale;
-          const targetPanY = containerRect.height / 2 - markerCanvasY * scale;
-          const startZoom = zoom;
-          const startPanX = pan.x;
-          const startPanY = pan.y;
-          const duration = 400;
-          const startTime = performance.now();
-
-          const animate = (now: number) => {
-            const elapsed = now - startTime;
-            const t = Math.min(elapsed / duration, 1);
-            const ease = 1 - Math.pow(1 - t, 3);
-            setZoom(startZoom + (targetZoom - startZoom) * ease);
-            setPan({
-              x: startPanX + (targetPanX - startPanX) * ease,
-              y: startPanY + (targetPanY - startPanY) * ease,
-            });
-            if (t < 1) requestAnimationFrame(animate);
-          };
-          requestAnimationFrame(animate);
-        }
-
         return;
       }
 
@@ -491,6 +525,42 @@ export function useWorkspaceCanvasElementInteraction(
     ],
   );
 
+  const handleElementTouchStart = useCallback(
+    async (e: React.TouchEvent, id: string) => {
+      if (isSpacePressedRef.current || activeTool === "hand" || activeTool !== "mark") {
+        return;
+      }
+
+      const touch = e.touches[0];
+      if (!touch) {
+        return;
+      }
+
+      const elObj = elementById.get(id);
+      if (elObj?.isLocked || !isMarkableElement(elObj)) {
+        return;
+      }
+
+      pendingAltDragDuplicateRef.current = null;
+      e.stopPropagation();
+      e.preventDefault();
+      await handleMarkPlacement(
+        e.currentTarget as HTMLElement,
+        id,
+        touch.clientX,
+        touch.clientY,
+      );
+    },
+    [
+      activeTool,
+      elementById,
+      handleMarkPlacement,
+      isMarkableElement,
+      isSpacePressedRef,
+      pendingAltDragDuplicateRef,
+    ],
+  );
+
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, handle: string, elementId: string) => {
       e.stopPropagation();
@@ -520,6 +590,7 @@ export function useWorkspaceCanvasElementInteraction(
 
   return {
     handleElementMouseDown,
+    handleElementTouchStart,
     handleResizeStart,
   };
 }

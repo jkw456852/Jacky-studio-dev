@@ -32,6 +32,11 @@ type MarqueePreviewIdsRef = MutableRefObject<string[]>;
 type DragDidMoveRef = MutableRefObject<boolean>;
 type ToolType = "select" | "hand" | "mark" | "insert" | "shape" | "text" | "brush" | "eraser";
 type EdgePoints = ReturnType<typeof getNodeGraphEdgePoints>;
+type AxisSnap = {
+  delta: number;
+  nextPos: number;
+  guidePos: number;
+};
 
 const RIGHT_DRAG_THRESHOLD = 4;
 const EDGE_CUT_SAMPLE_STEPS = 18;
@@ -69,6 +74,58 @@ const getContainerPointFromClient = (
     x: clientX - rect.left,
     y: clientY - rect.top,
   };
+};
+
+const getTouchCenter = (touches: React.TouchList): Point | null => {
+  if (touches.length === 0) {
+    return null;
+  }
+
+  let totalX = 0;
+  let totalY = 0;
+  for (let index = 0; index < touches.length; index += 1) {
+    totalX += touches[index].clientX;
+    totalY += touches[index].clientY;
+  }
+
+  return {
+    x: totalX / touches.length,
+    y: totalY / touches.length,
+  };
+};
+
+const getTouchDistance = (touches: React.TouchList): number | null => {
+  if (touches.length < 2) {
+    return null;
+  }
+
+  return Math.hypot(
+    touches[1].clientX - touches[0].clientX,
+    touches[1].clientY - touches[0].clientY,
+  );
+};
+
+const clampZoom = (value: number) => Math.max(10, Math.min(500, value));
+
+const pickBetterAxisSnap = (
+  current: AxisSnap | null,
+  delta: number,
+  nextPos: number,
+  guidePos: number,
+  threshold: number,
+): AxisSnap | null => {
+  const absDelta = Math.abs(delta);
+  if (absDelta > threshold) {
+    return current;
+  }
+  if (!current || absDelta < current.delta) {
+    return {
+      delta: absDelta,
+      nextPos,
+      guidePos,
+    };
+  }
+  return current;
 };
 
 const cubicBezierPointAt = (
@@ -306,6 +363,7 @@ type UseWorkspaceCanvasPointerOptions = {
   setIsResizing: (value: boolean) => void;
   setResizeHandle: (value: string | null) => void;
   setPan: (point: Point) => void;
+  setZoom?: (zoom: number) => void;
   setIsDraggingElement: (value: boolean) => void;
   beginAltDragDuplicate: (
     selectionIds: string[],
@@ -383,6 +441,7 @@ export function useWorkspaceCanvasPointer(
     setIsResizing,
     setResizeHandle,
     setPan,
+    setZoom,
     setIsDraggingElement,
     beginAltDragDuplicate,
     onDisconnectEdge,
@@ -395,6 +454,10 @@ export function useWorkspaceCanvasPointer(
   const cutterLastCanvasPointRef = useRef<Point | null>(null);
   const cutterTrailPointsRef = useRef<Point[]>([]);
   const cutEdgeKeysRef = useRef<Set<string>>(new Set());
+  const touchGestureModeRef = useRef<"none" | "pan" | "drag">("none");
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef(zoom);
+  const pinchStartCanvasPointRef = useRef<Point | null>(null);
 
   const syncMarqueePreviewHighlight = useCallback(
     (nextIds: string[]) => {
@@ -463,7 +526,7 @@ export function useWorkspaceCanvasPointer(
         const parentIds = getAllNodeParentIds(child);
         for (const parentId of parentIds) {
           const parent = elementMap.get(parentId);
-          if (!canUseNodeGraphParent(parent)) {
+          if (!parent || !canUseNodeGraphParent(parent)) {
             continue;
           }
 
@@ -949,36 +1012,35 @@ export function useWorkspaceCanvasPointer(
       const dragCY = baseY + dragEl.height / 2;
       const dragR = baseX + dragEl.width;
       const dragB = baseY + dragEl.height;
-      let bestVerticalSnap:
-        | {
-            delta: number;
-            nextX: number;
-            guidePos: number;
-          }
-        | null = null;
-      let bestHorizontalSnap:
-        | {
-            delta: number;
-            nextY: number;
-            guidePos: number;
-          }
-        | null = null;
+      let bestVerticalDelta = SNAP_THRESHOLD + 1;
+      let bestVerticalNextPos: number | null = null;
+      let bestVerticalGuidePos: number | null = null;
+      let bestHorizontalDelta = SNAP_THRESHOLD + 1;
+      let bestHorizontalNextPos: number | null = null;
+      let bestHorizontalGuidePos: number | null = null;
 
       const considerVerticalSnap = (
         delta: number,
         nextXCandidate: number,
         guidePos: number,
       ) => {
-        const absDelta = Math.abs(delta);
-        if (absDelta > SNAP_THRESHOLD) {
-          return;
-        }
-        if (!bestVerticalSnap || absDelta < bestVerticalSnap.delta) {
-          bestVerticalSnap = {
-            delta: absDelta,
-            nextX: nextXCandidate,
-            guidePos,
-          };
+        const candidate = pickBetterAxisSnap(
+          bestVerticalNextPos === null || bestVerticalGuidePos === null
+            ? null
+            : {
+                delta: bestVerticalDelta,
+                nextPos: bestVerticalNextPos,
+                guidePos: bestVerticalGuidePos,
+              },
+          delta,
+          nextXCandidate,
+          guidePos,
+          SNAP_THRESHOLD,
+        );
+        if (candidate) {
+          bestVerticalDelta = candidate.delta;
+          bestVerticalNextPos = candidate.nextPos;
+          bestVerticalGuidePos = candidate.guidePos;
         }
       };
 
@@ -987,16 +1049,23 @@ export function useWorkspaceCanvasPointer(
         nextYCandidate: number,
         guidePos: number,
       ) => {
-        const absDelta = Math.abs(delta);
-        if (absDelta > SNAP_THRESHOLD) {
-          return;
-        }
-        if (!bestHorizontalSnap || absDelta < bestHorizontalSnap.delta) {
-          bestHorizontalSnap = {
-            delta: absDelta,
-            nextY: nextYCandidate,
-            guidePos,
-          };
+        const candidate = pickBetterAxisSnap(
+          bestHorizontalNextPos === null || bestHorizontalGuidePos === null
+            ? null
+            : {
+                delta: bestHorizontalDelta,
+                nextPos: bestHorizontalNextPos,
+                guidePos: bestHorizontalGuidePos,
+              },
+          delta,
+          nextYCandidate,
+          guidePos,
+          SNAP_THRESHOLD,
+        );
+        if (candidate) {
+          bestHorizontalDelta = candidate.delta;
+          bestHorizontalNextPos = candidate.nextPos;
+          bestHorizontalGuidePos = candidate.guidePos;
         }
       };
 
@@ -1023,14 +1092,14 @@ export function useWorkspaceCanvasPointer(
         );
       }
 
-      if (bestVerticalSnap) {
-        newX = bestVerticalSnap.nextX;
-        guides.push({ type: "v", pos: bestVerticalSnap.guidePos });
+      if (bestVerticalNextPos !== null && bestVerticalGuidePos !== null) {
+        newX = bestVerticalNextPos;
+        guides.push({ type: "v", pos: bestVerticalGuidePos });
       }
 
-      if (bestHorizontalSnap) {
-        newY = bestHorizontalSnap.nextY;
-        guides.push({ type: "h", pos: bestHorizontalSnap.guidePos });
+      if (bestHorizontalNextPos !== null && bestHorizontalGuidePos !== null) {
+        newY = bestHorizontalNextPos;
+        guides.push({ type: "h", pos: bestHorizontalGuidePos });
       }
 
       setAlignmentGuides(guides);
@@ -1323,9 +1392,515 @@ export function useWorkspaceCanvasPointer(
     pendingDragElementIdRef,
   ]);
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (contextMenu) {
+      setContextMenu(null);
+    }
+
+    if (e.touches.length >= 2) {
+      const center = getTouchCenter(e.touches);
+      const distance = getTouchDistance(e.touches);
+      if (!center || !distance) {
+        return;
+      }
+
+      e.preventDefault();
+      touchGestureModeRef.current = "pan";
+      pinchStartDistanceRef.current = distance;
+      pinchStartZoomRef.current = zoom;
+      pinchStartCanvasPointRef.current = getCanvasPointFromClient(
+        center.x,
+        center.y,
+        containerRef.current,
+        panRef.current,
+        zoom,
+      );
+      setIsPanning(true);
+      panChangedRef.current = false;
+      return;
+    }
+
+    const touch = e.touches[0];
+    if (!touch) {
+      return;
+    }
+
+    if (activeTool === "hand") {
+      e.preventDefault();
+      touchGestureModeRef.current = "pan";
+      setIsPanning(true);
+      setDragStart({ x: touch.clientX, y: touch.clientY });
+      panStartRef.current = panRef.current;
+      panChangedRef.current = false;
+      return;
+    }
+
+    if (activeTool !== "select") {
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    const clickedNodeGraphBlankArea =
+      target instanceof SVGSVGElement &&
+      target.classList.contains("workspace-node-graph-layer");
+    const clickedNodeGraphHitArea = Boolean(
+      target.closest?.("[data-node-graph-hit='true']"),
+    );
+    const touchedCanvasBlankArea =
+      !clickedNodeGraphHitArea &&
+      (target === containerRef.current ||
+        target === canvasLayerRef.current ||
+        target.classList.contains("canvas-background") ||
+        clickedNodeGraphBlankArea);
+    const elementNode = target.closest("[id^='canvas-el-']") as HTMLElement | null;
+    const touchedElementId = elementNode?.id?.replace(/^canvas-el-/, "") || null;
+    if (!touchedElementId) {
+      if (touchedCanvasBlankArea) {
+        e.preventDefault();
+        syncMarqueePreviewHighlight([]);
+        setIsMarqueeSelecting(true);
+        setMarqueeStart({ x: touch.clientX, y: touch.clientY });
+        setMarqueeEndIfChanged({ x: touch.clientX, y: touch.clientY });
+        const rect = containerRef.current?.getBoundingClientRect();
+        const marqueeBox = marqueeBoxRef.current;
+        if (rect && marqueeBox) {
+          const left = touch.clientX - rect.left;
+          const top = touch.clientY - rect.top;
+          marqueeBox.style.left = `${left}px`;
+          marqueeBox.style.top = `${top}px`;
+          marqueeBox.style.width = "0px";
+          marqueeBox.style.height = "0px";
+        }
+      }
+      return;
+    }
+
+    let effectiveId = touchedElementId;
+    const clickedEl = elementById.get(touchedElementId);
+    if (clickedEl?.groupId) {
+      const parentGroup = elementById.get(clickedEl.groupId);
+      if (parentGroup && !parentGroup.isCollapsed) {
+        effectiveId = parentGroup.id;
+      }
+    }
+
+    const baseDragSelectionIds =
+      selectedElementIds.length > 1 && selectedElementIds.includes(effectiveId)
+        ? [...selectedElementIds]
+        : [effectiveId];
+
+    pendingDragElementIdRef.current = effectiveId;
+    dragSelectionIdsRef.current = baseDragSelectionIds;
+    pendingAltDragDuplicateRef.current = null;
+    setIsDraggingElement(false);
+    setDragStart({ x: touch.clientX, y: touch.clientY });
+
+    const element = elementById.get(effectiveId);
+    if (element) {
+      setElementStartPos({ x: element.x, y: element.y });
+    }
+
+    let draggingIds =
+      baseDragSelectionIds.length > 0 ? [...baseDragSelectionIds] : [effectiveId];
+    const draggingIdSet = new Set(draggingIds);
+    for (const did of [...draggingIds]) {
+      const dEl = elementById.get(did);
+      if (dEl?.type === "group" && dEl.children) {
+        for (const cid of dEl.children) {
+          if (!draggingIdSet.has(cid)) {
+            draggingIds.push(cid);
+            draggingIdSet.add(cid);
+          }
+        }
+      }
+    }
+    for (const descendantId of collectNodeDescendantIds(
+      Array.from(elementById.values()),
+      draggingIds,
+    )) {
+      if (draggingIdSet.has(descendantId)) {
+        continue;
+      }
+      draggingIds.push(descendantId);
+      draggingIdSet.add(descendantId);
+    }
+
+    const startMap: Record<string, Point> = {};
+    for (const did of draggingIds) {
+      const dragElement = elementById.get(did);
+      if (dragElement) {
+        startMap[did] = { x: dragElement.x, y: dragElement.y };
+      }
+    }
+    groupDragStartRef.current = startMap;
+    touchGestureModeRef.current = "drag";
+    e.preventDefault();
+  }, [
+    activeTool,
+    canvasLayerRef,
+    containerRef,
+    contextMenu,
+    dragSelectionIdsRef,
+    elementById,
+    groupDragStartRef,
+    marqueeBoxRef,
+    panChangedRef,
+    panRef,
+    panStartRef,
+    pendingAltDragDuplicateRef,
+    pendingDragElementIdRef,
+    selectedElementIds,
+    setContextMenu,
+    setDragStart,
+    setElementStartPos,
+    setIsDraggingElement,
+    setIsMarqueeSelecting,
+    setIsPanning,
+    setMarqueeEndIfChanged,
+    setMarqueeStart,
+    syncMarqueePreviewHighlight,
+    zoom,
+  ]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length >= 2) {
+      const center = getTouchCenter(e.touches);
+      const distance = getTouchDistance(e.touches);
+      const pinchAnchor = pinchStartCanvasPointRef.current;
+      if (!center || !distance || !pinchAnchor) {
+        return;
+      }
+
+      e.preventDefault();
+      touchGestureModeRef.current = "pan";
+      const nextZoom = clampZoom(
+        pinchStartZoomRef.current * (distance / Math.max(pinchStartDistanceRef.current || 1, 1)),
+      );
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+
+      const nextPan = {
+        x: center.x - rect.left - pinchAnchor.x * (nextZoom / 100),
+        y: center.y - rect.top - pinchAnchor.y * (nextZoom / 100),
+      };
+      panRef.current = nextPan;
+      panChangedRef.current = true;
+      setZoom?.(nextZoom);
+      cancelAnimationFrame(panRafIdRef.current);
+      panRafIdRef.current = requestAnimationFrame(() => {
+        const layer = canvasLayerRef.current;
+        if (!layer) return;
+        layer.style.transform = `translate3d(${nextPan.x}px, ${nextPan.y}px, 0) scale(${nextZoom / 100})`;
+        layer.style.willChange = "transform";
+        syncFloatingToolbarPosition(selectedElementId);
+      });
+      return;
+    }
+
+    const touch = e.touches[0];
+    if (!touch) {
+      return;
+    }
+
+    if (touchGestureModeRef.current === "pan" && isPanning) {
+      e.preventDefault();
+      const dx = touch.clientX - dragStart.x;
+      const dy = touch.clientY - dragStart.y;
+      const nextPan = {
+        x: panStartRef.current.x + dx,
+        y: panStartRef.current.y + dy,
+      };
+      panRef.current = nextPan;
+      panChangedRef.current = true;
+      cancelAnimationFrame(panRafIdRef.current);
+      panRafIdRef.current = requestAnimationFrame(() => {
+        const layer = canvasLayerRef.current;
+        if (!layer) return;
+        layer.style.transform = `translate3d(${nextPan.x}px, ${nextPan.y}px, 0) scale(${zoom / 100})`;
+        layer.style.willChange = "transform";
+        syncFloatingToolbarPosition(selectedElementId);
+      });
+      return;
+    }
+
+    if (isMarqueeSelecting) {
+      e.preventDefault();
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+      const clampedX = Math.max(rect.left, Math.min(touch.clientX, rect.right));
+      const clampedY = Math.max(rect.top, Math.min(touch.clientY, rect.bottom));
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = requestAnimationFrame(() => {
+        const marqueeBox = marqueeBoxRef.current;
+        if (!marqueeBox) return;
+        marqueeBox.style.left = `${Math.min(marqueeStart.x, clampedX) - rect.left}px`;
+        marqueeBox.style.top = `${Math.min(marqueeStart.y, clampedY) - rect.top}px`;
+        marqueeBox.style.width = `${Math.abs(clampedX - marqueeStart.x)}px`;
+        marqueeBox.style.height = `${Math.abs(clampedY - marqueeStart.y)}px`;
+      });
+
+      const sx =
+        (Math.min(marqueeStart.x, clampedX) - rect.left - panRef.current.x) /
+        (zoom / 100);
+      const sy =
+        (Math.min(marqueeStart.y, clampedY) - rect.top - panRef.current.y) /
+        (zoom / 100);
+      const sw = Math.abs(clampedX - marqueeStart.x) / (zoom / 100);
+      const sh = Math.abs(clampedY - marqueeStart.y) / (zoom / 100);
+      const hitSet = new Set<string>();
+      for (const el of visibleElements) {
+        if (
+          el.x < sx + sw &&
+          el.x + el.width > sx &&
+          el.y < sy + sh &&
+          el.y + el.height > sy
+        ) {
+          hitSet.add(el.id);
+        }
+      }
+      const hits = visibleElements
+        .filter((el) => hitSet.has(el.id))
+        .map((el) => el.id);
+      syncMarqueePreviewHighlight(hits);
+      return;
+    }
+
+    const pendingDragElementId = pendingDragElementIdRef.current;
+    let dragTargetId = pendingDragElementId;
+    const passedDragThreshold =
+      !!pendingDragElementId &&
+      Math.hypot(touch.clientX - dragStart.x, touch.clientY - dragStart.y) >= 4;
+
+    if (!isDraggingElement && passedDragThreshold) {
+      if (dragDidMoveRef) {
+        dragDidMoveRef.current = true;
+      }
+      setIsDraggingElement(true);
+      touchGestureModeRef.current = "drag";
+    }
+
+    if ((isDraggingElement || passedDragThreshold) && dragTargetId) {
+      e.preventDefault();
+      if (dragDidMoveRef) {
+        dragDidMoveRef.current = true;
+      }
+      const liveElements = elementsRef.current;
+      const liveElementById = new Map(
+        liveElements.map((element) => [element.id, element] as const),
+      );
+      const dx = (touch.clientX - dragStart.x) / (zoom / 100);
+      const dy = (touch.clientY - dragStart.y) / (zoom / 100);
+      const dragEl = liveElementById.get(dragTargetId);
+      if (!dragEl) return;
+
+      const baseX = elementStartPos.x + dx;
+      const baseY = elementStartPos.y + dy;
+      let newX = baseX;
+      let newY = baseY;
+      const SNAP_THRESHOLD = 4;
+      const guides: Guide[] = [];
+      const activeSelectionIds = dragSelectionIdsRef.current;
+      let draggingIds =
+        activeSelectionIds.length > 1 && activeSelectionIds.includes(dragTargetId)
+          ? [...activeSelectionIds]
+          : [dragTargetId];
+      const draggingIdSet = new Set(draggingIds);
+      for (const did of [...draggingIds]) {
+        const dEl = liveElementById.get(did);
+        if (dEl?.type === "group" && dEl.children) {
+          for (const cid of dEl.children) {
+            if (!draggingIdSet.has(cid)) {
+              draggingIds.push(cid);
+              draggingIdSet.add(cid);
+            }
+          }
+        }
+      }
+      for (const descendantId of collectNodeDescendantIds(
+        liveElements,
+        draggingIds,
+      )) {
+        if (draggingIdSet.has(descendantId)) {
+          continue;
+        }
+        draggingIds.push(descendantId);
+        draggingIdSet.add(descendantId);
+      }
+
+      const others = getCachedDragOthers(draggingIdSet);
+      const dragCX = baseX + dragEl.width / 2;
+      const dragCY = baseY + dragEl.height / 2;
+      const dragR = baseX + dragEl.width;
+      const dragB = baseY + dragEl.height;
+      let bestVerticalDelta = SNAP_THRESHOLD + 1;
+      let bestVerticalNextPos: number | null = null;
+      let bestVerticalGuidePos: number | null = null;
+      let bestHorizontalDelta = SNAP_THRESHOLD + 1;
+      let bestHorizontalNextPos: number | null = null;
+      let bestHorizontalGuidePos: number | null = null;
+
+      const considerVerticalSnap = (
+        delta: number,
+        nextXCandidate: number,
+        guidePos: number,
+      ) => {
+        const candidate = pickBetterAxisSnap(
+          bestVerticalNextPos === null || bestVerticalGuidePos === null
+            ? null
+            : {
+                delta: bestVerticalDelta,
+                nextPos: bestVerticalNextPos,
+                guidePos: bestVerticalGuidePos,
+              },
+          delta,
+          nextXCandidate,
+          guidePos,
+          SNAP_THRESHOLD,
+        );
+        if (candidate) {
+          bestVerticalDelta = candidate.delta;
+          bestVerticalNextPos = candidate.nextPos;
+          bestVerticalGuidePos = candidate.guidePos;
+        }
+      };
+
+      const considerHorizontalSnap = (
+        delta: number,
+        nextYCandidate: number,
+        guidePos: number,
+      ) => {
+        const candidate = pickBetterAxisSnap(
+          bestHorizontalNextPos === null || bestHorizontalGuidePos === null
+            ? null
+            : {
+                delta: bestHorizontalDelta,
+                nextPos: bestHorizontalNextPos,
+                guidePos: bestHorizontalGuidePos,
+              },
+          delta,
+          nextYCandidate,
+          guidePos,
+          SNAP_THRESHOLD,
+        );
+        if (candidate) {
+          bestHorizontalDelta = candidate.delta;
+          bestHorizontalNextPos = candidate.nextPos;
+          bestHorizontalGuidePos = candidate.guidePos;
+        }
+      };
+
+      for (const other of others) {
+        const oCX = other.x + other.width / 2;
+        const oCY = other.y + other.height / 2;
+        const oR = other.x + other.width;
+        const oB = other.y + other.height;
+
+        considerVerticalSnap(baseX - other.x, other.x, other.x);
+        considerVerticalSnap(dragR - oR, oR - dragEl.width, oR);
+        considerVerticalSnap(dragCX - oCX, oCX - dragEl.width / 2, oCX);
+        considerVerticalSnap(baseX - oR, oR, oR);
+        considerVerticalSnap(dragR - other.x, other.x - dragEl.width, other.x);
+
+        considerHorizontalSnap(baseY - other.y, other.y, other.y);
+        considerHorizontalSnap(dragB - oB, oB - dragEl.height, oB);
+        considerHorizontalSnap(dragCY - oCY, oCY - dragEl.height / 2, oCY);
+        considerHorizontalSnap(baseY - oB, oB, oB);
+        considerHorizontalSnap(
+          dragB - other.y,
+          other.y - dragEl.height,
+          other.y,
+        );
+      }
+
+      if (bestVerticalNextPos !== null && bestVerticalGuidePos !== null) {
+        newX = bestVerticalNextPos;
+        guides.push({ type: "v", pos: bestVerticalGuidePos });
+      }
+
+      if (bestHorizontalNextPos !== null && bestHorizontalGuidePos !== null) {
+        newY = bestHorizontalNextPos;
+        guides.push({ type: "h", pos: bestHorizontalGuidePos });
+      }
+
+      setAlignmentGuides(guides);
+
+      const primaryStart = groupDragStartRef.current[dragTargetId];
+      const totalDx = newX - (primaryStart?.x ?? elementStartPos.x);
+      const totalDy = newY - (primaryStart?.y ?? elementStartPos.y);
+
+      const newOffsets: Record<string, Point> = {};
+      for (const elId of draggingIds) {
+        const start = groupDragStartRef.current[elId];
+        if (start) {
+          newOffsets[elId] = { x: start.x + totalDx, y: start.y + totalDy };
+        } else if (elId === dragTargetId) {
+          newOffsets[elId] = { x: newX, y: newY };
+        }
+      }
+      dragOffsetsRef.current = newOffsets;
+
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = requestAnimationFrame(() => {
+        for (const [elId, pos] of Object.entries(newOffsets)) {
+          const dom = document.getElementById(`canvas-el-${elId}`);
+          if (!dom) continue;
+          const current = liveElementById.get(elId);
+          if (!current) continue;
+          dom.style.transform = `translate3d(${pos.x - current.x}px, ${pos.y - current.y}px, 0)`;
+        }
+        syncFloatingToolbarPosition(selectedElementId);
+      });
+    }
+  }, [
+    canvasLayerRef,
+    containerRef,
+    dragDidMoveRef,
+    dragOffsetsRef,
+    dragSelectionIdsRef,
+    dragStart,
+    elementStartPos,
+    elementsRef,
+    getCachedDragOthers,
+    groupDragStartRef,
+    isDraggingElement,
+    isMarqueeSelecting,
+    isPanning,
+    marqueeBoxRef,
+    marqueeStart,
+    panChangedRef,
+    panRafIdRef,
+    panRef,
+    panStartRef,
+    pendingDragElementIdRef,
+    pinchStartDistanceRef,
+    rafIdRef,
+    selectedElementId,
+    setAlignmentGuides,
+    setIsDraggingElement,
+    setIsPanning,
+    setZoom,
+    syncFloatingToolbarPosition,
+    syncMarqueePreviewHighlight,
+    visibleElements,
+    zoom,
+  ]);
+
+  const handleTouchEnd = useCallback(() => {
+    touchGestureModeRef.current = "none";
+    pinchStartDistanceRef.current = null;
+    pinchStartCanvasPointRef.current = null;
+  }, []);
+
   return {
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
   };
 }

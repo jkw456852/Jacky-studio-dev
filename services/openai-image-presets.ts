@@ -67,11 +67,28 @@ const GPT_IMAGE_2_OFFICIAL_SIZE_MAP: Record<
   },
 };
 
-const LEGACY_PREVIEW_SIZE_MAP: Record<string, string> = {
-  "8:1": "1024x128",
-  "4:1": "1024x256",
-  "1:4": "256x1024",
-  "1:8": "128x1024",
+const LEGACY_PREVIEW_SIZE_MAP: Record<
+  WorkspaceImageResolutionPreset,
+  Record<string, string>
+> = {
+  "1K": {
+    "8:1": "1024x128",
+    "4:1": "1024x256",
+    "1:4": "256x1024",
+    "1:8": "128x1024",
+  },
+  "2K": {
+    "8:1": "2048x256",
+    "4:1": "2048x512",
+    "1:4": "512x2048",
+    "1:8": "256x2048",
+  },
+  "4K": {
+    "8:1": "3840x480",
+    "4:1": "3840x960",
+    "1:4": "960x3840",
+    "1:8": "480x3840",
+  },
 };
 
 const YUNWU_GPT_IMAGE_2_ALL_NATIVE_SIZES = new Set([
@@ -186,7 +203,7 @@ export const getAspectRatioPreviewSize = (
   const normalized = String(aspectRatio || "").trim();
   return (
     GPT_IMAGE_2_OFFICIAL_SIZE_MAP[resolution][normalized] ||
-    LEGACY_PREVIEW_SIZE_MAP[normalized] ||
+    LEGACY_PREVIEW_SIZE_MAP[resolution][normalized] ||
     null
   );
 };

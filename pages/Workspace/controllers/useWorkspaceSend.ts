@@ -98,6 +98,7 @@ type BuildRequestMetadataParams = {
   preferredImageProviderId: string | null;
   translatePromptToEnglish: boolean;
   enforceChineseTextInImage: boolean;
+  inlineParts?: ChatMessage["inlineParts"];
   requiredChineseCopy: string;
   skillData?: ChatMessage["skillData"];
   canvasSelectionReferenceUrls: string[];
@@ -287,6 +288,7 @@ const buildRequestMetadata = ({
   researchWebPages,
   researchStatus,
   researchErrorMessage,
+  inlineParts,
 }: BuildRequestMetadataParams): AgentTaskMetadata => {
   const allowAutonomousRouting =
     skillData?.config &&
@@ -341,6 +343,7 @@ const buildRequestMetadata = ({
           : "default",
       uploadedAttachmentCount: 0,
       referenceWebPages: researchWebPages,
+      inlineParts,
       research: researchPayload
         ? {
             requestId: researchPayload.requestId,
@@ -487,30 +490,43 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
 
       const effectiveConversationId = ensureConversationId();
       const effectiveTopicId = buildMemoryKey(effectiveConversationId);
+
+      // 强制所有发送都走 buildUserChatMessagePayloadFromInputBlocks 确保 inlineParts 被构建
+      let effectiveBlocks: InputBlock[] = currentBlocks;
+      let effectivePendingFiles: WorkspaceInputFile[] = pendingAttachments.map(
+        (item) => item.file as WorkspaceInputFile,
+      );
+
+      if (overridePrompt !== undefined || overrideAttachments !== undefined) {
+        effectiveBlocks = [];
+
+        // 如果有 overridePrompt 文本，添加为 text block
+        if (overridePrompt !== undefined && overridePrompt.trim()) {
+          effectiveBlocks.push({
+            id: `override-text-${Date.now()}`,
+            type: 'text' as const,
+            text: overridePrompt.trim(),
+          });
+        }
+
+        // 如果有 overrideAttachments，添加为 file blocks
+        if (overrideAttachments !== undefined && overrideAttachments.length > 0) {
+          for (let i = 0; i < overrideAttachments.length; i++) {
+            effectiveBlocks.push({
+              id: `override-file-${i}-${Date.now()}`,
+              type: 'file' as const,
+              file: overrideAttachments[i] as WorkspaceInputFile,
+            });
+          }
+          effectivePendingFiles = [];
+        }
+      }
+
       const userMessagePayload =
-        overridePrompt === undefined && overrideAttachments === undefined
-          ? await buildUserChatMessagePayloadFromInputBlocks({
-              inputBlocks: currentBlocks,
-              pendingFiles: pendingAttachments.map(
-                (item) => item.file as WorkspaceInputFile,
-              ),
-            })
-          : {
-              attachments: await Promise.all(
-                allAttachmentFiles.map(async (file) => {
-                  const workspaceFile = file as WorkspaceInputFile;
-                  if (
-                    workspaceFile._chipPreviewUrl &&
-                    !isTransientAttachmentPreviewUrl(workspaceFile._chipPreviewUrl)
-                  ) {
-                    return workspaceFile._chipPreviewUrl;
-                  }
-                  return createImagePreviewDataUrl(file, 512, 0.82);
-                }),
-              ),
-              attachmentMetadata: undefined,
-              inlineParts: undefined,
-            };
+        await buildUserChatMessagePayloadFromInputBlocks({
+          inputBlocks: effectiveBlocks,
+          pendingFiles: effectivePendingFiles,
+        });
 
       const userMsg: ChatMessage = {
         id: Date.now().toString(),
@@ -572,15 +588,13 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           researchWebPages,
           researchStatus,
           researchErrorMessage,
+          inlineParts: userMessagePayload.inlineParts,
         });
         if (requestMetadata.multimodalContext) {
           requestMetadata.multimodalContext.uploadedAttachmentCount =
             attachments.length;
           if (attachments.length > 0) {
             requestMetadata.multimodalContext.referencePolicy = "uploaded-only";
-            if (requestMetadata.taskMode === "chat") {
-              requestMetadata.multimodalContext.isolateVisualQa = true;
-            }
           }
         }
 

@@ -195,6 +195,10 @@ export interface AgentMultimodalContext {
   uploadedAttachmentCount?: number;
   isolateVisualQa?: boolean;
   research?: AgentResearchContext;
+  inlineParts?: Array<
+    { type: 'text'; text: string } |
+    { type: 'image'; attachmentIndex?: number; attachmentLabel?: string }
+  >;
 }
 
 export interface AgentTaskMetadata {

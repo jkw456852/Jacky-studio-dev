@@ -278,6 +278,7 @@ export const WorkspaceTreeImageNode: React.FC<
               title={generationStatusTitle}
               lines={generationStatusLines}
               tone={statusTone}
+              density={isSelected ? "full" : "compact"}
               className="h-full w-full rounded-[inherit]"
             />
           </div>

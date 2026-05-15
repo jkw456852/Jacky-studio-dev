@@ -1048,32 +1048,38 @@ export const registerWorkspaceBrowserAgentTools = ({
       const requestedRequestId = String(input?.requestId || "").trim();
       const limit = Math.max(1, Math.min(20, Number(input?.limit || 8)));
       const events = readWorkspaceImageGenerationEvents(context);
-      const fallbackTraces =
-        !requestedElementId && events.length === 0
-          ? listRecentWorkspaceGenerationTraces(limit).map((trace) => ({
-              id: trace.requestId,
-              level: "info" as const,
-              timestamp: trace.updatedAt,
-              kind: `trace.${trace.status}`,
-              requestId: trace.requestId,
-              elementId: trace.requestElementId,
-              sourceElementId: trace.sourceElementId,
-              summary: [
-                trace.status,
-                trace.taskMode ? `taskMode=${trace.taskMode}` : null,
-                trace.model ? `model=${trace.model}` : null,
-                trace.planIntent ? `intent=${trace.planIntent}` : null,
-                trace.planStrategy ? `strategy=${trace.planStrategy}` : null,
-              ]
-                .filter(Boolean)
-                .join(" | "),
-              context: {
-                requestId: trace.requestId,
-                composedPromptPreview: trace.composedPromptPreview || null,
-                lastError: trace.lastError || null,
-              },
-            }))
-          : [];
+      const fallbackCandidates = requestedRequestId
+        ? [readWorkspaceGenerationTraceByRequestId(requestedRequestId)]
+            .filter((trace): trace is NonNullable<typeof trace> => Boolean(trace))
+        : requestedElementId
+          ? [readWorkspaceGenerationTraceByElementId(requestedElementId)]
+              .filter((trace): trace is NonNullable<typeof trace> => Boolean(trace))
+          : listRecentWorkspaceGenerationTraces(limit);
+
+      const fallbackTraces = fallbackCandidates
+        .map((trace) => ({
+          id: trace.requestId,
+          level: "info" as const,
+          timestamp: trace.updatedAt,
+          kind: `trace.${trace.status}`,
+          requestId: trace.requestId,
+          elementId: trace.requestElementId,
+          sourceElementId: trace.sourceElementId,
+          summary: [
+            trace.status,
+            trace.taskMode ? `taskMode=${trace.taskMode}` : null,
+            trace.model ? `model=${trace.model}` : null,
+            trace.planIntent ? `intent=${trace.planIntent}` : null,
+            trace.planStrategy ? `strategy=${trace.planStrategy}` : null,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          context: {
+            requestId: trace.requestId,
+            composedPromptPreview: trace.composedPromptPreview || null,
+            lastError: trace.lastError || null,
+          },
+        }));
       const activities = events
         .map(toWorkspaceGenerationActivity)
         .filter((activity): activity is WorkspaceGenerationActivity => Boolean(activity))
