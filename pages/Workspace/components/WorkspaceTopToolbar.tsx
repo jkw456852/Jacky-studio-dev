@@ -102,8 +102,10 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
   onPreviewConsistencyAnchor,
 }) => {
   const [showConsistencyPanel, setShowConsistencyPanel] = useState(false);
+  const [showNavMenu, setShowNavMenu] = useState(false);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
   const consistencyPanelRef = useRef<HTMLDivElement | null>(null);
+  const navMenuRef = useRef<HTMLDivElement | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const anchorUploadRef = useRef<HTMLInputElement | null>(null);
 
@@ -124,6 +126,23 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
       window.removeEventListener("mousedown", handlePointerDown);
     };
   }, [showConsistencyPanel]);
+
+  useEffect(() => {
+    if (!showNavMenu) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (navMenuRef.current && !navMenuRef.current.contains(event.target as Node)) {
+        setShowNavMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [showNavMenu]);
 
   useEffect(() => {
     if (!showInsertMenu) return;
@@ -153,16 +172,27 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
       className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-[0_2px_20px_rgba(0,0,0,0.08)] border border-gray-200/60 px-2 py-1.5 flex flex-row gap-0.5 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 items-center"
       style={{ marginLeft: showAssistant ? "-240px" : "0" }}
     >
-      <div className="relative group/nav">
+      <div className="relative group/nav" ref={navMenuRef}>
         <button
-          className={`p-2.5 rounded-xl transition ${["select", "hand"].includes(activeTool) ? "bg-gray-800 text-white" : "text-gray-500 hover:text-black hover:bg-gray-100"}`}
+          type="button"
+          onClick={() => {
+            setShowInsertMenu(false);
+            setShowNavMenu((current) => !current);
+          }}
+          className={`p-2.5 rounded-xl transition ${["select", "hand"].includes(activeTool) || showNavMenu ? "bg-gray-800 text-white" : "text-gray-500 hover:text-black hover:bg-gray-100"}`}
         >
           <NavIcon size={18} />
         </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 z-50 hidden group-hover/nav:block">
+        <div
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 pb-2 z-50 ${showNavMenu ? "block" : "hidden group-hover/nav:block"}`}
+        >
           <div className="w-44 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
-              onClick={() => setActiveTool("select")}
+              type="button"
+              onClick={() => {
+                setActiveTool("select");
+                setShowNavMenu(false);
+              }}
               className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition ${activeTool === "select" ? "bg-gray-100 text-black" : "text-gray-600 hover:bg-gray-50"}`}
             >
               <div className="flex items-center gap-3">
@@ -171,7 +201,11 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
               <span className="text-xs text-gray-400 font-medium">V</span>
             </button>
             <button
-              onClick={() => setActiveTool("hand")}
+              type="button"
+              onClick={() => {
+                setActiveTool("hand");
+                setShowNavMenu(false);
+              }}
               className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition ${activeTool === "hand" ? "bg-gray-100 text-black" : "text-gray-600 hover:bg-gray-50"}`}
             >
               <div className="flex items-center gap-3">

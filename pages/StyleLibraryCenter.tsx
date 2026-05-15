@@ -683,6 +683,7 @@ const StyleLibraryCenter: React.FC = () => {
   });
   const [isSelectionMode, setIsSelectionMode] = React.useState(false);
   const [selectedCardKeys, setSelectedCardKeys] = React.useState<string[]>([]);
+  const galleryImportRequestRef = React.useRef(0);
 
   const builtInLibraries = React.useMemo(() => listBuiltInStyleLibraries(), []);
   const userLibraries = React.useMemo(() => {
@@ -1088,7 +1089,7 @@ const StyleLibraryCenter: React.FC = () => {
     setShowGalleryPicker(true);
   }, []);
 
-  const handleImportFromGallery = React.useCallback(
+  const handleImportFromGalleryLegacy = React.useCallback(
     async (preview: SmartImportPreview) => {
       const nextEditor = buildGalleryEditor(preview, galleryPayload);
       const cachedCoverImageUrl = await normalizeReferenceToDataUrl(nextEditor.coverImageUrl);
@@ -1133,6 +1134,99 @@ const StyleLibraryCenter: React.FC = () => {
         });
       } finally {
       }
+    },
+    [galleryPayload],
+  );
+
+  const handleImportFromGallery = React.useCallback(
+    async (preview: SmartImportPreview) => {
+      const nextEditor = buildGalleryEditor(preview, galleryPayload);
+      const requestId = galleryImportRequestRef.current + 1;
+      galleryImportRequestRef.current = requestId;
+
+      setShowGalleryPicker(false);
+      setEditor(nextEditor);
+
+      void (async () => {
+        let hydratedEditor = nextEditor;
+
+        try {
+          const cachedCoverImageUrl = await normalizeReferenceToDataUrl(
+            nextEditor.coverImageUrl,
+          );
+          if (requestId !== galleryImportRequestRef.current) {
+            return;
+          }
+          if (cachedCoverImageUrl) {
+            hydratedEditor = {
+              ...nextEditor,
+              coverImageUrl: cachedCoverImageUrl,
+            };
+            setEditor((current) => {
+              if (!current || current.sourcePreviewKey !== nextEditor.sourcePreviewKey) {
+                return current;
+              }
+              if (
+                current.coverImageUrl &&
+                current.coverImageUrl !== nextEditor.coverImageUrl
+              ) {
+                return current;
+              }
+              return {
+                ...current,
+                coverImageUrl: cachedCoverImageUrl,
+              };
+            });
+          }
+        } catch {
+          // Do not block the editor if cover hydration fails on slow or touch devices.
+        }
+
+        try {
+          const result = await analyzeStyleCardDraft({
+            imageUrls: dedupeUrls([
+              hydratedEditor.coverImageUrl,
+              ...hydratedEditor.sampleImageUrls,
+            ]),
+            existingPromptText: hydratedEditor.promptText,
+            existingTags: splitTextToLines(hydratedEditor.tagsText),
+            task: "description",
+          });
+          if (requestId !== galleryImportRequestRef.current) {
+            return;
+          }
+          setEditor((current) => {
+            if (!current || current.sourcePreviewKey !== hydratedEditor.sourcePreviewKey) {
+              return current;
+            }
+            return {
+              ...current,
+              title: String(current.title || "").trim() || result.title || current.title,
+              promptText: current.promptText || result.promptText,
+              tagsText:
+                current.tagsText || (result.tags.length > 0 ? result.tags.join("\n") : ""),
+              description: result.description || current.description,
+            };
+          });
+          setNotice({
+            tone: "success",
+            text: result.description
+              ? "已沿用画廊现成 Prompt 和标签，并补齐风格说明。"
+              : "已沿用画廊现成 Prompt 和标签。",
+          });
+        } catch (error) {
+          if (requestId !== galleryImportRequestRef.current) {
+            return;
+          }
+          setNotice({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? `画廊风格说明生成失败：${error.message}`
+                : "画廊风格说明生成失败。",
+          });
+        }
+      })();
     },
     [galleryPayload],
   );

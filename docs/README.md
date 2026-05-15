@@ -43,6 +43,8 @@ This repository keeps non-runtime documents under `docs/` to avoid cluttering th
   - multi-agent integration PRD.
 - `docs/product/CHIP_MARKER_EDIT_WORKFLOW_PLAN.md`
   - marker editing workflow optimization plan.
+- `docs/product/WORKSPACE_PROJECT_REHOST_AND_ACCOUNT_SYNC_PRODUCT_PLAN_20260515.md`
+  - full product-grade plan for project image rehosting, old-project migration, sidebar compatibility, and account-level project sync.
 - `docs/roo-code-workflow.md`
   - project-level Roo Code modes, rules, and collaboration workflow.
 
