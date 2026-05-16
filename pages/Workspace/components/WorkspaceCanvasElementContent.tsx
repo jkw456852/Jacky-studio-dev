@@ -47,6 +47,14 @@ type WorkspaceCanvasElementContentProps = {
     size: string;
   }>;
   updateSelectedElement: (updates: Partial<CanvasElement>) => void;
+  approvedConsistencyAssetIds: string[];
+  currentConsistencyAnchorUrl: string | null;
+  onSetCurrentAsAnchor: () => void | Promise<void>;
+  onPreviewCurrentAnchor: (anchorUrl: string) => void;
+  onFastEdit: () => void;
+  onOpenUpscalePanel: () => void;
+  onRemoveBg: () => void | Promise<void>;
+  onOpenProductSwapPanel: () => void;
   onActivateNode: (elementId: string) => void;
   handleRefImageUpload: (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -56,6 +64,8 @@ type WorkspaceCanvasElementContentProps = {
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
+  handleEditTextClick: () => void | Promise<void>;
+  handleVectorRedraw: () => void | Promise<void>;
   isTreeConnectionActive: boolean;
   handleTreeConnectionStart: (
     elementId: string,
@@ -87,10 +97,20 @@ export const WorkspaceCanvasElementContent: React.FC<
   modelOptions,
   aspectRatios,
   updateSelectedElement,
+  approvedConsistencyAssetIds,
+  currentConsistencyAnchorUrl,
+  onSetCurrentAsAnchor,
+  onPreviewCurrentAnchor,
+  onFastEdit,
+  onOpenUpscalePanel,
+  onRemoveBg,
+  onOpenProductSwapPanel,
   onActivateNode,
   handleRefImageUpload,
   handleGenImage,
   setEraserMode,
+  handleEditTextClick,
+  handleVectorRedraw,
   isTreeConnectionActive,
   handleTreeConnectionStart,
   handleTreeConnectionComplete,
@@ -130,10 +150,20 @@ export const WorkspaceCanvasElementContent: React.FC<
         modelOptions={modelOptions}
         aspectRatios={aspectRatios}
         updateSelectedElement={updateSelectedElement}
+        approvedConsistencyAssetIds={approvedConsistencyAssetIds}
+        currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+        onSetCurrentAsAnchor={onSetCurrentAsAnchor}
+        onPreviewCurrentAnchor={onPreviewCurrentAnchor}
+        onFastEdit={onFastEdit}
+        onOpenUpscalePanel={onOpenUpscalePanel}
+        onRemoveBg={onRemoveBg}
+        onOpenProductSwapPanel={onOpenProductSwapPanel}
         onActivateNode={onActivateNode}
         handleRefImageUpload={handleRefImageUpload}
         handleGenImage={handleGenImage}
         setEraserMode={setEraserMode}
+        handleEditTextClick={handleEditTextClick}
+        handleVectorRedraw={handleVectorRedraw}
         isTreeConnectionActive={isTreeConnectionActive}
         handleTreeConnectionStart={handleTreeConnectionStart}
         handleTreeConnectionComplete={handleTreeConnectionComplete}

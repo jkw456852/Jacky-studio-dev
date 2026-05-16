@@ -1,11 +1,18 @@
 import React from "react";
 import {
   AlertCircle,
+  Box,
+  Check,
   Download,
+  Eraser,
   Image as ImageIcon,
-  Pencil,
   RefreshCw,
+  Scaling,
+  Shirt,
   Trash2,
+  Type,
+  Wand2,
+  Zap,
 } from "lucide-react";
 import type { CanvasElement } from "../../../types";
 import {
@@ -22,7 +29,17 @@ import {
   WORKSPACE_NODE_SELECTION_SHADOW,
 } from "./workspaceNodeStyles";
 
-const LABEL_EDIT = "\u7f16\u8f91";
+const LABEL_FAST_EDIT = "\u5feb\u6377\u7f16\u8f91";
+const LABEL_SET_ANCHOR = "\u8bbe\u4e3a\u951a\u70b9";
+const LABEL_CURRENT_ANCHOR = "\u5f53\u524d\u951a\u70b9";
+const LABEL_PREVIEW_ANCHOR = "\u67e5\u770b\u951a\u70b9";
+const LABEL_UPSCALE = "\u653e\u5927";
+const LABEL_REMOVE_BG = "\u53bb\u80cc\u666f";
+const LABEL_PRODUCT_SWAP = "\u4ea7\u54c1\u66ff\u6362";
+const LABEL_REGENERATE = "\u91cd\u65b0\u751f\u6210";
+const LABEL_OCR_TEXT_EDIT = "OCR\u6539\u5b57";
+const LABEL_MASK_EDIT = "\u6a61\u76ae\u5de5\u5177";
+const LABEL_LOCAL_REDRAW = "\u5c40\u90e8\u91cd\u7ed8";
 const LABEL_DOWNLOAD = "\u4e0b\u8f7d";
 const LABEL_DELETE = "\u5220\u9664\u8282\u70b9";
 const LABEL_DOUBLE_CLICK_PREVIEW = "\u53cc\u51fb\u9884\u89c8";
@@ -51,7 +68,18 @@ type WorkspaceTreeImageNodeProps = {
   displayUrl?: string;
   sourceUrl?: string;
   timestampLabel: string;
+  currentConsistencyAnchorUrl?: string | null;
+  isCurrentElementAnchor?: boolean;
+  onSetCurrentAsAnchor?: () => void;
+  onPreviewCurrentAnchor?: (anchorUrl: string) => void;
+  onFastEdit?: () => void;
+  onOpenUpscalePanel?: () => void;
+  onRemoveBg?: () => void;
+  onOpenProductSwapPanel?: () => void;
+  onRegenerate?: () => void;
+  onEditText: () => void;
   onStartMaskEdit: () => void;
+  onVectorRedraw: () => void;
   onDelete: () => void;
   onRetry?: () => void;
 };
@@ -99,56 +127,193 @@ const ToolbarButton: React.FC<{
 const TreeImageToolbar: React.FC<{
   canEdit: boolean;
   isVisible: boolean;
+  currentConsistencyAnchorUrl?: string | null;
+  isCurrentElementAnchor?: boolean;
+  onSetCurrentAsAnchor?: () => void;
+  onPreviewCurrentAnchor?: (anchorUrl: string) => void;
+  onFastEdit?: () => void;
+  onOpenUpscalePanel?: () => void;
+  onRemoveBg?: () => void;
+  onOpenProductSwapPanel?: () => void;
+  onRegenerate?: () => void;
+  onEditText: () => void;
   onStartMaskEdit: () => void;
+  onVectorRedraw: () => void;
   onDownload: () => void;
   onDelete: () => void;
 }> = ({
   canEdit,
   isVisible,
+  currentConsistencyAnchorUrl,
+  isCurrentElementAnchor = false,
+  onSetCurrentAsAnchor,
+  onPreviewCurrentAnchor,
+  onFastEdit,
+  onOpenUpscalePanel,
+  onRemoveBg,
+  onOpenProductSwapPanel,
+  onRegenerate,
+  onEditText,
   onStartMaskEdit,
+  onVectorRedraw,
   onDownload,
   onDelete,
-}) =>
-  !isVisible ? null : (
+}) => {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center transition-opacity duration-200 opacity-100">
-    <div
-      className="pointer-events-auto flex w-max items-center gap-0.5 rounded-full border border-white/82 bg-[rgba(255,255,255,0.98)] px-2 py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.10),0_1px_0_rgba(255,255,255,0.78)_inset] backdrop-blur-md transition-[transform,opacity] duration-200"
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-      style={{
-        transform: "translateY(calc(-100% - 12px)) scale(1)",
-        transformOrigin: "center bottom",
-      }}
-    >
-      <ToolbarButton
-        icon={<Pencil size={14} />}
-        label={LABEL_EDIT}
-        disabled={!canEdit}
-        onClick={(event) => {
-          event.stopPropagation();
-          onStartMaskEdit();
+      <div
+        className="pointer-events-auto flex w-max max-w-[min(100%,1100px)] flex-wrap items-center justify-center gap-0.5 rounded-[22px] border border-white/82 bg-[rgba(255,255,255,0.98)] px-2 py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.10),0_1px_0_rgba(255,255,255,0.78)_inset] backdrop-blur-md transition-[transform,opacity] duration-200"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          transform: "translateY(calc(-100% - 12px)) scale(1)",
+          transformOrigin: "center bottom",
         }}
-      />
-      <ToolbarButton
-        icon={<Download size={14} />}
-        label={LABEL_DOWNLOAD}
-        onClick={(event) => {
-          event.stopPropagation();
-          onDownload();
-        }}
-      />
-      <ToolbarButton
-        icon={<Trash2 size={14} />}
-        label={LABEL_DELETE}
-        destructive
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-      />
-    </div>
+      >
+        {onFastEdit ? (
+          <ToolbarButton
+            icon={
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#111827] text-[8px] font-black leading-none tracking-tight text-white">
+                JK
+              </span>
+            }
+            label={LABEL_FAST_EDIT}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onFastEdit();
+            }}
+          />
+        ) : null}
+        {onSetCurrentAsAnchor ? (
+          <ToolbarButton
+            icon={
+              isCurrentElementAnchor ? <Check size={14} /> : <Box size={14} />
+            }
+            label={isCurrentElementAnchor ? LABEL_CURRENT_ANCHOR : LABEL_SET_ANCHOR}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSetCurrentAsAnchor();
+            }}
+          />
+        ) : null}
+        {currentConsistencyAnchorUrl && onPreviewCurrentAnchor ? (
+          <ToolbarButton
+            icon={
+              <img
+                src={currentConsistencyAnchorUrl}
+                alt="current-anchor"
+                className="h-5 w-5 rounded-md border border-[#e5e7eb] object-cover"
+              />
+            }
+            label={LABEL_PREVIEW_ANCHOR}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPreviewCurrentAnchor(currentConsistencyAnchorUrl);
+            }}
+          />
+        ) : null}
+        {onRegenerate ? (
+          <ToolbarButton
+            icon={<Zap size={14} />}
+            label={LABEL_REGENERATE}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRegenerate();
+            }}
+          />
+        ) : null}
+        {onOpenUpscalePanel ? (
+          <ToolbarButton
+            icon={
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-[4px] border border-current px-1 text-[8px] font-black leading-none tracking-tight">
+                HD
+              </span>
+            }
+            label={LABEL_UPSCALE}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenUpscalePanel();
+            }}
+          />
+        ) : null}
+        {onRemoveBg ? (
+          <ToolbarButton
+            icon={<Wand2 size={14} />}
+            label={LABEL_REMOVE_BG}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemoveBg();
+            }}
+          />
+        ) : null}
+        {onOpenProductSwapPanel ? (
+          <ToolbarButton
+            icon={<Shirt size={14} />}
+            label={LABEL_PRODUCT_SWAP}
+            disabled={!canEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenProductSwapPanel();
+            }}
+          />
+        ) : null}
+        <ToolbarButton
+          icon={<Type size={14} />}
+          label={LABEL_OCR_TEXT_EDIT}
+          disabled={!canEdit}
+          onClick={(event) => {
+            event.stopPropagation();
+            onEditText();
+          }}
+        />
+        <ToolbarButton
+          icon={<Eraser size={14} />}
+          label={LABEL_MASK_EDIT}
+          disabled={!canEdit}
+          onClick={(event) => {
+            event.stopPropagation();
+            onStartMaskEdit();
+          }}
+        />
+        <ToolbarButton
+          icon={<Scaling size={14} />}
+          label={LABEL_LOCAL_REDRAW}
+          disabled={!canEdit}
+          onClick={(event) => {
+            event.stopPropagation();
+            onVectorRedraw();
+          }}
+        />
+        <ToolbarButton
+          icon={<Download size={14} />}
+          label={LABEL_DOWNLOAD}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDownload();
+          }}
+        />
+        <ToolbarButton
+          icon={<Trash2 size={14} />}
+          label={LABEL_DELETE}
+          destructive
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        />
+      </div>
     </div>
   );
+};
 
 const DoubleClickHint: React.FC<{
   isVisible: boolean;
@@ -175,7 +340,18 @@ export const WorkspaceTreeImageNode: React.FC<
   displayUrl,
   sourceUrl,
   timestampLabel,
+  currentConsistencyAnchorUrl,
+  isCurrentElementAnchor,
+  onSetCurrentAsAnchor,
+  onPreviewCurrentAnchor,
+  onFastEdit,
+  onOpenUpscalePanel,
+  onRemoveBg,
+  onOpenProductSwapPanel,
+  onRegenerate,
+  onEditText,
   onStartMaskEdit,
+  onVectorRedraw,
   onDelete,
   onRetry,
 }) => {
@@ -231,7 +407,18 @@ export const WorkspaceTreeImageNode: React.FC<
       <TreeImageToolbar
         canEdit={Boolean(displayUrl)}
         isVisible={isSelected}
+        currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+        isCurrentElementAnchor={isCurrentElementAnchor}
+        onSetCurrentAsAnchor={onSetCurrentAsAnchor}
+        onPreviewCurrentAnchor={onPreviewCurrentAnchor}
+        onFastEdit={onFastEdit}
+        onOpenUpscalePanel={onOpenUpscalePanel}
+        onRemoveBg={onRemoveBg}
+        onOpenProductSwapPanel={onOpenProductSwapPanel}
+        onRegenerate={onRegenerate}
+        onEditText={onEditText}
         onStartMaskEdit={onStartMaskEdit}
+        onVectorRedraw={onVectorRedraw}
         onDownload={handleDownload}
         onDelete={onDelete}
       />

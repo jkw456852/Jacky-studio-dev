@@ -360,7 +360,12 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     return null;
   }
 
-  if (isBranchImageSelection && !eraserMode && !showTextEditModal) {
+  if (
+    isBranchImageSelection &&
+    !eraserMode &&
+    !showTextEditModal &&
+    !showFastEdit
+  ) {
     return null;
   }
 
@@ -615,51 +620,53 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     return (
       <>
         {emptyGenConfigPanel}
-        <WorkspaceImageSideToolbar
-          key={`image-side-toolbar-${el.id}`}
-          element={el}
-          isDraggingElement={isDraggingElement}
-          left={rightToolbarLeft}
-          top={topToolbarTop}
-          scale={flexibleScale}
-          toolbarExpanded={toolbarExpanded}
-          setToolbarExpanded={setToolbarExpanded}
-          toolbarExpandTimer={toolbarExpandTimer}
-          showUpscalePanel={showUpscalePanel}
-          setShowUpscalePanel={setShowUpscalePanel}
-          selectedUpscaleRes={selectedUpscaleRes}
-          setSelectedUpscaleRes={setSelectedUpscaleRes}
-          showUpscaleResDropdown={showUpscaleResDropdown}
-          setShowUpscaleResDropdown={setShowUpscaleResDropdown}
-          upscaleSourceSize={upscaleSourceSize}
-          getUpscaleFactor={getUpscaleFactor}
-          calcUpscaleTargetSize={calcUpscaleTargetSize}
-          handleUpscaleSelect={handleUpscaleSelect}
-          handleRemoveBg={handleRemoveBg}
-          showProductSwapPanel={showProductSwapPanel}
-          setShowProductSwapPanel={setShowProductSwapPanel}
-          productSwapImages={productSwapImages}
-          setProductSwapImages={setProductSwapImages}
-          productSwapRes={productSwapRes}
-          setProductSwapRes={setProductSwapRes}
-          showProductSwapResDropdown={showProductSwapResDropdown}
-          setShowProductSwapResDropdown={setShowProductSwapResDropdown}
-          fileToDataUrl={fileToDataUrl}
-          handleProductSwap={handleProductSwap}
-          handleGenImage={handleGenImage}
-          setEraserMode={setEraserMode}
-          handleEditTextClick={handleEditTextClick}
-          handleVectorRedraw={handleVectorRedraw}
-          handleDownload={handleDownload}
-          setShowFastEdit={setShowFastEdit}
-          consistencyCheckEnabled={consistencyCheckEnabled}
-          currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
-          isCurrentElementAnchor={isCurrentElementAnchor}
-          onSetCurrentAsAnchor={() =>
-            void handleSetConsistencyAnchorFromElement(el)
-          }
-          onPreviewCurrentAnchor={handlePreviewConsistencyAnchor}
-        />
+        {!isBranchImageSelection ? (
+          <WorkspaceImageSideToolbar
+            key={`image-side-toolbar-${el.id}`}
+            element={el}
+            isDraggingElement={isDraggingElement}
+            left={rightToolbarLeft}
+            top={topToolbarTop}
+            scale={flexibleScale}
+            toolbarExpanded={toolbarExpanded}
+            setToolbarExpanded={setToolbarExpanded}
+            toolbarExpandTimer={toolbarExpandTimer}
+            showUpscalePanel={showUpscalePanel}
+            setShowUpscalePanel={setShowUpscalePanel}
+            selectedUpscaleRes={selectedUpscaleRes}
+            setSelectedUpscaleRes={setSelectedUpscaleRes}
+            showUpscaleResDropdown={showUpscaleResDropdown}
+            setShowUpscaleResDropdown={setShowUpscaleResDropdown}
+            upscaleSourceSize={upscaleSourceSize}
+            getUpscaleFactor={getUpscaleFactor}
+            calcUpscaleTargetSize={calcUpscaleTargetSize}
+            handleUpscaleSelect={handleUpscaleSelect}
+            handleRemoveBg={handleRemoveBg}
+            showProductSwapPanel={showProductSwapPanel}
+            setShowProductSwapPanel={setShowProductSwapPanel}
+            productSwapImages={productSwapImages}
+            setProductSwapImages={setProductSwapImages}
+            productSwapRes={productSwapRes}
+            setProductSwapRes={setProductSwapRes}
+            showProductSwapResDropdown={showProductSwapResDropdown}
+            setShowProductSwapResDropdown={setShowProductSwapResDropdown}
+            fileToDataUrl={fileToDataUrl}
+            handleProductSwap={handleProductSwap}
+            handleGenImage={handleGenImage}
+            setEraserMode={setEraserMode}
+            handleEditTextClick={handleEditTextClick}
+            handleVectorRedraw={handleVectorRedraw}
+            handleDownload={handleDownload}
+            setShowFastEdit={setShowFastEdit}
+            consistencyCheckEnabled={consistencyCheckEnabled}
+            currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+            isCurrentElementAnchor={isCurrentElementAnchor}
+            onSetCurrentAsAnchor={() =>
+              void handleSetConsistencyAnchorFromElement(el)
+            }
+            onPreviewCurrentAnchor={handlePreviewConsistencyAnchor}
+          />
+        ) : null}
 
         {/* Bottom Center Fast Edit Mode Tool when active */}
         <WorkspaceImageFastEditPanel

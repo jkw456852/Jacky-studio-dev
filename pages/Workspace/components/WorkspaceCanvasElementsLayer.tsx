@@ -52,6 +52,14 @@ type WorkspaceCanvasElementsLayerProps = {
     size: string;
   }>;
   updateSelectedElement: (updates: Partial<CanvasElement>) => void;
+  approvedConsistencyAssetIds: string[];
+  currentConsistencyAnchorUrl: string | null;
+  onSetCurrentAsAnchor: () => void | Promise<void>;
+  onPreviewCurrentAnchor: (anchorUrl: string) => void;
+  onFastEdit: () => void;
+  onOpenUpscalePanel: () => void;
+  onRemoveBg: () => void | Promise<void>;
+  onOpenProductSwapPanel: () => void;
   setSelectedElementId: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
   handleRefImageUpload: (
@@ -62,6 +70,8 @@ type WorkspaceCanvasElementsLayerProps = {
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
+  handleEditTextClick: () => void | Promise<void>;
+  handleVectorRedraw: () => void | Promise<void>;
   isTreeConnectionActive: boolean;
   handleTreeConnectionStart: (
     elementId: string,
@@ -99,11 +109,21 @@ type WorkspaceCanvasElementItemProps = {
   modelOptions: WorkspaceCanvasElementsLayerProps["modelOptions"];
   aspectRatios: WorkspaceCanvasElementsLayerProps["aspectRatios"];
   updateSelectedElement: WorkspaceCanvasElementsLayerProps["updateSelectedElement"];
+  approvedConsistencyAssetIds: WorkspaceCanvasElementsLayerProps["approvedConsistencyAssetIds"];
+  currentConsistencyAnchorUrl: WorkspaceCanvasElementsLayerProps["currentConsistencyAnchorUrl"];
+  onSetCurrentAsAnchor: WorkspaceCanvasElementsLayerProps["onSetCurrentAsAnchor"];
+  onPreviewCurrentAnchor: WorkspaceCanvasElementsLayerProps["onPreviewCurrentAnchor"];
+  onFastEdit: WorkspaceCanvasElementsLayerProps["onFastEdit"];
+  onOpenUpscalePanel: WorkspaceCanvasElementsLayerProps["onOpenUpscalePanel"];
+  onRemoveBg: WorkspaceCanvasElementsLayerProps["onRemoveBg"];
+  onOpenProductSwapPanel: WorkspaceCanvasElementsLayerProps["onOpenProductSwapPanel"];
   setSelectedElementId: WorkspaceCanvasElementsLayerProps["setSelectedElementId"];
   setSelectedElementIds: WorkspaceCanvasElementsLayerProps["setSelectedElementIds"];
   handleRefImageUpload: WorkspaceCanvasElementsLayerProps["handleRefImageUpload"];
   handleGenImage: WorkspaceCanvasElementsLayerProps["handleGenImage"];
   setEraserMode: WorkspaceCanvasElementsLayerProps["setEraserMode"];
+  handleEditTextClick: WorkspaceCanvasElementsLayerProps["handleEditTextClick"];
+  handleVectorRedraw: WorkspaceCanvasElementsLayerProps["handleVectorRedraw"];
   isTreeConnectionActive: WorkspaceCanvasElementsLayerProps["isTreeConnectionActive"];
   handleTreeConnectionStart: WorkspaceCanvasElementsLayerProps["handleTreeConnectionStart"];
   handleTreeConnectionComplete: WorkspaceCanvasElementsLayerProps["handleTreeConnectionComplete"];
@@ -139,11 +159,21 @@ const WorkspaceCanvasElementItem = memo(
     modelOptions,
     aspectRatios,
     updateSelectedElement,
+    approvedConsistencyAssetIds,
+    currentConsistencyAnchorUrl,
+    onSetCurrentAsAnchor,
+    onPreviewCurrentAnchor,
+    onFastEdit,
+    onOpenUpscalePanel,
+    onRemoveBg,
+    onOpenProductSwapPanel,
     setSelectedElementId,
     setSelectedElementIds,
     handleRefImageUpload,
     handleGenImage,
     setEraserMode,
+    handleEditTextClick,
+    handleVectorRedraw,
     isTreeConnectionActive,
     handleTreeConnectionStart,
     handleTreeConnectionComplete,
@@ -230,10 +260,20 @@ const WorkspaceCanvasElementItem = memo(
           modelOptions={modelOptions}
           aspectRatios={aspectRatios}
           updateSelectedElement={updateSelectedElement}
+          approvedConsistencyAssetIds={approvedConsistencyAssetIds}
+          currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+          onSetCurrentAsAnchor={onSetCurrentAsAnchor}
+          onPreviewCurrentAnchor={onPreviewCurrentAnchor}
+          onFastEdit={onFastEdit}
+          onOpenUpscalePanel={onOpenUpscalePanel}
+          onRemoveBg={onRemoveBg}
+          onOpenProductSwapPanel={onOpenProductSwapPanel}
           onActivateNode={activateNode}
           handleRefImageUpload={handleRefImageUpload}
           handleGenImage={handleGenImage}
           setEraserMode={setEraserMode}
+          handleEditTextClick={handleEditTextClick}
+          handleVectorRedraw={handleVectorRedraw}
           isTreeConnectionActive={isTreeConnectionActive}
           handleTreeConnectionStart={handleTreeConnectionStart}
           handleTreeConnectionComplete={handleTreeConnectionComplete}
@@ -258,11 +298,21 @@ const WorkspaceCanvasElementItem = memo(
     if (prev.modelOptions !== next.modelOptions) return false;
     if (prev.aspectRatios !== next.aspectRatios) return false;
     if (prev.updateSelectedElement !== next.updateSelectedElement) return false;
+    if (prev.approvedConsistencyAssetIds !== next.approvedConsistencyAssetIds) return false;
+    if (prev.currentConsistencyAnchorUrl !== next.currentConsistencyAnchorUrl) return false;
+    if (prev.onSetCurrentAsAnchor !== next.onSetCurrentAsAnchor) return false;
+    if (prev.onPreviewCurrentAnchor !== next.onPreviewCurrentAnchor) return false;
+    if (prev.onFastEdit !== next.onFastEdit) return false;
+    if (prev.onOpenUpscalePanel !== next.onOpenUpscalePanel) return false;
+    if (prev.onRemoveBg !== next.onRemoveBg) return false;
+    if (prev.onOpenProductSwapPanel !== next.onOpenProductSwapPanel) return false;
     if (prev.setSelectedElementId !== next.setSelectedElementId) return false;
     if (prev.setSelectedElementIds !== next.setSelectedElementIds) return false;
     if (prev.handleRefImageUpload !== next.handleRefImageUpload) return false;
     if (prev.handleGenImage !== next.handleGenImage) return false;
     if (prev.setEraserMode !== next.setEraserMode) return false;
+    if (prev.handleEditTextClick !== next.handleEditTextClick) return false;
+    if (prev.handleVectorRedraw !== next.handleVectorRedraw) return false;
     if (prev.isTreeConnectionActive !== next.isTreeConnectionActive) return false;
     if (prev.handleTreeConnectionStart !== next.handleTreeConnectionStart) {
       return false;
@@ -320,11 +370,21 @@ export const WorkspaceCanvasElementsLayer: React.FC<
   modelOptions,
   aspectRatios,
   updateSelectedElement,
+  approvedConsistencyAssetIds,
+  currentConsistencyAnchorUrl,
+  onSetCurrentAsAnchor,
+  onPreviewCurrentAnchor,
+  onFastEdit,
+  onOpenUpscalePanel,
+  onRemoveBg,
+  onOpenProductSwapPanel,
   setSelectedElementId,
   setSelectedElementIds,
   handleRefImageUpload,
   handleGenImage,
   setEraserMode,
+  handleEditTextClick,
+  handleVectorRedraw,
   isTreeConnectionActive,
   handleTreeConnectionStart,
   handleTreeConnectionComplete,
@@ -375,11 +435,21 @@ export const WorkspaceCanvasElementsLayer: React.FC<
             modelOptions={modelOptions}
             aspectRatios={aspectRatios}
             updateSelectedElement={updateSelectedElement}
+            approvedConsistencyAssetIds={approvedConsistencyAssetIds}
+            currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+            onSetCurrentAsAnchor={onSetCurrentAsAnchor}
+            onPreviewCurrentAnchor={onPreviewCurrentAnchor}
+            onFastEdit={onFastEdit}
+            onOpenUpscalePanel={onOpenUpscalePanel}
+            onRemoveBg={onRemoveBg}
+            onOpenProductSwapPanel={onOpenProductSwapPanel}
             setSelectedElementId={setSelectedElementId}
             setSelectedElementIds={setSelectedElementIds}
             handleRefImageUpload={handleRefImageUpload}
             handleGenImage={handleGenImage}
             setEraserMode={setEraserMode}
+            handleEditTextClick={handleEditTextClick}
+            handleVectorRedraw={handleVectorRedraw}
             isTreeConnectionActive={isTreeConnectionActive}
             handleTreeConnectionStart={handleTreeConnectionStart}
             handleTreeConnectionComplete={handleTreeConnectionComplete}

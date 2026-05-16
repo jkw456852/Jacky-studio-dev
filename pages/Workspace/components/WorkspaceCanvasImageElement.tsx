@@ -59,6 +59,14 @@ type WorkspaceCanvasImageElementProps = {
     size: string;
   }>;
   updateSelectedElement: (updates: Partial<CanvasElement>) => void;
+  approvedConsistencyAssetIds: string[];
+  currentConsistencyAnchorUrl: string | null;
+  onSetCurrentAsAnchor: () => void | Promise<void>;
+  onPreviewCurrentAnchor: (anchorUrl: string) => void;
+  onFastEdit: () => void;
+  onOpenUpscalePanel: () => void;
+  onRemoveBg: () => void | Promise<void>;
+  onOpenProductSwapPanel: () => void;
   onActivateNode: (elementId: string) => void;
   handleRefImageUpload: (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -68,6 +76,8 @@ type WorkspaceCanvasImageElementProps = {
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
+  handleEditTextClick: () => void | Promise<void>;
+  handleVectorRedraw: () => void | Promise<void>;
   isTreeConnectionActive: boolean;
   handleTreeConnectionStart: (
     elementId: string,
@@ -512,10 +522,20 @@ const WorkspaceCanvasImageElementImpl: React.FC<
   modelOptions,
   aspectRatios,
   updateSelectedElement,
+  approvedConsistencyAssetIds,
+  currentConsistencyAnchorUrl,
+  onSetCurrentAsAnchor,
+  onPreviewCurrentAnchor,
+  onFastEdit,
+  onOpenUpscalePanel,
+  onRemoveBg,
+  onOpenProductSwapPanel,
   onActivateNode,
   handleRefImageUpload,
   handleGenImage,
   setEraserMode,
+  handleEditTextClick,
+  handleVectorRedraw,
   isTreeConnectionActive,
   handleTreeConnectionStart,
   handleTreeConnectionComplete,
@@ -530,7 +550,14 @@ const WorkspaceCanvasImageElementImpl: React.FC<
   const isTreeImageNode = treeNodeKind === "image";
   const isTreeNode = isTreePromptNode || isTreeImageNode;
   const displayUrl = hasUrl ? getElementDisplayUrl(element) : undefined;
-  const sourceUrl = element.originalUrl || element.url || undefined;
+  const elementSourceUrl = element.originalUrl || element.url || "";
+  const sourceUrl = elementSourceUrl || undefined;
+  const approvedConsistencyAssetIdSet = new Set(approvedConsistencyAssetIds);
+  const isCurrentElementAnchor =
+    approvedConsistencyAssetIdSet.has(element.id) ||
+    (!!elementSourceUrl &&
+      !!currentConsistencyAnchorUrl &&
+      elementSourceUrl === currentConsistencyAnchorUrl);
   const sourceRefUrls =
     element.genRefImages || (element.genRefImage ? [element.genRefImage] : []);
   const previewRefUrls =
@@ -622,7 +649,28 @@ const WorkspaceCanvasImageElementImpl: React.FC<
               displayUrl={displayUrl}
               sourceUrl={sourceUrl}
               timestampLabel={timestampLabel}
+              currentConsistencyAnchorUrl={currentConsistencyAnchorUrl}
+              isCurrentElementAnchor={isCurrentElementAnchor}
+              onSetCurrentAsAnchor={() => {
+                void onSetCurrentAsAnchor();
+              }}
+              onPreviewCurrentAnchor={onPreviewCurrentAnchor}
+              onFastEdit={onFastEdit}
+              onOpenUpscalePanel={onOpenUpscalePanel}
+              onRemoveBg={() => {
+                void onRemoveBg();
+              }}
+              onOpenProductSwapPanel={onOpenProductSwapPanel}
+              onRegenerate={() => {
+                void handleGenImage(element.id);
+              }}
+              onEditText={() => {
+                void handleEditTextClick();
+              }}
               onStartMaskEdit={() => setEraserMode(true)}
+              onVectorRedraw={() => {
+                void handleVectorRedraw();
+              }}
               onDelete={deleteSelectedElement}
               onRetry={() => {
                 void handleGenImage(element.id);
@@ -748,10 +796,20 @@ export const WorkspaceCanvasImageElement = memo(
     prev.modelOptions === next.modelOptions &&
     prev.aspectRatios === next.aspectRatios &&
     prev.updateSelectedElement === next.updateSelectedElement &&
+    prev.approvedConsistencyAssetIds === next.approvedConsistencyAssetIds &&
+    prev.currentConsistencyAnchorUrl === next.currentConsistencyAnchorUrl &&
+    prev.onSetCurrentAsAnchor === next.onSetCurrentAsAnchor &&
+    prev.onPreviewCurrentAnchor === next.onPreviewCurrentAnchor &&
+    prev.onFastEdit === next.onFastEdit &&
+    prev.onOpenUpscalePanel === next.onOpenUpscalePanel &&
+    prev.onRemoveBg === next.onRemoveBg &&
+    prev.onOpenProductSwapPanel === next.onOpenProductSwapPanel &&
     prev.onActivateNode === next.onActivateNode &&
     prev.handleRefImageUpload === next.handleRefImageUpload &&
     prev.handleGenImage === next.handleGenImage &&
     prev.setEraserMode === next.setEraserMode &&
+    prev.handleEditTextClick === next.handleEditTextClick &&
+    prev.handleVectorRedraw === next.handleVectorRedraw &&
     prev.isTreeConnectionActive === next.isTreeConnectionActive &&
     prev.handleTreeConnectionStart === next.handleTreeConnectionStart &&
     prev.handleTreeConnectionComplete === next.handleTreeConnectionComplete &&

@@ -552,11 +552,12 @@ export const WorkspaceImageSideToolbar: React.FC<
 
         <button
           onClick={handleEditTextClick}
+          title="OCR 改字"
           className={`w-full flex items-center gap-2.5 px-2 py-1.5 text-gray-600 hover:bg-gray-50 rounded-[10px] transition-colors ${toolbarExpanded ? "" : "justify-center"}`}
         >
           <Type size={16} strokeWidth={2} className="flex-shrink-0" />
           {toolbarExpanded && (
-            <span className="text-[13px] whitespace-nowrap">编辑文字</span>
+            <span className="text-[13px] whitespace-nowrap">OCR 改字</span>
           )}
         </button>
 
@@ -602,13 +603,14 @@ export const WorkspaceImageSideToolbar: React.FC<
 
         <button
           onClick={handleVectorRedraw}
+          title="局部重绘"
           className={`w-full flex items-center gap-2.5 px-2 py-1.5 text-gray-600 hover:bg-gray-50 rounded-[10px] transition-colors relative ${toolbarExpanded ? "" : "justify-center"}`}
         >
           <div className="relative flex-shrink-0">
             <Scaling size={16} strokeWidth={2} />
           </div>
           {toolbarExpanded && (
-            <span className="text-[13px] whitespace-nowrap">矢量</span>
+            <span className="text-[13px] whitespace-nowrap">局部重绘</span>
           )}
         </button>
 
