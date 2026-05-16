@@ -1,6 +1,7 @@
 import React from "react";
 import type {
   CanvasElement,
+  ImageTextEditBlock,
   InputBlock,
   WorkspaceNodeInteractionMode,
 } from "../../../types";
@@ -109,8 +110,8 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   handleTreeConnectionComplete: (elementId: string) => void;
   handleTreeConnectionDisconnect: (parentId: string, childId: string) => void;
   showTextEditModal: boolean;
-  detectedTexts: string[];
-  editedTexts: string[];
+  detectedTexts: ImageTextEditBlock[];
+  editedTexts: ImageTextEditBlock[];
   setEditedTexts: WorkspaceImageToolbarProps["setEditedTexts"];
   setShowTextEditModal: React.Dispatch<React.SetStateAction<boolean>>;
   handleApplyTextEdits: WorkspaceImageToolbarProps["handleApplyTextEdits"];

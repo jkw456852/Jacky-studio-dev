@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import { extractTextFromImage, generateImage } from "../../../services/gemini";
 import type { ImageGenerationConfig } from "../../../services/gemini";
 import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
-import type { CanvasElement } from "../../../types";
+import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
 
 type UseWorkspaceElementEditActionsOptions = {
   selectedElementId: string | null;
@@ -43,10 +43,10 @@ type UseWorkspaceElementEditActionsOptions = {
   ) => Promise<string>;
   loadElementSourceSize: (element: CanvasElement) => Promise<{ width: number; height: number }>;
   getNearestAspectRatio: (width: number, height: number) => string;
-  detectedTexts: string[];
-  editedTexts: string[];
-  setDetectedTexts: Dispatch<SetStateAction<string[]>>;
-  setEditedTexts: Dispatch<SetStateAction<string[]>>;
+  detectedTexts: ImageTextEditBlock[];
+  editedTexts: ImageTextEditBlock[];
+  setDetectedTexts: Dispatch<SetStateAction<ImageTextEditBlock[]>>;
+  setEditedTexts: Dispatch<SetStateAction<ImageTextEditBlock[]>>;
   setShowTextEditModal: Dispatch<SetStateAction<boolean>>;
   setIsExtractingText: Dispatch<SetStateAction<boolean>>;
   fastEditPrompt: string;
@@ -85,18 +85,15 @@ export function useWorkspaceElementEditActions(
   const resolveImageModel = useCallback(
     (element: CanvasElement): ImageGenerationConfig["model"] => {
       const model = element.genModel;
-      return model === "Nano Banana Pro" ||
-        model === "NanoBanana2" ||
-        model === "Seedream5.0" ||
-        model === "GPT Image 2" ||
-        model === "gpt-image-2" ||
-        model === "GPT Image 2 All" ||
-        model === "gpt-image-2-all" ||
-        model === "GPT Image 1.5" ||
-        model === "gpt-image-1.5-all" ||
-        model === "Flux.2 Max"
-        ? model
-        : "Nano Banana Pro";
+      if (model === "Nano Banana Pro") return "Nano Banana Pro";
+      if (model === "NanoBanana2" || model === "Nano Banana 2") return "NanoBanana2";
+      if (model === "Seedream5.0" || model === "Seedream 5.0") return "Seedream5.0";
+      if (model === "Seedream 4") return "Seedream 4";
+      if (model === "GPT Image 2" || model === "gpt-image-2") return "gpt-image-2";
+      if (model === "GPT Image 2 All" || model === "gpt-image-2-all") return "gpt-image-2";
+      if (model === "GPT Image 1.5" || model === "gpt-image-1.5-all") return "gpt-image-1.5-all";
+      if (model === "Flux.2 Max") return "Flux.2 Max";
+      return "Nano Banana Pro";
     },
     [],
   );
@@ -106,18 +103,105 @@ export function useWorkspaceElementEditActions(
     if (model === "Nano Banana Pro") return "gemini-3-pro-image-preview";
     if (model === "NanoBanana2") return "gemini-3.1-flash-image-preview";
     if (model === "Seedream5.0") return "doubao-seedream-5-0-260128";
-    if (
-      model === "GPT Image 2" ||
-      model === "gpt-image-2" ||
-      model === "GPT Image 2 All" ||
-      model === "gpt-image-2-all"
-    ) {
-      return "gpt-image-2";
-    }
+    if (model === "gpt-image-2") return "gpt-image-2";
     if (model === "GPT Image 1.5" || model === "gpt-image-1.5-all") return "gpt-image-1.5-all";
     if (model === "Flux.2 Max") return "flux-pro-max";
     return String(model);
   }, [resolveImageModel]);
+
+  const cloneTextEditBlock = (block: ImageTextEditBlock): ImageTextEditBlock => ({
+    ...block,
+    box: { ...block.box },
+  });
+
+  const buildEditableTextBlocks = (blocks: ImageTextBlock[]): ImageTextEditBlock[] =>
+    blocks.map((block, index) => ({
+      ...block,
+      id: block.id || `text-block-${index + 1}`,
+      box: { ...block.box },
+      editedText: block.text,
+      isChanged: false,
+    }));
+
+  const hasUsableTextBox = (block: Pick<ImageTextBlock, "box">): boolean =>
+    Number(block.box?.width) > 0 && Number(block.box?.height) > 0;
+
+  type TextMaskMode = "bw" | "alpha";
+
+  const resolveTextMaskMode = (element: CanvasElement): TextMaskMode => {
+    const model = String(resolveImageModel(element) || "").toLowerCase();
+    return model.includes("gpt-image") ? "alpha" : "bw";
+  };
+
+  const buildTextMaskDataUrl = (
+    width: number,
+    height: number,
+    blocks: ImageTextEditBlock[],
+    mode: TextMaskMode,
+  ): string => {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("无法创建文字蒙版");
+    }
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (mode === "alpha") {
+      context.fillStyle = "rgba(0, 0, 0, 1)";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      context.fillStyle = "#000000";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#FFFFFF";
+    }
+
+    blocks.forEach((block) => {
+      const paddingX = Math.max(8, Math.round(block.box.height * 0.24));
+      const paddingY = Math.max(6, Math.round(block.box.height * 0.18));
+      const x = Math.max(0, Math.round(block.box.x - paddingX));
+      const y = Math.max(0, Math.round(block.box.y - paddingY));
+      const right = Math.min(
+        canvas.width,
+        Math.round(block.box.x + block.box.width + paddingX),
+      );
+      const bottom = Math.min(
+        canvas.height,
+        Math.round(block.box.y + block.box.height + paddingY),
+      );
+      const boxWidth = Math.max(1, right - x);
+      const boxHeight = Math.max(1, bottom - y);
+      const radius = Math.min(12, Math.max(4, Math.round(boxHeight * 0.2)));
+
+      context.beginPath();
+      context.moveTo(x + radius, y);
+      context.lineTo(x + boxWidth - radius, y);
+      context.quadraticCurveTo(x + boxWidth, y, x + boxWidth, y + radius);
+      context.lineTo(x + boxWidth, y + boxHeight - radius);
+      context.quadraticCurveTo(
+        x + boxWidth,
+        y + boxHeight,
+        x + boxWidth - radius,
+        y + boxHeight,
+      );
+      context.lineTo(x + radius, y + boxHeight);
+      context.quadraticCurveTo(x, y + boxHeight, x, y + boxHeight - radius);
+      context.lineTo(x, y + radius);
+      context.quadraticCurveTo(x, y, x + radius, y);
+      context.closePath();
+      if (mode === "alpha") {
+        context.save();
+        context.globalCompositeOperation = "destination-out";
+        context.fill();
+        context.restore();
+      } else {
+        context.fill();
+      }
+    });
+
+    return canvas.toDataURL("image/png");
+  };
 
   const appendTemporaryClone = useCallback(
     (
@@ -261,8 +345,9 @@ export function useWorkspaceElementEditActions(
     try {
       const base64Ref = await urlToBase64(element.url);
       const extractedTexts = await extractTextFromImage(base64Ref);
-      setDetectedTexts(extractedTexts);
-      setEditedTexts([...extractedTexts]);
+      const editableTexts = buildEditableTextBlocks(extractedTexts);
+      setDetectedTexts(editableTexts.map(cloneTextEditBlock));
+      setEditedTexts(editableTexts.map(cloneTextEditBlock));
       setShowTextEditModal(true);
     } catch (error) {
       console.error("Text extraction failed", error);
@@ -284,21 +369,32 @@ export function useWorkspaceElementEditActions(
     const element = elementsRef.current.find((item) => item.id === selectedElementId);
     if (!element || !element.url) return;
 
-    const changes: string[] = [];
-    for (let index = 0; index < detectedTexts.length; index++) {
-      if (detectedTexts[index] !== editedTexts[index]) {
-        changes.push(
-          `Replace text "${detectedTexts[index]}" with "${editedTexts[index]}"`,
-        );
+    const changedBlocks: ImageTextEditBlock[] = [];
+    editedTexts.forEach((block, index) => {
+      const original = detectedTexts[index];
+      if (!original) return;
+      const editedText = String(block.editedText ?? original.text ?? "").trim();
+      if (!editedText || editedText === original.text) {
+        return;
       }
-    }
+      changedBlocks.push({
+        ...block,
+        text: original.text,
+        editedText,
+        box: { ...block.box },
+        isChanged: true,
+      });
+    });
 
-    if (changes.length === 0) return;
+    if (changedBlocks.length === 0) return;
 
+    const changes = changedBlocks.map(
+      (block) => `Replace text "${block.text}" with "${block.editedText}"`,
+    );
     const editPrompt =
-      "Edit the text in the image. " +
+      "Edit only the text inside the masked area. " +
       changes.join(". ") +
-      ". Maintain the original font style, size, color and layout as much as possible. Keep the background and all other elements identical.";
+      ". Match the original font family, weight, size, color, effects, spacing, alignment, perspective and layout as closely as possible. Keep all unmasked regions unchanged.";
 
     setShowTextEditModal(false);
 
@@ -307,6 +403,7 @@ export function useWorkspaceElementEditActions(
       sourceSize.width,
       sourceSize.height,
     );
+    const maskMode = resolveTextMaskMode(element);
     const { newId } = appendTemporaryClone(
       element,
       "text-edit",
@@ -316,17 +413,53 @@ export function useWorkspaceElementEditActions(
 
     try {
       const base64Ref = await urlToBase64(element.url);
+      const maskedBlocks = changedBlocks.filter(hasUsableTextBox);
       await persistEditSession("text-edit", element, {
         instruction: editPrompt,
-        constraints: ["Edit only the text in the image", "Keep font style, layout, and background as stable as possible"],
+        constraints: maskedBlocks.length > 0
+          ? [
+              maskMode === "alpha"
+                ? "Edit only the transparent masked text regions"
+                : "Edit only the white masked text regions",
+              "Keep all unmasked regions unchanged",
+              "Maintain original typography and layout as much as possible",
+            ]
+          : [
+              "Edit only the text in the image",
+              "Keep font style, layout, and background as stable as possible",
+            ],
       });
-      const resultUrl = await generateImage({
-        prompt: editPrompt,
-        model: resolveImageModel(element),
-        providerId: element.genProviderId,
-        aspectRatio: targetAspectRatio,
-        referenceImage: base64Ref,
-      });
+
+      let resultUrl: string | null;
+      if (maskedBlocks.length > 0) {
+        const maskImage = buildTextMaskDataUrl(
+          sourceSize.width,
+          sourceSize.height,
+          maskedBlocks,
+          maskMode,
+        );
+        resultUrl = await smartEditSkill({
+          sourceUrl: base64Ref,
+          maskImage,
+          editType: "object-remove",
+          parameters: {
+            prompt: editPrompt,
+            preservePrompt:
+              "Preserve all unmasked areas exactly. In the masked area only, replace the original text with the requested new text while matching the original typography, lighting, texture, color and blending.",
+            editModel: resolveEditModelId(element),
+            providerId: element.genProviderId,
+            aspectRatio: targetAspectRatio,
+          },
+        });
+      } else {
+        resultUrl = await generateImage({
+          prompt: editPrompt,
+          model: resolveImageModel(element),
+          providerId: element.genProviderId,
+          aspectRatio: targetAspectRatio,
+          referenceImage: base64Ref,
+        });
+      }
 
       if (!resultUrl) {
         throw new Error("No result");
@@ -335,16 +468,39 @@ export function useWorkspaceElementEditActions(
       const finalUrl = await retryWithConsistencyFix(
         "Text edit result",
         resultUrl,
-        async (fixPrompt?: string) =>
-          generateImage({
-            prompt: fixPrompt
-              ? `${editPrompt}\n\nConsistency fix: ${fixPrompt}`
-              : editPrompt,
+        async (fixPrompt?: string) => {
+          const nextPrompt = fixPrompt
+            ? `${editPrompt}\n\nConsistency fix: ${fixPrompt}`
+            : editPrompt;
+          if (maskedBlocks.length > 0) {
+            const maskImage = buildTextMaskDataUrl(
+              sourceSize.width,
+              sourceSize.height,
+              maskedBlocks,
+              maskMode,
+            );
+            return smartEditSkill({
+              sourceUrl: base64Ref,
+              maskImage,
+              editType: "object-remove",
+              parameters: {
+                prompt: nextPrompt,
+                preservePrompt:
+                  "Preserve all unmasked areas exactly. In the masked area only, replace the original text with the requested new text while matching the original typography, lighting, texture, color and blending.",
+                editModel: resolveEditModelId(element),
+                providerId: element.genProviderId,
+                aspectRatio: targetAspectRatio,
+              },
+            });
+          }
+          return generateImage({
+            prompt: nextPrompt,
             model: resolveImageModel(element),
             providerId: element.genProviderId,
             aspectRatio: targetAspectRatio,
             referenceImage: base64Ref,
-          }),
+          });
+        },
         undefined,
         editPrompt,
         1,
@@ -365,6 +521,7 @@ export function useWorkspaceElementEditActions(
     loadElementSourceSize,
     persistEditSession,
     removeTemporaryElement,
+    resolveEditModelId,
     resolveImageModel,
     retryWithConsistencyFix,
     selectedElementId,

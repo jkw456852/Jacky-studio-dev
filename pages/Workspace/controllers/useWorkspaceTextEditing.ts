@@ -2,7 +2,7 @@ import { useCallback, type MutableRefObject } from "react";
 import { extractTextFromImage, generateImage } from "../../../services/gemini";
 import type { ImageGenerationConfig } from "../../../services/gemini";
 import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
-import type { CanvasElement } from "../../../types";
+import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
 import type { DesignTaskMode } from "../../../types/common";
 
 type PersistEditDetails = {
@@ -15,16 +15,16 @@ type PersistEditDetails = {
 
 type UseWorkspaceTextEditingOptions = {
   selectedElementId: string | null;
-  detectedTexts: string[];
-  editedTexts: string[];
+  detectedTexts: ImageTextEditBlock[];
+  editedTexts: ImageTextEditBlock[];
   fastEditPrompt: string;
   elementsRef: MutableRefObject<CanvasElement[]>;
   setElementsSynced: (nextElements: CanvasElement[]) => void;
   setSelectedElementId: (id: string | null) => void;
   setShowTextEditModal: (show: boolean) => void;
   setIsExtractingText: (value: boolean) => void;
-  setDetectedTexts: (texts: string[]) => void;
-  setEditedTexts: (texts: string[]) => void;
+  setDetectedTexts: (texts: ImageTextEditBlock[]) => void;
+  setEditedTexts: (texts: ImageTextEditBlock[]) => void;
   setShowFastEdit: (show: boolean) => void;
   setFastEditPrompt: (value: string) => void;
   urlToBase64: (url: string) => Promise<string>;
@@ -79,18 +79,15 @@ export function useWorkspaceTextEditing(options: UseWorkspaceTextEditingOptions)
   const resolveImageModel = useCallback(
     (element: CanvasElement): ImageGenerationConfig["model"] => {
       const model = element.genModel;
-      return model === "Nano Banana Pro" ||
-        model === "NanoBanana2" ||
-        model === "Seedream5.0" ||
-        model === "GPT Image 2" ||
-        model === "gpt-image-2" ||
-        model === "GPT Image 2 All" ||
-        model === "gpt-image-2-all" ||
-        model === "GPT Image 1.5" ||
-        model === "gpt-image-1.5-all" ||
-        model === "Flux.2 Max"
-        ? model
-        : "Nano Banana Pro";
+      if (model === "Nano Banana Pro") return "Nano Banana Pro";
+      if (model === "NanoBanana2" || model === "Nano Banana 2") return "NanoBanana2";
+      if (model === "Seedream5.0" || model === "Seedream 5.0") return "Seedream5.0";
+      if (model === "Seedream 4") return "Seedream 4";
+      if (model === "GPT Image 2" || model === "gpt-image-2") return "gpt-image-2";
+      if (model === "GPT Image 2 All" || model === "gpt-image-2-all") return "gpt-image-2";
+      if (model === "GPT Image 1.5" || model === "gpt-image-1.5-all") return "gpt-image-1.5-all";
+      if (model === "Flux.2 Max") return "Flux.2 Max";
+      return "Nano Banana Pro";
     },
     [],
   );
@@ -100,18 +97,20 @@ export function useWorkspaceTextEditing(options: UseWorkspaceTextEditingOptions)
     if (model === "Nano Banana Pro") return "gemini-3-pro-image-preview";
     if (model === "NanoBanana2") return "gemini-3.1-flash-image-preview";
     if (model === "Seedream5.0") return "doubao-seedream-5-0-260128";
-    if (
-      model === "GPT Image 2" ||
-      model === "gpt-image-2" ||
-      model === "GPT Image 2 All" ||
-      model === "gpt-image-2-all"
-    ) {
-      return "gpt-image-2";
-    }
+    if (model === "gpt-image-2") return "gpt-image-2";
     if (model === "GPT Image 1.5" || model === "gpt-image-1.5-all") return "gpt-image-1.5-all";
     if (model === "Flux.2 Max") return "flux-pro-max";
     return String(model);
   }, [resolveImageModel]);
+
+  const buildEditableTextBlocks = (blocks: ImageTextBlock[]): ImageTextEditBlock[] =>
+    blocks.map((block, index) => ({
+      ...block,
+      id: block.id || `text-block-${index + 1}`,
+      box: { ...block.box },
+      editedText: block.text,
+      isChanged: false,
+    }));
 
   const handleEditTextClick = useCallback(async () => {
     if (!selectedElementId) return;
@@ -122,8 +121,9 @@ export function useWorkspaceTextEditing(options: UseWorkspaceTextEditingOptions)
     try {
       const base64Ref = await urlToBase64(el.url);
       const extractedTexts = await extractTextFromImage(base64Ref);
-      setDetectedTexts(extractedTexts);
-      setEditedTexts([...extractedTexts]);
+      const editableTexts = buildEditableTextBlocks(extractedTexts);
+      setDetectedTexts(editableTexts);
+      setEditedTexts(editableTexts.map((item) => ({ ...item, box: { ...item.box } })));
       setShowTextEditModal(true);
     } catch (error) {
       console.error("Text extraction failed", error);
@@ -148,11 +148,12 @@ export function useWorkspaceTextEditing(options: UseWorkspaceTextEditingOptions)
     let editPrompt = "Edit the text in the image. ";
     const changes: string[] = [];
     for (let index = 0; index < detectedTexts.length; index++) {
-      if (detectedTexts[index] !== editedTexts[index]) {
-        changes.push(
-          `Replace text "${detectedTexts[index]}" with "${editedTexts[index]}"`,
-        );
-      }
+      const original = detectedTexts[index];
+      const edited = editedTexts[index];
+      if (!original || !edited) continue;
+      const nextText = String(edited.editedText ?? original.text ?? "").trim();
+      if (!nextText || nextText === original.text) continue;
+      changes.push(`Replace text "${original.text}" with "${nextText}"`);
     }
 
     if (changes.length === 0) {

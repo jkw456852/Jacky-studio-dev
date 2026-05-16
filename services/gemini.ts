@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Chat, GenerateContentResponse, Part, Content, Type } from "@google/genai";
+import type { ImageTextBlock } from '../types';
 import { ProviderError } from '../utils/provider-error';
 import { fetchWithResilience } from './http/api-client';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
@@ -2087,10 +2088,10 @@ export const sendMessage = async (
                     }
                     return null;
                 })
-                .filter(Boolean);
+                .filter((item): item is string => Boolean(item));
 
             if (sources.length > 0) {
-                text += `\n\n**Sources:**\n${sources.map((s: string) => `- ${s}`).join('\n')}`;
+                text += `\n\n**Sources:**\n${sources.map((s) => `- ${s}`).join('\n')}`;
             }
         }
 
@@ -2167,7 +2168,67 @@ export const refineImagePrompt = async (imageBase64: string, frameworkPrompt: st
     }
 };
 
-export const extractTextFromImage = async (imageBase64: string): Promise<string[]> => {
+const normalizeImageTextBlockNumber = (value: unknown): number => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const normalizeImageTextBlocks = (value: unknown): ImageTextBlock[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value
+        .map((item, index): ImageTextBlock | null => {
+            if (typeof item === 'string') {
+                const text = item.trim();
+                if (!text) return null;
+                return {
+                    id: `text-block-${index + 1}`,
+                    text,
+                    box: {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                    order: index,
+                };
+            }
+
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+
+            const raw = item as Record<string, unknown>;
+            const text = String(raw.text || '').trim();
+            if (!text) {
+                return null;
+            }
+
+            const rawBox = raw.box && typeof raw.box === 'object'
+                ? raw.box as Record<string, unknown>
+                : {};
+
+            return {
+                id: String(raw.id || `text-block-${index + 1}`),
+                text,
+                box: {
+                    x: normalizeImageTextBlockNumber(rawBox.x),
+                    y: normalizeImageTextBlockNumber(rawBox.y),
+                    width: normalizeImageTextBlockNumber(rawBox.width),
+                    height: normalizeImageTextBlockNumber(rawBox.height),
+                },
+                confidence: raw.confidence === undefined ? undefined : normalizeImageTextBlockNumber(raw.confidence),
+                angle: raw.angle === undefined ? undefined : normalizeImageTextBlockNumber(raw.angle),
+                lineIndex: raw.lineIndex === undefined ? undefined : Math.round(normalizeImageTextBlockNumber(raw.lineIndex)),
+                order: raw.order === undefined ? index : Math.round(normalizeImageTextBlockNumber(raw.order)),
+            };
+        })
+        .filter((item): item is ImageTextBlock => Boolean(item));
+};
+
+export const extractTextFromImage = async (imageBase64: string): Promise<ImageTextBlock[]> => {
     try {
         const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
         if (!matches) throw new Error("Invalid base64 image");
@@ -2183,7 +2244,8 @@ export const extractTextFromImage = async (imageBase64: string): Promise<string[
                         }
                     },
                     {
-                        text: "Identify all the visible text in this image. Return the result as a JSON array of strings. If there is no text, return an empty array."
+                        text:
+                            "Identify all visible text blocks in this image. Return a JSON array. Each item must contain: id, text, box{x,y,width,height}, confidence, angle, lineIndex, order. Coordinates must be pixel values relative to the original image. Group words into practical editable text blocks. If there is no text, return an empty array."
                     }
                 ]
             },
@@ -2191,13 +2253,34 @@ export const extractTextFromImage = async (imageBase64: string): Promise<string[
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.ARRAY,
-                    items: { type: Type.STRING }
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.STRING },
+                            text: { type: Type.STRING },
+                            box: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    x: { type: Type.NUMBER },
+                                    y: { type: Type.NUMBER },
+                                    width: { type: Type.NUMBER },
+                                    height: { type: Type.NUMBER },
+                                },
+                                required: ["x", "y", "width", "height"],
+                            },
+                            confidence: { type: Type.NUMBER },
+                            angle: { type: Type.NUMBER },
+                            lineIndex: { type: Type.NUMBER },
+                            order: { type: Type.NUMBER },
+                        },
+                        required: ["text", "box"],
+                    }
                 }
             }
         }));
 
         if (response.text) {
-            return JSON.parse(response.text);
+            return normalizeImageTextBlocks(JSON.parse(response.text));
         }
         return [];
     } catch (error) {

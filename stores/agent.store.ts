@@ -8,7 +8,15 @@ import {
   RoleGovernanceMode,
   RoleSource,
 } from '../types/agent.types';
-import { CanvasElement, ChatMessage, InputBlock, ImageModel, VideoModel, WorkspaceInputFile } from '../types';
+import {
+  CanvasElement,
+  ChatMessage,
+  ImageModel,
+  ImageTextEditBlock,
+  InputBlock,
+  VideoModel,
+  WorkspaceInputFile,
+} from '../types';
 
 type VideoGenDuration = NonNullable<CanvasElement['genDuration']>;
 type VideoGenQuality = NonNullable<CanvasElement['genQuality']>;
@@ -233,8 +241,8 @@ interface AgentState {
   generation: AgentGenerationState;
 
   // 文本编辑
-  detectedTexts: string[];
-  editedTexts: string[];
+  detectedTexts: ImageTextEditBlock[];
+  editedTexts: ImageTextEditBlock[];
   isExtractingText: boolean;
 
   // 快捷编辑
@@ -309,8 +317,8 @@ interface AgentState {
     setVideoMultiRefs: (refs: File[]) => void;
     setShowVideoModelDropdown: (show: boolean) => void;
 
-    setDetectedTexts: (texts: string[]) => void;
-    setEditedTexts: (texts: string[]) => void;
+    setDetectedTexts: (texts: ImageTextEditBlock[]) => void;
+    setEditedTexts: (texts: ImageTextEditBlock[]) => void;
     setIsExtractingText: (extracting: boolean) => void;
 
     setFastEditPrompt: (prompt: string) => void;

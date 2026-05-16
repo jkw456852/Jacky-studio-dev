@@ -5,6 +5,28 @@ export type CnDetailPromptVersion = 'original' | 'new';
 export type CnDetailTextMode = 'auto' | 'withText' | 'noText';
 export type CnDetailRatioMode = 'adaptive' | 'fixed';
 
+export interface ImageTextBlockBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageTextBlock {
+  id: string;
+  text: string;
+  box: ImageTextBlockBox;
+  confidence?: number;
+  angle?: number;
+  lineIndex?: number;
+  order?: number;
+}
+
+export interface ImageTextEditBlock extends ImageTextBlock {
+  editedText: string;
+  isChanged?: boolean;
+}
+
 export type CnDetailRetryPolicy = {
   maxRetriesPerShot?: number;
   tiers?: Array<{
@@ -178,7 +200,7 @@ export interface CanvasElement {
   genVisualPlanningCacheKey?: string;
   genVisualPlanningCachePayload?: string;
   genVisualPlanningCacheCreatedAt?: number;
-  detectedTexts?: { original: string, edited?: string }[];
+  detectedTexts?: ImageTextEditBlock[];
 
   // Image Gen Reference
   genRefImage?: string;

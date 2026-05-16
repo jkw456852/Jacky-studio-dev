@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import ReactDOM from "react-dom";
-import type { CanvasElement } from "../../../types";
+import type { CanvasElement, ImageTextEditBlock } from "../../../types";
 import { WorkspaceImageConfigPanel } from "./WorkspaceImageConfigPanel";
 import { WorkspaceImageTextEditModal } from "./WorkspaceImageTextEditModal";
 import { WorkspaceImageEraserOverlay } from "./WorkspaceImageEraserOverlay";
@@ -63,10 +63,10 @@ type WorkspaceImageToolbarProps = {
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
   showTextEditModal: boolean;
-  detectedTexts: string[];
-  editedTexts: string[];
+  detectedTexts: ImageTextEditBlock[];
+  editedTexts: ImageTextEditBlock[];
   isExtractingText: boolean;
-  setEditedTexts: (texts: string[]) => void;
+  setEditedTexts: (texts: ImageTextEditBlock[]) => void;
   setShowTextEditModal: React.Dispatch<React.SetStateAction<boolean>>;
   handleApplyTextEdits: () => void | Promise<void>;
   eraserMode: boolean;
@@ -396,6 +396,9 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
             detectedTexts={detectedTexts}
             editedTexts={editedTexts}
             isExtractingText={isExtractingText}
+            modelOptions={modelOptions}
+            currentModel={selectedElement?.genModel ?? null}
+            onModelChange={(model) => updateSelectedElement({ genModel: model })}
             setEditedTexts={setEditedTexts}
             onClose={() => setShowTextEditModal(false)}
             onApply={handleApplyTextEdits}
