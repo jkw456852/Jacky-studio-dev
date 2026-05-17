@@ -15,6 +15,8 @@ import {
     getOfficialGptImage2Size,
     getNormalizedAspectRatioForImageModel,
     isGptImage2FamilyModel,
+    normalizeWorkspaceImageSize,
+    parseImageSizeString,
 } from './openai-image-presets';
 
 const isNetworkFetchError = (error: unknown): boolean => {
@@ -2337,6 +2339,7 @@ export interface ImageGenerationConfig {
         | 'Flux.2 Max';
     aspectRatio: string;
     imageSize?: '1K' | '2K' | '4K';
+    exactSize?: string;
     imageQuality?: 'low' | 'medium' | 'high';
     providerId?: string | null;
     disableTransportRetries?: boolean;
@@ -2801,7 +2804,14 @@ const resolveOpenAIImageSize = (
     model: string,
     aspectRatio: string,
     imageSize?: '1K' | '2K' | '4K',
+    exactSize?: string,
 ): string => {
+    const parsedExactSize = parseImageSizeString(exactSize);
+    if (parsedExactSize) {
+        const normalized = normalizeWorkspaceImageSize(parsedExactSize);
+        return `${normalized.width}x${normalized.height}`;
+    }
+
     const ratio = normalizeOpenAIImageAspectRatio(model, aspectRatio);
     const preset = imageSize || '1K';
     const requestMode = getOpenAIImageRequestMode(model, preset);
@@ -3057,6 +3067,7 @@ const requestOpenAICompatibleImage = async (opts: {
     prompt: string;
     aspectRatio: string;
     imageSize?: '1K' | '2K' | '4K';
+    exactSize?: string;
     imageQuality?: 'low' | 'medium' | 'high';
     disableTransportRetries?: boolean;
     referenceImages?: string[];
@@ -3101,8 +3112,10 @@ const requestOpenAICompatibleImage = async (opts: {
             hasReferences: isEditRequest,
         });
     const requestMode = getOpenAIImageRequestMode(opts.model, opts.imageSize);
-    const size = resolveOpenAIImageSize(opts.model, opts.aspectRatio, opts.imageSize);
-    const normalizedAspectRatio = normalizeOpenAIImageAspectRatio(opts.model, opts.aspectRatio);
+    const size = resolveOpenAIImageSize(opts.model, opts.aspectRatio, opts.imageSize, opts.exactSize);
+    const normalizedAspectRatio = opts.exactSize
+        ? null
+        : normalizeOpenAIImageAspectRatio(opts.model, opts.aspectRatio);
     const requestTuning = getOpenAIImageRequestTuning(isEditRequest ? 'edit' : 'generate', requestMode, {
         disableTransportRetries: opts.disableTransportRetries,
     });
@@ -3150,6 +3163,7 @@ const requestOpenAICompatibleImage = async (opts: {
             disableTransportRetries: opts.disableTransportRetries === true,
             aspectRatio: opts.aspectRatio,
             imageSize: opts.imageSize || '1K',
+            exactSize: opts.exactSize || null,
             imageQuality: opts.imageQuality || 'medium',
             size,
             providerId: provider.id || opts.providerId || null,
@@ -3214,7 +3228,7 @@ const requestOpenAICompatibleImage = async (opts: {
             prompt: opts.prompt,
             size,
             quality: opts.imageQuality,
-            aspect_ratio: normalizedAspectRatio,
+            ...(normalizedAspectRatio ? { aspect_ratio: normalizedAspectRatio } : {}),
         },
         opts.contextTag,
         requestTuningWithFingerprint,
@@ -3556,6 +3570,12 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     const openAIImageRequestMode = useOpenAIImageRoute
         ? getOpenAIImageRequestMode(targetModelId, config.imageSize)
         : null;
+    const normalizedExactSize = (() => {
+        const parsed = parseImageSizeString(config.exactSize);
+        if (!parsed) return null;
+        const normalized = normalizeWorkspaceImageSize(parsed);
+        return `${normalized.width}x${normalized.height}`;
+    })();
 
     console.info('[imggen] route decision', {
         requestedModel,
@@ -3570,6 +3590,7 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
         hiddenConstraintsDisabled: shouldDisableHiddenConstraints,
         hasMask: !!config.maskImage,
         imageSize: config.imageSize || '1K',
+        exactSize: normalizedExactSize,
         aspectRatio: validAspectRatio,
         useOpenAIImageRoute,
     });
@@ -3581,6 +3602,7 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
             prompt: finalPrompt,
             aspectRatio: validAspectRatio,
             imageSize: config.imageSize,
+            exactSize: normalizedExactSize || undefined,
             imageQuality: config.imageQuality,
             disableTransportRetries: config.disableTransportRetries,
             referenceImages: references,

@@ -4,6 +4,22 @@ export type WorkspaceImageResolutionPreset =
   (typeof WORKSPACE_IMAGE_RESOLUTION_PRESETS)[number];
 
 export type WorkspaceImageSupportStatus = "normal" | "warning" | "disabled";
+export type WorkspaceImageSizeMode = "preset" | "custom" | "auto";
+
+export const WORKSPACE_IMAGE_SIZE_MULTIPLE = 16;
+export const WORKSPACE_IMAGE_MIN_EDGE = 16;
+export const WORKSPACE_IMAGE_MAX_EDGE = 3840;
+export const WORKSPACE_IMAGE_MIN_PIXELS = 655360;
+export const WORKSPACE_IMAGE_MAX_PIXELS = 8294400;
+
+export type WorkspaceNormalizedImageSize = {
+  width: number;
+  height: number;
+  size: string;
+  aspectRatio: string;
+  adjusted: boolean;
+  reasons: string[];
+};
 
 export const WORKSPACE_IMAGE_ASPECT_RATIO_VALUES = [
   "8:1",
@@ -111,6 +127,261 @@ const OFFICIAL_GPT_IMAGE_2_ASPECT_RATIOS = Object.keys(
   GPT_IMAGE_2_OFFICIAL_SIZE_MAP["1K"],
 );
 
+const clampDimensionToWorkspaceLimit = (value: number): number =>
+  Math.max(
+    WORKSPACE_IMAGE_MIN_EDGE,
+    Math.min(WORKSPACE_IMAGE_MAX_EDGE, Math.round(value)),
+  );
+
+const snapDimensionToMultiple = (value: number): number => {
+  const snapped =
+    Math.round(value / WORKSPACE_IMAGE_SIZE_MULTIPLE) *
+    WORKSPACE_IMAGE_SIZE_MULTIPLE;
+  return Math.max(WORKSPACE_IMAGE_MIN_EDGE, snapped);
+};
+
+const gcd = (a: number, b: number): number => {
+  let left = Math.abs(Math.round(a));
+  let right = Math.abs(Math.round(b));
+  while (right !== 0) {
+    const next = left % right;
+    left = right;
+    right = next;
+  }
+  return Math.max(1, left);
+};
+
+const formatAspectRatioFromDimensions = (width: number, height: number): string => {
+  const safeWidth = Math.max(1, Math.round(width));
+  const safeHeight = Math.max(1, Math.round(height));
+  const divisor = gcd(safeWidth, safeHeight);
+  return `${safeWidth / divisor}:${safeHeight / divisor}`;
+};
+
+const normalizeWorkspaceImagePair = (
+  widthInput: number,
+  heightInput: number,
+): { width: number; height: number } => {
+  let width = snapDimensionToMultiple(clampDimensionToWorkspaceLimit(widthInput));
+  let height = snapDimensionToMultiple(clampDimensionToWorkspaceLimit(heightInput));
+
+  if (width >= height) {
+    width = Math.min(width, snapDimensionToMultiple(height * 3));
+  } else {
+    height = Math.min(height, snapDimensionToMultiple(width * 3));
+  }
+
+  width = snapDimensionToMultiple(clampDimensionToWorkspaceLimit(width));
+  height = snapDimensionToMultiple(clampDimensionToWorkspaceLimit(height));
+
+  return {
+    width,
+    height,
+  };
+};
+
+const scaleWorkspaceImagePair = (
+  width: number,
+  height: number,
+  factor: number,
+): { width: number; height: number } =>
+  normalizeWorkspaceImagePair(width * factor, height * factor);
+
+export const normalizeWorkspaceImageSize = (args: {
+  width: number;
+  height: number;
+}): WorkspaceNormalizedImageSize => {
+  const reasons: string[] = [];
+  const sourceWidth = Number(args.width);
+  const sourceHeight = Number(args.height);
+
+  let width = Number.isFinite(sourceWidth) && sourceWidth > 0 ? sourceWidth : 1024;
+  let height = Number.isFinite(sourceHeight) && sourceHeight > 0 ? sourceHeight : 1024;
+
+  if (width !== sourceWidth || height !== sourceHeight) {
+    reasons.push("已将非法尺寸回退为默认合法值");
+  }
+
+  const originalRoundedWidth = Math.round(width);
+  const originalRoundedHeight = Math.round(height);
+
+  const normalizedInitial = normalizeWorkspaceImagePair(width, height);
+  width = normalizedInitial.width;
+  height = normalizedInitial.height;
+
+  if (width !== originalRoundedWidth || height !== originalRoundedHeight) {
+    reasons.push("已自动修正到 16px 倍数并限制最大边长 / 比例范围");
+  }
+
+  const tunePixelsToBounds = (
+    currentWidth: number,
+    currentHeight: number,
+  ): { width: number; height: number } => {
+    let nextWidth = currentWidth;
+    let nextHeight = currentHeight;
+    const ratio = nextWidth / Math.max(1, nextHeight);
+    let safety = 0;
+
+    while (
+      safety < 512 &&
+      (nextWidth * nextHeight < WORKSPACE_IMAGE_MIN_PIXELS ||
+        nextWidth * nextHeight > WORKSPACE_IMAGE_MAX_PIXELS)
+    ) {
+      safety += 1;
+      const shouldGrow = nextWidth * nextHeight < WORKSPACE_IMAGE_MIN_PIXELS;
+      const delta = shouldGrow
+        ? WORKSPACE_IMAGE_SIZE_MULTIPLE
+        : -WORKSPACE_IMAGE_SIZE_MULTIPLE;
+      const widthDominant = nextWidth >= nextHeight;
+
+      if (widthDominant) {
+        const candidateWidth = clampDimensionToWorkspaceLimit(nextWidth + delta);
+        if (candidateWidth === nextWidth) {
+          break;
+        }
+        nextWidth = candidateWidth;
+        nextHeight = snapDimensionToMultiple(nextWidth / Math.max(ratio, 1e-6));
+      } else {
+        const candidateHeight = clampDimensionToWorkspaceLimit(nextHeight + delta);
+        if (candidateHeight === nextHeight) {
+          break;
+        }
+        nextHeight = candidateHeight;
+        nextWidth = snapDimensionToMultiple(nextHeight * ratio);
+      }
+
+      const normalizedPair = normalizeWorkspaceImagePair(nextWidth, nextHeight);
+      nextWidth = normalizedPair.width;
+      nextHeight = normalizedPair.height;
+    }
+
+    return {
+      width: nextWidth,
+      height: nextHeight,
+    };
+  };
+
+  let pixels = width * height;
+  if (pixels < WORKSPACE_IMAGE_MIN_PIXELS) {
+    const scaleUp = Math.sqrt(WORKSPACE_IMAGE_MIN_PIXELS / Math.max(1, pixels));
+    const scaled = scaleWorkspaceImagePair(width, height, scaleUp);
+    width = scaled.width;
+    height = scaled.height;
+    reasons.push("已自动放大到最小总像素要求");
+  }
+
+  pixels = width * height;
+  if (pixels > WORKSPACE_IMAGE_MAX_PIXELS) {
+    const scaleDown = Math.sqrt(WORKSPACE_IMAGE_MAX_PIXELS / pixels);
+    const scaled = scaleWorkspaceImagePair(width, height, scaleDown);
+    width = scaled.width;
+    height = scaled.height;
+    reasons.push("已自动缩小到最大总像素限制");
+  }
+
+  const tuned = tunePixelsToBounds(width, height);
+  width = tuned.width;
+  height = tuned.height;
+
+  const finalNormalized = normalizeWorkspaceImagePair(width, height);
+  width = finalNormalized.width;
+  height = finalNormalized.height;
+
+  return {
+    width,
+    height,
+    size: `${width}x${height}`,
+    aspectRatio: formatAspectRatioFromDimensions(width, height),
+    adjusted: reasons.length > 0,
+    reasons,
+  };
+};
+
+export const inferAutoImageSizeFromReference = (args: {
+  width: number;
+  height: number;
+}): WorkspaceNormalizedImageSize =>
+  normalizeWorkspaceImageSize({
+    width: args.width,
+    height: args.height,
+  });
+
+export const parseImageSizeString = (
+  value: string | null | undefined,
+): { width: number; height: number } | null => {
+  const raw = String(value || "").trim().toLowerCase();
+  const match = raw.match(/^(\d+)\s*[x×]\s*(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    width,
+    height,
+  };
+};
+
+export const getPresetImageSizeDimensions = (args: {
+  aspectRatio: string | null | undefined;
+  resolution: WorkspaceImageResolutionPreset;
+}): WorkspaceNormalizedImageSize | null => {
+  const official = getOfficialGptImage2Size(args.aspectRatio, args.resolution);
+  const fallback = getAspectRatioPreviewSize(args.aspectRatio, args.resolution);
+  const parsed = parseImageSizeString(official || fallback);
+  if (!parsed) {
+    return null;
+  }
+  return normalizeWorkspaceImageSize(parsed);
+};
+
+export const buildPresetSizeCandidatesForAspectRatio = (
+  aspectRatio: string | null | undefined,
+): Array<{
+  resolution: WorkspaceImageResolutionPreset;
+  normalized: WorkspaceNormalizedImageSize | null;
+}> =>
+  WORKSPACE_IMAGE_RESOLUTION_PRESETS.map((resolution) => ({
+    resolution,
+    normalized: getPresetImageSizeDimensions({
+      aspectRatio,
+      resolution,
+    }),
+  }));
+
+export const getClosestWorkspaceImageResolutionPresetForSize = (args: {
+  aspectRatio: string | null | undefined;
+  width: number;
+  height: number;
+}): WorkspaceImageResolutionPreset => {
+  const target = normalizeWorkspaceImageSize({
+    width: args.width,
+    height: args.height,
+  });
+  const candidates = buildPresetSizeCandidatesForAspectRatio(args.aspectRatio);
+
+  let best: WorkspaceImageResolutionPreset = "1K";
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const item of candidates) {
+    if (!item.normalized) continue;
+    const score =
+      Math.abs(item.normalized.width - target.width) +
+      Math.abs(item.normalized.height - target.height);
+    if (score < bestScore) {
+      bestScore = score;
+      best = item.resolution;
+    }
+  }
+
+  return best;
+};
+
 const normalizeModelKey = (model: string | null | undefined): string =>
   String(model || "")
     .toLowerCase()
@@ -135,6 +406,71 @@ const parseAspectRatioValue = (
   }
 
   return width / height;
+};
+
+export const getClosestWorkspaceAspectRatioFromSize = (
+  width: number,
+  height: number,
+): string => {
+  const normalized = normalizeWorkspaceImageSize({ width, height });
+  const target = normalized.width / Math.max(1, normalized.height);
+  let closest = "1:1";
+  let minDiff = Number.POSITIVE_INFINITY;
+
+  for (const candidate of WORKSPACE_IMAGE_ASPECT_RATIO_VALUES) {
+    const candidateRatio = parseAspectRatioValue(candidate);
+    if (!candidateRatio) continue;
+    const diff = Math.abs(candidateRatio - target);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = candidate;
+    }
+  }
+
+  return closest;
+};
+
+export const getDefaultWorkspaceImageSizeForAspectRatio = (args: {
+  aspectRatio: string | null | undefined;
+  resolution?: WorkspaceImageResolutionPreset;
+}): WorkspaceNormalizedImageSize => {
+  const preset = getPresetImageSizeDimensions({
+    aspectRatio: args.aspectRatio,
+    resolution: args.resolution || "1K",
+  });
+  return preset || normalizeWorkspaceImageSize({ width: 1024, height: 1024 });
+};
+
+export const isWorkspaceImageAutoSizeSupportedForModel = (
+  model: string | null | undefined,
+): boolean => isGptImage2FamilyModel(model);
+
+export const resolveAutoWorkspaceImageSize = (args: {
+  model: string | null | undefined;
+  referenceWidth?: number | null;
+  referenceHeight?: number | null;
+  fallbackAspectRatio?: string | null;
+  fallbackResolution?: WorkspaceImageResolutionPreset;
+}): WorkspaceNormalizedImageSize => {
+  const referenceWidth = Number(args.referenceWidth);
+  const referenceHeight = Number(args.referenceHeight);
+  if (
+    isWorkspaceImageAutoSizeSupportedForModel(args.model) &&
+    Number.isFinite(referenceWidth) &&
+    Number.isFinite(referenceHeight) &&
+    referenceWidth > 0 &&
+    referenceHeight > 0
+  ) {
+    return inferAutoImageSizeFromReference({
+      width: referenceWidth,
+      height: referenceHeight,
+    });
+  }
+
+  return getDefaultWorkspaceImageSizeForAspectRatio({
+    aspectRatio: args.fallbackAspectRatio || "1:1",
+    resolution: args.fallbackResolution || "1K",
+  });
 };
 
 export const isGptImage2FamilyModel = (

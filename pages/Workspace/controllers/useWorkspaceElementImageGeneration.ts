@@ -26,6 +26,13 @@ import {
 } from "../browserAgentGenerationTrace";
 import { resolveWorkspaceTreeNodeKind } from "../workspaceTreeNode";
 import { normalizeReferenceToDataUrl } from "../../../services/image-reference-resolver";
+import {
+  getClosestWorkspaceImageResolutionPresetForSize,
+  getDefaultWorkspaceImageSizeForAspectRatio,
+  normalizeWorkspaceImageSize,
+  resolveAutoWorkspaceImageSize,
+  type WorkspaceImageSizeMode,
+} from "../../../services/openai-image-presets";
 import { getEffectiveStyleLibrary } from "../../../services/vision-orchestrator/style-library";
 import {
   executeWorkspaceResearchContext,
@@ -347,6 +354,26 @@ const normalizeReferenceCandidate = async (
     return normalizeReferenceToDataUrl(normalized);
   }
   return null;
+};
+
+const readReferenceImageDimensions = async (
+  value: string,
+): Promise<{ width: number; height: number } | null> => {
+  const normalized = await normalizeReferenceToDataUrl(String(value || "").trim());
+  if (!normalized || typeof document === "undefined") {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () =>
+      resolve({
+        width: Math.max(1, image.naturalWidth || image.width || 1),
+        height: Math.max(1, image.naturalHeight || image.height || 1),
+      });
+    image.onerror = () => resolve(null);
+    image.src = normalized;
+  });
 };
 
 const repairGenerationReferenceInputs = async (args: {
@@ -1287,12 +1314,14 @@ export function useWorkspaceElementImageGeneration(
           setElementGeneratingState(elementId, true);
         }
 
-        const currentAspectRatio =
+        const fallbackAspectRatio =
           sourceElement.genAspectRatio ||
           getClosestAspectRatio(sourceElement.width, sourceElement.height);
         const model = sourceElement.genModel || "Nano Banana Pro";
         const imageSize = sourceElement.genResolution || "1K";
         const imageQuality = sourceElement.genImageQuality || "medium";
+        const currentSizeMode =
+          (sourceElement.genSizeMode || "preset") as WorkspaceImageSizeMode;
         const requestedImageCount = isTreePromptNode
           ? Math.max(1, Math.min(4, sourceElement.genImageCount || 1))
           : 1;
@@ -1308,6 +1337,46 @@ export function useWorkspaceElementImageGeneration(
           manualReferenceImages: rawManualReferenceImages,
           previewReferenceImages: rawPreviewReferenceImages,
         });
+        const baseCustomSize =
+          Number.isFinite(sourceElement.genCustomWidth) &&
+          Number.isFinite(sourceElement.genCustomHeight) &&
+          Number(sourceElement.genCustomWidth) > 0 &&
+          Number(sourceElement.genCustomHeight) > 0
+            ? normalizeWorkspaceImageSize({
+                width: Number(sourceElement.genCustomWidth),
+                height: Number(sourceElement.genCustomHeight),
+              })
+            : getDefaultWorkspaceImageSizeForAspectRatio({
+                aspectRatio: fallbackAspectRatio,
+                resolution: imageSize,
+              });
+        const autoReferenceDimensions =
+          currentSizeMode === "auto" && repairedReferenceInput.referenceImages[0]
+            ? await readReferenceImageDimensions(repairedReferenceInput.referenceImages[0])
+            : null;
+        const resolvedWorkspaceImageSize =
+          currentSizeMode === "auto"
+            ? resolveAutoWorkspaceImageSize({
+                model,
+                referenceWidth: autoReferenceDimensions?.width ?? null,
+                referenceHeight: autoReferenceDimensions?.height ?? null,
+                fallbackAspectRatio,
+                fallbackResolution: imageSize,
+              })
+            : baseCustomSize;
+        const currentAspectRatio = resolvedWorkspaceImageSize.aspectRatio;
+        const exactSize =
+          currentSizeMode === "preset"
+            ? undefined
+            : `${resolvedWorkspaceImageSize.width}x${resolvedWorkspaceImageSize.height}`;
+        const resolvedImageSizePreset =
+          currentSizeMode === "preset"
+            ? imageSize
+            : getClosestWorkspaceImageResolutionPresetForSize({
+                aspectRatio: currentAspectRatio,
+                width: resolvedWorkspaceImageSize.width,
+                height: resolvedWorkspaceImageSize.height,
+              });
         const manualReferenceImages = repairedReferenceInput.referenceImages;
         const referenceImages = mergeConsistencyAnchorIntoReferences(
           manualReferenceImages,
@@ -2399,7 +2468,8 @@ export function useWorkspaceElementImageGeneration(
                   model,
                   providerId: sourceElement.genProviderId,
                   aspectRatio: currentAspectRatio,
-                  imageSize,
+                  imageSize: resolvedImageSizePreset,
+                  exactSize,
                   imageQuality,
                   disableTransportRetries,
                   referenceImages: plannedReferenceImages,
@@ -2429,7 +2499,8 @@ export function useWorkspaceElementImageGeneration(
                       model,
                       providerId: sourceElement.genProviderId,
                       aspectRatio: currentAspectRatio,
-                      imageSize,
+                      imageSize: resolvedImageSizePreset,
+                      exactSize,
                       imageQuality,
                       disableTransportRetries,
                       referenceImages: plannedReferenceImages,
@@ -2751,7 +2822,8 @@ export function useWorkspaceElementImageGeneration(
             model,
             providerId: sourceElement.genProviderId,
             aspectRatio: getVariantAspectRatio(index),
-            imageSize,
+            imageSize: resolvedImageSizePreset,
+            exactSize,
             imageQuality,
             disableTransportRetries:
               pageGeneration.execution.disableTransportRetries,

@@ -17,11 +17,18 @@ import {
 import type { CanvasElement, ImageModel } from "../../../types";
 import { normalizeMappedModelId } from "../../../services/provider-settings";
 import {
+  buildPresetSizeCandidatesForAspectRatio,
   getAspectRatioPreviewSize,
+  getClosestWorkspaceAspectRatioFromSize,
+  getClosestWorkspaceImageResolutionPresetForSize,
+  getDefaultWorkspaceImageSizeForAspectRatio,
   getImageModelSupportState,
   getNormalizedAspectRatioForImageModel,
   isGptImage2AllModel,
+  isWorkspaceImageAutoSizeSupportedForModel,
+  normalizeWorkspaceImageSize,
   type WorkspaceImageResolutionPreset,
+  type WorkspaceImageSizeMode,
   type WorkspaceImageSupportStatus,
 } from "../../../services/openai-image-presets";
 import { isLikelyGeneratedReferencePreview } from "../workspaceShared";
@@ -130,6 +137,8 @@ const WorkspaceImageConfigPanelImpl: React.FC<
   const [showCountPicker, setShowCountPicker] = useState(false);
   const [showReferenceThumbnails, setShowReferenceThumbnails] = useState(false);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
+  const [draftWidth, setDraftWidth] = useState("1024");
+  const [draftHeight, setDraftHeight] = useState("1024");
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -202,6 +211,11 @@ const WorkspaceImageConfigPanelImpl: React.FC<
   const normalizedCurrentProviderId = currentModelOption.providerId || null;
   const currentResolution = (element.genResolution || "1K") as WorkspaceImageResolutionPreset;
   const currentAspectRatio = element.genAspectRatio || "1:1";
+  const currentSizeMode =
+    (element.genSizeMode || "preset") as WorkspaceImageSizeMode;
+  const isAutoSizeSupported = isWorkspaceImageAutoSizeSupportedForModel(
+    normalizedCurrentModelId,
+  );
   const normalizedAspectRatioForModel = useMemo(
     () =>
       getNormalizedAspectRatioForImageModel(
@@ -224,6 +238,112 @@ const WorkspaceImageConfigPanelImpl: React.FC<
     [normalizedAspectRatioForModel, normalizedCurrentModelId],
   );
 
+  const presetSizeCandidates = useMemo(
+    () => buildPresetSizeCandidatesForAspectRatio(normalizedAspectRatioForModel),
+    [normalizedAspectRatioForModel],
+  );
+
+  const currentCustomSize = useMemo(() => {
+    if (
+      Number.isFinite(element.genCustomWidth) &&
+      Number.isFinite(element.genCustomHeight) &&
+      Number(element.genCustomWidth) > 0 &&
+      Number(element.genCustomHeight) > 0
+    ) {
+      return normalizeWorkspaceImageSize({
+        width: Number(element.genCustomWidth),
+        height: Number(element.genCustomHeight),
+      });
+    }
+
+    const preset = getDefaultWorkspaceImageSizeForAspectRatio({
+      aspectRatio: normalizedAspectRatioForModel,
+      resolution: currentResolution,
+    });
+
+    return preset;
+  }, [
+    currentResolution,
+    element.genCustomHeight,
+    element.genCustomWidth,
+    normalizedAspectRatioForModel,
+  ]);
+
+  const currentSizeLabel = useMemo(() => {
+    if (currentSizeMode === "auto") {
+      return isAutoSizeSupported
+        ? `Auto · ${currentCustomSize.size}`
+        : `Auto 不可用`;
+    }
+    if (currentSizeMode === "custom") {
+      return `自定义 · ${currentCustomSize.size}`;
+    }
+    return currentResolution;
+  }, [currentCustomSize.size, currentResolution, currentSizeMode, isAutoSizeSupported]);
+
+  const applyPresetResolution = (resolution: WorkspaceImageResolutionPreset) => {
+    const matched = presetSizeCandidates.find((item) => item.resolution === resolution);
+    const normalized =
+      matched?.normalized ||
+      getDefaultWorkspaceImageSizeForAspectRatio({
+        aspectRatio: normalizedAspectRatioForModel,
+        resolution,
+      });
+
+    updateSelectedElement({
+      genResolution: resolution,
+      genSizeMode: "preset",
+      genAspectRatio: normalized.aspectRatio,
+      genCustomWidth: normalized.width,
+      genCustomHeight: normalized.height,
+    });
+  };
+
+  const applyCustomSize = (width: number, height: number) => {
+    const normalized = normalizeWorkspaceImageSize({ width, height });
+    const nextAspectRatio = getClosestWorkspaceAspectRatioFromSize(
+      normalized.width,
+      normalized.height,
+    );
+    const nextResolution = getClosestWorkspaceImageResolutionPresetForSize({
+      aspectRatio: nextAspectRatio,
+      width: normalized.width,
+      height: normalized.height,
+    });
+
+    updateSelectedElement({
+      genSizeMode: "custom",
+      genResolution: nextResolution,
+      genCustomWidth: normalized.width,
+      genCustomHeight: normalized.height,
+      genAspectRatio: nextAspectRatio,
+    });
+  };
+
+  const applyAutoSize = () => {
+    if (!isAutoSizeSupported) {
+      return;
+    }
+
+    const nextAspectRatio = getClosestWorkspaceAspectRatioFromSize(
+      currentCustomSize.width,
+      currentCustomSize.height,
+    );
+    const nextResolution = getClosestWorkspaceImageResolutionPresetForSize({
+      aspectRatio: nextAspectRatio,
+      width: currentCustomSize.width,
+      height: currentCustomSize.height,
+    });
+
+    updateSelectedElement({
+      genSizeMode: "auto",
+      genResolution: nextResolution,
+      genAspectRatio: nextAspectRatio,
+      genCustomWidth: currentCustomSize.width,
+      genCustomHeight: currentCustomSize.height,
+    });
+  };
+
   const aspectRatioOptions = useMemo(
     () =>
       aspectRatios.map((ratio) => {
@@ -243,6 +363,11 @@ const WorkspaceImageConfigPanelImpl: React.FC<
       }),
     [aspectRatios, currentResolution, normalizedCurrentModelId],
   );
+
+  useEffect(() => {
+    setDraftWidth(String(currentCustomSize.width));
+    setDraftHeight(String(currentCustomSize.height));
+  }, [currentCustomSize.height, currentCustomSize.width, element.id]);
 
   useEffect(() => {
     setShowReferenceThumbnails(false);
@@ -354,9 +479,22 @@ const WorkspaceImageConfigPanelImpl: React.FC<
       currentAspectRatio,
     );
     if (nextAspectRatio !== currentAspectRatio) {
-      updateSelectedElement({ genAspectRatio: nextAspectRatio });
+      const fallbackSize = getDefaultWorkspaceImageSizeForAspectRatio({
+        aspectRatio: nextAspectRatio,
+        resolution: currentResolution,
+      });
+      updateSelectedElement({
+        genAspectRatio: nextAspectRatio,
+        genCustomWidth: fallbackSize.width,
+        genCustomHeight: fallbackSize.height,
+      });
     }
-  }, [currentAspectRatio, normalizedCurrentModelId, updateSelectedElement]);
+  }, [
+    currentAspectRatio,
+    currentResolution,
+    normalizedCurrentModelId,
+    updateSelectedElement,
+  ]);
 
   if (!shouldRender) {
     return null;
@@ -436,6 +574,101 @@ const WorkspaceImageConfigPanelImpl: React.FC<
         )
       ) : null}
 
+      <div className="mb-4 rounded-2xl border border-gray-100 bg-[#fafbfc] p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">
+              尺寸
+            </div>
+            <div className="mt-1 text-[10px] text-gray-500">
+              自动吸附到 16px 倍数，并限制最大边长 / 总像素 / 长短边比。
+            </div>
+          </div>
+          <button
+            onClick={() => applyAutoSize()}
+            disabled={!isAutoSizeSupported}
+            className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+              currentSizeMode === "auto"
+                ? "bg-black text-white"
+                : isAutoSizeSupported
+                  ? "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            }`}
+            title={
+              isAutoSizeSupported
+                ? "GPT Image 2 将跟随参考图尺寸并自动合法化"
+                : "当前模型不支持 auto 尺寸"
+            }
+          >
+            Auto
+          </button>
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+          <input
+            type="number"
+            min={16}
+            step={16}
+            value={draftWidth}
+            onChange={(e) => setDraftWidth(e.target.value)}
+            onBlur={() => applyCustomSize(Number(draftWidth), Number(draftHeight))}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                applyCustomSize(Number(draftWidth), Number(draftHeight));
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className="h-11 rounded-2xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition focus:border-gray-400"
+            placeholder="W"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const nextWidth = draftHeight;
+              const nextHeight = draftWidth;
+              setDraftWidth(nextWidth);
+              setDraftHeight(nextHeight);
+              applyCustomSize(Number(nextWidth), Number(nextHeight));
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+            title="交换宽高"
+          >
+            ↔
+          </button>
+          <input
+            type="number"
+            min={16}
+            step={16}
+            value={draftHeight}
+            onChange={(e) => setDraftHeight(e.target.value)}
+            onBlur={() => applyCustomSize(Number(draftWidth), Number(draftHeight))}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                applyCustomSize(Number(draftWidth), Number(draftHeight));
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className="h-11 rounded-2xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 outline-none transition focus:border-gray-400"
+            placeholder="H"
+          />
+        </div>
+
+        <div className="mt-2 flex min-w-0 items-center justify-between gap-3 text-[10px] text-gray-500">
+          <span className="min-w-0 truncate">
+            当前：{currentCustomSize.size} · {getClosestWorkspaceAspectRatioFromSize(currentCustomSize.width, currentCustomSize.height)}
+          </span>
+          <span className="shrink-0 text-right">
+            {currentSizeMode === "custom"
+              ? "自定义尺寸"
+              : currentSizeMode === "auto"
+                ? "自动尺寸"
+                : `预设 ${currentResolution}`}
+          </span>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2 mb-3 px-1 overflow-x-auto no-scrollbar">
         <button
           onClick={() =>
@@ -499,10 +732,21 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                         model.id,
                         currentAspectRatio,
                       );
+                      const fallbackSize = getDefaultWorkspaceImageSizeForAspectRatio({
+                        aspectRatio: nextAspectRatio,
+                        resolution: currentResolution,
+                      });
                       updateSelectedElement({
                         genModel: model.id as ImageModel,
                         genProviderId: model.providerId || null,
                         genAspectRatio: nextAspectRatio,
+                        genCustomWidth: fallbackSize.width,
+                        genCustomHeight: fallbackSize.height,
+                        genSizeMode:
+                          currentSizeMode === "auto" &&
+                          !isWorkspaceImageAutoSizeSupportedForModel(model.id)
+                            ? "preset"
+                            : currentSizeMode,
                       });
                       setShowModelPicker(false);
                       setShowQualityPicker(false);
@@ -599,7 +843,7 @@ const WorkspaceImageConfigPanelImpl: React.FC<
               }}
               className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-black transition px-2 py-1.5 hover:bg-gray-50 rounded-lg"
             >
-              {currentResolution}
+              {currentSizeLabel}
               <ChevronDown size={10} className="opacity-50" />
             </button>
             {showResPicker && (
@@ -612,9 +856,7 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                     key={value}
                     onClick={() => {
                       if (disabled) return;
-                      updateSelectedElement({
-                        genResolution: value,
-                      });
+                      applyPresetResolution(value);
                       setShowResPicker(false);
                     }}
                     disabled={disabled}
@@ -660,7 +902,15 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                       key={ratio.value}
                       onClick={() => {
                         if (disabled) return;
-                        updateSelectedElement({ genAspectRatio: ratio.value });
+                        const preset = getDefaultWorkspaceImageSizeForAspectRatio({
+                          aspectRatio: ratio.value,
+                          resolution: currentResolution,
+                        });
+                        updateSelectedElement({
+                          genAspectRatio: ratio.value,
+                          genCustomWidth: preset.width,
+                          genCustomHeight: preset.height,
+                        });
                         setShowRatioPicker(false);
                       }}
                       disabled={disabled}

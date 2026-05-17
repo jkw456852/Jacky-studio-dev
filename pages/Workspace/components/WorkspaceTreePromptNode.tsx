@@ -29,10 +29,16 @@ import {
 import { TREE_NODE_CARD_WIDTH } from "../workspaceTreeNode";
 import { normalizeMappedModelId } from "../../../services/provider-settings";
 import {
+  getClosestWorkspaceAspectRatioFromSize,
+  getClosestWorkspaceImageResolutionPresetForSize,
+  getDefaultWorkspaceImageSizeForAspectRatio,
   getImageModelSupportState,
   getNormalizedAspectRatioForImageModel,
   isGptImage2AllModel,
+  isWorkspaceImageAutoSizeSupportedForModel,
+  normalizeWorkspaceImageSize,
   type WorkspaceImageResolutionPreset,
+  type WorkspaceImageSizeMode,
   type WorkspaceImageSupportStatus,
 } from "../../../services/openai-image-presets";
 import {
@@ -2429,11 +2435,16 @@ const TreePromptSettingsModal: React.FC<{
   currentImageCount: number;
   currentQuality: (typeof IMAGE_QUALITY_OPTIONS)[number];
   currentResolution: WorkspaceImageResolutionPreset;
+  currentSizeMode: WorkspaceImageSizeMode;
+  currentCustomWidth: number;
+  currentCustomHeight: number;
   onClose: () => void;
   onSelectAspectRatio: (value: string) => void;
   onSelectImageCount: (value: number) => void;
   onSelectQuality: (value: (typeof IMAGE_QUALITY_OPTIONS)[number]) => void;
   onSelectResolution: (value: WorkspaceImageResolutionPreset) => void;
+  onApplyCustomSize: (width: number, height: number) => void;
+  onSelectAutoSize: () => void;
 }> = ({
   aspectRatios,
   anchorRect,
@@ -2442,13 +2453,20 @@ const TreePromptSettingsModal: React.FC<{
   currentImageCount,
   currentQuality,
   currentResolution,
+  currentSizeMode,
+  currentCustomWidth,
+  currentCustomHeight,
   onClose,
   onSelectAspectRatio,
   onSelectImageCount,
   onSelectQuality,
   onSelectResolution,
+  onApplyCustomSize,
+  onSelectAutoSize,
 }) => {
   const [isVisible, setIsVisible] = React.useState(false);
+  const [draftWidth, setDraftWidth] = React.useState("1024");
+  const [draftHeight, setDraftHeight] = React.useState("1024");
 
   React.useEffect(() => {
     const frame = window.requestAnimationFrame(() => setIsVisible(true));
@@ -2475,6 +2493,27 @@ const TreePromptSettingsModal: React.FC<{
     currentModelId,
     currentAspectRatio,
   );
+  const isAutoSizeSupported = isWorkspaceImageAutoSizeSupportedForModel(
+    currentModelId,
+  );
+  const currentNormalizedSize = React.useMemo(() => {
+    if (
+      Number.isFinite(currentCustomWidth) &&
+      Number.isFinite(currentCustomHeight) &&
+      Number(currentCustomWidth) > 0 &&
+      Number(currentCustomHeight) > 0
+    ) {
+      return normalizeWorkspaceImageSize({
+        width: Number(currentCustomWidth),
+        height: Number(currentCustomHeight),
+      });
+    }
+
+    return getDefaultWorkspaceImageSizeForAspectRatio({
+      aspectRatio: currentAspectRatio,
+      resolution: currentResolution,
+    });
+  }, [currentAspectRatio, currentCustomHeight, currentCustomWidth, currentResolution]);
   const resolutionOptions = (["1K", "2K", "4K"] as const).map((resolution) => ({
     value: resolution,
     support: getImageModelSupportState({
@@ -2491,6 +2530,11 @@ const TreePromptSettingsModal: React.FC<{
       resolution: currentResolution,
     }),
   }));
+
+  React.useEffect(() => {
+    setDraftWidth(String(currentNormalizedSize.width));
+    setDraftHeight(String(currentNormalizedSize.height));
+  }, [currentNormalizedSize.height, currentNormalizedSize.width]);
 
   return createPortal(
     <div
@@ -2514,6 +2558,101 @@ const TreePromptSettingsModal: React.FC<{
           <div className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[rgba(224,229,238,0.96)] bg-[rgba(248,250,253,0.985)]" />
           <div className="max-h-[min(68vh,620px)] overflow-y-auto px-4 py-4">
             <div className="space-y-4">
+              <section>
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#98a2b3]">
+                      尺寸
+                    </div>
+                    <div className="mt-1 text-[10px] leading-4 text-[#98a2b3]">
+                      自动吸附到 16px 倍数，并限制最大边长 / 总像素 / 长短边比。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!isAutoSizeSupported}
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                      currentSizeMode === "auto"
+                        ? "bg-[#111827] text-white"
+                        : isAutoSizeSupported
+                          ? "border border-[#dbe3ef] bg-white text-[#4b5563] hover:bg-[#f8fafc]"
+                          : "bg-[#eef2f7] text-[#b7bfcb] cursor-not-allowed"
+                    }`}
+                    onClick={() => {
+                      if (!isAutoSizeSupported) return;
+                      onSelectAutoSize();
+                    }}
+                  >
+                    auto
+                  </button>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-[18px] bg-[#f4f6fa] p-2">
+                  <input
+                    type="number"
+                    min={16}
+                    step={16}
+                    value={draftWidth}
+                    onChange={(event) => setDraftWidth(event.target.value)}
+                    onBlur={() =>
+                      onApplyCustomSize(Number(draftWidth), Number(draftHeight))
+                    }
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        onApplyCustomSize(Number(draftWidth), Number(draftHeight));
+                        (event.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="h-11 rounded-[14px] border border-[#dbe3ef] bg-white px-3 text-[15px] font-semibold text-[#111827] outline-none transition focus:border-[#111827]"
+                    placeholder="W"
+                  />
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dbe3ef] bg-white text-[#7b8192] transition hover:bg-[#f8fafc]"
+                    onClick={() => {
+                      const nextWidth = draftHeight;
+                      const nextHeight = draftWidth;
+                      setDraftWidth(nextWidth);
+                      setDraftHeight(nextHeight);
+                      onApplyCustomSize(Number(nextWidth), Number(nextHeight));
+                    }}
+                  >
+                    ↔
+                  </button>
+                  <input
+                    type="number"
+                    min={16}
+                    step={16}
+                    value={draftHeight}
+                    onChange={(event) => setDraftHeight(event.target.value)}
+                    onBlur={() =>
+                      onApplyCustomSize(Number(draftWidth), Number(draftHeight))
+                    }
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        onApplyCustomSize(Number(draftWidth), Number(draftHeight));
+                        (event.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="h-11 rounded-[14px] border border-[#dbe3ef] bg-white px-3 text-[15px] font-semibold text-[#111827] outline-none transition focus:border-[#111827]"
+                    placeholder="H"
+                  />
+                </div>
+                <div className="mt-2 flex min-w-0 items-center justify-between gap-3 px-1 text-[10px] text-[#98a2b3]">
+                  <span className="min-w-0 truncate">
+                    当前：{currentNormalizedSize.size} · {getClosestWorkspaceAspectRatioFromSize(currentNormalizedSize.width, currentNormalizedSize.height)}
+                  </span>
+                  <span className="shrink-0 text-right">
+                    {currentSizeMode === "custom"
+                      ? "自定义尺寸"
+                      : currentSizeMode === "auto"
+                        ? "自动尺寸"
+                        : `预设 ${currentResolution}`}
+                  </span>
+                </div>
+              </section>
+
               <section>
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#98a2b3]">
                   分辨率
@@ -2695,7 +2834,27 @@ const TreePromptGenerateControls: React.FC<{
   const currentModelLabel = getModelControlLabel(currentModelOption);
   const currentResolution = (element.genResolution || "1K") as WorkspaceImageResolutionPreset;
   const currentAspectRatio = element.genAspectRatio || "1:1";
-  const settingsSummary = `${currentResolution} | ${currentAspectRatio} | ${imageCount}p`;
+  const currentSizeMode =
+    (element.genSizeMode || "preset") as WorkspaceImageSizeMode;
+  const currentCustomSize =
+    Number.isFinite(element.genCustomWidth) &&
+    Number.isFinite(element.genCustomHeight) &&
+    Number(element.genCustomWidth) > 0 &&
+    Number(element.genCustomHeight) > 0
+      ? normalizeWorkspaceImageSize({
+          width: Number(element.genCustomWidth),
+          height: Number(element.genCustomHeight),
+        })
+      : getDefaultWorkspaceImageSizeForAspectRatio({
+          aspectRatio: currentAspectRatio,
+          resolution: currentResolution,
+        });
+  const settingsSummary =
+    currentSizeMode === "auto"
+      ? `Auto · ${currentCustomSize.size} · ${imageCount}p`
+      : currentSizeMode === "custom"
+        ? `${currentCustomSize.size} · ${imageCount}p`
+        : `${currentResolution} | ${currentAspectRatio} | ${imageCount}p`;
 
   const closeAllPickers = () => {
     setShowModelPicker(false);
@@ -2774,10 +2933,21 @@ const TreePromptGenerateControls: React.FC<{
                   model.id,
                   currentAspectRatio,
                 );
+                const fallbackSize = getDefaultWorkspaceImageSizeForAspectRatio({
+                  aspectRatio: nextAspectRatio,
+                  resolution: currentResolution,
+                });
                 updateSelectedElement({
                   genModel: model.id as ImageModel,
                   genProviderId: model.providerId || null,
                   genAspectRatio: nextAspectRatio,
+                  genCustomWidth: fallbackSize.width,
+                  genCustomHeight: fallbackSize.height,
+                  genSizeMode:
+                    currentSizeMode === "auto" &&
+                    !isWorkspaceImageAutoSizeSupportedForModel(model.id)
+                      ? "preset"
+                      : currentSizeMode,
                 });
                 closeAllPickers();
               }}
@@ -2823,13 +2993,63 @@ const TreePromptGenerateControls: React.FC<{
               currentImageCount={imageCount}
               currentQuality={imageQuality}
               currentResolution={currentResolution}
+              currentSizeMode={currentSizeMode}
+              currentCustomWidth={currentCustomSize.width}
+              currentCustomHeight={currentCustomSize.height}
               onClose={() => setShowSettingsPicker(false)}
-              onSelectAspectRatio={(value) => updateSelectedElement({ genAspectRatio: value })}
+              onSelectAspectRatio={(value) => {
+                const preset = getDefaultWorkspaceImageSizeForAspectRatio({
+                  aspectRatio: value,
+                  resolution: currentResolution,
+                });
+                updateSelectedElement({
+                  genAspectRatio: value,
+                  genCustomWidth: preset.width,
+                  genCustomHeight: preset.height,
+                });
+              }}
               onSelectImageCount={(value) =>
                 updateSelectedElement({ genImageCount: value as CanvasElement["genImageCount"] })
               }
               onSelectQuality={(value) => updateSelectedElement({ genImageQuality: value })}
-              onSelectResolution={(value) => updateSelectedElement({ genResolution: value })}
+              onSelectResolution={(value) => {
+                const preset = getDefaultWorkspaceImageSizeForAspectRatio({
+                  aspectRatio: currentAspectRatio,
+                  resolution: value,
+                });
+                updateSelectedElement({
+                  genResolution: value,
+                  genSizeMode: "preset",
+                  genCustomWidth: preset.width,
+                  genCustomHeight: preset.height,
+                });
+              }}
+              onApplyCustomSize={(width, height) => {
+                const normalized = normalizeWorkspaceImageSize({ width, height });
+                const nextAspectRatio = getClosestWorkspaceAspectRatioFromSize(
+                  normalized.width,
+                  normalized.height,
+                );
+                const nextResolution = getClosestWorkspaceImageResolutionPresetForSize({
+                  aspectRatio: nextAspectRatio,
+                  width: normalized.width,
+                  height: normalized.height,
+                });
+                updateSelectedElement({
+                  genSizeMode: "custom",
+                  genResolution: nextResolution,
+                  genAspectRatio: nextAspectRatio,
+                  genCustomWidth: normalized.width,
+                  genCustomHeight: normalized.height,
+                });
+              }}
+              onSelectAutoSize={() =>
+                updateSelectedElement({
+                  genSizeMode: "auto",
+                  genCustomWidth: currentCustomSize.width,
+                  genCustomHeight: currentCustomSize.height,
+                })
+              }
             />
           ) : null}
         </div>

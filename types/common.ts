@@ -190,6 +190,9 @@ export interface CanvasElement {
   genProviderId?: string | null;
   genAspectRatio?: string;
   genResolution?: '1K' | '2K' | '4K';
+  genSizeMode?: 'preset' | 'custom' | 'auto';
+  genCustomWidth?: number;
+  genCustomHeight?: number;
   genImageQuality?: 'low' | 'medium' | 'high';
   genImageCount?: 1 | 2 | 3 | 4;
   genInfiniteRetry?: boolean;
