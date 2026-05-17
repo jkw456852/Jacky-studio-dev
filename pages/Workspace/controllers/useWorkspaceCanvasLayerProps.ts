@@ -173,9 +173,14 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   handleDownload: WorkspaceImageToolbarProps["handleDownload"];
   showFastEdit: boolean;
   setShowFastEdit: React.Dispatch<React.SetStateAction<boolean>>;
+  showLocalRedrawPanel: boolean;
+  setShowLocalRedrawPanel: React.Dispatch<React.SetStateAction<boolean>>;
   fastEditPrompt: string;
   setFastEditPrompt: WorkspaceImageToolbarProps["setFastEditPrompt"];
+  localRedrawPrompt: string;
+  setLocalRedrawPrompt: (value: string) => void;
   handleFastEditRun: WorkspaceImageToolbarProps["handleFastEditRun"];
+  handleApplyLocalRedraw: (instruction: string) => void | Promise<void>;
   consistencyCheckEnabled: boolean;
   preGenerationPlanningEnabled: boolean;
   currentConsistencyAnchorUrl: string | null;
@@ -342,9 +347,14 @@ export const useWorkspaceCanvasLayerProps = ({
   handleDownload,
   showFastEdit,
   setShowFastEdit,
+  showLocalRedrawPanel,
+  setShowLocalRedrawPanel,
   fastEditPrompt,
   setFastEditPrompt,
+  localRedrawPrompt,
+  setLocalRedrawPrompt,
   handleFastEditRun,
+  handleApplyLocalRedraw,
   consistencyCheckEnabled,
   preGenerationPlanningEnabled,
   currentConsistencyAnchorUrl,
@@ -544,9 +554,14 @@ export const useWorkspaceCanvasLayerProps = ({
       handleDownload,
       showFastEdit,
       setShowFastEdit,
+      showLocalRedrawPanel,
+      setShowLocalRedrawPanel,
       fastEditPrompt,
       setFastEditPrompt,
+      localRedrawPrompt,
+      setLocalRedrawPrompt,
       handleFastEditRun,
+      handleApplyLocalRedraw,
       consistencyCheckEnabled,
       preGenerationPlanningEnabled,
       currentConsistencyAnchorUrl,

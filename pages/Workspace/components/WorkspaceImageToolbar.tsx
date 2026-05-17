@@ -6,7 +6,6 @@ import { WorkspaceImageTextEditModal } from "./WorkspaceImageTextEditModal";
 import { WorkspaceImageEraserOverlay } from "./WorkspaceImageEraserOverlay";
 import { WorkspaceImageSideToolbar } from "./WorkspaceImageSideToolbar";
 import { WorkspaceImageFastEditPanel } from "./WorkspaceImageFastEditPanel";
-import { isWorkspaceTreeNode } from "../workspaceTreeNode";
 
 type ImageModelOption = {
   id: string;
@@ -88,6 +87,11 @@ type WorkspaceImageToolbarProps = {
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   handleCloseEraser: () => void;
   handleExecuteEraser: () => void | Promise<void>;
+  showLocalRedrawPanel: boolean;
+  setShowLocalRedrawPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  localRedrawPrompt: string;
+  setLocalRedrawPrompt: (value: string) => void;
+  handleApplyLocalRedraw: (instruction: string) => void | Promise<void>;
   toolbarExpanded: boolean;
   setToolbarExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   toolbarExpandTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
@@ -201,6 +205,11 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
   setEraserMode,
   handleCloseEraser,
   handleExecuteEraser,
+  showLocalRedrawPanel,
+  setShowLocalRedrawPanel,
+  localRedrawPrompt,
+  setLocalRedrawPrompt,
+  handleApplyLocalRedraw,
   toolbarExpanded,
   setToolbarExpanded,
   toolbarExpandTimer,
@@ -247,19 +256,37 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     selectedElementIds.length <= 1 &&
     !!el &&
     (el.type === "gen-image" || el.type === "image");
+  const hasActiveImageOverlayPanel =
+    showTextEditModal ||
+    eraserMode ||
+    showFastEdit ||
+    showUpscalePanel ||
+    showProductSwapPanel ||
+    showLocalRedrawPanel;
   const shouldShowSingleImageToolbar =
-    hasSingleImageSelection && !isDraggingElement;
+    hasSingleImageSelection && (!isDraggingElement || hasActiveImageOverlayPanel);
   const isEmptyGenImageSelection =
     shouldShowSingleImageToolbar &&
     el.type === "gen-image" &&
     el.nodeInteractionMode !== "branch" &&
     !el.url &&
     !el.isGenerating;
-  const isTreeNodeSelection =
-    shouldShowSingleImageToolbar && !!el && isWorkspaceTreeNode(el);
-  const isBranchPromptSelection =
-    isTreeNodeSelection && el.type === "gen-image";
-  const isBranchImageSelection = isTreeNodeSelection && el.type === "image";
+  const selectedTreeNodeKind = React.useMemo<"prompt" | "image" | null>(() => {
+    if (!el) {
+      return null;
+    }
+    if (el.treeNodeKind === "prompt" || el.treeNodeKind === "image") {
+      return el.treeNodeKind;
+    }
+    if (el.nodeInteractionMode === "branch") {
+      if (el.type === "gen-image") return "prompt";
+      if (el.type === "image") return "image";
+    }
+    return null;
+  }, [el]);
+  const isTreeNodeSelection = selectedTreeNodeKind !== null;
+  const isBranchPromptSelection = selectedTreeNodeKind === "prompt";
+  const isBranchImageSelection = selectedTreeNodeKind === "image";
 
   React.useEffect(() => {
     if (isEmptyGenImageSelection) {
@@ -352,7 +379,11 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     return emptyGenConfigPanel;
   }
 
-  if (!shouldShowSingleImageToolbar || !el) {
+  if (!el) {
+    return emptyGenConfigPanel;
+  }
+
+  if (!shouldShowSingleImageToolbar && !hasActiveImageOverlayPanel) {
     return emptyGenConfigPanel;
   }
 
@@ -364,7 +395,9 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     isBranchImageSelection &&
     !eraserMode &&
     !showTextEditModal &&
-    !showFastEdit
+    !showFastEdit &&
+    !showUpscalePanel &&
+    !showProductSwapPanel
   ) {
     return null;
   }
@@ -585,6 +618,25 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
         eraserLastPointRef.current = null;
       };
 
+      const closeMaskEdit = () => {
+        setShowLocalRedrawPanel(false);
+        setLocalRedrawPrompt("");
+        handleCloseEraser();
+      };
+
+      const handleMaskApply = () => {
+        if (showLocalRedrawPanel) {
+          const instruction = localRedrawPrompt.trim();
+          if (!instruction) {
+            return;
+          }
+          setShowLocalRedrawPanel(false);
+          void handleApplyLocalRedraw(instruction);
+          return;
+        }
+        void handleExecuteEraser();
+      };
+
       return (
         <>
           {emptyGenConfigPanel}
@@ -599,11 +651,19 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
             selectedImageEl={selectedImageEl}
             canvasRef={eraserCanvasRef as React.RefObject<HTMLCanvasElement>}
             cursorRef={eraserCursorRef as React.RefObject<HTMLDivElement>}
+            title={showLocalRedrawPanel ? "局部重绘" : "橡皮工具"}
+            applyLabel={showLocalRedrawPanel ? "开始重绘" : "立即使用"}
+            description={
+              showLocalRedrawPanel
+                ? "先涂抹需要重绘的区域，再输入修改要求并执行。"
+                : null
+            }
+            applyDisabled={showLocalRedrawPanel && !localRedrawPrompt.trim()}
             onUndo={handleUndoEraser}
             onClear={handleClearEraser}
             onBrushSizeChange={setBrushSize}
-            onClose={handleCloseEraser}
-            onApply={handleExecuteEraser}
+            onClose={closeMaskEdit}
+            onApply={handleMaskApply}
             onPointerEnter={updateEraserCursor}
             onPointerDown={handleEraserPointerDown}
             onPointerMove={handleEraserPointerMove}
@@ -613,14 +673,32 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
               hideEraserCursor();
             }}
           />
+          <WorkspaceImageFastEditPanel
+            show={showLocalRedrawPanel}
+            left={canvasCenterX}
+            top={bottomButtonTop}
+            scale={1 / adaptiveScale}
+            title="局部重绘"
+            placeholder="描述要在蒙版区域里重绘成什么，例如：把这块改成浅灰金属拉丝表面"
+            hintText="先刷蒙版，再按回车执行局部重绘"
+            runLabel="开始重绘"
+            prompt={localRedrawPrompt}
+            isGenerating={Boolean(el.isGenerating)}
+            setPrompt={setLocalRedrawPrompt}
+            onClose={closeMaskEdit}
+            onRun={handleMaskApply}
+          />
         </>
       );
     }
 
+    const shouldRenderSideToolbar =
+      !isBranchImageSelection || showUpscalePanel || showProductSwapPanel;
+
     return (
       <>
         {emptyGenConfigPanel}
-        {!isBranchImageSelection ? (
+        {shouldRenderSideToolbar ? (
           <WorkspaceImageSideToolbar
             key={`image-side-toolbar-${el.id}`}
             element={el}

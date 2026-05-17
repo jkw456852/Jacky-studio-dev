@@ -6,6 +6,10 @@ type WorkspaceImageFastEditPanelProps = {
   left: number;
   top: number;
   scale: number;
+  title?: string;
+  placeholder?: string;
+  hintText?: string;
+  runLabel?: string;
   prompt: string;
   isGenerating: boolean;
   setPrompt: (value: string) => void;
@@ -20,6 +24,10 @@ export const WorkspaceImageFastEditPanel: React.FC<
   left,
   top,
   scale,
+  title = "快捷编辑",
+  placeholder = "Describe your edit here...",
+  hintText = "Hit Return to generate",
+  runLabel = "生成",
   prompt,
   isGenerating,
   setPrompt,
@@ -41,10 +49,13 @@ export const WorkspaceImageFastEditPanel: React.FC<
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
+      <div className="mb-2 px-1">
+        <div className="text-[12px] font-semibold text-gray-900">{title}</div>
+      </div>
       <textarea
         autoFocus
         className="w-full text-[13px] text-gray-800 placeholder:text-gray-400 bg-transparent border-none outline-none resize-none h-14 mb-2 p-1"
-        placeholder="Describe your edit here..."
+        placeholder={placeholder}
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
@@ -57,7 +68,7 @@ export const WorkspaceImageFastEditPanel: React.FC<
       />
       <div className="flex justify-between items-center px-1">
         <span className="text-[11px] text-gray-400 pointer-events-none">
-          Hit Return to generate
+          {hintText}
         </span>
         <div className="flex gap-2">
           <button
@@ -74,7 +85,7 @@ export const WorkspaceImageFastEditPanel: React.FC<
             {isGenerating ? (
               <Loader2 size={12} className="animate-spin" />
             ) : null}
-            生成{" "}
+            {runLabel}{" "}
             {isGenerating ? "" : <span className="opacity-60 font-normal">/</span>}
           </button>
         </div>

@@ -1451,7 +1451,9 @@ const Workspace: React.FC = () => {
   >("frames");
   const [showFramePanel, setShowFramePanel] = useState(false);
   const [showFastEdit, setShowFastEdit] = useState(false);
+  const [showLocalRedrawPanel, setShowLocalRedrawPanel] = useState(false);
   const fastEditPrompt = useAgentStore((s) => s.fastEditPrompt);
+  const [localRedrawPrompt, setLocalRedrawPrompt] = useState("");
   const [history, setHistory] = useState<HistoryState[]>([
     { elements: [], markers: [] },
   ]);
@@ -4084,7 +4086,9 @@ const Workspace: React.FC = () => {
 
   useEffect(() => {
     setShowFastEdit(false);
+    setShowLocalRedrawPanel(false);
     setFastEditPrompt("");
+    setLocalRedrawPrompt("");
     setShowTextEditModal(false);
   }, [selectedElementId]);
 
@@ -4259,6 +4263,7 @@ const Workspace: React.FC = () => {
     handleClearEraser,
     handleCloseEraser,
     handleExecuteEraser,
+    handleApplyLocalRedraw,
     handleVectorRedraw,
   } = useWorkspaceImageToolActions({
     selectedElementId,
@@ -4285,6 +4290,8 @@ const Workspace: React.FC = () => {
     setEraserHistory,
     setEraserHasPaint,
     setIsDrawingEraser,
+    setShowLocalRedrawPanel,
+    setLocalRedrawPrompt,
     addMessage,
     urlToBase64,
     persistEditSession,
@@ -5994,9 +6001,14 @@ const Workspace: React.FC = () => {
     handleDownload,
     showFastEdit,
     setShowFastEdit,
+    showLocalRedrawPanel,
+    setShowLocalRedrawPanel,
     fastEditPrompt,
     setFastEditPrompt,
+    localRedrawPrompt,
+    setLocalRedrawPrompt,
     handleFastEditRun,
+    handleApplyLocalRedraw,
     consistencyCheckEnabled,
     preGenerationPlanningEnabled,
     currentConsistencyAnchorUrl,

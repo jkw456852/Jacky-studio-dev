@@ -1,5 +1,9 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { extractTextFromImage, generateImage } from "../../../services/gemini";
+import {
+  extractTextFromImage,
+  generateImage,
+  validateTransparentCutoutResult,
+} from "../../../services/gemini";
 import type { ImageGenerationConfig } from "../../../services/gemini";
 import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
 import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
@@ -314,6 +318,17 @@ export function useWorkspaceElementEditActions(
 
       if (!resultUrl) {
         throw new Error("No result");
+      }
+
+      const validation = await validateTransparentCutoutResult(resultUrl);
+      if (!validation.ok) {
+        throw new Error(
+          validation.reason === "not-data-url"
+            ? "当前模型返回的不是透明抠图结果，暂不接受为去背景成功结果"
+            : validation.reason === "missing-alpha-output"
+              ? "当前结果没有透明背景，去背景失败"
+              : "透明背景校验失败",
+        );
       }
 
       await maybeWarnConsistencyDrift(

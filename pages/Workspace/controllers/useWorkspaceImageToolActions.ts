@@ -48,6 +48,8 @@ type UseWorkspaceImageToolActionsOptions = {
   setEraserHistory: Dispatch<SetStateAction<EraserHistoryItem[]>>;
   setEraserHasPaint: Dispatch<SetStateAction<boolean>>;
   setIsDrawingEraser: Dispatch<SetStateAction<boolean>>;
+  setShowLocalRedrawPanel: Dispatch<SetStateAction<boolean>>;
+  setLocalRedrawPrompt: Dispatch<SetStateAction<string>>;
   addMessage: (message: ChatMessage) => void;
   urlToBase64: (url: string) => Promise<string>;
   persistEditSession: (
@@ -100,6 +102,8 @@ export function useWorkspaceImageToolActions(
     setEraserHistory,
     setEraserHasPaint,
     setIsDrawingEraser,
+    setShowLocalRedrawPanel,
+    setLocalRedrawPrompt,
     addMessage,
     urlToBase64,
     persistEditSession,
@@ -480,87 +484,146 @@ export function useWorkspaceImageToolActions(
     setEraserMaskDataUrl,
   ]);
 
-  const handleExecuteEraser = useCallback(async () => {
-    if (!selectedElementId || !eraserMaskDataUrl) {
-      resetEraserSession();
-      return;
-    }
-
-    const element = elementsRef.current.find(
-      (item) => item.id === selectedElementId,
-    );
-    if (!element || !element.url) {
-      resetEraserSession();
-      return;
-    }
-
-    const newId = appendTemporaryClone(element, "eraser", "eraser", 100);
-
-    try {
-      const sourceImage = await urlToBase64(
-        getElementSourceUrl(element) || element.url,
-      );
-      await persistEditSession("edit", element, {
-        instruction:
-          "Remove objects in the white mask area only. Keep the black mask area unchanged and blend naturally.",
-        constraints: [
-          "Only modify the white masked region",
-          "Keep all unmasked regions unchanged",
-        ],
-      });
-
-      const result = await smartEditSkill({
-        sourceUrl: sourceImage,
-        maskImage: eraserMaskDataUrl,
-        editType: "object-remove",
-        parameters: {
-          prompt:
-            "Remove objects in the white mask area only. Keep the black mask area unchanged. Blend naturally.",
-          preservePrompt:
-            "Preserve the original product identity, lighting direction, scene composition, typography, and all unmasked areas.",
-          editModel: resolveEditModelId(element),
-          providerId: element.genProviderId,
-          aspectRatio: getClosestAspectRatio(element.width, element.height),
-        },
-      });
-
-      if (!result) {
-        throw new Error("No result from eraser edit");
+  const executeMaskedEdit = useCallback(
+    async (args: {
+      sessionInstruction: string;
+      editPrompt: string;
+      preservePrompt: string;
+      resultLabel: string;
+      errorLabel: string;
+      generatingType: CanvasElement["generatingType"];
+      idPrefix: string;
+      driftPrompt?: string;
+      constraints?: string[];
+    }) => {
+      if (!selectedElementId || !eraserMaskDataUrl) {
+        resetEraserSession();
+        return;
       }
 
-      await maybeWarnConsistencyDrift(
-        result,
-        "Eraser result",
-        element.genPrompt ||
-          "Remove objects in the white mask area only. Keep the black mask area unchanged and blend naturally.",
+      const element = elementsRef.current.find(
+        (item) => item.id === selectedElementId,
       );
-      await applyGeneratedImageToElement(newId, result, true);
-    } catch (error) {
-      console.error("Execute eraser failed", error);
-      removeTemporaryElement(newId);
-      addMessage({
-        id: Date.now().toString(),
-        role: "model",
-        text: `Eraser generation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        timestamp: Date.now(),
+      if (!element || !element.url) {
+        resetEraserSession();
+        return;
+      }
+
+      const newId = appendTemporaryClone(
+        element,
+        args.generatingType,
+        args.idPrefix,
+        100,
+      );
+
+      try {
+        const sourceImage = await urlToBase64(
+          getElementSourceUrl(element) || element.url,
+        );
+        await persistEditSession("edit", element, {
+          instruction: args.sessionInstruction,
+          constraints:
+            args.constraints || [
+              "Only modify the white masked region",
+              "Keep all unmasked regions unchanged",
+            ],
+        });
+
+        const result = await smartEditSkill({
+          sourceUrl: sourceImage,
+          maskImage: eraserMaskDataUrl,
+          editType: "object-remove",
+          parameters: {
+            prompt: args.editPrompt,
+            preservePrompt: args.preservePrompt,
+            editModel: resolveEditModelId(element),
+            providerId: element.genProviderId,
+            aspectRatio: getClosestAspectRatio(element.width, element.height),
+          },
+        });
+
+        if (!result) {
+          throw new Error(`No result from ${args.idPrefix} edit`);
+        }
+
+        await maybeWarnConsistencyDrift(
+          result,
+          args.resultLabel,
+          args.driftPrompt || args.editPrompt,
+        );
+        await applyGeneratedImageToElement(newId, result, true);
+      } catch (error) {
+        console.error(args.errorLabel, error);
+        removeTemporaryElement(newId);
+        addMessage({
+          id: Date.now().toString(),
+          role: "model",
+          text: `${args.errorLabel}: ${error instanceof Error ? error.message : "Unknown error"}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        resetEraserSession();
+      }
+    },
+    [
+      addMessage,
+      appendTemporaryClone,
+      applyGeneratedImageToElement,
+      elementsRef,
+      eraserMaskDataUrl,
+      maybeWarnConsistencyDrift,
+      persistEditSession,
+      removeTemporaryElement,
+      resolveEditModelId,
+      resetEraserSession,
+      selectedElementId,
+      urlToBase64,
+    ],
+  );
+
+  const handleExecuteEraser = useCallback(async () => {
+    await executeMaskedEdit({
+      sessionInstruction:
+        "Remove objects in the white mask area only. Keep the black mask area unchanged and blend naturally.",
+      editPrompt:
+        "Remove objects in the white mask area only. Keep the black mask area unchanged. Blend naturally.",
+      preservePrompt:
+        "Preserve the original product identity, lighting direction, scene composition, typography, and all unmasked areas.",
+      resultLabel: "Eraser result",
+      errorLabel: "Eraser generation failed",
+      generatingType: "eraser",
+      idPrefix: "eraser",
+      driftPrompt:
+        "Remove objects in the white mask area only. Keep the black mask area unchanged and blend naturally.",
+    });
+  }, [executeMaskedEdit]);
+
+  const handleApplyLocalRedraw = useCallback(
+    async (instruction: string) => {
+      const trimmedInstruction = instruction.trim();
+      if (!trimmedInstruction) {
+        resetEraserSession();
+        return;
+      }
+
+      await executeMaskedEdit({
+        sessionInstruction: `Redraw only the white masked area: ${trimmedInstruction}`,
+        editPrompt: [
+          `Only redraw the content inside the white masked area according to this instruction: ${trimmedInstruction}.`,
+          "Do not modify anything outside the masked area.",
+          "Match the surrounding edges, lighting, perspective, texture, typography, and material rendering so the edited region blends seamlessly with the original image.",
+        ].join(" "),
+        preservePrompt:
+          "Preserve all unmasked regions exactly. In the white masked region only, redraw the requested content while matching surrounding lighting, perspective, texture, material detail, and composition.",
+        resultLabel: "Local redraw result",
+        errorLabel: "Local redraw failed",
+        generatingType: "eraser",
+        idPrefix: "local-redraw",
+        driftPrompt: trimmedInstruction,
       });
-    } finally {
-      resetEraserSession();
-    }
-  }, [
-    addMessage,
-    appendTemporaryClone,
-    applyGeneratedImageToElement,
-    elementsRef,
-    eraserMaskDataUrl,
-    maybeWarnConsistencyDrift,
-    persistEditSession,
-    removeTemporaryElement,
-    resolveEditModelId,
-    resetEraserSession,
-    selectedElementId,
-    urlToBase64,
-  ]);
+    },
+    [executeMaskedEdit, resetEraserSession],
+  );
 
   const handleVectorRedraw = useCallback(async () => {
     if (!selectedElementId) {
@@ -574,50 +637,15 @@ export function useWorkspaceImageToolActions(
       return;
     }
 
-    const newId = appendTemporaryClone(element, "vector", "vector", 10);
-
-    try {
-      const base64Ref = await urlToBase64(element.url);
-      await persistEditSession("edit", element, {
-        instruction:
-          "Convert the image into a professional vector-style line drawing while preserving structure and key details.",
-        constraints: [
-          "Keep the subject structure and proportions stable",
-          "Output black and white line art without gray noise",
-        ],
-      });
-
-      const result = await smartEditSkill({
-        sourceUrl: base64Ref,
-        editType: "upscale",
-        parameters: {
-          factor: 2,
-          providerId: element.genProviderId,
-          prompt: vectorRedrawPrompt,
-          preservePrompt:
-            "Preserve the original silhouette, structure, and detail hierarchy while translating to clean vector-style line art.",
-        },
-      });
-
-      if (!result) {
-        removeTemporaryElement(newId);
-        return;
-      }
-
-      await applyGeneratedImageToElement(newId, result, true);
-    } catch (error) {
-      console.error("Vector redraw failed:", error);
-      removeTemporaryElement(newId);
-    }
+    setLocalRedrawPrompt("");
+    setShowLocalRedrawPanel(true);
+    setEraserMode(true);
   }, [
-    appendTemporaryClone,
-    applyGeneratedImageToElement,
     elementsRef,
-    persistEditSession,
-    removeTemporaryElement,
     selectedElementId,
-    urlToBase64,
-    vectorRedrawPrompt,
+    setEraserMode,
+    setLocalRedrawPrompt,
+    setShowLocalRedrawPanel,
   ]);
 
   return {
@@ -626,6 +654,7 @@ export function useWorkspaceImageToolActions(
     handleClearEraser,
     handleCloseEraser: resetEraserSession,
     handleExecuteEraser,
+    handleApplyLocalRedraw,
     handleVectorRedraw,
   };
 }

@@ -13,6 +13,10 @@ type WorkspaceImageEraserOverlayProps = {
   selectedImageEl: CanvasElement;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   cursorRef: React.RefObject<HTMLDivElement>;
+  title?: string;
+  applyLabel?: string;
+  description?: string | null;
+  applyDisabled?: boolean;
   onUndo: () => void;
   onClear: () => void;
   onBrushSizeChange: (size: number) => void;
@@ -38,6 +42,10 @@ export const WorkspaceImageEraserOverlay: React.FC<
   selectedImageEl,
   canvasRef,
   cursorRef,
+  title = "橡皮工具",
+  applyLabel = "立即使用",
+  description = null,
+  applyDisabled = false,
   onUndo,
   onClear,
   onBrushSizeChange,
@@ -64,9 +72,16 @@ export const WorkspaceImageEraserOverlay: React.FC<
         }}
       >
         <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Eraser size={14} className="text-gray-900" />
-            橡皮工具
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Eraser size={14} className="text-gray-900" />
+              <span className="truncate">{title}</span>
+            </div>
+            {description ? (
+              <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                {description}
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -118,10 +133,10 @@ export const WorkspaceImageEraserOverlay: React.FC<
           </button>
           <button
             onClick={onApply}
-            disabled={!canDrawMask || !eraserHasPaint}
+            disabled={!canDrawMask || !eraserHasPaint || applyDisabled}
             className="h-8 rounded-lg bg-black text-white text-xs font-medium hover:bg-gray-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            立即使用
+            {applyLabel}
           </button>
         </div>
       </div>

@@ -386,10 +386,15 @@ export const WorkspaceImageSideToolbar: React.FC<
               className="absolute top-0 left-full ml-2 bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-gray-100 p-4 z-[70] w-72 animate-in slide-in-from-left-2 duration-200 flex flex-col gap-4"
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-gray-900">
-                  上传产品图替换
-                </span>
+              <div className="flex justify-between items-start gap-3">
+                <div className="min-w-0 space-y-1">
+                  <span className="block text-sm font-bold text-gray-900">
+                    受控产品替换
+                  </span>
+                  <p className="text-[11px] leading-5 text-gray-500">
+                    当前会基于参考图重构主商品，尽量保留原场景构图、光线与环境，不承诺像素级局部替换。
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowProductSwapPanel(false)}
                   className="text-gray-400 hover:text-black transition"
@@ -400,7 +405,7 @@ export const WorkspaceImageSideToolbar: React.FC<
 
               <div className="flex flex-col gap-2">
                 <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider px-1">
-                  上传产品细节图（最多 3 张）
+                  上传替换商品参考图（最多 3 张）
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {productSwapImages.map((imgUrl, i) => (
@@ -503,7 +508,7 @@ export const WorkspaceImageSideToolbar: React.FC<
                     disabled={productSwapImages.length === 0}
                     className="flex-1 py-2 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    开始替换
+                    开始受控替换
                   </button>
                 </div>
               </div>

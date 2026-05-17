@@ -2371,6 +2371,13 @@ export interface ImageEditConfig {
     referenceImages?: string[];
 }
 
+export interface TransparentResultValidation {
+    ok: boolean;
+    hasAlpha: boolean;
+    transparentPixelRatio: number;
+    reason?: 'not-data-url' | 'image-load-failed' | 'canvas-context-failed' | 'missing-alpha-output';
+}
+
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 
 const strengthToRepeats = (strength: number): number => {
@@ -2841,6 +2848,73 @@ const estimateDataUrlBytes = (dataUrl: string): number => {
     const base64 = match[2];
     const padding = (base64.match(/=*$/)?.[0]?.length || 0);
     return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+};
+
+export const validateTransparentCutoutResult = async (
+    imageUrl: string,
+): Promise<TransparentResultValidation> => {
+    const source = String(imageUrl || '').trim();
+    if (!source.startsWith('data:image/')) {
+        return {
+            ok: false,
+            hasAlpha: false,
+            transparentPixelRatio: 0,
+            reason: 'not-data-url',
+        };
+    }
+
+    try {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+
+        await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('image-load-failed'));
+            image.src = source;
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, image.naturalWidth || image.width || 1);
+        canvas.height = Math.max(1, image.naturalHeight || image.height || 1);
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) {
+            return {
+                ok: false,
+                hasAlpha: false,
+                transparentPixelRatio: 0,
+                reason: 'canvas-context-failed',
+            };
+        }
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+
+        let transparentPixels = 0;
+        const pixelCount = Math.max(1, data.length / 4);
+        for (let index = 3; index < data.length; index += 4) {
+            if (data[index] < 250) {
+                transparentPixels += 1;
+            }
+        }
+
+        const transparentPixelRatio = transparentPixels / pixelCount;
+        const hasAlpha = transparentPixels > 0;
+
+        return {
+            ok: hasAlpha,
+            hasAlpha,
+            transparentPixelRatio,
+            reason: hasAlpha ? undefined : 'missing-alpha-output',
+        };
+    } catch {
+        return {
+            ok: false,
+            hasAlpha: false,
+            transparentPixelRatio: 0,
+            reason: 'image-load-failed',
+        };
+    }
 };
 
 const extractOpenAIImageResult = (payload: any): string | null => {
