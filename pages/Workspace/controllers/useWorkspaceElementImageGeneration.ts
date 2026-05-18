@@ -30,7 +30,6 @@ import {
   getClosestWorkspaceImageResolutionPresetForSize,
   getDefaultWorkspaceImageSizeForAspectRatio,
   normalizeWorkspaceImageSize,
-  resolveAutoWorkspaceImageSize,
   type WorkspaceImageSizeMode,
 } from "../../../services/openai-image-presets";
 import { getEffectiveStyleLibrary } from "../../../services/vision-orchestrator/style-library";
@@ -356,25 +355,6 @@ const normalizeReferenceCandidate = async (
   return null;
 };
 
-const readReferenceImageDimensions = async (
-  value: string,
-): Promise<{ width: number; height: number } | null> => {
-  const normalized = await normalizeReferenceToDataUrl(String(value || "").trim());
-  if (!normalized || typeof document === "undefined") {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.onload = () =>
-      resolve({
-        width: Math.max(1, image.naturalWidth || image.width || 1),
-        height: Math.max(1, image.naturalHeight || image.height || 1),
-      });
-    image.onerror = () => resolve(null);
-    image.src = normalized;
-  });
-};
 
 const repairGenerationReferenceInputs = async (args: {
   manualReferenceImages: string[];
@@ -1350,33 +1330,25 @@ export function useWorkspaceElementImageGeneration(
                 aspectRatio: fallbackAspectRatio,
                 resolution: imageSize,
               });
-        const autoReferenceDimensions =
-          currentSizeMode === "auto" && repairedReferenceInput.referenceImages[0]
-            ? await readReferenceImageDimensions(repairedReferenceInput.referenceImages[0])
-            : null;
-        const resolvedWorkspaceImageSize =
+        const resolvedWorkspaceImageSize = baseCustomSize;
+        const currentAspectRatio =
           currentSizeMode === "auto"
-            ? resolveAutoWorkspaceImageSize({
-                model,
-                referenceWidth: autoReferenceDimensions?.width ?? null,
-                referenceHeight: autoReferenceDimensions?.height ?? null,
-                fallbackAspectRatio,
-                fallbackResolution: imageSize,
-              })
-            : baseCustomSize;
-        const currentAspectRatio = resolvedWorkspaceImageSize.aspectRatio;
+            ? fallbackAspectRatio
+            : resolvedWorkspaceImageSize.aspectRatio;
         const exactSize =
-          currentSizeMode === "preset"
-            ? undefined
-            : `${resolvedWorkspaceImageSize.width}x${resolvedWorkspaceImageSize.height}`;
+          currentSizeMode === "auto"
+            ? "auto"
+            : currentSizeMode === "preset"
+              ? undefined
+              : `${resolvedWorkspaceImageSize.width}x${resolvedWorkspaceImageSize.height}`;
         const resolvedImageSizePreset =
-          currentSizeMode === "preset"
-            ? imageSize
-            : getClosestWorkspaceImageResolutionPresetForSize({
+          currentSizeMode === "custom"
+            ? getClosestWorkspaceImageResolutionPresetForSize({
                 aspectRatio: currentAspectRatio,
                 width: resolvedWorkspaceImageSize.width,
                 height: resolvedWorkspaceImageSize.height,
-              });
+              })
+            : imageSize;
         const manualReferenceImages = repairedReferenceInput.referenceImages;
         const referenceImages = mergeConsistencyAnchorIntoReferences(
           manualReferenceImages,

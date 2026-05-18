@@ -2531,6 +2531,29 @@ const TreePromptSettingsModal: React.FC<{
     }),
   }));
 
+  const commitDraftCustomSize = React.useCallback(() => {
+    const nextWidth = Number(draftWidth);
+    const nextHeight = Number(draftHeight);
+    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
+      return;
+    }
+    if (nextWidth <= 0 || nextHeight <= 0) {
+      return;
+    }
+    onApplyCustomSize(nextWidth, nextHeight);
+  }, [draftHeight, draftWidth, onApplyCustomSize]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        commitDraftCustomSize();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commitDraftCustomSize, onClose]);
+
   React.useEffect(() => {
     setDraftWidth(String(currentNormalizedSize.width));
     setDraftHeight(String(currentNormalizedSize.height));
@@ -2541,7 +2564,10 @@ const TreePromptSettingsModal: React.FC<{
       className={`fixed inset-0 z-[320] transition-opacity duration-180 ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
-      onMouseDown={onClose}
+      onMouseDown={() => {
+        commitDraftCustomSize();
+        onClose();
+      }}
     >
       <div className="pointer-events-none absolute inset-0">
         <div
@@ -2593,13 +2619,11 @@ const TreePromptSettingsModal: React.FC<{
                     step={16}
                     value={draftWidth}
                     onChange={(event) => setDraftWidth(event.target.value)}
-                    onBlur={() =>
-                      onApplyCustomSize(Number(draftWidth), Number(draftHeight))
-                    }
+                    onBlur={commitDraftCustomSize}
                     onKeyDown={(event) => {
                       event.stopPropagation();
                       if (event.key === "Enter") {
-                        onApplyCustomSize(Number(draftWidth), Number(draftHeight));
+                        commitDraftCustomSize();
                         (event.target as HTMLInputElement).blur();
                       }
                     }}
@@ -2625,13 +2649,11 @@ const TreePromptSettingsModal: React.FC<{
                     step={16}
                     value={draftHeight}
                     onChange={(event) => setDraftHeight(event.target.value)}
-                    onBlur={() =>
-                      onApplyCustomSize(Number(draftWidth), Number(draftHeight))
-                    }
+                    onBlur={commitDraftCustomSize}
                     onKeyDown={(event) => {
                       event.stopPropagation();
                       if (event.key === "Enter") {
-                        onApplyCustomSize(Number(draftWidth), Number(draftHeight));
+                        commitDraftCustomSize();
                         (event.target as HTMLInputElement).blur();
                       }
                     }}
@@ -2641,7 +2663,9 @@ const TreePromptSettingsModal: React.FC<{
                 </div>
                 <div className="mt-2 flex min-w-0 items-center justify-between gap-3 px-1 text-[10px] text-[#98a2b3]">
                   <span className="min-w-0 truncate">
-                    当前：{currentNormalizedSize.size} · {getClosestWorkspaceAspectRatioFromSize(currentNormalizedSize.width, currentNormalizedSize.height)}
+                    {currentSizeMode === "auto"
+                      ? "当前：Auto · 由模型自动决定"
+                      : `当前：${currentNormalizedSize.size} · ${getClosestWorkspaceAspectRatioFromSize(currentNormalizedSize.width, currentNormalizedSize.height)}`}
                   </span>
                   <span className="shrink-0 text-right">
                     {currentSizeMode === "custom"
@@ -2851,7 +2875,7 @@ const TreePromptGenerateControls: React.FC<{
         });
   const settingsSummary =
     currentSizeMode === "auto"
-      ? `Auto · ${currentCustomSize.size} · ${imageCount}p`
+      ? `Auto | ${imageCount}p`
       : currentSizeMode === "custom"
         ? `${currentCustomSize.size} · ${imageCount}p`
         : `${currentResolution} | ${currentAspectRatio} | ${imageCount}p`;
@@ -3046,8 +3070,6 @@ const TreePromptGenerateControls: React.FC<{
               onSelectAutoSize={() =>
                 updateSelectedElement({
                   genSizeMode: "auto",
-                  genCustomWidth: currentCustomSize.width,
-                  genCustomHeight: currentCustomSize.height,
                 })
               }
             />

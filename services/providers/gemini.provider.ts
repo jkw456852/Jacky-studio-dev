@@ -23,6 +23,7 @@ export const geminiImageProvider: ImageProvider = {
       providerId: request.providerId,
       aspectRatio: request.aspectRatio,
       imageSize: request.imageSize,
+      exactSize: request.exactSize,
       imageQuality: request.imageQuality,
       disableTransportRetries: request.disableTransportRetries,
       referenceImage: request.referenceImage,

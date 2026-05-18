@@ -2769,12 +2769,17 @@ type OpenAIImageRequestMode = 'standard-openai' | 'reverse-compat' | 'official-t
 const getOpenAIImageRequestMode = (
     model: string,
     imageSize?: '1K' | '2K' | '4K',
+    exactSize?: string,
 ): OpenAIImageRequestMode => {
     const normalizedModel = normalizeOpenAICompatibleImageModelId(model);
-    if (normalizedModel === 'gpt-image-2' && imageSize && imageSize !== '1K') {
-        return 'official-transfer';
-    }
     if (normalizedModel === 'gpt-image-2') {
+        const normalizedExactSize = String(exactSize || '').trim().toLowerCase();
+        if (normalizedExactSize) {
+            return 'official-transfer';
+        }
+        if (imageSize && imageSize !== '1K') {
+            return 'official-transfer';
+        }
         return 'reverse-compat';
     }
     return 'standard-openai';
@@ -2806,15 +2811,22 @@ const resolveOpenAIImageSize = (
     imageSize?: '1K' | '2K' | '4K',
     exactSize?: string,
 ): string => {
-    const parsedExactSize = parseImageSizeString(exactSize);
-    if (parsedExactSize) {
-        const normalized = normalizeWorkspaceImageSize(parsedExactSize);
-        return `${normalized.width}x${normalized.height}`;
+    const normalizedExactSize = String(exactSize || '').trim();
+    if (normalizedExactSize) {
+        if (normalizedExactSize.toLowerCase() === 'auto') {
+            return 'auto';
+        }
+
+        const parsedExactSize = parseImageSizeString(normalizedExactSize);
+        if (parsedExactSize) {
+            const normalized = normalizeWorkspaceImageSize(parsedExactSize);
+            return `${normalized.width}x${normalized.height}`;
+        }
     }
 
     const ratio = normalizeOpenAIImageAspectRatio(model, aspectRatio);
     const preset = imageSize || '1K';
-    const requestMode = getOpenAIImageRequestMode(model, preset);
+    const requestMode = getOpenAIImageRequestMode(model, preset, exactSize);
 
     const resolvedPreset = requestMode === 'reverse-compat' ? '1K' : preset;
     return (
@@ -3111,8 +3123,17 @@ const requestOpenAICompatibleImage = async (opts: {
             modelId: opts.model,
             hasReferences: isEditRequest,
         });
-    const requestMode = getOpenAIImageRequestMode(opts.model, opts.imageSize);
-    const size = resolveOpenAIImageSize(opts.model, opts.aspectRatio, opts.imageSize, opts.exactSize);
+    const requestMode = getOpenAIImageRequestMode(
+        opts.model,
+        opts.imageSize,
+        opts.exactSize,
+    );
+    const size = resolveOpenAIImageSize(
+        opts.model,
+        opts.aspectRatio,
+        opts.imageSize,
+        opts.exactSize,
+    );
     const normalizedAspectRatio = opts.exactSize
         ? null
         : normalizeOpenAIImageAspectRatio(opts.model, opts.aspectRatio);
@@ -3567,15 +3588,20 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     const textPolicySuffix = buildTextPolicySuffix(config.textPolicy);
     const finalPrompt = `${languageAdjustedPrompt}\n\n${textPolicySuffix}`.trim();
     const useOpenAIImageRoute = isOpenAICompatibleImageModel(targetModelId) || isOpenAICompatibleImageModel(requestedModel);
-    const openAIImageRequestMode = useOpenAIImageRoute
-        ? getOpenAIImageRequestMode(targetModelId, config.imageSize)
-        : null;
     const normalizedExactSize = (() => {
-        const parsed = parseImageSizeString(config.exactSize);
+        const exactSize = String(config.exactSize || '').trim();
+        if (!exactSize) return null;
+        if (exactSize.toLowerCase() === 'auto') {
+            return 'auto';
+        }
+        const parsed = parseImageSizeString(exactSize);
         if (!parsed) return null;
         const normalized = normalizeWorkspaceImageSize(parsed);
         return `${normalized.width}x${normalized.height}`;
     })();
+    const openAIImageRequestMode = useOpenAIImageRoute
+        ? getOpenAIImageRequestMode(targetModelId, config.imageSize, normalizedExactSize || undefined)
+        : null;
 
     console.info('[imggen] route decision', {
         requestedModel,

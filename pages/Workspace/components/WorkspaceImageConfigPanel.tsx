@@ -271,9 +271,7 @@ const WorkspaceImageConfigPanelImpl: React.FC<
 
   const currentSizeLabel = useMemo(() => {
     if (currentSizeMode === "auto") {
-      return isAutoSizeSupported
-        ? `Auto · ${currentCustomSize.size}`
-        : `Auto 不可用`;
+      return isAutoSizeSupported ? "Auto" : `Auto 不可用`;
     }
     if (currentSizeMode === "custom") {
       return `自定义 · ${currentCustomSize.size}`;
@@ -325,22 +323,8 @@ const WorkspaceImageConfigPanelImpl: React.FC<
       return;
     }
 
-    const nextAspectRatio = getClosestWorkspaceAspectRatioFromSize(
-      currentCustomSize.width,
-      currentCustomSize.height,
-    );
-    const nextResolution = getClosestWorkspaceImageResolutionPresetForSize({
-      aspectRatio: nextAspectRatio,
-      width: currentCustomSize.width,
-      height: currentCustomSize.height,
-    });
-
     updateSelectedElement({
       genSizeMode: "auto",
-      genResolution: nextResolution,
-      genAspectRatio: nextAspectRatio,
-      genCustomWidth: currentCustomSize.width,
-      genCustomHeight: currentCustomSize.height,
     });
   };
 
@@ -657,7 +641,9 @@ const WorkspaceImageConfigPanelImpl: React.FC<
 
         <div className="mt-2 flex min-w-0 items-center justify-between gap-3 text-[10px] text-gray-500">
           <span className="min-w-0 truncate">
-            当前：{currentCustomSize.size} · {getClosestWorkspaceAspectRatioFromSize(currentCustomSize.width, currentCustomSize.height)}
+            {currentSizeMode === "auto"
+              ? "当前：Auto · 由模型自动决定"
+              : `当前：${currentCustomSize.size} · ${getClosestWorkspaceAspectRatioFromSize(currentCustomSize.width, currentCustomSize.height)}`}
           </span>
           <span className="shrink-0 text-right">
             {currentSizeMode === "custom"
