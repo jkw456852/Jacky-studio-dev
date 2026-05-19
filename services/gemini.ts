@@ -2718,21 +2718,23 @@ const buildTextPolicySuffix = (
         requiredCopy?: string;
     },
 ): string => {
-    const enforceChinese = textPolicy?.enforceChinese !== false;
+    const enforceChinese = textPolicy?.enforceChinese === true;
     const requiredCopy = String(textPolicy?.requiredCopy || '').trim();
 
-    const rules: string[] = ['[Text Rendering Rules]'];
+    const rules: string[] = [];
     if (enforceChinese) {
+        rules.push('[Text Rendering Rules]');
         rules.push('- Any visible text in the generated image must be Simplified Chinese only. Do not render English letters, pinyin, or mixed-language text.');
-    } else {
-        rules.push('- If visible text is needed, prefer Simplified Chinese.');
     }
 
     if (requiredCopy) {
+        if (rules.length === 0) {
+            rules.push('[Text Rendering Rules]');
+        }
         rules.push(`- The visible text must exactly match this copy: "${requiredCopy}". Do not add, remove, paraphrase, or translate any character.`);
     }
 
-    return rules.join('\n');
+    return rules.join('\n').trim();
 };
 
 const isOpenAICompatibleImageModel = (model: string): boolean => {

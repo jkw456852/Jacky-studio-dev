@@ -1350,10 +1350,13 @@ export function useWorkspaceElementImageGeneration(
               })
             : imageSize;
         const manualReferenceImages = repairedReferenceInput.referenceImages;
-        const referenceImages = mergeConsistencyAnchorIntoReferences(
-          manualReferenceImages,
-        );
+        const shouldPreferManualReferencesForAutoSize =
+          currentSizeMode === "auto" && manualReferenceImages.length > 0;
+        const referenceImages = shouldPreferManualReferencesForAutoSize
+          ? manualReferenceImages
+          : mergeConsistencyAnchorIntoReferences(manualReferenceImages);
         const consistencyAnchorInjected =
+          !shouldPreferManualReferencesForAutoSize &&
           referenceImages.length > 0 &&
           (manualReferenceImages.length === 0 ||
             referenceImages[0] !== manualReferenceImages[0] ||

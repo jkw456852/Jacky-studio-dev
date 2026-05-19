@@ -359,7 +359,7 @@ const initialState: Omit<AgentState, 'actions'> = {
   currentAutoRoleSession: null,
   imageModelEnabled: false,
   translatePromptToEnglish: false,
-  enforceChineseTextInImage: true,
+  enforceChineseTextInImage: false,
   requiredChineseCopy: '',
 
   generation: {
