@@ -355,6 +355,26 @@ const normalizeReferenceCandidate = async (
   return null;
 };
 
+const inferAspectRatioFromReferenceImage = async (
+  value: string,
+  getClosestAspectRatio: (width: number, height: number) => string,
+): Promise<string | null> => {
+  const normalized = await normalizeReferenceCandidate(value);
+  if (!normalized || typeof Image === "undefined") {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = Math.max(1, image.naturalWidth || image.width || 1);
+      const height = Math.max(1, image.naturalHeight || image.height || 1);
+      resolve(getClosestAspectRatio(width, height));
+    };
+    image.onerror = () => resolve(null);
+    image.src = normalized;
+  });
+};
 
 const repairGenerationReferenceInputs = async (args: {
   manualReferenceImages: string[];
@@ -1294,9 +1314,6 @@ export function useWorkspaceElementImageGeneration(
           setElementGeneratingState(elementId, true);
         }
 
-        const fallbackAspectRatio =
-          sourceElement.genAspectRatio ||
-          getClosestAspectRatio(sourceElement.width, sourceElement.height);
         const model = sourceElement.genModel || "Nano Banana Pro";
         const imageSize = sourceElement.genResolution || "1K";
         const imageQuality = sourceElement.genImageQuality || "medium";
@@ -1317,6 +1334,18 @@ export function useWorkspaceElementImageGeneration(
           manualReferenceImages: rawManualReferenceImages,
           previewReferenceImages: rawPreviewReferenceImages,
         });
+        const manualReferenceImages = repairedReferenceInput.referenceImages;
+        const inferredAutoAspectRatio =
+          currentSizeMode === "auto" && manualReferenceImages.length > 0
+            ? await inferAspectRatioFromReferenceImage(
+                manualReferenceImages[0],
+                getClosestAspectRatio,
+              )
+            : null;
+        const fallbackAspectRatio =
+          inferredAutoAspectRatio ||
+          sourceElement.genAspectRatio ||
+          getClosestAspectRatio(sourceElement.width, sourceElement.height);
         const baseCustomSize =
           Number.isFinite(sourceElement.genCustomWidth) &&
           Number.isFinite(sourceElement.genCustomHeight) &&
@@ -1349,7 +1378,6 @@ export function useWorkspaceElementImageGeneration(
                 height: resolvedWorkspaceImageSize.height,
               })
             : imageSize;
-        const manualReferenceImages = repairedReferenceInput.referenceImages;
         const shouldPreferManualReferencesForAutoSize =
           currentSizeMode === "auto" && manualReferenceImages.length > 0;
         const referenceImages = shouldPreferManualReferencesForAutoSize

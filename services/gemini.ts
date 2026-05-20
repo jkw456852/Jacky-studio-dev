@@ -3076,6 +3076,22 @@ const buildOpenAIImageEditFormData = (opts: {
     };
 };
 
+const buildOpenAIImageEditJsonPayload = (opts: {
+    model: string;
+    prompt: string;
+    size: string;
+    quality?: 'low' | 'medium' | 'high';
+    referenceImages: string[];
+    maskImage?: string | null;
+}) => ({
+    model: opts.model,
+    prompt: opts.prompt,
+    images: opts.referenceImages.map((imageUrl) => ({ image_url: imageUrl })),
+    size: opts.size,
+    ...(opts.quality ? { quality: opts.quality } : {}),
+    ...(opts.maskImage ? { mask: { image_url: opts.maskImage } } : {}),
+});
+
 const requestOpenAICompatibleImage = async (opts: {
     model: string;
     prompt: string;
@@ -3158,8 +3174,13 @@ const requestOpenAICompatibleImage = async (opts: {
         ...(requestTuning || {}),
         requestFingerprint: requestFingerprintMeta.fingerprint,
     };
+    const shouldUseJsonEditPayload =
+        isEditRequest &&
+        isGptImage2FamilyModel(opts.model) &&
+        normalizedReferences.length > 0 &&
+        (size === 'auto' || requestMode === 'official-transfer');
     const editFormMeta =
-        isEditRequest
+        isEditRequest && !shouldUseJsonEditPayload
             ? buildOpenAIImageEditFormData({
                 model: opts.model,
                 prompt: opts.prompt,
@@ -3171,9 +3192,11 @@ const requestOpenAICompatibleImage = async (opts: {
             : null;
     const imageFieldMode =
         isEditRequest
-            ? normalizedReferences.length > 1
-                ? 'multi-file-repeated-field'
-                : 'single-file'
+            ? shouldUseJsonEditPayload
+                ? 'json-image-ref-array'
+                : normalizedReferences.length > 1
+                    ? 'multi-file-repeated-field'
+                    : 'single-file'
             : 'json';
 
     if (isVerboseOpenAIOperation(opts.contextTag)) {
@@ -3207,6 +3230,41 @@ const requestOpenAICompatibleImage = async (opts: {
     }
 
     if (isEditRequest) {
+        if (shouldUseJsonEditPayload) {
+            if (isVerboseOpenAIOperation(opts.contextTag)) {
+                console.info(`[${opts.contextTag}] json edit payload`, {
+                    model: opts.model,
+                    requestMode,
+                    providerId: provider.id || opts.providerId || null,
+                    requestFingerprint: requestFingerprintMeta.fingerprint,
+                    promptHash: requestFingerprintMeta.promptHash,
+                    referenceHash: requestFingerprintMeta.referenceHash,
+                    quality: opts.imageQuality || 'medium',
+                    imagePartCount: normalizedReferences.length,
+                    size,
+                    aspect_ratio: null,
+                    hasMask: !!normalizedMask,
+                    promptChars: opts.prompt.length,
+                });
+            }
+            const payload = await fetchOpenAIJsonWithFallback<any>(
+                baseUrl,
+                effectiveRoute,
+                apiKeys,
+                buildOpenAIImageEditJsonPayload({
+                    model: opts.model,
+                    prompt: opts.prompt,
+                    size,
+                    quality: opts.imageQuality,
+                    referenceImages: normalizedReferences,
+                    maskImage: normalizedMask,
+                }),
+                opts.contextTag,
+                requestTuningWithFingerprint,
+            );
+            return extractOpenAIImageResult(payload);
+        }
+
         if (isVerboseOpenAIOperation(opts.contextTag)) {
             console.info(`[${opts.contextTag}] form payload`, {
                 model: opts.model,
