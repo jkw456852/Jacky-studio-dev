@@ -570,6 +570,16 @@ const fetchOpenAIJsonWithFallback = async <T>(
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
             const headers = buildOpenAIHeaders(authMode, apiKey);
             const requestStartedAt = Date.now();
+            const shouldUseBrowserProxy = typeof window !== 'undefined';
+            const browserProxyUrl = '/api/openai-proxy';
+            const requestTarget = shouldUseBrowserProxy
+                ? {
+                    targetUrl: url,
+                    method: 'POST',
+                    headers,
+                    body,
+                  }
+                : null;
             if (isVerboseOpenAIOperation(contextTag)) {
                 console.log(
                     `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
@@ -581,6 +591,7 @@ const fetchOpenAIJsonWithFallback = async <T>(
                     keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
                     requestFingerprint: requestTuning?.requestFingerprint || null,
                     url: summarizeBaseUrlForLog(url.replace(apiKey, '***')),
+                    proxyUrl: shouldUseBrowserProxy ? browserProxyUrl : null,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
                     retries: requestTuning?.retries ?? 3,
@@ -588,19 +599,37 @@ const fetchOpenAIJsonWithFallback = async <T>(
             }
             let res: Response;
             try {
-                res = await fetchWithResilience(url, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify(body),
-                }, {
-                    operation: `${contextTag}.openaiPost`,
-                    retries: requestTuning?.retries ?? 3,
-                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                    requestFingerprint: requestTuning?.requestFingerprint,
-                });
+                if (requestTarget) {
+                    res = await fetchWithResilience(browserProxyUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestTarget),
+                    }, {
+                        operation: `${contextTag}.openaiProxyPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                } else {
+                    res = await fetchWithResilience(url, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify(body),
+                    }, {
+                        operation: `${contextTag}.openaiPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                }
             } catch (error) {
                 const isTimeoutError = isTimeoutException(error);
                 if (isTimeoutError) {
@@ -868,6 +897,7 @@ const fetchOpenAIFormWithFallback = async <T>(
                     keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
                     requestFingerprint: requestTuning?.requestFingerprint || null,
                     url: summarizeBaseUrlForLog(url.replace(apiKey, '***')),
+                    proxyUrl: typeof window !== 'undefined' ? '/api/openai-proxy' : null,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
                     retries: requestTuning?.retries ?? 3,
@@ -876,19 +906,43 @@ const fetchOpenAIFormWithFallback = async <T>(
 
             let res: Response;
             try {
-                res = await fetchWithResilience(url, {
-                    method: 'POST',
-                    headers,
-                    body: buildFormData(),
-                }, {
-                    operation: `${contextTag}.openaiFormPost`,
-                    retries: requestTuning?.retries ?? 3,
-                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                    requestFingerprint: requestTuning?.requestFingerprint,
-                });
+                if (typeof window !== 'undefined') {
+                    const serializedFormData = await serializeFormDataForProxy(buildFormData());
+                    res = await fetchWithResilience('/api/openai-proxy', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            targetUrl: url,
+                            method: 'POST',
+                            headers,
+                            body: serializedFormData,
+                        }),
+                    }, {
+                        operation: `${contextTag}.openaiProxyPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                } else {
+                    res = await fetchWithResilience(url, {
+                        method: 'POST',
+                        headers,
+                        body: buildFormData(),
+                    }, {
+                        operation: `${contextTag}.openaiFormPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                }
             } catch (error) {
                 if (isTimeoutException(error)) {
                     const timeoutError: any = error instanceof Error ? error : new Error(String(error));
@@ -1167,8 +1221,8 @@ export const generateJsonResponse = async (
                 temperature,
                 responseMimeType: 'application/json',
                 ...(responseSchema ? { responseSchema } : {}),
-                ...(tools && tools.length > 0 ? { tools } : {})
-            }
+                ...(tools && tools.length > 0 ? { tools: tools as any } : {}),
+            },
         });
 
         return {
@@ -1444,7 +1498,11 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
 
                 let keySucceeded = false;
                 for (const plan of plans) {
-                    const res = await fetchWithResilience(plan.url, { headers: plan.headers }, { operation: 'fetchAvailableModels.modelList', retries: 0 });
+                    const res = await fetchWithResilience(
+                        plan.url,
+                        { headers: plan.headers as Record<string, string> },
+                        { operation: 'fetchAvailableModels.modelList', retries: 0 },
+                    );
 
                     if (res.ok) {
                         const data = await res.json();
@@ -3028,6 +3086,29 @@ const getOpenAIImageRequestTuning = (
     });
 };
 
+type SerializedFormDataEntry =
+    | {
+        key: string;
+        type: 'text';
+        value: string;
+    }
+    | {
+        key: string;
+        type: 'file';
+        name: string;
+        mimeType: string;
+        dataUrl: string;
+    };
+
+const isOfficialOpenAIBaseUrl = (baseUrl: string): boolean => {
+    try {
+        const host = new URL(normalizeUrl(baseUrl || '')).host.toLowerCase();
+        return host === 'api.openai.com' || host.endsWith('.openai.com');
+    } catch {
+        return false;
+    }
+};
+
 const buildOpenAIImageEditFormData = (opts: {
     model: string;
     prompt: string;
@@ -3091,6 +3172,41 @@ const buildOpenAIImageEditJsonPayload = (opts: {
     ...(opts.quality ? { quality: opts.quality } : {}),
     ...(opts.maskImage ? { mask: { image_url: opts.maskImage } } : {}),
 });
+
+const serializeFormDataForProxy = async (
+    formData: FormData,
+): Promise<{
+    kind: 'form-data';
+    entries: SerializedFormDataEntry[];
+}> => {
+    const entries: SerializedFormDataEntry[] = [];
+    for (const [key, value] of formData.entries()) {
+        if (typeof value === 'string') {
+            entries.push({ key, type: 'text', value });
+            continue;
+        }
+
+        const file = value as File;
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('formdata_blob_read_failed'));
+            reader.readAsDataURL(file);
+        });
+        entries.push({
+            key,
+            type: 'file',
+            name: file.name || 'upload.bin',
+            mimeType: file.type || 'application/octet-stream',
+            dataUrl,
+        });
+    }
+
+    return {
+        kind: 'form-data',
+        entries,
+    };
+};
 
 const requestOpenAICompatibleImage = async (opts: {
     model: string;
@@ -3177,6 +3293,7 @@ const requestOpenAICompatibleImage = async (opts: {
     const shouldUseJsonEditPayload =
         isEditRequest &&
         isGptImage2FamilyModel(opts.model) &&
+        isOfficialOpenAIBaseUrl(baseUrl) &&
         normalizedReferences.length > 0 &&
         (size === 'auto' || requestMode === 'official-transfer');
     const editFormMeta =
@@ -3231,38 +3348,60 @@ const requestOpenAICompatibleImage = async (opts: {
 
     if (isEditRequest) {
         if (shouldUseJsonEditPayload) {
-            if (isVerboseOpenAIOperation(opts.contextTag)) {
-                console.info(`[${opts.contextTag}] json edit payload`, {
-                    model: opts.model,
-                    requestMode,
-                    providerId: provider.id || opts.providerId || null,
-                    requestFingerprint: requestFingerprintMeta.fingerprint,
-                    promptHash: requestFingerprintMeta.promptHash,
-                    referenceHash: requestFingerprintMeta.referenceHash,
-                    quality: opts.imageQuality || 'medium',
-                    imagePartCount: normalizedReferences.length,
-                    size,
-                    aspect_ratio: null,
-                    hasMask: !!normalizedMask,
-                    promptChars: opts.prompt.length,
-                });
+            try {
+                if (isVerboseOpenAIOperation(opts.contextTag)) {
+                    console.info(`[${opts.contextTag}] json edit payload`, {
+                        model: opts.model,
+                        requestMode,
+                        providerId: provider.id || opts.providerId || null,
+                        requestFingerprint: requestFingerprintMeta.fingerprint,
+                        promptHash: requestFingerprintMeta.promptHash,
+                        referenceHash: requestFingerprintMeta.referenceHash,
+                        quality: opts.imageQuality || 'medium',
+                        imagePartCount: normalizedReferences.length,
+                        size,
+                        aspect_ratio: null,
+                        hasMask: !!normalizedMask,
+                        promptChars: opts.prompt.length,
+                    });
+                }
+                const payload = await fetchOpenAIJsonWithFallback<any>(
+                    baseUrl,
+                    effectiveRoute,
+                    apiKeys,
+                    buildOpenAIImageEditJsonPayload({
+                        model: opts.model,
+                        prompt: opts.prompt,
+                        size,
+                        quality: opts.imageQuality,
+                        referenceImages: normalizedReferences,
+                        maskImage: normalizedMask,
+                    }),
+                    opts.contextTag,
+                    requestTuningWithFingerprint,
+                );
+                return extractOpenAIImageResult(payload);
+            } catch (error) {
+                const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? NaN);
+                const shouldFallbackToForm =
+                    Boolean(editFormMeta) &&
+                    (isNetworkFetchError(error) || status >= 500 || status === 400 || status === 415);
+
+                if (!shouldFallbackToForm) {
+                    throw error;
+                }
+
+                if (isVerboseOpenAIOperation(opts.contextTag)) {
+                    console.warn(`[${opts.contextTag}] json edit payload failed, falling back to multipart form`, {
+                        providerId: provider.id || opts.providerId || null,
+                        requestMode,
+                        requestFingerprint: requestFingerprintMeta.fingerprint,
+                        status: Number.isFinite(status) ? status : null,
+                        errorName: error instanceof Error ? error.name : typeof error,
+                        errorMessage: error instanceof Error ? error.message : String(error),
+                    });
+                }
             }
-            const payload = await fetchOpenAIJsonWithFallback<any>(
-                baseUrl,
-                effectiveRoute,
-                apiKeys,
-                buildOpenAIImageEditJsonPayload({
-                    model: opts.model,
-                    prompt: opts.prompt,
-                    size,
-                    quality: opts.imageQuality,
-                    referenceImages: normalizedReferences,
-                    maskImage: normalizedMask,
-                }),
-                opts.contextTag,
-                requestTuningWithFingerprint,
-            );
-            return extractOpenAIImageResult(payload);
         }
 
         if (isVerboseOpenAIOperation(opts.contextTag)) {

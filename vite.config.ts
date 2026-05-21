@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import accountSyncHandler from "./api/account-sync";
 import accountSecretsHandler from "./api/account-secrets";
+import openAIProxyHandler from "./api/openai-proxy";
 import searchHandler from "./api/search";
 import {
   clearPersonalBrowserAuthSession,
@@ -24,6 +25,39 @@ import { apiEcommerceProductAnalysisDebugPlugin } from "./services/dev/ecommerce
 import { apiEcommerceSupplementDebugPlugin } from "./services/dev/ecommerce-supplement-debug";
 import { apiEcommerceWorkflowDebugPlugin } from "./services/dev/ecommerce-workflow-debug";
 import { apiCompetitorPageImportPlugin } from "./services/dev/competitor-page-import";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /api/openai-proxy 本地代理：让前端同源转发 OpenAI 兼容请求
+// ─────────────────────────────────────────────────────────────────────────────
+function apiOpenAIProxyPlugin(): Plugin {
+  return {
+    name: "vite-plugin-api-openai-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/openai-proxy", async (req, res) => {
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Method not allowed" }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        const rawBody = Buffer.concat(chunks).toString("utf-8");
+        let body: any = {};
+        try { body = JSON.parse(rawBody); } catch { /* ignore */ }
+
+        const adaptedRes = createAdaptedApiResponse(res);
+        try {
+          await openAIProxyHandler({ method: req.method, body }, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({ error: error?.message || "local_openai_proxy_failed" });
+          }
+        }
+      });
+    },
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 本地开发时把 /api/fetch-image 挂在 Vite dev server 上
@@ -1239,6 +1273,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      apiOpenAIProxyPlugin(),
       apiFetchImagePlugin(),
       apiSearchPlugin(),
       apiRehostImagePlugin(),
