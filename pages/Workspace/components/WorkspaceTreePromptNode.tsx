@@ -3028,6 +3028,7 @@ const TreePromptGenerateControls: React.FC<{
                 });
                 updateSelectedElement({
                   genAspectRatio: value,
+                  genSizeMode: "preset",
                   genCustomWidth: preset.width,
                   genCustomHeight: preset.height,
                 });

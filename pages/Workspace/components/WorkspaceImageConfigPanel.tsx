@@ -894,6 +894,7 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                         });
                         updateSelectedElement({
                           genAspectRatio: ratio.value,
+                          genSizeMode: "preset",
                           genCustomWidth: preset.width,
                           genCustomHeight: preset.height,
                         });

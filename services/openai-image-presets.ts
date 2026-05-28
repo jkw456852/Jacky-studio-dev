@@ -155,7 +155,30 @@ const formatAspectRatioFromDimensions = (width: number, height: number): string 
   const safeWidth = Math.max(1, Math.round(width));
   const safeHeight = Math.max(1, Math.round(height));
   const divisor = gcd(safeWidth, safeHeight);
-  return `${safeWidth / divisor}:${safeHeight / divisor}`;
+  const reducedWidth = safeWidth / divisor;
+  const reducedHeight = safeHeight / divisor;
+  const reducedRatio = reducedWidth / Math.max(1, reducedHeight);
+
+  for (const candidate of WORKSPACE_IMAGE_ASPECT_RATIO_VALUES) {
+    const [candidateWidthText, candidateHeightText] = candidate.split(":");
+    const candidateWidth = Number(candidateWidthText);
+    const candidateHeight = Number(candidateHeightText);
+    if (
+      !Number.isFinite(candidateWidth) ||
+      !Number.isFinite(candidateHeight) ||
+      candidateWidth <= 0 ||
+      candidateHeight <= 0
+    ) {
+      continue;
+    }
+
+    const candidateRatio = candidateWidth / candidateHeight;
+    if (Math.abs(candidateRatio - reducedRatio) < 0.0001) {
+      return candidate;
+    }
+  }
+
+  return `${reducedWidth}:${reducedHeight}`;
 };
 
 const normalizeWorkspaceImagePair = (
