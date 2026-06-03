@@ -102,6 +102,7 @@ type WorkspaceImageConfigPanelProps = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
 };
 
 const WorkspaceImageConfigPanelImpl: React.FC<
@@ -131,9 +132,10 @@ const WorkspaceImageConfigPanelImpl: React.FC<
   updateSelectedElement,
   handleRefImageUpload,
   handleGenImage,
+  stopImageGeneration,
 }) => {
   const shouldRender =
-    element.type === "gen-image" && !element.url && !element.isGenerating;
+    element.type === "gen-image" && !element.url;
   const [showCountPicker, setShowCountPicker] = useState(false);
   const [showReferenceThumbnails, setShowReferenceThumbnails] = useState(false);
   const [showQualityPicker, setShowQualityPicker] = useState(false);
@@ -985,15 +987,21 @@ const WorkspaceImageConfigPanelImpl: React.FC<
           </div>
 
           <button
-            onClick={() => handleGenImage(element.id)}
-            disabled={!hasPrompt || element.isGenerating}
-            title={element.isGenerating ? "生成中..." : "生成"}
-            className={`h-8 px-3 rounded-xl flex items-center gap-1.5 transition-all font-bold text-[11px] ${!hasPrompt || element.isGenerating ? "bg-gray-100 text-gray-400" : "bg-[#CBD5E1] hover:bg-black text-white"}`}
+            onClick={() => {
+              if (element.isGenerating) {
+                stopImageGeneration?.(element.id);
+                return;
+              }
+              handleGenImage(element.id);
+            }}
+            disabled={!element.isGenerating && !hasPrompt}
+            title={element.isGenerating ? "中断当前生图" : "生成"}
+            className={`h-8 px-3 rounded-xl flex items-center gap-1.5 transition-all font-bold text-[11px] ${!element.isGenerating && !hasPrompt ? "bg-gray-100 text-gray-400" : element.isGenerating ? "bg-[#fff1f2] text-[#dc2626] hover:bg-[#ffe4e6]" : "bg-[#CBD5E1] hover:bg-black text-white"}`}
           >
             {element.isGenerating ? (
               <>
-                <Loader2 size={14} className="animate-spin" />
-                <span>生成中...</span>
+                <X size={14} />
+                <span>中断</span>
               </>
             ) : (
               <>

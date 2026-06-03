@@ -75,6 +75,7 @@ type WorkspaceCanvasImageElementProps = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   handleEditTextClick: () => void | Promise<void>;
   handleVectorRedraw: () => void | Promise<void>;
@@ -533,6 +534,7 @@ const WorkspaceCanvasImageElementImpl: React.FC<
   onActivateNode,
   handleRefImageUpload,
   handleGenImage,
+  stopImageGeneration,
   setEraserMode,
   handleEditTextClick,
   handleVectorRedraw,
@@ -628,6 +630,7 @@ const WorkspaceCanvasImageElementImpl: React.FC<
             updateSelectedElement={updateTreePromptElement}
             handleRefImageUpload={handleRefImageUpload}
             handleGenImage={handleGenImage}
+            stopImageGeneration={stopImageGeneration}
             onDelete={deleteSelectedElement}
             refUploadInputId={refUploadInputId}
           />

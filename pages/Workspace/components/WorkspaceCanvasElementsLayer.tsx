@@ -69,6 +69,7 @@ type WorkspaceCanvasElementsLayerProps = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   handleEditTextClick: () => void | Promise<void>;
   handleVectorRedraw: () => void | Promise<void>;
@@ -121,6 +122,7 @@ type WorkspaceCanvasElementItemProps = {
   setSelectedElementIds: WorkspaceCanvasElementsLayerProps["setSelectedElementIds"];
   handleRefImageUpload: WorkspaceCanvasElementsLayerProps["handleRefImageUpload"];
   handleGenImage: WorkspaceCanvasElementsLayerProps["handleGenImage"];
+  stopImageGeneration: WorkspaceCanvasElementsLayerProps["stopImageGeneration"];
   setEraserMode: WorkspaceCanvasElementsLayerProps["setEraserMode"];
   handleEditTextClick: WorkspaceCanvasElementsLayerProps["handleEditTextClick"];
   handleVectorRedraw: WorkspaceCanvasElementsLayerProps["handleVectorRedraw"];
@@ -171,6 +173,7 @@ const WorkspaceCanvasElementItem = memo(
     setSelectedElementIds,
     handleRefImageUpload,
     handleGenImage,
+    stopImageGeneration,
     setEraserMode,
     handleEditTextClick,
     handleVectorRedraw,
@@ -271,6 +274,7 @@ const WorkspaceCanvasElementItem = memo(
           onActivateNode={activateNode}
           handleRefImageUpload={handleRefImageUpload}
           handleGenImage={handleGenImage}
+          stopImageGeneration={stopImageGeneration}
           setEraserMode={setEraserMode}
           handleEditTextClick={handleEditTextClick}
           handleVectorRedraw={handleVectorRedraw}
@@ -382,6 +386,7 @@ export const WorkspaceCanvasElementsLayer: React.FC<
   setSelectedElementIds,
   handleRefImageUpload,
   handleGenImage,
+  stopImageGeneration,
   setEraserMode,
   handleEditTextClick,
   handleVectorRedraw,
@@ -447,6 +452,7 @@ export const WorkspaceCanvasElementsLayer: React.FC<
             setSelectedElementIds={setSelectedElementIds}
             handleRefImageUpload={handleRefImageUpload}
             handleGenImage={handleGenImage}
+            stopImageGeneration={stopImageGeneration}
             setEraserMode={setEraserMode}
             handleEditTextClick={handleEditTextClick}
             handleVectorRedraw={handleVectorRedraw}

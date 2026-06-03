@@ -36,10 +36,22 @@ export type WorkspaceGenerationTrace = {
   status:
     | "planning"
     | "planned"
+    | "submitted"
+    | "polling"
     | "generating"
     | "retrying"
     | "completed"
     | "failed";
+  pollingTask?: {
+    taskId: string;
+    providerId?: string | null;
+    baseUrl?: string | null;
+    model?: string | null;
+    route?: string | null;
+    targetElementIds?: string[];
+    sourceElementId?: string | null;
+    stoppedAt?: number | null;
+  } | null;
   sourcePrompt: string;
   taskMode?: string;
   taskIntent?: string;
@@ -100,6 +112,7 @@ export type WorkspaceGenerationTrace = {
 };
 
 const MAX_TRACES = 100;
+const TRACE_STORAGE_KEY = "workspace_generation_traces_v1";
 
 const tracesByRequestId = new Map<string, WorkspaceGenerationTrace>();
 const latestRequestIdByElementId = new Map<string, string>();
@@ -140,6 +153,62 @@ const touchRecentRequestId = (requestId: string) => {
   }
 };
 
+const syncWorkspaceGenerationTraceStorage = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = {
+      traces: recentRequestIds
+        .map((requestId) => tracesByRequestId.get(requestId))
+        .filter((item): item is WorkspaceGenerationTrace => Boolean(item)),
+      latestByElement: Array.from(latestRequestIdByElementId.entries()),
+      pendingByElement: Array.from(pendingRequestIdByElementId.entries()),
+      recentRequestIds: [...recentRequestIds],
+    };
+    window.localStorage.setItem(TRACE_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage failures
+  }
+};
+
+const restoreWorkspaceGenerationTraceStorage = () => {
+  if (typeof window === "undefined") return;
+  if (tracesByRequestId.size > 0 || recentRequestIds.length > 0) return;
+  try {
+    const raw = window.localStorage.getItem(TRACE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    tracesByRequestId.clear();
+    latestRequestIdByElementId.clear();
+    pendingRequestIdByElementId.clear();
+    recentRequestIds.splice(0, recentRequestIds.length);
+    const traces = Array.isArray(parsed?.traces) ? parsed.traces : [];
+    traces.forEach((trace) => {
+      if (!trace?.requestId) return;
+      tracesByRequestId.set(trace.requestId, trace);
+    });
+    const latestEntries = Array.isArray(parsed?.latestByElement) ? parsed.latestByElement : [];
+    latestEntries.forEach((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return;
+      const [elementId, requestId] = entry;
+      if (elementId && requestId) latestRequestIdByElementId.set(String(elementId), String(requestId));
+    });
+    const pendingEntries = Array.isArray(parsed?.pendingByElement) ? parsed.pendingByElement : [];
+    pendingEntries.forEach((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return;
+      const [elementId, requestId] = entry;
+      if (elementId && requestId) pendingRequestIdByElementId.set(String(elementId), String(requestId));
+    });
+    const orderedRequestIds = Array.isArray(parsed?.recentRequestIds) ? parsed.recentRequestIds : traces.map((trace) => trace.requestId);
+    orderedRequestIds.forEach((requestId) => {
+      if (tracesByRequestId.has(String(requestId))) recentRequestIds.push(String(requestId));
+    });
+  } catch {
+    // ignore restore failures
+  }
+};
+
+restoreWorkspaceGenerationTraceStorage();
+
 const bindTraceToElementIds = (trace: WorkspaceGenerationTrace) => {
   const ids = new Set<string>([
     trace.requestElementId,
@@ -162,6 +231,7 @@ export const announceWorkspaceGenerationRequest = (
   const normalizedRequestId = String(requestId || "").trim();
   if (!normalizedElementId || !normalizedRequestId) return;
   pendingRequestIdByElementId.set(normalizedElementId, normalizedRequestId);
+  syncWorkspaceGenerationTraceStorage();
 };
 
 export const readPendingWorkspaceGenerationRequestByElementId = (
@@ -288,6 +358,7 @@ export const upsertWorkspaceGenerationTrace = (
   tracesByRequestId.set(normalized.requestId, normalized);
   bindTraceToElementIds(normalized);
   touchRecentRequestId(normalized.requestId);
+  syncWorkspaceGenerationTraceStorage();
   return normalized;
 };
 
@@ -348,6 +419,53 @@ export const updateWorkspaceGenerationVariantTrace = (args: {
     updatedAt: nextVariant.updatedAt,
     variantResults,
   });
+};
+
+export const markWorkspaceGenerationPollingTask = (args: {
+  requestId: string;
+  taskId: string;
+  providerId?: string | null;
+  baseUrl?: string | null;
+  model?: string | null;
+  route?: string | null;
+  targetElementIds?: string[];
+  sourceElementId?: string | null;
+}) => {
+  const current = tracesByRequestId.get(args.requestId);
+  if (!current) return null;
+  return patchWorkspaceGenerationTrace(args.requestId, {
+    updatedAt: Date.now(),
+    status: "polling",
+    pollingTask: {
+      taskId: String(args.taskId || "").trim(),
+      providerId: args.providerId || null,
+      baseUrl: args.baseUrl || null,
+      model: args.model || null,
+      route: args.route || null,
+      targetElementIds: Array.isArray(args.targetElementIds) ? args.targetElementIds : current.targetElementIds,
+      sourceElementId: args.sourceElementId || current.sourceElementId,
+      stoppedAt: null,
+    },
+  });
+};
+
+export const stopWorkspaceGenerationPollingTask = (requestId: string) => {
+  const current = tracesByRequestId.get(requestId);
+  if (!current?.pollingTask) return current || null;
+  return patchWorkspaceGenerationTrace(requestId, {
+    updatedAt: Date.now(),
+    pollingTask: {
+      ...current.pollingTask,
+      stoppedAt: Date.now(),
+    },
+  });
+};
+
+export const listActiveWorkspaceGenerationPollingTasks = () => {
+  return recentRequestIds
+    .map((requestId) => tracesByRequestId.get(requestId))
+    .filter((item): item is WorkspaceGenerationTrace => Boolean(item))
+    .filter((trace) => Boolean(trace.pollingTask?.taskId) && !trace.pollingTask?.stoppedAt && trace.status !== "completed" && trace.status !== "failed");
 };
 
 export const appendWorkspaceGenerationTraceDiagnostics = (

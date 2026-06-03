@@ -269,8 +269,7 @@ const WorkspaceImageToolbarImpl: React.FC<WorkspaceImageToolbarProps> = ({
     shouldShowSingleImageToolbar &&
     el.type === "gen-image" &&
     el.nodeInteractionMode !== "branch" &&
-    !el.url &&
-    !el.isGenerating;
+    !el.url;
   const selectedTreeNodeKind = React.useMemo<"prompt" | "image" | null>(() => {
     if (!el) {
       return null;

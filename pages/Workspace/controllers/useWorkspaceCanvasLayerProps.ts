@@ -102,6 +102,7 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   updateSelectedElement: WorkspaceImageToolbarProps["updateSelectedElement"];
   handleRefImageUpload: WorkspaceImageToolbarProps["handleRefImageUpload"];
   handleGenImage: WorkspaceImageToolbarProps["handleGenImage"];
+  stopImageGeneration: (elementId: string) => boolean | Promise<boolean>;
   isTreeConnectionActive: boolean;
   handleTreeConnectionStart: (
     elementId: string,

@@ -59,6 +59,7 @@ type WorkspaceImageSideToolbarProps = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
   setEraserMode: React.Dispatch<React.SetStateAction<boolean>>;
   handleEditTextClick: () => void | Promise<void>;
   handleVectorRedraw: () => void | Promise<void>;
@@ -104,6 +105,7 @@ export const WorkspaceImageSideToolbar: React.FC<
   fileToDataUrl,
   handleProductSwap,
   handleGenImage,
+  stopImageGeneration,
   setEraserMode,
   handleEditTextClick,
   handleVectorRedraw,
@@ -518,19 +520,25 @@ export const WorkspaceImageSideToolbar: React.FC<
 
         {element.type === "gen-image" && (
           <button
-            onClick={() => handleGenImage(element.id)}
-            disabled={!element.genPrompt || element.isGenerating}
-            title={element.isGenerating ? "生成中..." : "重新生成"}
-            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-[10px] transition-colors ${toolbarExpanded ? "" : "justify-center"} ${!element.genPrompt || element.isGenerating ? "text-gray-300 cursor-not-allowed" : "text-gray-600 hover:bg-gray-50"}`}
+            onClick={() => {
+              if (element.isGenerating) {
+                stopImageGeneration?.(element.id);
+                return;
+              }
+              handleGenImage(element.id);
+            }}
+            disabled={!element.isGenerating && !element.genPrompt}
+            title={element.isGenerating ? "中断当前生图" : "重新生成"}
+            className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-[10px] transition-colors ${toolbarExpanded ? "" : "justify-center"} ${!element.isGenerating && !element.genPrompt ? "text-gray-300 cursor-not-allowed" : element.isGenerating ? "text-red-600 hover:bg-red-50" : "text-gray-600 hover:bg-gray-50"}`}
           >
             {element.isGenerating ? (
-              <Loader2 size={16} className="flex-shrink-0 animate-spin" />
+              <X size={16} strokeWidth={2} className="flex-shrink-0" />
             ) : (
               <Zap size={16} strokeWidth={2} className="flex-shrink-0" />
             )}
             {toolbarExpanded && (
               <span className="text-[13px] whitespace-nowrap">
-                {element.isGenerating ? "生成中" : "重新生成"}
+                {element.isGenerating ? "中断生成" : "重新生成"}
               </span>
             )}
           </button>

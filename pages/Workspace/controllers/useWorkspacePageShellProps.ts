@@ -116,6 +116,7 @@ type UseWorkspacePageShellPropsArgs = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration: (elementId: string) => boolean | Promise<boolean>;
   handleManualPaste: React.ComponentProps<
     typeof WorkspaceContextMenu
   >["onManualPaste"];
@@ -220,6 +221,7 @@ export const useWorkspacePageShellProps = ({
   setSelectedElementIds,
   updateElementById,
   handleGenImage,
+  stopImageGeneration,
   handleManualPaste,
   handleDownload,
   fitToScreen,

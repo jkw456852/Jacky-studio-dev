@@ -1,10 +1,12 @@
-import { useCallback, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type {
   CanvasElement,
   ChatMessage,
   WorkspaceNodeInteractionMode,
 } from "../../../types";
 import { imageGenSkill } from "../../../services/skills/image-gen.skill";
+import { pollOpenAICompatibleImageResult } from "../../../services/gemini";
+import { getApiKeyByProviderId } from "../../../services/provider-config";
 import { getVisualOrchestratorModelConfig } from "../../../services/provider-settings";
 import {
   planVisualGenerationWithModel,
@@ -22,6 +24,9 @@ import {
   patchWorkspaceGenerationTrace,
   updateWorkspaceGenerationVariantTrace,
   upsertWorkspaceGenerationTrace,
+  markWorkspaceGenerationPollingTask,
+  stopWorkspaceGenerationPollingTask,
+  listActiveWorkspaceGenerationPollingTasks,
   type WorkspaceGenerationTraceDiagnostic,
 } from "../browserAgentGenerationTrace";
 import { resolveWorkspaceTreeNodeKind } from "../workspaceTreeNode";
@@ -1017,7 +1022,7 @@ const createGenerationLogStreamer = (args: {
   appendElementsGenerationLog: (
     elementIds: string[],
     update: {
-      phase?: "planning" | "planned" | "queued" | "generating" | "retrying";
+      phase?: "planning" | "planned" | "queued" | "submitted" | "polling" | "generating" | "retrying";
       title?: string;
       lines: string[];
     },
@@ -1026,7 +1031,7 @@ const createGenerationLogStreamer = (args: {
   let queue = Promise.resolve();
 
   const push = (update: {
-    phase?: "planning" | "planned" | "queued" | "generating" | "retrying";
+    phase?: "planning" | "planned" | "queued" | "submitted" | "polling" | "generating" | "retrying";
     title?: string;
     line?: string | null;
     lines?: string[];
@@ -1170,7 +1175,7 @@ type UseWorkspaceElementImageGenerationOptions = {
   setElementsGenerationStatus: (
     elementIds: string[],
     status?: {
-      phase?: "planning" | "planned" | "queued" | "generating" | "retrying";
+      phase?: "planning" | "planned" | "queued" | "submitted" | "polling" | "generating" | "retrying";
       title?: string;
       lines?: string[];
     } | null,
@@ -1178,7 +1183,7 @@ type UseWorkspaceElementImageGenerationOptions = {
   appendElementsGenerationLog: (
     elementIds: string[],
     update: {
-      phase?: "planning" | "planned" | "queued" | "generating" | "retrying";
+      phase?: "planning" | "planned" | "queued" | "submitted" | "polling" | "generating" | "retrying";
       title?: string;
       lines: string[];
     },
@@ -1250,7 +1255,103 @@ export function useWorkspaceElementImageGeneration(
     >(),
   );
 
-  return useCallback(
+  const activePollingRequestIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    let cancelled = false;
+    const traces = listActiveWorkspaceGenerationPollingTasks();
+    traces.forEach((trace) => {
+      const pollingTask = trace.pollingTask;
+      if (!pollingTask?.taskId || activePollingRequestIdsRef.current.has(trace.requestId)) {
+        return;
+      }
+      const targetIds = (pollingTask.targetElementIds || trace.targetElementIds || []).filter(Boolean);
+      if (targetIds.length === 0) return;
+      const liveTargets = targetIds.filter((targetId) =>
+        elementsRef.current.some((element) => element.id === targetId),
+      );
+      if (liveTargets.length === 0) {
+        stopWorkspaceGenerationPollingTask(trace.requestId);
+        return;
+      }
+      const apiKeys = getApiKeyByProviderId(pollingTask.providerId || undefined, true);
+      if (!Array.isArray(apiKeys) || apiKeys.length === 0 || !pollingTask.baseUrl) {
+        return;
+      }
+      activePollingRequestIdsRef.current.add(trace.requestId);
+      liveTargets.forEach((targetId) => setElementGeneratingState(targetId, true));
+      setElementsGenerationStatus(liveTargets, {
+        phase: "polling",
+        title: "正在恢复轮询结果",
+        lines: [`任务 ID：${pollingTask.taskId}`],
+      });
+      void pollOpenAICompatibleImageResult({
+        baseUrl: String(pollingTask.baseUrl || ""),
+        apiKeys,
+        taskId: pollingTask.taskId,
+        contextTag: `workspace.resume.${trace.requestId}`,
+        requestFingerprint: trace.requestId,
+      })
+        .then(async (resultUrl) => {
+          if (cancelled || !resultUrl) return;
+          await applyGeneratedImageToElement(liveTargets[0], resultUrl, true);
+          patchWorkspaceGenerationTrace(trace.requestId, {
+            updatedAt: Date.now(),
+            completedAt: Date.now(),
+            status: "completed",
+            pollingTask: pollingTask ? { ...pollingTask, stoppedAt: Date.now() } : null,
+          });
+          setElementsGenerationStatus(liveTargets, null);
+          liveTargets.forEach((targetId) => setElementGeneratingState(targetId, false));
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          const reason = formatGenerationError(error);
+          patchWorkspaceGenerationTrace(trace.requestId, {
+            updatedAt: Date.now(),
+            status: "failed",
+            lastError: reason,
+          });
+          setElementsGenerationStatus(liveTargets, null);
+          liveTargets.forEach((targetId) => setElementGeneratingState(targetId, false, reason));
+        })
+        .finally(() => {
+          activePollingRequestIdsRef.current.delete(trace.requestId);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyGeneratedImageToElement,
+    elementsRef,
+    setElementGeneratingState,
+    setElementsGenerationStatus,
+  ]);
+
+  const stopImageGeneration = useCallback((elementId: string) => {
+    const targetId = String(elementId || "").trim();
+    if (!targetId) return false;
+    const traces = listActiveWorkspaceGenerationPollingTasks();
+    const hit = traces.find((trace) =>
+      [trace.requestElementId, trace.sourceElementId, ...(trace.targetElementIds || [])].includes(targetId),
+    );
+    if (!hit) return false;
+    stopWorkspaceGenerationPollingTask(hit.requestId);
+    activePollingRequestIdsRef.current.delete(hit.requestId);
+    const affectedIds = (hit.pollingTask?.targetElementIds || hit.targetElementIds || []).filter(Boolean);
+    setElementsGenerationStatus(affectedIds, null);
+    affectedIds.forEach((id) => setElementGeneratingState(id, false, "Generation stopped by user."));
+    patchWorkspaceGenerationTrace(hit.requestId, {
+      updatedAt: Date.now(),
+      status: "failed",
+      lastError: "Generation stopped by user.",
+      pollingTask: hit.pollingTask ? { ...hit.pollingTask, stoppedAt: Date.now() } : null,
+    });
+    return true;
+  }, [setElementGeneratingState, setElementsGenerationStatus]);
+
+  const handleGenerateImage = useCallback(
     async (elementId: string) => {
       const requestElement = elementsRef.current.find(
         (element) => element.id === elementId,
@@ -2482,6 +2583,23 @@ export function useWorkspaceElementImageGeneration(
                   promptLanguagePolicy,
                   textPolicy,
                   consistencyContext,
+                  onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route }) => {
+                    markWorkspaceGenerationPollingTask({
+                      requestId: traceRequestId,
+                      taskId,
+                      providerId,
+                      baseUrl,
+                      model: submittedModel,
+                      route,
+                      targetElementIds: [singleTargetElementId],
+                      sourceElementId: sourceElement.id,
+                    });
+                    setElementsGenerationStatus([singleTargetElementId], {
+                      phase: "submitted",
+                      title: "已提交任务，等待结果",
+                      lines: [`任务 ID：${taskId}`],
+                    });
+                  },
                 });
                 if (!resultUrl) {
                   throw new Error("No result returned");
@@ -2837,6 +2955,24 @@ export function useWorkspaceElementImageGeneration(
             promptLanguagePolicy: pageGeneration.execution.promptLanguagePolicy,
             textPolicy: pageGeneration.execution.textPolicy,
             consistencyContext: pageGeneration.execution.consistencyContext,
+            onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route }) => {
+              const targetId = targetElementIds[index] || elementId;
+              markWorkspaceGenerationPollingTask({
+                requestId: traceRequestId,
+                taskId,
+                providerId,
+                baseUrl,
+                model: submittedModel,
+                route,
+                targetElementIds: [targetId],
+                sourceElementId: sourceElement.id,
+              });
+              setElementsGenerationStatus([targetId], {
+                phase: "submitted",
+                title: "已提交任务，等待结果",
+                lines: [`任务 ID：${taskId}`],
+              });
+            },
           });
         };
 
@@ -3193,4 +3329,9 @@ export function useWorkspaceElementImageGeneration(
       updateElementById,
     ],
   );
+
+  return {
+    handleGenerateImage,
+    stopImageGeneration,
+  };
 }

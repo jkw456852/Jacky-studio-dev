@@ -44,6 +44,13 @@ export interface ImageGenSkillParams {
     forbiddenChanges?: string[];
   };
   maskImage?: string;
+  onSubmitted?: (payload: {
+    taskId: string;
+    providerId?: string | null;
+    baseUrl?: string | null;
+    model?: string | null;
+    route?: string | null;
+  }) => void;
 }
 
 export interface VideoGenSkillParams {

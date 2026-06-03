@@ -4774,7 +4774,7 @@ const Workspace: React.FC = () => {
     [duplicateCanvasSelection],
   );
 
-  const handleGenImage = useWorkspaceElementImageGeneration({
+  const { handleGenerateImage: handleGenImage, stopImageGeneration } = useWorkspaceElementImageGeneration({
     elementsRef,
     nodeInteractionMode,
     updateElementById,
@@ -5943,6 +5943,7 @@ const Workspace: React.FC = () => {
     updateSelectedElement,
     handleRefImageUpload,
     handleGenImage,
+    stopImageGeneration,
     isTreeConnectionActive: Boolean(treeConnectionDraft),
     handleTreeConnectionStart,
     handleTreeConnectionComplete,
@@ -6121,6 +6122,7 @@ const Workspace: React.FC = () => {
     setSelectedElementIds,
     updateElementById,
     handleGenImage,
+    stopImageGeneration,
     handleManualPaste,
     handleDownload,
     fitToScreen,

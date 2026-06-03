@@ -168,6 +168,7 @@ type WorkspaceTreePromptNodeProps = {
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
   onDelete: () => void;
   refUploadInputId: string;
 };
@@ -2816,6 +2817,7 @@ const TreePromptGenerateControls: React.FC<{
   handleGenImage: (
     elementId: string,
   ) => string | null | undefined | Promise<string | null | undefined>;
+  stopImageGeneration?: (elementId: string) => boolean | Promise<boolean>;
   className?: string;
 }> = ({
   element,
@@ -2824,6 +2826,7 @@ const TreePromptGenerateControls: React.FC<{
   selectElement,
   updateSelectedElement,
   handleGenImage,
+  stopImageGeneration,
   className = "",
 }) => {
   const [showModelPicker, setShowModelPicker] = React.useState(false);

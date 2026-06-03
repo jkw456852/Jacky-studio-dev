@@ -1027,6 +1027,119 @@ const fetchOpenAIFormWithFallback = async <T>(
     throw lastError || new Error(`${contextTag} API failed on all auth strategies`);
 };
 
+const fetchOpenAIGetWithFallback = async <T>(
+    baseUrl: string,
+    path: string,
+    apiKeyOrKeys: string | string[],
+    contextTag: string,
+    requestTuning?: {
+        timeoutMs?: number;
+        idleTimeoutMs?: number;
+        retries?: number;
+        baseDelayMs?: number;
+        maxDelayMs?: number;
+        authStrategy?: OpenAIAuthStrategy;
+        requestFingerprint?: string;
+    },
+): Promise<T> => {
+    const cacheKey = getOpenAIAuthCacheEntryKey(baseUrl, path);
+    const cachedMode = getCachedOpenAIAuthMode(cacheKey);
+    const authStrategy = requestTuning?.authStrategy || 'auto';
+    const allowQueryFallback = shouldAllowQueryAuthFallback(baseUrl, path);
+    const plans = resolveOpenAIAuthPlans(cachedMode, authStrategy, allowQueryFallback);
+    const apiKeys = normalizeApiKeyCandidates(apiKeyOrKeys);
+    let lastError: any = null;
+
+    if (apiKeys.length === 0) {
+        throw new Error(`${contextTag} API failed: no available api keys`);
+    }
+
+    for (const authMode of plans) {
+        for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
+            const apiKey = apiKeys[keyIndex];
+            const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
+            const headers = buildOpenAIHeaders(authMode, apiKey);
+
+            let res: Response;
+            try {
+                if (typeof window !== 'undefined') {
+                    res = await fetchWithResilience('/api/openai-proxy', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            targetUrl: url,
+                            method: 'GET',
+                            headers,
+                        }),
+                    }, {
+                        operation: `${contextTag}.openaiProxyGet`,
+                        retries: requestTuning?.retries ?? 1,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                } else {
+                    res = await fetchWithResilience(url, {
+                        method: 'GET',
+                        headers,
+                    }, {
+                        operation: `${contextTag}.openaiGet`,
+                        retries: requestTuning?.retries ?? 1,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                }
+            } catch (error) {
+                if (isTimeoutException(error)) {
+                    const timeoutError: any = error instanceof Error ? error : new Error(String(error));
+                    timeoutError.authMode = authMode;
+                    timeoutError.keyIndex = keyIndex;
+                    timeoutError.retryable = true;
+                    timeoutError.timeout = true;
+                    lastError = timeoutError;
+                    continue;
+                }
+                throw error;
+            }
+
+            if (res.ok) {
+                setCachedOpenAIAuthMode(cacheKey, authMode);
+                return await res.json() as T;
+            }
+
+            const errBody = await res.text().catch(() => '');
+            const isRateLimitError = isRateLimited(res.status);
+            const isServerErr = isServerError(res.status);
+            const err: any = new Error(`${contextTag} API error: ${res.status} [${authMode}] ${isRateLimitError ? 'Rate limited' : isServerErr ? 'Server error' : errBody}`);
+            err.status = res.status;
+            err.authMode = authMode;
+            err.keyIndex = keyIndex;
+            err.retryable = isRateLimitError || isServerErr;
+            lastError = err;
+
+            if (shouldTryAlternateAuth(res.status)) {
+                clearCachedOpenAIAuthMode(cacheKey);
+            }
+
+            if (isRateLimitError || isServerErr) {
+                continue;
+            }
+
+            if (!shouldTryAlternateAuth(res.status)) {
+                throw err;
+            }
+        }
+    }
+
+    throw lastError || new Error(`${contextTag} API failed on all auth strategies`);
+};
 type UnifiedJsonGenerationOptions = {
     model: string;
     providerId?: string | null;
@@ -3019,6 +3132,103 @@ const extractOpenAIImageResult = (payload: any): string | null => {
     return null;
 };
 
+
+type OpenAIImageTaskSubmission = {
+    taskId: string;
+    status: string | null;
+    raw: any;
+};
+
+const extractOpenAIImageTaskSubmission = (payload: any): OpenAIImageTaskSubmission | null => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const first = Array.isArray(payload?.data) ? payload.data[0] : null;
+    const taskId =
+        (typeof payload?.id === 'string' && payload.id) ||
+        (typeof payload?.task_id === 'string' && payload.task_id) ||
+        (typeof payload?.request_id === 'string' && payload.request_id) ||
+        (typeof payload?.requestId === 'string' && payload.requestId) ||
+        (typeof first?.id === 'string' && first.id) ||
+        (typeof first?.task_id === 'string' && first.task_id) ||
+        (typeof first?.request_id === 'string' && first.request_id) ||
+        null;
+
+    if (!taskId) return null;
+
+    const status =
+        (typeof payload?.status === 'string' && payload.status) ||
+        (typeof payload?.state === 'string' && payload.state) ||
+        (typeof first?.status === 'string' && first.status) ||
+        (typeof first?.state === 'string' && first.state) ||
+        null;
+
+    return {
+        taskId,
+        status: status ? String(status).toLowerCase() : null,
+        raw: payload,
+    };
+};
+
+export const pollOpenAICompatibleImageResult = async (args: {
+    baseUrl: string;
+    apiKeys: string[];
+    taskId: string;
+    contextTag: string;
+    requestFingerprint?: string;
+}): Promise<string | null> => {
+    const pollPaths = [
+        `/v1/images/${args.taskId}`,
+        `/v1/images/generations/${args.taskId}`,
+        `/v1/images/edits/${args.taskId}`,
+        `/v1/tasks/${args.taskId}`,
+    ];
+
+    let lastError: any = null;
+
+    for (let index = 0; index < 60; index += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+
+        for (const pollPath of pollPaths) {
+            try {
+                const payload = await fetchOpenAIGetWithFallback<any>(
+                    args.baseUrl,
+                    pollPath,
+                    args.apiKeys,
+                    `${args.contextTag}.poll`,
+                    {
+                        authStrategy: 'bearer-only',
+                        retries: 1,
+                        baseDelayMs: 500,
+                        maxDelayMs: 5000,
+                        timeoutMs: 120000,
+                        idleTimeoutMs: 120000,
+                        requestFingerprint: args.requestFingerprint,
+                    },
+                );
+
+                const result = extractOpenAIImageResult(payload);
+                if (result) {
+                    return result;
+                }
+
+                const submission = extractOpenAIImageTaskSubmission(payload);
+                const status = submission?.status || null;
+                if (status && ['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
+                    throw new Error(`openai image polling failed: ${JSON.stringify(payload).slice(0, 280)}`);
+                }
+            } catch (error) {
+                lastError = error;
+            }
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+
+    throw new Error('openai image polling timeout');
+};
+
 const getOpenAIImageRequestTuning = (
     requestKind: 'edit' | 'generate',
     requestMode: OpenAIImageRequestMode,
@@ -3380,7 +3590,21 @@ const requestOpenAICompatibleImage = async (opts: {
                     opts.contextTag,
                     requestTuningWithFingerprint,
                 );
-                return extractOpenAIImageResult(payload);
+                const directResult = extractOpenAIImageResult(payload);
+                if (directResult) {
+                    return directResult;
+                }
+                const submission = extractOpenAIImageTaskSubmission(payload);
+                if (submission) {
+                    return await pollOpenAICompatibleImageResult({
+                        baseUrl,
+                        apiKeys,
+                        taskId: submission.taskId,
+                        contextTag: opts.contextTag,
+                        requestFingerprint: requestFingerprintMeta.fingerprint,
+                    });
+                }
+                return null;
             } catch (error) {
                 const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? NaN);
                 const shouldFallbackToForm =
@@ -3436,7 +3660,21 @@ const requestOpenAICompatibleImage = async (opts: {
             opts.contextTag,
             requestTuningWithFingerprint,
         );
-        return extractOpenAIImageResult(payload);
+        const directResult = extractOpenAIImageResult(payload);
+        if (directResult) {
+            return directResult;
+        }
+        const submission = extractOpenAIImageTaskSubmission(payload);
+        if (submission) {
+            return await pollOpenAICompatibleImageResult({
+                baseUrl,
+                apiKeys,
+                taskId: submission.taskId,
+                contextTag: opts.contextTag,
+                requestFingerprint: requestFingerprintMeta.fingerprint,
+            });
+        }
+        return null;
     }
 
     const payload = await fetchOpenAIJsonWithFallback<any>(
@@ -3454,7 +3692,22 @@ const requestOpenAICompatibleImage = async (opts: {
         requestTuningWithFingerprint,
     );
 
-    return extractOpenAIImageResult(payload);
+    const directResult = extractOpenAIImageResult(payload);
+    if (directResult) {
+        return directResult;
+    }
+    const submission = extractOpenAIImageTaskSubmission(payload);
+    if (submission) {
+        return await pollOpenAICompatibleImageResult({
+            baseUrl,
+            apiKeys,
+            taskId: submission.taskId,
+            contextTag: opts.contextTag,
+            requestFingerprint: requestFingerprintMeta.fingerprint,
+        });
+    }
+
+    return null;
 };
 
 export const editImage = async (config: ImageEditConfig): Promise<string | null> => {
