@@ -25,6 +25,7 @@ type SerializedFormDataBody = {
 };
 
 const REQUEST_TIMEOUT_MS = 300000;
+const MAX_REQUEST_TIMEOUT_MS = 900000;
 
 function isPrivateHostname(hostname: string): boolean {
   const host = String(hostname || '').toLowerCase();
@@ -134,6 +135,10 @@ export default async function handler(req: any, res: any) {
   }
 
   const method = String(body.method || 'POST').trim().toUpperCase();
+  const requestedTimeoutMs = Number(body.timeoutMs);
+  const effectiveTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+    ? Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(1000, requestedTimeoutMs))
+    : REQUEST_TIMEOUT_MS;
   const headers = normalizeHeaders(body.headers);
   const requestBody = method === 'GET' || method === 'HEAD'
     ? undefined
@@ -148,7 +153,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     const upstreamResponse = await fetch(targetUrl, {
       method,
       headers,

@@ -118,6 +118,7 @@ const tracesByRequestId = new Map<string, WorkspaceGenerationTrace>();
 const latestRequestIdByElementId = new Map<string, string>();
 const pendingRequestIdByElementId = new Map<string, string>();
 const recentRequestIds: string[] = [];
+const restoredRequestIds = new Set<string>();
 
 const normalizeTraceDiagnostic = (
   input: WorkspaceGenerationTraceDiagnostic,
@@ -185,6 +186,7 @@ const restoreWorkspaceGenerationTraceStorage = () => {
     traces.forEach((trace) => {
       if (!trace?.requestId) return;
       tracesByRequestId.set(trace.requestId, trace);
+      restoredRequestIds.add(String(trace.requestId));
     });
     const latestEntries = Array.isArray(parsed?.latestByElement) ? parsed.latestByElement : [];
     latestEntries.forEach((entry) => {
@@ -356,6 +358,9 @@ export const upsertWorkspaceGenerationTrace = (
     updatedAt: input.updatedAt || Date.now(),
   };
   tracesByRequestId.set(normalized.requestId, normalized);
+  if (!restoredRequestIds.has(normalized.requestId)) {
+    restoredRequestIds.delete(normalized.requestId);
+  }
   bindTraceToElementIds(normalized);
   touchRecentRequestId(normalized.requestId);
   syncWorkspaceGenerationTraceStorage();
@@ -459,6 +464,30 @@ export const stopWorkspaceGenerationPollingTask = (requestId: string) => {
       stoppedAt: Date.now(),
     },
   });
+};
+
+export const wasWorkspaceGenerationTraceRestored = (requestId?: string) => {
+  const normalized = String(requestId || "").trim();
+  if (!normalized) return false;
+  return restoredRequestIds.has(normalized);
+};
+
+export const consumeRestoredWorkspaceGenerationTrace = (requestId?: string) => {
+  const normalized = String(requestId || "").trim();
+  if (!normalized) return false;
+  return restoredRequestIds.delete(normalized);
+};
+
+export const listResumableWorkspaceGenerationTraces = () => {
+  return recentRequestIds
+    .map((requestId) => tracesByRequestId.get(requestId))
+    .filter((item): item is WorkspaceGenerationTrace => Boolean(item))
+    .filter((trace) => {
+      if (trace.status === "completed" || trace.status === "failed") return false;
+      if (trace.pollingTask?.stoppedAt) return false;
+      if (trace.pollingTask?.taskId) return true;
+      return ["planning", "submitted", "polling", "generating", "retrying"].includes(trace.status);
+    });
 };
 
 export const listActiveWorkspaceGenerationPollingTasks = () => {

@@ -37,6 +37,16 @@ import type {
   VisualTaskIntent,
 } from "./types";
 
+const isImageInputUnsupportedError = (error: unknown): boolean => {
+  const message = String((error as any)?.message || "").toLowerCase();
+  return message.includes("does not support image input")
+    || message.includes("model does not support image")
+    || message.includes("image input is not supported")
+    || message.includes("cannot read \"image")
+    || message.includes("invalid content type")
+    || message.includes("image_url");
+};
+
 const VALID_INTENTS = new Set<VisualTaskIntent>([
   "poster_rebuild",
   "product_scene",
@@ -1942,15 +1952,14 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     },
   ];
   const streamingThoughtBridge = createStreamingPlanningThoughtBridge(onThought);
-
-  try {
-    const response = await generateJsonResponse({
+  const runTaskPlanRequest = async (partsOverride: typeof parts, operationName = "visualTaskPlan") =>
+    generateJsonResponse({
       model: modelId,
       providerId,
-      parts,
+      parts: partsOverride,
       temperature: 0.2,
       responseSchema: VISUAL_TASK_PLAN_RESPONSE_SCHEMA,
-      operation: "visualTaskPlan",
+      operation: operationName,
       queueKey: "visualTaskPlan",
       minIntervalMs: 400,
       onReasoningDelta: streamingThoughtBridge.onReasoningDelta,
@@ -1963,6 +1972,19 @@ export const generateVisualTaskPlanModelPatch = async (args: {
         requestFingerprint: requestId,
       },
     });
+
+  try {
+    let response;
+    try {
+      response = await runTaskPlanRequest(parts);
+    } catch (error) {
+      if (referenceParts.length > 0 && isImageInputUnsupportedError(error)) {
+        console.warn("[visualTaskPlan] planner model does not support image input, retrying text-only");
+        response = await runTaskPlanRequest([{ text: prompt }], "visualTaskPlan.textOnlyFallback");
+      } else {
+        throw error;
+      }
+    }
 
     streamingThoughtBridge.flush();
     emitPlanningThought(onThought, "正在解析返回结果", "规划模型已返回，开始读取它的任务判断。");
@@ -1987,10 +2009,10 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     const announcedTaskPlanRetry = shouldAnnounceTaskPlanRetry(normalized);
     if (announcedTaskPlanRetry) {
       emitPlanningThought(
-      onThought,
-      "正在智能补全规划",
-      "首轮返回字段不够完整，我会基于原始上下文和部分结果再做一轮智能补全。",
-    );
+        onThought,
+        "正在智能补全规划",
+        "首轮返回字段不够完整，我会基于原始上下文和部分结果再做一轮智能补全。",
+      );
     }
     const agentFallbackResponse = await generateJsonResponse({
       model: modelId,
@@ -2026,10 +2048,10 @@ export const generateVisualTaskPlanModelPatch = async (args: {
     streamingThoughtBridge.flush();
     if (announcedTaskPlanRetry) {
       emitPlanningThought(
-      onThought,
-      "正在校验智能补全结果",
-      "智能补全结果已返回，正在重新校验字段完整性。",
-    );
+        onThought,
+        "正在校验智能补全结果",
+        "智能补全结果已返回，正在重新校验字段完整性。",
+      );
     }
     const agentFallbackParsed = JSON.parse(agentFallbackResponse.text || "{}");
     const agentFallback = normalizeTaskPlanPatch(agentFallbackParsed);

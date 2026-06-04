@@ -1072,6 +1072,7 @@ const fetchOpenAIGetWithFallback = async <T>(
                             targetUrl: url,
                             method: 'GET',
                             headers,
+                            timeoutMs: requestTuning?.idleTimeoutMs ?? requestTuning?.timeoutMs ?? 300000,
                         }),
                     }, {
                         operation: `${contextTag}.openaiProxyGet`,
