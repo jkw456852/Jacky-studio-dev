@@ -124,6 +124,188 @@ test("local asset api can rollback to previous audit checkpoint", () => {
   });
 });
 
+test("local asset api preserves legacy style-library keys so delete survives reload", () => {
+  const storage = createStorageMock();
+  const now = Date.now();
+  storage.setItem(
+    "studio_user_assets_v1",
+    JSON.stringify({
+      version: 5,
+      updatedAt: now,
+      mainBrainPreferences: {
+        schemaVersion: 1,
+        updatedAt: now,
+        lines: [],
+      },
+      mainBrainSoul: {
+        schemaVersion: 1,
+        updatedAt: now,
+        persona: "",
+        tone: [],
+        workingStyle: [],
+        restraintRules: [],
+        selfCheckRules: [],
+        riskPreference: "balanced",
+      },
+      mainBrainUser: {
+        schemaVersion: 1,
+        updatedAt: now,
+        goals: [],
+        workingHabits: [],
+        businessContext: [],
+        aestheticPreferences: [],
+        communicationStyle: [],
+        permanentNotes: [],
+        memoryBlacklist: [],
+      },
+      mainBrainWorkflow: {
+        schemaVersion: 1,
+        updatedAt: now,
+        defaultAnalysisDepth: "balanced",
+        searchPolicy: "auto",
+        clarifyBeforeExecution: false,
+        toolUseGuidelines: [],
+        failureRecoveryRules: [],
+        roleGovernanceDefaults: {
+          mode: "approval_required",
+          allowDraft: true,
+          allowAutoPromote: false,
+          allowAutoArchive: false,
+        },
+      },
+      mainBrainMemory: {
+        schemaVersion: 1,
+        updatedAt: now,
+        memoryIndex: [],
+        memoryRecords: {},
+        pendingMemoryCandidates: [],
+        memoryBlacklists: [],
+        retentionPolicy: {
+          maxActiveMemories: 200,
+          maxCandidateMemories: 50,
+          autoPromoteSimilarCount: 3,
+        },
+        dailySummary: [],
+      },
+      mainBrainHeartbeat: {
+        schemaVersion: 1,
+        updatedAt: now,
+        enabled: false,
+        cadence: "manual",
+        scope: [],
+        heartbeatTasks: {},
+        recentRunSummary: [],
+        lastRunAt: null,
+        nextRunAt: null,
+      },
+      mainBrainBootstrap: {
+        schemaVersion: 1,
+        updatedAt: now,
+        initialized: false,
+        initializedAt: null,
+        sourceTemplate: "",
+        completedSteps: [],
+        lastRebootstrapAt: null,
+      },
+      userProfile: {
+        schemaVersion: 1,
+        updatedAt: now,
+        avatarUrl: "",
+        preferenceNotes: [],
+        commonTasks: [],
+        aestheticPreferences: [],
+        brandContextNotes: [],
+        memoryNotes: [],
+      },
+      workspacePreferences: {
+        schemaVersion: 1,
+        updatedAt: now,
+        selectedScriptModels: ["gemini-3.1-flash-lite-preview"],
+        selectedImageModels: ["Auto"],
+        selectedVideoModels: ["veo-3.1-fast-generate-preview"],
+        imageModelPostPaths: {},
+        visualOrchestratorModel: "auto",
+        browserAgentModel: "auto",
+        visualOrchestratorMaxReferenceImages: 0,
+        visualOrchestratorMaxInlineImageBytesMb: 48,
+        visualContinuity: true,
+        systemModeration: false,
+        autoSave: true,
+        concurrentCount: 1,
+        autoModelSelect: true,
+        preferredImageModel: "Nano Banana Pro",
+        preferredImageProviderId: null,
+        preferredVideoModel: "veo-3.1-fast-generate-preview",
+        preferredVideoProviderId: null,
+        preferred3DModel: "Auto",
+        browserAgentChatEnabled: true,
+      },
+      skillPreferences: {
+        schemaVersion: 1,
+        updatedAt: now,
+        activeQuickSkill: null,
+        recentSkillIds: [],
+        pinnedSkillIds: [],
+        customSkillConfigs: {},
+      },
+      pluginPreferences: {
+        schemaVersion: 1,
+        updatedAt: now,
+        records: {},
+      },
+      agentPromptAddons: {},
+      latestRoleDrafts: {},
+      roles: {},
+      temporaryRoleDrafts: {},
+      roleVersions: {},
+      roleAuditEntries: {},
+      styleLibraries: {
+        "legacy-style-card": {
+          title: "海报复刻",
+          summary: "legacy summary",
+          referenceInterpretation: "legacy interpretation",
+          planningDirectives: ["plan"],
+          promptDirectives: ["prompt"],
+          createdBy: "user",
+          updatedAt: 1,
+          sourceMode: "custom",
+        },
+      },
+      styleLibraryCandidates: {
+        "legacy-candidate-card": {
+          title: "多角度主体",
+          summary: "legacy summary",
+          referenceInterpretation: "legacy interpretation",
+          planningDirectives: ["plan"],
+          promptDirectives: ["prompt"],
+          createdBy: "user",
+          updatedAt: 1,
+          createdAt: 1,
+          sourceMode: "custom",
+          status: "draft",
+        },
+      },
+      evolutionRecords: {},
+    }),
+  );
+
+  withMockWindow(storage, () => {
+    const api = createLocalStudioUserAssetApi();
+    assert.equal(api.listStyleLibraries()[0]?.id, "legacy-style-card");
+    assert.equal(
+      api.listStyleLibraryCandidates()[0]?.id,
+      "legacy-candidate-card",
+    );
+
+    api.removeStyleLibrary("legacy-style-card");
+    api.removeStyleLibraryCandidate("legacy-candidate-card");
+
+    const reloadedApi = createLocalStudioUserAssetApi();
+    assert.equal(reloadedApi.listStyleLibraries().length, 0);
+    assert.equal(reloadedApi.listStyleLibraryCandidates().length, 0);
+  });
+});
+
 test("local asset api can promote temporary role draft and rollback to an earlier role version", () => {
   const storage = createStorageMock();
   withMockWindow(storage, () => {

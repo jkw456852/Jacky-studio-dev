@@ -6,6 +6,29 @@ import { fetchWithResilience } from './http/api-client';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
 import { getApiKey, getApiKeyByProviderId, getProviderConfig, getProviderConfigById } from './provider-config';
 import {
+    buildOpenAIFormHeaders,
+    buildOpenAIHeaders,
+    buildOpenAIUrl,
+    clearCachedOpenAIAuthMode,
+    getCachedOpenAIAuthMode,
+    getOpenAIAuthCacheEntryKey,
+    isRateLimited,
+    isServerError,
+    normalizeApiKeyCandidates,
+    normalizeUrl,
+    resolveOpenAIAuthPlans,
+    setCachedOpenAIAuthMode,
+    shouldAllowQueryAuthFallback,
+    shouldTryAlternateAuth,
+    type OpenAIAuthMode,
+    type OpenAIAuthStrategy,
+} from './openai-transport/auth';
+import {
+    createImageRequestWarning,
+    type ImageTransportRequestSnapshot,
+    type ImageUserRequestSnapshot,
+} from '../types/image-generation.types';
+import {
     normalizeReferenceToDataUrl,
     normalizeReferenceToModelInputDataUrl,
 } from './image-reference-resolver';
@@ -18,6 +41,40 @@ import {
     normalizeWorkspaceImageSize,
     parseImageSizeString,
 } from './openai-image-presets';
+import {
+    dataUrlToFilePayload,
+    estimateDataUrlBytes,
+    getOpenAIImageRequestMode,
+    isOpenAICompatibleImageModel,
+    normalizeOpenAICompatibleImageModelId,
+    normalizeOpenAIImageAspectRatio,
+    resolveOpenAIImageSize,
+    type OpenAIImageRequestMode,
+} from './image-generation/core/openai-image-spec';
+import {
+    buildBaseImagePrompt as composeBaseImagePrompt,
+    buildReferenceInjectionPlan as planReferenceInjection,
+    buildTextPolicySuffix as buildImageTextPolicySuffix,
+} from './image-generation/core/prompt-composer';
+import {
+    buildOpenAIImageEditFormData,
+    buildOpenAIImageEditJsonPayload,
+    buildOpenAIImageGenerationBody,
+} from './image-generation/core/request-builder';
+import {
+    extractOpenAIImageResult,
+    extractOpenAIImageTaskSubmission,
+    parseOpenAIImageResponse,
+} from './image-generation/core/response-parser';
+import {
+    pollOpenAICompatibleImageResult as pollOpenAICompatibleImageResultViaTransport,
+    runOpenAITransportWithFallback,
+} from './image-generation/core/transport-runner';
+import {
+    decideOpenAIImageRoute,
+    isOfficialOpenAIBaseUrl,
+} from './image-generation/core/request-router';
+import { getImageProviderById } from './providers';
 
 const isNetworkFetchError = (error: unknown): boolean => {
     const msg = ((error as any)?.message || '').toLowerCase();
@@ -46,15 +103,6 @@ const requireApiKey = (stage: string, providerId?: string | null): string => {
         details: `missing_api_key:${stage}`,
         message: 'API 密钥未配置，请先在设置中填写并保存可用密钥。',
     });
-};
-
-/**
- * Normalize and clean Base URL
- */
-const normalizeUrl = (baseUrl: string): string => {
-    let url = (baseUrl || '').trim().replace(/\/+$/, '');
-    if (!url) return 'https://generativelanguage.googleapis.com';
-    return url;
 };
 
 const stableHashString = (input: string): string => {
@@ -110,159 +158,7 @@ const buildImageRequestFingerprint = (parts: {
     };
 };
 
-const shouldTryAlternateAuth = (status: number): boolean => {
-    return status === 401 || status === 403 || status === 404;
-};
-
-const isRateLimited = (status: number): boolean => {
-    return status === 429;
-};
-
-const isServerError = (status: number): boolean => {
-    return status >= 500 && status < 600;
-};
-
-type OpenAIAuthMode = 'bearer' | 'query';
-type OpenAIAuthStrategy = 'auto' | 'bearer-only' | 'query-only';
-
-const OPENAI_QUERY_AUTH_BLOCKED_HOSTS = new Set<string>([
-    'api3.wlai.vip',
-    'api.xcode.best',
-]);
-
-const OPENAI_QUERY_AUTH_BLOCKED_HOST_PATH_PREFIXES: Record<string, string[]> = {
-    'api.bltcy.ai': ['/v1/images/edits', '/v1/images/generations'],
-};
-
-const OPENAI_AUTH_MODE_CACHE_KEY = 'openai_auth_mode_cache_v1';
-const openAIAuthModeMemoryCache = new Map<string, OpenAIAuthMode>();
 const OPENAI_REQUEST_QUEUE_NEXT_AT_PREFIX = 'openai_request_queue_next_at_v1::';
-
-const readOpenAIAuthModeCache = (): Record<string, OpenAIAuthMode> => {
-    if (typeof window === 'undefined') return {};
-    try {
-        const raw = window.localStorage.getItem(OPENAI_AUTH_MODE_CACHE_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
-        const normalized: Record<string, OpenAIAuthMode> = {};
-        Object.entries(parsed || {}).forEach(([key, value]) => {
-            if (value === 'bearer' || value === 'query') {
-                normalized[key] = value;
-            }
-        });
-        return normalized;
-    } catch {
-        return {};
-    }
-};
-
-const writeOpenAIAuthModeCache = (cache: Record<string, OpenAIAuthMode>): void => {
-    if (typeof window === 'undefined') return;
-    safeLocalStorageSetItem(OPENAI_AUTH_MODE_CACHE_KEY, JSON.stringify(cache));
-};
-
-const getOpenAIAuthCacheEntryKey = (baseUrl: string, path: string): string => {
-    const root = normalizeUrl(baseUrl || '').toLowerCase();
-    const normalizedPath = String(path || '').trim() || '/v1/chat/completions';
-    return `${root}::${normalizedPath}`;
-};
-
-const getCachedOpenAIAuthMode = (cacheKey: string): OpenAIAuthMode | undefined => {
-    const memoryHit = openAIAuthModeMemoryCache.get(cacheKey);
-    if (memoryHit) return memoryHit;
-
-    const persisted = readOpenAIAuthModeCache()[cacheKey];
-    if (persisted) {
-        openAIAuthModeMemoryCache.set(cacheKey, persisted);
-        return persisted;
-    }
-
-    return undefined;
-};
-
-const setCachedOpenAIAuthMode = (cacheKey: string, mode: OpenAIAuthMode): void => {
-    openAIAuthModeMemoryCache.set(cacheKey, mode);
-    const persisted = readOpenAIAuthModeCache();
-    persisted[cacheKey] = mode;
-    writeOpenAIAuthModeCache(persisted);
-};
-
-const clearCachedOpenAIAuthMode = (cacheKey: string): void => {
-    openAIAuthModeMemoryCache.delete(cacheKey);
-    const persisted = readOpenAIAuthModeCache();
-    if (persisted[cacheKey]) {
-        delete persisted[cacheKey];
-        writeOpenAIAuthModeCache(persisted);
-    }
-};
-
-const buildOpenAIPath = (baseUrl: string, path: string): string => {
-    const root = normalizeUrl(baseUrl);
-    return path.startsWith('/') ? `${root}${path}` : `${root}/${path}`;
-};
-
-const shouldAllowQueryAuthFallback = (baseUrl: string, path: string): boolean => {
-    const normalizedPath = String(path || '').trim() || '/v1/chat/completions';
-
-    try {
-        const host = new URL(normalizeUrl(baseUrl || '')).host.toLowerCase();
-        const blockedPrefixes = OPENAI_QUERY_AUTH_BLOCKED_HOST_PATH_PREFIXES[host] || [];
-        if (blockedPrefixes.some((prefix) => normalizedPath.startsWith(prefix))) {
-            return false;
-        }
-
-        if (normalizedPath !== '/v1/chat/completions') {
-            return true;
-        }
-
-        if (OPENAI_QUERY_AUTH_BLOCKED_HOSTS.has(host)) {
-            return false;
-        }
-    } catch {
-        if (normalizedPath !== '/v1/chat/completions') {
-            return true;
-        }
-        // ignore URL parse errors and keep fallback enabled
-    }
-
-    return true;
-};
-
-const resolveOpenAIAuthPlans = (
-    cachedMode: OpenAIAuthMode | undefined,
-    authStrategy: OpenAIAuthStrategy,
-    allowQueryFallback: boolean,
-): OpenAIAuthMode[] => {
-    if (authStrategy === 'bearer-only') return ['bearer'];
-    if (authStrategy === 'query-only') return ['query'];
-
-    if (!allowQueryFallback) {
-        return ['bearer'];
-    }
-
-    if (cachedMode === 'bearer' || cachedMode === 'query') {
-        const alternateMode: OpenAIAuthMode =
-            cachedMode === 'bearer' ? 'query' : 'bearer';
-        return [cachedMode, alternateMode];
-    }
-
-    return ['bearer', 'query'];
-};
-
-const normalizeApiKeyCandidates = (
-    apiKeyOrKeys: string | string[],
-): string[] => {
-    const rawKeys = Array.isArray(apiKeyOrKeys)
-        ? apiKeyOrKeys
-        : String(apiKeyOrKeys || '').split('\n');
-    return Array.from(
-        new Set(
-            rawKeys
-                .map((key) => String(key || '').trim())
-                .filter((key) => key.length > 0 && !key.startsWith('#')),
-        ),
-    );
-};
 
 const isVerboseOpenAIOperation = (operation: string): boolean => {
     return operation === 'ecomAnalyzeProductSkill'
@@ -353,32 +249,6 @@ const setSharedOpenAIQueueNextAt = (queueKey: string, nextAt: number): void => {
         `${OPENAI_REQUEST_QUEUE_NEXT_AT_PREFIX}${queueKey}`,
         String(Math.max(0, Math.floor(nextAt))),
     );
-};
-
-const buildOpenAIHeaders = (authMode: OpenAIAuthMode, apiKey: string): Record<string, string> => {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-    };
-    if (authMode === 'bearer') {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-    return headers;
-};
-
-const buildOpenAIFormHeaders = (authMode: OpenAIAuthMode, apiKey: string): Record<string, string> => {
-    const headers: Record<string, string> = {};
-    if (authMode === 'bearer') {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-    return headers;
-};
-
-const buildOpenAIUrl = (baseUrl: string, path: string, authMode: OpenAIAuthMode, apiKey: string): string => {
-    const base = buildOpenAIPath(baseUrl, path);
-    if (authMode === 'query') {
-        return `${base}${base.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`;
-    }
-    return base;
 };
 
 type UnifiedJsonStreamCallbacks = {
@@ -549,11 +419,6 @@ const fetchOpenAIJsonWithFallback = async <T>(
     const allowQueryFallback = shouldAllowQueryAuthFallback(baseUrl, path);
     const plans = resolveOpenAIAuthPlans(cachedMode, authStrategy, allowQueryFallback);
     const apiKeys = normalizeApiKeyCandidates(apiKeyOrKeys);
-    let lastError: any = null;
-
-    if (apiKeys.length === 0) {
-        throw new Error(`${contextTag} API failed: no available api keys`);
-    }
 
     if (isVerboseOpenAIOperation(contextTag)) {
         console.info(`[${contextTag}] auth plan`, {
@@ -563,13 +428,100 @@ const fetchOpenAIJsonWithFallback = async <T>(
             cachedMode: cachedMode || null,
         });
     }
-
-    for (const authMode of plans) {
-        for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
+    return runOpenAITransportWithFallback<T>({
+        baseUrl,
+        path,
+        apiKeys,
+        authPlans: plans,
+        contextTag,
+        isTimeoutError: isTimeoutException,
+        shouldTryAlternateAuth,
+        isRateLimited,
+        isServerError,
+        requestTuning,
+        onAuthModeSuccess: (authMode) => {
+            setCachedOpenAIAuthMode(cacheKey, authMode);
+        },
+        onAuthModeRejected: (_authMode, status) => {
+            if (shouldTryAlternateAuth(status)) {
+                clearCachedOpenAIAuthMode(cacheKey);
+            }
+        },
+        onBeforeRequest: ({ authMode, keyIndex, apiKeyCount }) => {
             const apiKey = apiKeys[keyIndex];
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.log(
+                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeyCount} ${url.replace(apiKey, '***')}`,
+                );
+                console.info(`[${contextTag}] transport config`, {
+                    authMode,
+                    keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
+                    requestFingerprint: requestTuning?.requestFingerprint || null,
+                    url: summarizeBaseUrlForLog(url.replace(apiKey, '***')),
+                    proxyUrl: typeof window !== 'undefined' ? '/api/openai-proxy' : null,
+                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    retries: requestTuning?.retries ?? 3,
+                });
+            }
+        },
+        onTransportError: ({ authMode, keyIndex, apiKeyCount, elapsedMs, error, isTimeoutError }) => {
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.warn(`[${contextTag}] transport failure`, {
+                    authMode,
+                    keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
+                    requestFingerprint: requestTuning?.requestFingerprint || null,
+                    elapsedMs,
+                    isTimeoutError,
+                    errorName: error instanceof Error ? error.name : typeof error,
+                    errorMessage: error instanceof Error ? error.message : String(error),
+                });
+            }
+            if (isTimeoutError) {
+                if (keyIndex < apiKeyCount - 1) {
+                    console.warn(
+                        `[${contextTag}] Timeout, switching to next api key ${keyIndex + 2}/${apiKeyCount}${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
+                    );
+                } else {
+                    console.warn(
+                        `[${contextTag}] Timeout on final api key for auth=${authMode}, will continue with next auth mode if available${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
+                    );
+                }
+            }
+        },
+        onResponseError: ({ authMode, keyIndex, apiKeyCount, elapsedMs, status, errorBody }) => {
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.warn(`[${contextTag}] response error`, {
+                    authMode,
+                    keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
+                    requestFingerprint: requestTuning?.requestFingerprint || null,
+                    elapsedMs,
+                    status,
+                    bodyPreview: errorBody.slice(0, 280),
+                });
+            }
+        },
+        shouldContinueOnRateLimit: async ({ keyIndex, apiKeyCount }) => {
+            if (keyIndex < apiKeyCount - 1) {
+                console.warn(`[${contextTag}] Rate limited (429), switching to next api key ${keyIndex + 2}/${apiKeyCount}`);
+                return true;
+            }
+            const delay = 5000 + Math.random() * 5000;
+            console.warn(`[${contextTag}] Rate limited (429), waiting ${delay.toFixed(0)}ms before retry`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return true;
+        },
+        shouldContinueOnServerError: ({ status, path }) => {
+            if (path === '/v1/chat/completions') {
+                console.warn(`[${contextTag}] Server error (${status}), will retry with alternate auth or next key`);
+                return true;
+            }
+            return false;
+        },
+        send: ({ authMode, apiKey }) => {
+            const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
             const headers = buildOpenAIHeaders(authMode, apiKey);
-            const requestStartedAt = Date.now();
             const shouldUseBrowserProxy = typeof window !== 'undefined';
             const browserProxyUrl = '/api/openai-proxy';
             const requestTarget = shouldUseBrowserProxy
@@ -578,160 +530,55 @@ const fetchOpenAIJsonWithFallback = async <T>(
                     method: 'POST',
                     headers,
                     body,
-                  }
+                }
                 : null;
-            if (isVerboseOpenAIOperation(contextTag)) {
-                console.log(
-                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
-                );
-            }
-            if (isVerboseOpenAIOperation(contextTag)) {
-                console.info(`[${contextTag}] transport config`, {
-                    authMode,
-                    keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                    requestFingerprint: requestTuning?.requestFingerprint || null,
-                    url: summarizeBaseUrlForLog(url.replace(apiKey, '***')),
-                    proxyUrl: shouldUseBrowserProxy ? browserProxyUrl : null,
+            if (requestTarget) {
+                return fetchWithResilience(browserProxyUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestTarget),
+                }, {
+                    operation: `${contextTag}.openaiProxyPost`,
+                    retries: requestTuning?.retries ?? 3,
+                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
                     timeoutMs: requestTuning?.timeoutMs ?? 120000,
                     idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                    retries: requestTuning?.retries ?? 3,
+                    requestFingerprint: requestTuning?.requestFingerprint,
                 });
             }
-            let res: Response;
-            try {
-                if (requestTarget) {
-                    res = await fetchWithResilience(browserProxyUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(requestTarget),
-                    }, {
-                        operation: `${contextTag}.openaiProxyPost`,
-                        retries: requestTuning?.retries ?? 3,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                } else {
-                    res = await fetchWithResilience(url, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify(body),
-                    }, {
-                        operation: `${contextTag}.openaiPost`,
-                        retries: requestTuning?.retries ?? 3,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                }
-            } catch (error) {
-                const isTimeoutError = isTimeoutException(error);
-                if (isTimeoutError) {
-                    const timeoutError: any = error instanceof Error ? error : new Error(String(error));
-                    timeoutError.authMode = authMode;
-                    timeoutError.keyIndex = keyIndex;
-                    timeoutError.retryable = true;
-                    timeoutError.timeout = true;
-                    lastError = timeoutError;
-                }
-                if (isVerboseOpenAIOperation(contextTag)) {
-                    console.warn(`[${contextTag}] transport failure`, {
-                        authMode,
-                        keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                        requestFingerprint: requestTuning?.requestFingerprint || null,
-                        elapsedMs: Date.now() - requestStartedAt,
-                        isTimeoutError,
-                        errorName: error instanceof Error ? error.name : typeof error,
-                        errorMessage: error instanceof Error ? error.message : String(error),
-                    });
-                }
-                if (isTimeoutError) {
-                    if (keyIndex < apiKeys.length - 1) {
-                        console.warn(
-                            `[${contextTag}] Timeout, switching to next api key ${keyIndex + 2}/${apiKeys.length}${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
-                        );
-                    } else {
-                        console.warn(
-                            `[${contextTag}] Timeout on final api key for auth=${authMode}, will continue with next auth mode if available${requestTuning?.requestFingerprint ? `, requestId=${requestTuning.requestFingerprint}` : ''}`,
-                        );
-                    }
-                    continue;
-                }
-                throw error;
-            }
-
-            if (res.ok) {
-                setCachedOpenAIAuthMode(cacheKey, authMode);
-                const responseParseStartedAt = Date.now();
-                const payload = await res.json();
-                if (isVerboseOpenAIOperation(contextTag)) {
-                    console.info(`[${contextTag}] response payload`, {
-                        authMode,
-                        keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                        elapsedMs: Date.now() - requestStartedAt,
-                        parseMs: Date.now() - responseParseStartedAt,
-                        ...summarizeOpenAIJsonPayloadForLog(payload),
-                    });
-                }
-                return payload as T;
-            }
-
-            const errBody = await res.text().catch(() => '');
+            return fetchWithResilience(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+            }, {
+                operation: `${contextTag}.openaiPost`,
+                retries: requestTuning?.retries ?? 3,
+                baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                requestFingerprint: requestTuning?.requestFingerprint,
+            });
+        },
+        parseSuccess: async (response) => {
+            const responseParseStartedAt = Date.now();
+            const payload = await response.json();
             if (isVerboseOpenAIOperation(contextTag)) {
-                console.warn(`[${contextTag}] response error`, {
-                    authMode,
-                    keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                    requestFingerprint: requestTuning?.requestFingerprint || null,
-                    elapsedMs: Date.now() - requestStartedAt,
-                    status: res.status,
-                    bodyPreview: errBody.slice(0, 280),
+                console.info(`[${contextTag}] response payload`, {
+                    parseMs: Date.now() - responseParseStartedAt,
+                    ...summarizeOpenAIJsonPayloadForLog(payload),
                 });
             }
-            const isRateLimitError = isRateLimited(res.status);
-            const isServerErr = isServerError(res.status);
-            const err: any = new Error(`${contextTag} API error: ${res.status} [${authMode}] ${isRateLimitError ? 'Rate limited' : isServerErr ? 'Server error' : errBody}`);
-            err.status = res.status;
-            err.authMode = authMode;
-            err.keyIndex = keyIndex;
-            err.retryable = isRateLimitError || isServerErr;
-            lastError = err;
+            return payload as T;
+        },
+    });
+};
 
-            if (shouldTryAlternateAuth(res.status)) {
-                clearCachedOpenAIAuthMode(cacheKey);
-            }
-
-            if (isRateLimitError) {
-                if (keyIndex < apiKeys.length - 1) {
-                    console.warn(
-                        `[${contextTag}] Rate limited (429), switching to next api key ${keyIndex + 2}/${apiKeys.length}`,
-                    );
-                    continue;
-                }
-                const delay = 5000 + Math.random() * 5000;
-                console.warn(`[${contextTag}] Rate limited (429), waiting ${delay.toFixed(0)}ms before retry`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-
-            if (isServerErr && path === '/v1/chat/completions') {
-                // For server errors on chat API, try exponential backoff before giving up
-                console.warn(`[${contextTag}] Server error (${res.status}), will retry with alternate auth or next key`);
-                continue;
-            }
-
-            if (!shouldTryAlternateAuth(res.status)) {
-                throw err;
-            }
-        }
-    }
-
-    throw lastError || new Error(`${contextTag} API failed on all auth strategies`);
+const resolveProviderImageTransportProfile = (providerId?: string | null) => {
+    return getImageProviderById(providerId)?.capability.imageTransportProfile || null;
 };
 
 const fetchOpenAIStreamingJsonWithFallback = async <T>(
@@ -865,11 +712,6 @@ const fetchOpenAIFormWithFallback = async <T>(
     const allowQueryFallback = shouldAllowQueryAuthFallback(baseUrl, path);
     const plans = resolveOpenAIAuthPlans(cachedMode, authStrategy, allowQueryFallback);
     const apiKeys = normalizeApiKeyCandidates(apiKeyOrKeys);
-    let lastError: any = null;
-
-    if (apiKeys.length === 0) {
-        throw new Error(`${contextTag} API failed: no available api keys`);
-    }
 
     if (isVerboseOpenAIOperation(contextTag)) {
         console.info(`[${contextTag}] auth plan`, {
@@ -879,22 +721,35 @@ const fetchOpenAIFormWithFallback = async <T>(
             cachedMode: cachedMode || null,
         });
     }
-
-    for (const authMode of plans) {
-        for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
+    return runOpenAITransportWithFallback<T>({
+        baseUrl,
+        path,
+        apiKeys,
+        authPlans: plans,
+        contextTag,
+        isTimeoutError: isTimeoutException,
+        shouldTryAlternateAuth,
+        isRateLimited,
+        isServerError,
+        requestTuning,
+        onAuthModeSuccess: (authMode) => {
+            setCachedOpenAIAuthMode(cacheKey, authMode);
+        },
+        onAuthModeRejected: (_authMode, status) => {
+            if (shouldTryAlternateAuth(status)) {
+                clearCachedOpenAIAuthMode(cacheKey);
+            }
+        },
+        onBeforeRequest: ({ authMode, keyIndex, apiKeyCount }) => {
             const apiKey = apiKeys[keyIndex];
             const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
-            const headers = buildOpenAIFormHeaders(authMode, apiKey);
-            const requestStartedAt = Date.now();
             if (isVerboseOpenAIOperation(contextTag)) {
                 console.log(
-                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeys.length} ${url.replace(apiKey, '***')}`,
+                    `[${contextTag}] POST [${authMode}] key=${keyIndex + 1}/${apiKeyCount} ${url.replace(apiKey, '***')}`,
                 );
-            }
-            if (isVerboseOpenAIOperation(contextTag)) {
                 console.info(`[${contextTag}] transport config`, {
                     authMode,
-                    keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
+                    keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
                     requestFingerprint: requestTuning?.requestFingerprint || null,
                     url: summarizeBaseUrlForLog(url.replace(apiKey, '***')),
                     proxyUrl: typeof window !== 'undefined' ? '/api/openai-proxy' : null,
@@ -903,128 +758,90 @@ const fetchOpenAIFormWithFallback = async <T>(
                     retries: requestTuning?.retries ?? 3,
                 });
             }
-
-            let res: Response;
-            try {
-                if (typeof window !== 'undefined') {
-                    const serializedFormData = await serializeFormDataForProxy(buildFormData());
-                    res = await fetchWithResilience('/api/openai-proxy', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            targetUrl: url,
-                            method: 'POST',
-                            headers,
-                            body: serializedFormData,
-                        }),
-                    }, {
-                        operation: `${contextTag}.openaiProxyPost`,
-                        retries: requestTuning?.retries ?? 3,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                } else {
-                    res = await fetchWithResilience(url, {
-                        method: 'POST',
-                        headers,
-                        body: buildFormData(),
-                    }, {
-                        operation: `${contextTag}.openaiFormPost`,
-                        retries: requestTuning?.retries ?? 3,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                }
-            } catch (error) {
-                if (isTimeoutException(error)) {
-                    const timeoutError: any = error instanceof Error ? error : new Error(String(error));
-                    timeoutError.authMode = authMode;
-                    timeoutError.keyIndex = keyIndex;
-                    timeoutError.retryable = true;
-                    timeoutError.timeout = true;
-                    lastError = timeoutError;
-                    continue;
-                }
-                if (isVerboseOpenAIOperation(contextTag)) {
-                    console.warn(`[${contextTag}] transport failure`, {
-                        authMode,
-                        keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                        requestFingerprint: requestTuning?.requestFingerprint || null,
-                        elapsedMs: Date.now() - requestStartedAt,
-                        errorName: error instanceof Error ? error.name : typeof error,
-                        errorMessage: error instanceof Error ? error.message : String(error),
-                    });
-                }
-                throw error;
+        },
+        onTransportError: ({ authMode, keyIndex, apiKeyCount, elapsedMs, error }) => {
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.warn(`[${contextTag}] transport failure`, {
+                    authMode,
+                    keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
+                    requestFingerprint: requestTuning?.requestFingerprint || null,
+                    elapsedMs,
+                    errorName: error instanceof Error ? error.name : typeof error,
+                    errorMessage: error instanceof Error ? error.message : String(error),
+                });
             }
-
-            if (res.ok) {
-                setCachedOpenAIAuthMode(cacheKey, authMode);
-                const payload = await res.json();
-                if (isVerboseOpenAIOperation(contextTag)) {
-                    console.info(`[${contextTag}] response payload`, {
-                        authMode,
-                        keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
-                        requestFingerprint: requestTuning?.requestFingerprint || null,
-                        elapsedMs: Date.now() - requestStartedAt,
-                        ...(typeof payload === 'object' && payload
-                            ? summarizeOpenAIJsonPayloadForLog(payload)
-                            : { payloadType: typeof payload }),
-                    });
-                }
-                return payload as T;
-            }
-
-            const errBody = await res.text().catch(() => '');
+        },
+        onResponseError: ({ authMode, keyIndex, apiKeyCount, elapsedMs, status, errorBody }) => {
             console.warn(`[${contextTag}] response error`, {
                 authMode,
-                keyIndex: `${keyIndex + 1}/${apiKeys.length}`,
+                keyIndex: `${keyIndex + 1}/${apiKeyCount}`,
                 requestFingerprint: requestTuning?.requestFingerprint || null,
-                elapsedMs: Date.now() - requestStartedAt,
-                status: res.status,
-                bodyPreview: errBody.slice(0, 500),
+                elapsedMs,
+                status,
+                bodyPreview: errorBody.slice(0, 500),
             });
-            const isRateLimitError = isRateLimited(res.status);
-            const isServerErr = isServerError(res.status);
-            const err: any = new Error(`${contextTag} API error: ${res.status} [${authMode}] ${isRateLimitError ? 'Rate limited' : isServerErr ? 'Server error' : errBody}`);
-            err.status = res.status;
-            err.authMode = authMode;
-            err.keyIndex = keyIndex;
-            err.retryable = isRateLimitError || isServerErr;
-            lastError = err;
-
-            if (shouldTryAlternateAuth(res.status)) {
-                clearCachedOpenAIAuthMode(cacheKey);
+        },
+        shouldContinueOnRateLimit: async ({ keyIndex, apiKeyCount }) => {
+            if (keyIndex < apiKeyCount - 1) {
+                return true;
             }
-
-            if (isRateLimitError) {
-                if (keyIndex < apiKeys.length - 1) {
-                    continue;
-                }
-                const delay = 5000 + Math.random() * 5000;
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
+            const delay = 5000 + Math.random() * 5000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return true;
+        },
+        shouldContinueOnServerError: () => true,
+        send: async ({ authMode, apiKey }) => {
+            const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
+            const headers = buildOpenAIFormHeaders(authMode, apiKey);
+            if (typeof window !== 'undefined') {
+                const serializedFormData = await serializeFormDataForProxy(buildFormData());
+                return fetchWithResilience('/api/openai-proxy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        targetUrl: url,
+                        method: 'POST',
+                        headers,
+                        body: serializedFormData,
+                    }),
+                }, {
+                    operation: `${contextTag}.openaiProxyPost`,
+                    retries: requestTuning?.retries ?? 3,
+                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    requestFingerprint: requestTuning?.requestFingerprint,
+                });
             }
-
-            if (isServerErr) {
-                continue;
+            return fetchWithResilience(url, {
+                method: 'POST',
+                headers,
+                body: buildFormData(),
+            }, {
+                operation: `${contextTag}.openaiFormPost`,
+                retries: requestTuning?.retries ?? 3,
+                baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                requestFingerprint: requestTuning?.requestFingerprint,
+            });
+        },
+        parseSuccess: async (response) => {
+            const payload = await response.json();
+            if (isVerboseOpenAIOperation(contextTag)) {
+                console.info(`[${contextTag}] response payload`, {
+                    ...(typeof payload === 'object' && payload
+                        ? summarizeOpenAIJsonPayloadForLog(payload)
+                        : { payloadType: typeof payload }),
+                });
             }
-
-            if (!shouldTryAlternateAuth(res.status)) {
-                throw err;
-            }
-        }
-    }
-
-    throw lastError || new Error(`${contextTag} API failed on all auth strategies`);
+            return payload as T;
+        },
+    });
 };
 
 const fetchOpenAIGetWithFallback = async <T>(
@@ -1048,105 +865,80 @@ const fetchOpenAIGetWithFallback = async <T>(
     const allowQueryFallback = shouldAllowQueryAuthFallback(baseUrl, path);
     const plans = resolveOpenAIAuthPlans(cachedMode, authStrategy, allowQueryFallback);
     const apiKeys = normalizeApiKeyCandidates(apiKeyOrKeys);
-    let lastError: any = null;
-
-    if (apiKeys.length === 0) {
-        throw new Error(`${contextTag} API failed: no available api keys`);
-    }
-
-    for (const authMode of plans) {
-        for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
-            const apiKey = apiKeys[keyIndex];
-            const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
-            const headers = buildOpenAIHeaders(authMode, apiKey);
-
-            let res: Response;
-            try {
-                if (typeof window !== 'undefined') {
-                    res = await fetchWithResilience('/api/openai-proxy', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            targetUrl: url,
-                            method: 'GET',
-                            headers,
-                            timeoutMs: requestTuning?.idleTimeoutMs ?? requestTuning?.timeoutMs ?? 300000,
-                        }),
-                    }, {
-                        operation: `${contextTag}.openaiProxyGet`,
-                        retries: requestTuning?.retries ?? 1,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                } else {
-                    res = await fetchWithResilience(url, {
-                        method: 'GET',
-                        headers,
-                    }, {
-                        operation: `${contextTag}.openaiGet`,
-                        retries: requestTuning?.retries ?? 1,
-                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                        requestFingerprint: requestTuning?.requestFingerprint,
-                    });
-                }
-            } catch (error) {
-                if (isTimeoutException(error)) {
-                    const timeoutError: any = error instanceof Error ? error : new Error(String(error));
-                    timeoutError.authMode = authMode;
-                    timeoutError.keyIndex = keyIndex;
-                    timeoutError.retryable = true;
-                    timeoutError.timeout = true;
-                    lastError = timeoutError;
-                    continue;
-                }
-                throw error;
-            }
-
-            if (res.ok) {
-                setCachedOpenAIAuthMode(cacheKey, authMode);
-                return await res.json() as T;
-            }
-
-            const errBody = await res.text().catch(() => '');
-            const isRateLimitError = isRateLimited(res.status);
-            const isServerErr = isServerError(res.status);
-            const err: any = new Error(`${contextTag} API error: ${res.status} [${authMode}] ${isRateLimitError ? 'Rate limited' : isServerErr ? 'Server error' : errBody}`);
-            err.status = res.status;
-            err.authMode = authMode;
-            err.keyIndex = keyIndex;
-            err.retryable = isRateLimitError || isServerErr;
-            lastError = err;
-
-            if (shouldTryAlternateAuth(res.status)) {
+    return runOpenAITransportWithFallback<T>({
+        baseUrl,
+        path,
+        apiKeys,
+        authPlans: plans,
+        contextTag,
+        isTimeoutError: isTimeoutException,
+        shouldTryAlternateAuth,
+        isRateLimited,
+        isServerError,
+        requestTuning,
+        onAuthModeSuccess: (authMode) => {
+            setCachedOpenAIAuthMode(cacheKey, authMode);
+        },
+        onAuthModeRejected: (_authMode, status) => {
+            if (shouldTryAlternateAuth(status)) {
                 clearCachedOpenAIAuthMode(cacheKey);
             }
-
-            if (isRateLimitError || isServerErr) {
-                continue;
+        },
+        shouldContinueOnRateLimit: () => true,
+        shouldContinueOnServerError: () => true,
+        send: ({ authMode, apiKey }) => {
+            const url = buildOpenAIUrl(baseUrl, path, authMode, apiKey);
+            const headers = buildOpenAIHeaders(authMode, apiKey);
+            if (typeof window !== 'undefined') {
+                return fetchWithResilience('/api/openai-proxy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        targetUrl: url,
+                        method: 'GET',
+                        headers,
+                        timeoutMs: requestTuning?.idleTimeoutMs ?? requestTuning?.timeoutMs ?? 300000,
+                    }),
+                }, {
+                    operation: `${contextTag}.openaiProxyGet`,
+                    retries: requestTuning?.retries ?? 1,
+                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                    requestFingerprint: requestTuning?.requestFingerprint,
+                });
             }
-
-            if (!shouldTryAlternateAuth(res.status)) {
-                throw err;
-            }
-        }
-    }
-
-    throw lastError || new Error(`${contextTag} API failed on all auth strategies`);
+            return fetchWithResilience(url, {
+                method: 'GET',
+                headers,
+            }, {
+                operation: `${contextTag}.openaiGet`,
+                retries: requestTuning?.retries ?? 1,
+                baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                requestFingerprint: requestTuning?.requestFingerprint,
+            });
+        },
+        parseSuccess: (response) => response.json() as Promise<T>,
+    });
 };
 type UnifiedJsonGenerationOptions = {
     model: string;
     providerId?: string | null;
-    parts: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }>;
+    parts: Array<{
+        text?: string;
+        inlineData?: { mimeType?: string; data?: string };
+        imageUrl?: string;
+    }>;
     temperature?: number;
     responseSchema?: unknown;
+    responseFormat?: 'schema' | 'text';
+    injectSchemaPrompt?: boolean;
     tools?: unknown[];
     operation?: string;
     disableTextOnlyFallback?: boolean;
@@ -1259,6 +1051,11 @@ export type UnifiedJsonGenerationResult = {
     text: string;
     candidates?: any[];
     raw?: any;
+    meta?: {
+        model?: string | null;
+        providerId?: string | null;
+        baseUrl?: string | null;
+    };
 };
 
 const toOpenAIMessageContent = (
@@ -1312,6 +1109,7 @@ export const generateJsonResponse = async (
         parts,
         temperature = 0.7,
         responseSchema,
+        responseFormat = 'schema',
         tools,
         operation = 'generateJsonResponse',
         disableTextOnlyFallback = false,
@@ -1333,7 +1131,7 @@ export const generateJsonResponse = async (
             contents: { parts },
             config: {
                 temperature,
-                responseMimeType: 'application/json',
+                responseMimeType: responseFormat === 'text' ? 'text/plain' : 'application/json',
                 ...(responseSchema ? { responseSchema } : {}),
                 ...(tools && tools.length > 0 ? { tools: tools as any } : {}),
             },
@@ -1342,7 +1140,12 @@ export const generateJsonResponse = async (
         return {
             text: response.text || '{}',
             candidates: response.candidates as any,
-            raw: response as any
+            raw: response as any,
+            meta: {
+                model,
+                providerId: provider.id || providerId || null,
+                baseUrl,
+            },
         };
     }
 
@@ -1361,7 +1164,9 @@ export const generateJsonResponse = async (
                 content: openAIContent
             }
         ],
-        response_format: { type: 'json_object' },
+        ...(responseFormat === 'schema'
+            ? { response_format: { type: 'json_object' } }
+            : {}),
         ...((onTextDelta || onReasoningDelta)
             ? {
                 stream: true,
@@ -1547,7 +1352,12 @@ export const generateJsonResponse = async (
     return {
         text: data?.choices?.[0]?.message?.content || '{}',
         candidates: data?.choices || [],
-        raw: data
+        raw: data,
+        meta: {
+            model,
+            providerId: provider.id || providerId || null,
+            baseUrl,
+        },
     };
 };
 
@@ -2281,8 +2091,13 @@ export const analyzeImageRegion = async (imageBase64: string): Promise<string> =
         const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
         if (!matches) throw new Error("Invalid base64 image");
 
-        const response = await retryWithBackoff<GenerateContentResponse>(() => getClient().models.generateContent({
-            model: FLASH_MODEL,
+        // 读用户偏好的脚本模型 / provider，避免硬编码渠道里没有的模型
+        const selected = getSelectedScriptModelSelection();
+        const targetModel = selected?.modelId || FLASH_MODEL;
+        const targetProviderId = selected?.providerId;
+
+        const response = await retryWithBackoff<GenerateContentResponse>(() => getClient(targetProviderId).models.generateContent({
+            model: targetModel,
             contents: {
                 parts: [
                     {
@@ -2497,18 +2312,7 @@ export const analyzeProductSwapScene = async (imageBase64: string): Promise<stri
 
 export interface ImageGenerationConfig {
     prompt: string;
-    model:
-        | 'Nano Banana Pro'
-        | 'NanoBanana2'
-        | 'Nano Banana 2'
-        | 'Seedream5.0'
-        | 'Seedream 5.0'
-        | 'Seedream 4'
-        | 'GPT Image 2'
-        | 'gpt-image-2'
-        | 'GPT Image 1.5'
-        | 'gpt-image-1.5-all'
-        | 'Flux.2 Max';
+    model: string;
     aspectRatio: string;
     imageSize?: '1K' | '2K' | '4K';
     exactSize?: string;
@@ -2533,6 +2337,15 @@ export interface ImageGenerationConfig {
         referenceSummary?: string;
         forbiddenChanges?: string[];
     };
+    onSubmitted?: (payload: {
+        taskId: string;
+        providerId?: string | null;
+        baseUrl?: string | null;
+        model?: string | null;
+        route?: string | null;
+        transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+    }) => void;
+    onTransportPrepared?: (snapshot: ImageTransportRequestSnapshot) => void;
 }
 
 export interface ImageEditConfig {
@@ -2541,9 +2354,12 @@ export interface ImageEditConfig {
     model?: string;
     aspectRatio?: string;
     imageSize?: '1K' | '2K' | '4K';
+    exactSize?: string;
     providerId?: string | null;
     maskImage?: string;
     referenceImages?: string[];
+    background?: 'transparent' | 'opaque' | 'auto';
+    outputFormat?: 'png' | 'jpeg' | 'webp';
 }
 
 export interface TransparentResultValidation {
@@ -2552,286 +2368,6 @@ export interface TransparentResultValidation {
     transparentPixelRatio: number;
     reason?: 'not-data-url' | 'image-load-failed' | 'canvas-context-failed' | 'missing-alpha-output';
 }
-
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
-
-const strengthToRepeats = (strength: number): number => {
-    if (strength >= 0.85) return 3;
-    if (strength >= 0.65) return 2;
-    return 1;
-};
-
-const buildConstrainedPrompt = (
-    userPrompt: string,
-    opts: {
-        strength: number;
-        mode: 'style' | 'product';
-        referenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
-        referenceCount?: number;
-        priority?: 'first' | 'all';
-        forbiddenChanges?: string[];
-        approvedSummary?: string;
-    },
-): string => {
-    const hard = opts.strength >= 0.7;
-    const referenceCount = Math.max(0, opts.referenceCount || 0);
-    const multiReference = referenceCount > 1;
-    const isPosterProductMode =
-        opts.referenceRoleMode === 'poster-product' && referenceCount >= 2;
-
-    if (isPosterProductMode) {
-        const approvedContext = opts.approvedSummary
-            ? `
-[Approved Anchor]
-- Continue from the latest approved result as the current design baseline.
-- Approved summary: ${opts.approvedSummary}
-`
-            : '';
-
-        const forbiddenSection = opts.forbiddenChanges && opts.forbiddenChanges.length > 0
-            ? `
-[Forbidden Changes]
-${opts.forbiddenChanges.map((item) => `- ${item}`).join('\n')}
-`
-            : '';
-
-        return `
-[Poster Reconstruction Mode]
-- Reference image 1 is the poster/layout anchor.
-- Reference image 2 is the product identity anchor.
-- Rebuild the overall poster composition, framing, camera angle, background style, lighting direction, text-safe empty space, and design language from reference image 1 as closely as possible.
-- Replace only the main product/hero subject in reference image 1 with the product from reference image 2.
-- Keep the product from reference image 2 exact in silhouette, structure, proportions, color family, materials, logos, placement, and distinctive details.
-- Do not create a brand-new composition.
-- Do not merge both references into a different scene.
-- If there is any conflict, preserve poster layout/style from reference image 1 and preserve product identity/details from reference image 2.
-- Any additional references beyond the first two are supporting detail only and must not override those role assignments.
-${approvedContext}${forbiddenSection}
-[Do Not]
-- Do not redesign the poster structure.
-- Do not replace the composition with a generic ad layout.
-- Do not change the product type, shape, or key details.
-- Do not drift away from the visual hierarchy of reference image 1.
-
-[User Request]
-${userPrompt}`.trim();
-    }
-
-    const constraints = opts.mode === 'product'
-        ? `
-[Consistency Requirements]
-- Keep product silhouette, cut, structure, color family, material texture, and major details consistent with references.
-- Do not add/remove logos, stitching lines, trims, or hardware when they are visible.
-- Preserve relative logo placement and key detailing when visible in references.
-- Allowed changes: background, ambience, props, and composition only.
-`
-        : `
-[Style Requirements]
-- Keep visual style, color language, and composition tendency aligned with references.
-- Preserve the overall mood and design direction across outputs.
-`;
-
-    const referenceInstructions = multiReference
-        ? `
-[Multi-Reference Policy]
-- Treat all reference images as the same subject shown from different angles or with complementary details.
-- Synthesize identity using ALL references together instead of copying only the first image.
-- If references conflict, prioritize silhouette, logo placement, signature details, material texture, and core color family.
-- Merge the strongest consistent traits across all references into one coherent final subject.
-`
-        : opts.priority === 'first'
-            ? `
-[Reference Priority]
-- The first reference is the primary identity anchor.
-- Secondary references may add detail, but must not override the main subject identity.
-`
-            : '';
-
-    const negatives = hard
-        ? `
-[Do Not]
-- Do not change product type or core shape.
-- Do not drift to a different SKU-like design.
-- Do not over-stylize and lose material realism.
-`
-        : '';
-
-    const approvedContext = opts.approvedSummary
-        ? `
-[Approved Anchor]
-- Continue from the latest approved result as the current design baseline.
-- Approved summary: ${opts.approvedSummary}
-`
-        : '';
-
-    const forbiddenSection = opts.forbiddenChanges && opts.forbiddenChanges.length > 0
-        ? `
-[Forbidden Changes]
-${opts.forbiddenChanges.map((item) => `- ${item}`).join('\n')}
-`
-        : '';
-
-    return `${constraints}${referenceInstructions}${approvedContext}${forbiddenSection}${negatives}
-[User Request]
-${userPrompt}`.trim();
-};
-
-const buildReferenceGroundingPrompt = (
-    userPrompt: string,
-    opts: {
-        referenceCount?: number;
-    },
-): string => {
-    const referenceCount = Math.max(0, opts.referenceCount || 0);
-    const inferredReferenceRoles = inferExplicitReferenceRoleAssignment(
-        userPrompt,
-        referenceCount,
-    );
-    const multiReferenceSection = referenceCount >= 2
-        ? `
-[Multiple Reference Handling]
-- Read all reference images together instead of randomly following only one image.
-- If the user assigns different roles to different references, follow that assignment exactly.
-- Do not swap reference roles or ignore the product identity reference.
-`
-        : '';
-    const explicitRoleSection = inferredReferenceRoles
-        ? `
-[Explicit Reference Role Assignment]
-- The user explicitly assigned different roles to the references.
-- Reference image ${inferredReferenceRoles.layoutReferenceIndex} is the layout/style/composition anchor.
-- Reference image ${inferredReferenceRoles.productReferenceIndex} is the product identity and branding anchor.
-- Keep the overall poster/layout direction from reference image ${inferredReferenceRoles.layoutReferenceIndex}, while preserving the product shape, packaging, brand spelling, logo placement, and key details from reference image ${inferredReferenceRoles.productReferenceIndex}.
-- Do not replace the assigned product brand with unrelated new branding.
-`
-        : '';
-
-    return `
-[Reference Grounding]
-- Do not apply any hidden style-library preset or extra composition template beyond the user's own request.
-- Follow the user's written instruction as the only creative directive.
-- Keep the main product identity faithful to the relevant reference image(s).
-- Preserve visible brand name, logo spelling, packaging layout, silhouette, proportions, materials, colors, and signature details unless the user explicitly asks to change them.
-- Do not invent a new brand, replace the visible logo with another brand, or redesign the product into a different SKU-like object.
-- If exact brand text cannot be rendered perfectly, prefer keeping the original packaging structure and brand placement rather than replacing it with unrelated new branding.
-${multiReferenceSection}${explicitRoleSection}
-[User Request]
-${userPrompt}`.trim();
-};
-
-const normalizePromptForReferenceRoleParsing = (value: string): string =>
-    String(value || '')
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .trim();
-
-const REF1_ALIASES = [
-    '参考图一', '参考图1', '图一', '图1', '第一张', '第1张', '第一幅', '第1幅',
-    'ref1', 'ref 1', 'reference1', 'reference 1', 'image1', 'image 1',
-];
-
-const REF2_ALIASES = [
-    '参考图二', '参考图2', '图二', '图2', '第二张', '第2张', '第二幅', '第2幅',
-    'ref2', 'ref 2', 'reference2', 'reference 2', 'image2', 'image 2',
-];
-
-const LAYOUT_ROLE_CUES = [
-    '海报', '构图', '版式', '排版', '布局', '画面', '风格', '样式', '氛围', 'style', 'layout', 'composition', 'poster',
-];
-
-const PRODUCT_ROLE_CUES = [
-    '产品', '商品', '主体', '包装', '瓶子', '瓶身', '品牌', 'logo', '标志', '主物', 'product', 'brand', 'packaging',
-];
-
-const findOccurrences = (text: string, needles: string[]): number[] => {
-    const hits: number[] = [];
-    for (const needle of needles) {
-        let startIndex = 0;
-        while (startIndex < text.length) {
-            const hitIndex = text.indexOf(needle, startIndex);
-            if (hitIndex === -1) break;
-            hits.push(hitIndex);
-            startIndex = hitIndex + needle.length;
-        }
-    }
-    return hits;
-};
-
-const hasAliasCueProximity = (
-    text: string,
-    aliases: string[],
-    cues: string[],
-    maxDistance = 28,
-): boolean => {
-    const aliasHits = findOccurrences(text, aliases);
-    const cueHits = findOccurrences(text, cues);
-    if (aliasHits.length === 0 || cueHits.length === 0) {
-        return false;
-    }
-    for (const aliasHit of aliasHits) {
-        for (const cueHit of cueHits) {
-            if (Math.abs(aliasHit - cueHit) <= maxDistance) {
-                return true;
-            }
-        }
-    }
-    return false;
-};
-
-const hasAnyAlias = (text: string, aliases: string[]): boolean =>
-    aliases.some((alias) => text.includes(alias));
-
-const inferExplicitReferenceRoleAssignment = (
-    userPrompt: string,
-    referenceCount: number,
-): {
-    layoutReferenceIndex: 1 | 2;
-    productReferenceIndex: 1 | 2;
-} | null => {
-    if (referenceCount < 2) {
-        return null;
-    }
-
-    const prompt = normalizePromptForReferenceRoleParsing(userPrompt);
-    if (!prompt) {
-        return null;
-    }
-
-    const ref1Mentioned = hasAnyAlias(prompt, REF1_ALIASES);
-    const ref2Mentioned = hasAnyAlias(prompt, REF2_ALIASES);
-    if (!ref1Mentioned || !ref2Mentioned) {
-        return null;
-    }
-
-    const ref1Layout = hasAliasCueProximity(prompt, REF1_ALIASES, LAYOUT_ROLE_CUES);
-    const ref1Product = hasAliasCueProximity(prompt, REF1_ALIASES, PRODUCT_ROLE_CUES);
-    const ref2Layout = hasAliasCueProximity(prompt, REF2_ALIASES, LAYOUT_ROLE_CUES);
-    const ref2Product = hasAliasCueProximity(prompt, REF2_ALIASES, PRODUCT_ROLE_CUES);
-
-    const explicitPattern12 =
-        /(?:参考图[一1]|图[一1]|第[一1]张).{0,24}(?:海报|构图|版式|布局|风格|样式|画面|poster|layout|composition|style)/i.test(prompt) ||
-        /(?:用|把|换成|替换成).{0,12}(?:参考图[二2]|图[二2]|第[二2]张|ref ?2|reference ?2).{0,12}(?:产品|商品|主体|包装|品牌|logo|product|brand|packaging)/i.test(prompt);
-
-    const explicitPattern21 =
-        /(?:参考图[二2]|图[二2]|第[二2]张).{0,24}(?:海报|构图|版式|布局|风格|样式|画面|poster|layout|composition|style)/i.test(prompt) ||
-        /(?:用|把|换成|替换成).{0,12}(?:参考图[一1]|图[一1]|第[一1]张|ref ?1|reference ?1).{0,12}(?:产品|商品|主体|包装|品牌|logo|product|brand|packaging)/i.test(prompt);
-
-    if ((ref1Layout && ref2Product) || (explicitPattern12 && !ref2Layout)) {
-        return {
-            layoutReferenceIndex: 1,
-            productReferenceIndex: 2,
-        };
-    }
-
-    if ((ref2Layout && ref1Product) || (explicitPattern21 && !ref1Layout)) {
-        return {
-            layoutReferenceIndex: 2,
-            productReferenceIndex: 1,
-        };
-    }
-
-    return null;
-};
 
 const buildEditPrompt = (prompt: string, hasMask: boolean): string => {
     const maskRule = hasMask
@@ -2884,173 +2420,11 @@ const translatePromptToEnglish = async (prompt: string): Promise<string> => {
     }
 };
 
-const buildTextPolicySuffix = (
-    textPolicy?: {
-        enforceChinese?: boolean;
-        requiredCopy?: string;
-    },
-): string => {
-    const enforceChinese = textPolicy?.enforceChinese === true;
-    const requiredCopy = String(textPolicy?.requiredCopy || '').trim();
-
-    const rules: string[] = [];
-    if (enforceChinese) {
-        rules.push('[Text Rendering Rules]');
-        rules.push('- Any visible text in the generated image must be Simplified Chinese only. Do not render English letters, pinyin, or mixed-language text.');
-    }
-
-    if (requiredCopy) {
-        if (rules.length === 0) {
-            rules.push('[Text Rendering Rules]');
-        }
-        rules.push(`- The visible text must exactly match this copy: "${requiredCopy}". Do not add, remove, paraphrase, or translate any character.`);
-    }
-
-    return rules.join('\n').trim();
-};
-
-const isOpenAICompatibleImageModel = (model: string): boolean => {
-    const normalized = String(model || '').trim().toLowerCase();
-    return normalized === 'gpt-image-2'
-        || normalized === 'gpt image 2'
-        || normalized === 'gpt-image-1.5-all'
-        || normalized === 'gpt image 1.5'
-        || normalized.startsWith('gpt-image-')
-        || normalized.includes('gpt-image-2')
-        || normalized.includes('gpt image 2')
-        || normalized.includes('gpt-image-1.5')
-        || normalized.includes('gpt image 1.5');
-};
-
-const normalizeOpenAICompatibleImageModelId = (model: string): string => {
-    const normalized = String(model || '').trim().toLowerCase();
-    if (!normalized) return '';
-    if (normalized.includes('gpt-image-2') || normalized.includes('gpt image 2')) {
-        return 'gpt-image-2';
-    }
-    if (
-        normalized.includes('gpt-image-1.5-all')
-        || normalized.includes('gpt image 1.5')
-        || normalized.includes('gpt-image-1.5')
-    ) {
-        return 'gpt-image-1.5-all';
-    }
-    return String(model || '').trim();
-};
-
-type OpenAIImageRequestMode = 'standard-openai' | 'reverse-compat' | 'official-transfer';
-
-const getOpenAIImageRequestMode = (
-    model: string,
-    imageSize?: '1K' | '2K' | '4K',
-    exactSize?: string,
-): OpenAIImageRequestMode => {
-    const normalizedModel = normalizeOpenAICompatibleImageModelId(model);
-    if (normalizedModel === 'gpt-image-2') {
-        const normalizedExactSize = String(exactSize || '').trim().toLowerCase();
-        if (normalizedExactSize) {
-            return 'official-transfer';
-        }
-        if (imageSize && imageSize !== '1K') {
-            return 'official-transfer';
-        }
-        return 'reverse-compat';
-    }
-    return 'standard-openai';
-};
-
-const normalizeOpenAIImageAspectRatio = (
-    model: string,
-    aspectRatio: string,
-): string => {
-    const normalized = String(aspectRatio || '').trim();
-    if (getOfficialGptImage2Size(normalized, '1K')) {
-        return normalized;
-    }
-    if (isGptImage2FamilyModel(model)) {
-        return getNormalizedAspectRatioForImageModel(model, normalized);
-    }
-    if (normalized === '21:9' || normalized === '8:1' || normalized === '4:1') {
-        return '16:9';
-    }
-    if (normalized === '1:4' || normalized === '1:8') {
-        return '9:16';
-    }
-    return '1:1';
-};
-
-const resolveOpenAIImageSize = (
-    model: string,
-    aspectRatio: string,
-    imageSize?: '1K' | '2K' | '4K',
-    exactSize?: string,
-): string => {
-    const normalizedExactSize = String(exactSize || '').trim();
-    if (normalizedExactSize) {
-        if (normalizedExactSize.toLowerCase() === 'auto') {
-            return 'auto';
-        }
-
-        const parsedExactSize = parseImageSizeString(normalizedExactSize);
-        if (parsedExactSize) {
-            const normalized = normalizeWorkspaceImageSize(parsedExactSize);
-            return `${normalized.width}x${normalized.height}`;
-        }
-    }
-
-    const ratio = normalizeOpenAIImageAspectRatio(model, aspectRatio);
-    const preset = imageSize || '1K';
-    const requestMode = getOpenAIImageRequestMode(model, preset, exactSize);
-
-    const resolvedPreset = requestMode === 'reverse-compat' ? '1K' : preset;
-    return (
-        getOfficialGptImage2Size(ratio, resolvedPreset) ||
-        getOfficialGptImage2Size('1:1', resolvedPreset) ||
-        '1024x1024'
-    );
-};
-
-const mimeTypeToFileExtension = (mimeType: string): string => {
-    const normalized = String(mimeType || '').toLowerCase();
-    if (normalized.includes('png')) return 'png';
-    if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
-    if (normalized.includes('webp')) return 'webp';
-    return 'bin';
-};
-
-const dataUrlToFilePayload = (
-    dataUrl: string,
-    fallbackName: string,
-): { blob: Blob; filename: string } | null => {
-    const match = String(dataUrl || '').match(/^data:(.+);base64,(.+)$/);
-    if (!match) return null;
-
-    const mimeType = match[1];
-    const binary = atob(match[2]);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-    }
-
-    return {
-        blob: new Blob([bytes], { type: mimeType }),
-        filename: `${fallbackName}.${mimeTypeToFileExtension(mimeType)}`,
-    };
-};
-
-const estimateDataUrlBytes = (dataUrl: string): number => {
-    const match = String(dataUrl || '').match(/^data:(.+);base64,(.+)$/);
-    if (!match) return 0;
-    const base64 = match[2];
-    const padding = (base64.match(/=*$/)?.[0]?.length || 0);
-    return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
-};
-
 export const validateTransparentCutoutResult = async (
     imageUrl: string,
 ): Promise<TransparentResultValidation> => {
     const source = String(imageUrl || '').trim();
-    if (!source.startsWith('data:image/')) {
+    if (!source) {
         return {
             ok: false,
             hasAlpha: false,
@@ -3060,13 +2434,26 @@ export const validateTransparentCutoutResult = async (
     }
 
     try {
+        const normalizedSource = source.startsWith('data:image/')
+            ? source
+            : await normalizeReferenceToDataUrl(source);
+
+        if (!normalizedSource || !normalizedSource.startsWith('data:image/')) {
+            return {
+                ok: false,
+                hasAlpha: false,
+                transparentPixelRatio: 0,
+                reason: 'not-data-url',
+            };
+        }
+
         const image = new Image();
         image.crossOrigin = 'anonymous';
 
         await new Promise<void>((resolve, reject) => {
             image.onload = () => resolve();
             image.onerror = () => reject(new Error('image-load-failed'));
-            image.src = source;
+            image.src = normalizedSource;
         });
 
         const canvas = document.createElement('canvas');
@@ -3113,63 +2500,6 @@ export const validateTransparentCutoutResult = async (
     }
 };
 
-const extractOpenAIImageResult = (payload: any): string | null => {
-    const first = Array.isArray(payload?.data) ? payload.data[0] : null;
-    if (!first) return null;
-
-    if (typeof first?.b64_json === 'string' && first.b64_json) {
-        return `data:image/png;base64,${first.b64_json}`;
-    }
-    if (typeof first?.url === 'string' && first.url) {
-        return first.url;
-    }
-    if (typeof first?.b64 === 'string' && first.b64) {
-        return `data:image/png;base64,${first.b64}`;
-    }
-    if (typeof first === 'string' && first) {
-        return first.startsWith('data:') ? first : `data:image/png;base64,${first}`;
-    }
-
-    return null;
-};
-
-
-type OpenAIImageTaskSubmission = {
-    taskId: string;
-    status: string | null;
-    raw: any;
-};
-
-const extractOpenAIImageTaskSubmission = (payload: any): OpenAIImageTaskSubmission | null => {
-    if (!payload || typeof payload !== 'object') return null;
-
-    const first = Array.isArray(payload?.data) ? payload.data[0] : null;
-    const taskId =
-        (typeof payload?.id === 'string' && payload.id) ||
-        (typeof payload?.task_id === 'string' && payload.task_id) ||
-        (typeof payload?.request_id === 'string' && payload.request_id) ||
-        (typeof payload?.requestId === 'string' && payload.requestId) ||
-        (typeof first?.id === 'string' && first.id) ||
-        (typeof first?.task_id === 'string' && first.task_id) ||
-        (typeof first?.request_id === 'string' && first.request_id) ||
-        null;
-
-    if (!taskId) return null;
-
-    const status =
-        (typeof payload?.status === 'string' && payload.status) ||
-        (typeof payload?.state === 'string' && payload.state) ||
-        (typeof first?.status === 'string' && first.status) ||
-        (typeof first?.state === 'string' && first.state) ||
-        null;
-
-    return {
-        taskId,
-        status: status ? String(status).toLowerCase() : null,
-        raw: payload,
-    };
-};
-
 export const pollOpenAICompatibleImageResult = async (args: {
     baseUrl: string;
     apiKeys: string[];
@@ -3177,57 +2507,26 @@ export const pollOpenAICompatibleImageResult = async (args: {
     contextTag: string;
     requestFingerprint?: string;
 }): Promise<string | null> => {
-    const pollPaths = [
-        `/v1/images/${args.taskId}`,
-        `/v1/images/generations/${args.taskId}`,
-        `/v1/images/edits/${args.taskId}`,
-        `/v1/tasks/${args.taskId}`,
-    ];
-
-    let lastError: any = null;
-
-    for (let index = 0; index < 60; index += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-
-        for (const pollPath of pollPaths) {
-            try {
-                const payload = await fetchOpenAIGetWithFallback<any>(
-                    args.baseUrl,
-                    pollPath,
-                    args.apiKeys,
-                    `${args.contextTag}.poll`,
-                    {
-                        authStrategy: 'bearer-only',
-                        retries: 1,
-                        baseDelayMs: 500,
-                        maxDelayMs: 5000,
-                        timeoutMs: 120000,
-                        idleTimeoutMs: 120000,
-                        requestFingerprint: args.requestFingerprint,
-                    },
-                );
-
-                const result = extractOpenAIImageResult(payload);
-                if (result) {
-                    return result;
-                }
-
-                const submission = extractOpenAIImageTaskSubmission(payload);
-                const status = submission?.status || null;
-                if (status && ['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
-                    throw new Error(`openai image polling failed: ${JSON.stringify(payload).slice(0, 280)}`);
-                }
-            } catch (error) {
-                lastError = error;
-            }
-        }
-    }
-
-    if (lastError) {
-        throw lastError;
-    }
-
-    throw new Error('openai image polling timeout');
+    return pollOpenAICompatibleImageResultViaTransport({
+        taskId: args.taskId,
+        contextTag: args.contextTag,
+        fetchJson: (path, contextTag) =>
+            fetchOpenAIGetWithFallback<any>(
+                args.baseUrl,
+                path,
+                args.apiKeys,
+                contextTag,
+                {
+                    authStrategy: 'bearer-only',
+                    retries: 1,
+                    baseDelayMs: 500,
+                    maxDelayMs: 5000,
+                    timeoutMs: 120000,
+                    idleTimeoutMs: 120000,
+                    requestFingerprint: args.requestFingerprint,
+                },
+            ),
+    });
 };
 
 const getOpenAIImageRequestTuning = (
@@ -3311,79 +2610,6 @@ type SerializedFormDataEntry =
         dataUrl: string;
     };
 
-const isOfficialOpenAIBaseUrl = (baseUrl: string): boolean => {
-    try {
-        const host = new URL(normalizeUrl(baseUrl || '')).host.toLowerCase();
-        return host === 'api.openai.com' || host.endsWith('.openai.com');
-    } catch {
-        return false;
-    }
-};
-
-const buildOpenAIImageEditFormData = (opts: {
-    model: string;
-    prompt: string;
-    size: string;
-    quality?: 'low' | 'medium' | 'high';
-    referenceImages: string[];
-    maskImage?: string | null;
-}): {
-    formData: FormData;
-    imageFieldName: string;
-    referenceMimeTypes: string[];
-    maskMimeType: string | null;
-} => {
-    const formData = new FormData();
-    formData.append('model', opts.model);
-    formData.append('prompt', opts.prompt);
-    formData.append('size', opts.size);
-    if (opts.quality) {
-        formData.append('quality', opts.quality);
-    }
-
-    const imageFieldName = 'image';
-    const referenceMimeTypes: string[] = [];
-    opts.referenceImages.forEach((dataUrl, index) => {
-        const filePayload = dataUrlToFilePayload(dataUrl, `image-${index + 1}`);
-        if (filePayload) {
-            formData.append(imageFieldName, filePayload.blob, filePayload.filename);
-            referenceMimeTypes.push(filePayload.blob.type || 'application/octet-stream');
-        }
-    });
-
-    let maskMimeType: string | null = null;
-    if (opts.maskImage) {
-        const maskPayload = dataUrlToFilePayload(opts.maskImage, 'mask');
-        if (maskPayload) {
-            formData.append('mask', maskPayload.blob, maskPayload.filename);
-            maskMimeType = maskPayload.blob.type || 'application/octet-stream';
-        }
-    }
-
-    return {
-        formData,
-        imageFieldName,
-        referenceMimeTypes,
-        maskMimeType,
-    };
-};
-
-const buildOpenAIImageEditJsonPayload = (opts: {
-    model: string;
-    prompt: string;
-    size: string;
-    quality?: 'low' | 'medium' | 'high';
-    referenceImages: string[];
-    maskImage?: string | null;
-}) => ({
-    model: opts.model,
-    prompt: opts.prompt,
-    images: opts.referenceImages.map((imageUrl) => ({ image_url: imageUrl })),
-    size: opts.size,
-    ...(opts.quality ? { quality: opts.quality } : {}),
-    ...(opts.maskImage ? { mask: { image_url: opts.maskImage } } : {}),
-});
-
 const serializeFormDataForProxy = async (
     formData: FormData,
 ): Promise<{
@@ -3429,10 +2655,22 @@ const requestOpenAICompatibleImage = async (opts: {
     disableTransportRetries?: boolean;
     referenceImages?: string[];
     maskImage?: string | null;
+    background?: 'transparent' | 'opaque' | 'auto';
+    outputFormat?: 'png' | 'jpeg' | 'webp';
     providerId?: string | null;
     contextTag: string;
+    onSubmitted?: (payload: {
+        taskId: string;
+        providerId?: string | null;
+        baseUrl?: string | null;
+        model?: string | null;
+        route?: string | null;
+        transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+    }) => void;
+    onTransportPrepared?: (snapshot: ImageTransportRequestSnapshot) => void;
 }): Promise<string | null> => {
     const provider = getProviderConfigById(opts.providerId);
+    const transportProfile = resolveProviderImageTransportProfile(provider.id || opts.providerId || null);
     const baseUrl = normalizeUrl(provider.baseUrl || 'https://api.openai.com');
     const apiKeys = getApiKeyByProviderId(opts.providerId, true);
 
@@ -3457,17 +2695,6 @@ const requestOpenAICompatibleImage = async (opts: {
         ? await normalizeReferenceToDataUrl(opts.maskImage)
         : null;
 
-    const route =
-        normalizedReferences.length > 0 || normalizedMask
-            ? '/v1/images/edits'
-            : '/v1/images/generations';
-    const isEditRequest = normalizedReferences.length > 0 || !!normalizedMask;
-    const effectiveRoute =
-        resolveImageModelPostPath({
-            providerId: provider.id || opts.providerId || null,
-            modelId: opts.model,
-            hasReferences: isEditRequest,
-        });
     const requestMode = getOpenAIImageRequestMode(
         opts.model,
         opts.imageSize,
@@ -3482,6 +2709,49 @@ const requestOpenAICompatibleImage = async (opts: {
     const normalizedAspectRatio = opts.exactSize
         ? null
         : normalizeOpenAIImageAspectRatio(opts.model, opts.aspectRatio);
+    const routeDecision = decideOpenAIImageRoute({
+        baseUrl,
+        model: opts.model,
+        providerId: provider.id || opts.providerId || null,
+        normalizedReferenceCount: normalizedReferences.length,
+        hasMask: Boolean(normalizedMask),
+        size,
+        requestMode,
+        resolveImageModelPostPath,
+        isGptImage2FamilyModel,
+        normalizeUrl,
+        transportProfile,
+    });
+    const { route, effectiveRoute, isEditRequest, shouldUseJsonEditPayload, imageFieldMode } = routeDecision;
+    const payloadMode: ImageTransportRequestSnapshot['payloadMode'] = isEditRequest
+        ? imageFieldMode === 'json-image-ref-array'
+            ? 'openai-edit-json'
+            : 'openai-edit-form'
+        : 'openai-generate-json';
+    const profile = transportProfile;
+    const transportRequestSnapshot: ImageTransportRequestSnapshot = {
+        resolvedModel: opts.model,
+        resolvedAspectRatio: normalizedAspectRatio || opts.aspectRatio,
+        resolvedSize: size,
+        providerId: provider.id || opts.providerId || null,
+        baseUrl,
+        route: effectiveRoute,
+        effectiveRoute,
+        requestMode,
+        payloadMode,
+        requestFingerprint: null,
+        referenceCount: normalizedReferences.length,
+        hasMask: Boolean(normalizedMask),
+        warnings: [],
+        transportProfileDigest: profile
+            ? {
+                routeStyle: profile.routeStyle,
+                requestModes: profile.requestModes,
+                aspectRatioPolicy: profile.aspectRatioPolicy,
+                pollingMode: profile.pollingResultMode,
+            }
+            : null,
+    };
     const requestTuning = getOpenAIImageRequestTuning(isEditRequest ? 'edit' : 'generate', requestMode, {
         disableTransportRetries: opts.disableTransportRetries,
     });
@@ -3501,12 +2771,9 @@ const requestOpenAICompatibleImage = async (opts: {
         ...(requestTuning || {}),
         requestFingerprint: requestFingerprintMeta.fingerprint,
     };
-    const shouldUseJsonEditPayload =
-        isEditRequest &&
-        isGptImage2FamilyModel(opts.model) &&
-        isOfficialOpenAIBaseUrl(baseUrl) &&
-        normalizedReferences.length > 0 &&
-        (size === 'auto' || requestMode === 'official-transfer');
+    transportRequestSnapshot.requestFingerprint = requestFingerprintMeta.fingerprint;
+    opts.onTransportPrepared?.(transportRequestSnapshot);
+    const resolvedEffectiveRoute = effectiveRoute;
     const editFormMeta =
         isEditRequest && !shouldUseJsonEditPayload
             ? buildOpenAIImageEditFormData({
@@ -3514,19 +2781,13 @@ const requestOpenAICompatibleImage = async (opts: {
                 prompt: opts.prompt,
                 size,
                 quality: opts.imageQuality,
+                background: (opts as any).background,
+                outputFormat: (opts as any).outputFormat,
                 referenceImages: normalizedReferences,
                 maskImage: normalizedMask,
+                dataUrlToFilePayload,
             })
             : null;
-    const imageFieldMode =
-        isEditRequest
-            ? shouldUseJsonEditPayload
-                ? 'json-image-ref-array'
-                : normalizedReferences.length > 1
-                    ? 'multi-file-repeated-field'
-                    : 'single-file'
-            : 'json';
-
     if (isVerboseOpenAIOperation(opts.contextTag)) {
         console.info(`[${opts.contextTag}] request summary`, {
             route: effectiveRoute,
@@ -3576,18 +2837,43 @@ const requestOpenAICompatibleImage = async (opts: {
                         promptChars: opts.prompt.length,
                     });
                 }
-                const payload = await fetchOpenAIJsonWithFallback<any>(
-                    baseUrl,
-                    effectiveRoute,
-                    apiKeys,
-                    buildOpenAIImageEditJsonPayload({
+                const editPayload = buildOpenAIImageEditJsonPayload({
                         model: opts.model,
                         prompt: opts.prompt,
                         size,
                         quality: opts.imageQuality,
+                        background: (opts as any).background,
+                        outputFormat: (opts as any).outputFormat,
                         referenceImages: normalizedReferences,
                         maskImage: normalizedMask,
-                    }),
+                    });
+                const profile = transportProfile;
+                const editFormat = profile?.gptImage2EditFormat || 'json-body';
+                const resolvedBody =
+                    editFormat === 'chat-messages'
+                        ? {
+                            model: opts.model,
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: [
+                                        ...normalizedReferences.map((ref) => ({
+                                            type: 'image_url' as const,
+                                            image_url: { url: ref },
+                                        })),
+                                        { type: 'text' as const, text: opts.prompt },
+                                    ],
+                                },
+                            ],
+                        }
+                        : editPayload;
+                const requestRoute =
+                    editFormat === 'chat-messages' ? '/v1/chat/completions' : resolvedEffectiveRoute;
+                const payload = await fetchOpenAIJsonWithFallback<any>(
+                    baseUrl,
+                    requestRoute,
+                    apiKeys,
+                    resolvedBody,
                     opts.contextTag,
                     requestTuningWithFingerprint,
                 );
@@ -3648,29 +2934,39 @@ const requestOpenAICompatibleImage = async (opts: {
         }
         const payload = await fetchOpenAIFormWithFallback<any>(
             baseUrl,
-            effectiveRoute,
+            resolvedEffectiveRoute,
             apiKeys,
             () => buildOpenAIImageEditFormData({
                 model: opts.model,
                 prompt: opts.prompt,
                 size,
                 quality: opts.imageQuality,
+                background: (opts as any).background,
+                outputFormat: (opts as any).outputFormat,
                 referenceImages: normalizedReferences,
                 maskImage: normalizedMask,
+                dataUrlToFilePayload,
             }).formData,
             opts.contextTag,
             requestTuningWithFingerprint,
         );
-        const directResult = extractOpenAIImageResult(payload);
-        if (directResult) {
-            return directResult;
+        const parsed = parseOpenAIImageResponse(payload);
+        if (parsed.kind === 'direct') {
+            return parsed.image;
         }
-        const submission = extractOpenAIImageTaskSubmission(payload);
-        if (submission) {
+        if (parsed.kind === 'task') {
+            opts.onSubmitted?.({
+                taskId: parsed.submission.taskId,
+                providerId: provider.id || opts.providerId || null,
+                baseUrl,
+                model: opts.model,
+                route: resolvedEffectiveRoute,
+                transportRequestSnapshot,
+            });
             return await pollOpenAICompatibleImageResult({
                 baseUrl,
                 apiKeys,
-                taskId: submission.taskId,
+                taskId: parsed.submission.taskId,
                 contextTag: opts.contextTag,
                 requestFingerprint: requestFingerprintMeta.fingerprint,
             });
@@ -3680,35 +2976,62 @@ const requestOpenAICompatibleImage = async (opts: {
 
     const payload = await fetchOpenAIJsonWithFallback<any>(
         baseUrl,
-        effectiveRoute,
+        resolvedEffectiveRoute,
         apiKeys,
-        {
+        buildOpenAIImageGenerationBody({
             model: opts.model,
             prompt: opts.prompt,
             size,
             quality: opts.imageQuality,
-            ...(normalizedAspectRatio ? { aspect_ratio: normalizedAspectRatio } : {}),
-        },
+            normalizedAspectRatio,
+        }),
         opts.contextTag,
         requestTuningWithFingerprint,
     );
 
-    const directResult = extractOpenAIImageResult(payload);
-    if (directResult) {
-        return directResult;
+    const parsed = parseOpenAIImageResponse(payload);
+    if (parsed.kind === 'direct') {
+        return parsed.image;
     }
-    const submission = extractOpenAIImageTaskSubmission(payload);
-    if (submission) {
+    if (parsed.kind === 'task') {
+        opts.onSubmitted?.({
+            taskId: parsed.submission.taskId,
+            providerId: provider.id || opts.providerId || null,
+            baseUrl,
+            model: opts.model,
+            route: effectiveRoute,
+            transportRequestSnapshot,
+        });
         return await pollOpenAICompatibleImageResult({
             baseUrl,
             apiKeys,
-            taskId: submission.taskId,
+            taskId: parsed.submission.taskId,
             contextTag: opts.contextTag,
             requestFingerprint: requestFingerprintMeta.fingerprint,
         });
     }
 
     return null;
+};
+
+const resolveImageAspectRatio = async (dataUrl: string): Promise<string | null> => {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = dataUrl;
+    });
+    if (!img.naturalWidth || !img.naturalHeight) return null;
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    const d = gcd(img.naturalWidth, img.naturalHeight);
+    const w = img.naturalWidth / d;
+    const h = img.naturalHeight / d;
+    if (w > 10 || h > 10) return null;
+    return `${w}:${h}`;
+  } catch {
+    return null;
+  }
 };
 
 export const editImage = async (config: ImageEditConfig): Promise<string | null> => {
@@ -3769,8 +3092,10 @@ export const editImage = async (config: ImageEditConfig): Promise<string | null>
 
     const requestedModel = (config.model || IMAGE_PRO_MODEL).trim() || IMAGE_PRO_MODEL;
     const model = normalizeOpenAICompatibleImageModelId(requestedModel) || requestedModel;
-    const aspectRatio = config.aspectRatio || '1:1';
-    const requestMode = getOpenAIImageRequestMode(model, config.imageSize);
+    const aspectRatio = config.aspectRatio || await resolveImageAspectRatio(sourceDataUrl) || undefined;
+    const requestMode = isOpenAICompatibleImageModel(model)
+        ? getOpenAIImageRequestMode(model, config.imageSize, config.exactSize)
+        : null;
 
     console.info('[imgedit] route decision', {
         requestedModel,
@@ -3789,8 +3114,11 @@ export const editImage = async (config: ImageEditConfig): Promise<string | null>
             prompt: editPrompt,
             aspectRatio,
             imageSize: config.imageSize,
+            exactSize: config.exactSize,
             referenceImages: [sourceDataUrl, ...refs],
             maskImage: maskDataUrl,
+            background: config.background,
+            outputFormat: config.outputFormat,
             providerId: config.providerId,
         });
     }
@@ -3902,6 +3230,15 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     const requestedModel = (config.model || '').trim();
     const normalizedRequestedModel = normalizeOpenAICompatibleImageModelId(requestedModel);
     const provider = getProviderConfigById(config.providerId);
+    const userRequestSnapshot: ImageUserRequestSnapshot = {
+        requestedModel,
+        requestedAspectRatio: config.aspectRatio,
+        requestedImageSize: config.imageSize || null,
+        requestedExactSize: config.exactSize || null,
+        requestedImageQuality: config.imageQuality || null,
+        referenceCount: references.length,
+        hasMask: Boolean(config.maskImage),
+    };
     const preserveOpenAICompatibleRawModel =
         requestedModel.toLowerCase() === 'gpt-image-2-all'
         || requestedModel.toLowerCase() === 'gpt image 2 all';
@@ -3981,24 +3318,18 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
     // Prepare parts: Image(s) should generally come before or alongside text for multimodal models
     const parts: any[] = [];
 
-    const strength = clamp01(Number.isFinite(config.referenceStrength as number) ? Number(config.referenceStrength) : 0.75);
-    const mode = config.referenceMode || 'product';
-    const priority = config.referencePriority || (references.length > 1 ? 'all' : 'first');
-    const repeats = hasReferences && priority === 'first' ? strengthToRepeats(strength) : 1;
-
-    const orderedReferences = priority === 'first'
-        ? references
-        : references;
-
-    const referencesToInject: string[] = [];
-    if (orderedReferences[0] && priority === 'first') {
-        for (let i = 0; i < repeats; i += 1) {
-            referencesToInject.push(orderedReferences[0]);
-        }
-        referencesToInject.push(...orderedReferences.slice(1));
-    } else {
-        referencesToInject.push(...orderedReferences);
-    }
+    const {
+        strength,
+        mode,
+        priority,
+        repeats,
+        referencesToInject,
+    } = planReferenceInjection({
+        references,
+        referenceStrength: config.referenceStrength,
+        referenceMode: config.referenceMode,
+        referencePriority: config.referencePriority,
+    });
 
     for (const imageInput of referencesToInject) {
         const normalizedDataUrl = await normalizeReferenceToModelInputDataUrl(imageInput);
@@ -4016,29 +3347,23 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
 
     const consistencyContext = config.consistencyContext || {};
     const shouldDisableHiddenConstraints = config.referenceRoleMode === 'none';
-    const basePrompt = shouldDisableHiddenConstraints
-        ? hasReferences
-            ? buildReferenceGroundingPrompt(config.prompt, {
-                referenceCount: references.length,
-            })
-            : config.prompt
-        : hasReferences || consistencyContext?.forbiddenChanges?.length || consistencyContext?.referenceSummary
-        ? buildConstrainedPrompt(config.prompt, {
-            strength,
-            mode,
-            referenceRoleMode: config.referenceRoleMode,
-            referenceCount: references.length,
-            priority,
-            forbiddenChanges: consistencyContext?.forbiddenChanges,
-            approvedSummary: consistencyContext?.referenceSummary,
-        })
-        : config.prompt;
+    const basePrompt = composeBaseImagePrompt({
+        prompt: config.prompt,
+        hasReferences,
+        referenceCount: references.length,
+        referenceStrength: strength,
+        referenceMode: mode,
+        referencePriority: priority,
+        referenceRoleMode: config.referenceRoleMode,
+        forbiddenChanges: consistencyContext?.forbiddenChanges,
+        approvedSummary: consistencyContext?.referenceSummary,
+    });
 
     const policy = config.promptLanguagePolicy || 'original-zh';
     const languageAdjustedPrompt = policy === 'translate-en'
         ? await translatePromptToEnglish(basePrompt)
         : basePrompt;
-    const textPolicySuffix = buildTextPolicySuffix(config.textPolicy);
+    const textPolicySuffix = buildImageTextPolicySuffix(config.textPolicy);
     const finalPrompt = `${languageAdjustedPrompt}\n\n${textPolicySuffix}`.trim();
     const useOpenAIImageRoute = isOpenAICompatibleImageModel(targetModelId) || isOpenAICompatibleImageModel(requestedModel);
     const normalizedExactSize = (() => {
@@ -4087,8 +3412,57 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
             referenceImages: references,
             maskImage: config.maskImage,
             providerId: config.providerId,
+            onSubmitted: (payload) => {
+                const warnings = payload.transportRequestSnapshot?.warnings || [];
+                config.onSubmitted?.({
+                    ...payload,
+                    transportRequestSnapshot: payload.transportRequestSnapshot
+                        ? {
+                            ...payload.transportRequestSnapshot,
+                            warnings: [
+                                ...warnings,
+                                ...(userRequestSnapshot.requestedModel && userRequestSnapshot.requestedModel !== payload.transportRequestSnapshot.resolvedModel
+                                    ? [createImageRequestWarning('MODEL_NORMALIZED', `Requested ${userRequestSnapshot.requestedModel}, resolved ${payload.transportRequestSnapshot.resolvedModel}.`)]
+                                    : []),
+                            ],
+                        }
+                        : null,
+                });
+            },
+            onTransportPrepared: (transportRequestSnapshot) => {
+                config.onTransportPrepared?.(transportRequestSnapshot);
+            },
         });
     }
+
+    config.onTransportPrepared?.({
+        resolvedModel: targetModelId,
+        resolvedAspectRatio: validAspectRatio,
+        resolvedSize: normalizedExactSize || config.imageSize || null,
+        providerId: provider.id || config.providerId || null,
+        baseUrl: provider.baseUrl || null,
+        route: 'gemini.generateContent',
+        effectiveRoute: 'gemini.generateContent',
+        requestMode: null,
+        payloadMode: 'gemini-inline',
+        requestFingerprint: null,
+        referenceCount: references.length,
+        hasMask: Boolean(config.maskImage),
+        transportProfileDigest: {
+            routeStyle: 'gemini-inline',
+            requestModes: ['gemini-inline'],
+            aspectRatioPolicy: 'proxy-expanded',
+            pollingMode: 'direct',
+        },
+        warnings: [
+            ...(requestedModel && requestedModel !== targetModelId
+                ? [createImageRequestWarning('MODEL_NORMALIZED', `Requested ${requestedModel}, resolved ${targetModelId}.`)]
+                : []),
+            ...(config.aspectRatio !== validAspectRatio
+                ? [createImageRequestWarning('ASPECT_RATIO_NORMALIZED', `Aspect ratio normalized from ${config.aspectRatio} to ${validAspectRatio}.`)]
+                : []),
+        ],
+    });
 
     parts.push({ text: finalPrompt });
 
@@ -4159,6 +3533,7 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
 export interface VideoGenerationConfig {
     prompt: string;
     model: string;
+    providerId?: string | null;
     aspectRatio: string;
     startFrame?: string; // base64
     endFrame?: string; // base64

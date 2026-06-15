@@ -137,6 +137,7 @@ const createState = (
   roleVersions: {},
   roleAuditEntries: {},
   styleLibraries: {},
+  styleLibraryCandidates: {},
   evolutionRecords: {},
   ...patch,
 });
@@ -222,6 +223,10 @@ const createMemoryApi = (initial: StudioUserAssetState): StudioUserAssetApi => {
     getStyleLibraryById: () => null,
     saveStyleLibrary: () => null,
     removeStyleLibrary: () => structuredClone(snapshot),
+    listStyleLibraryCandidates: () => [],
+    getStyleLibraryCandidateById: () => null,
+    saveStyleLibraryCandidate: () => null,
+    removeStyleLibraryCandidate: () => structuredClone(snapshot),
     listEvolutionRecords: () => [],
     getEvolutionRecordById: () => null,
     saveEvolutionRecord: () => null,

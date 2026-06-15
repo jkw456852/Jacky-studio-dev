@@ -13,6 +13,7 @@ import { createImagePreviewDataUrl } from "../workspaceShared";
 import { useAssistantSidebarConversationUi } from "../controllers/useAssistantSidebarConversationUi";
 import { useAssistantSidebarBrowserAgentUi } from "../controllers/useAssistantSidebarBrowserAgentUi";
 import { useAssistantSidebarPanelUi } from "../controllers/useAssistantSidebarPanelUi";
+import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences";
 import { AssistantSidebarHeader } from "./AssistantSidebarHeader";
 import { AssistantSidebarHistoryPanel } from "./AssistantSidebarHistoryPanel";
 import { AssistantSidebarPlanCard } from "./AssistantSidebarPlanCard";
@@ -83,15 +84,23 @@ const shouldRouteSidebarMessageToBrowserAgent = ({
   chatEnabled: boolean;
 }) => {
   const normalized = String(text || "").trim();
-  void hasSelectedElement;
-  void chatEnabled;
+  if (!normalized || !chatEnabled || !hasSelectedElement) return false;
 
-  if (!normalized) return false;
+  const hasExecutionIntent = EXECUTION_INTENT_PATTERN.test(normalized);
+  if (!hasExecutionIntent) return false;
 
-  // 侧边栏当前先恢复为 chat-first：
-  // 所有自然语言输入先交给主脑理解、吸收上下文、决定是否执行。
-  // 执行代理只保留给后续显式触发入口，不再由这里的前置规则自动接管。
-  return false;
+  const isPureChatQuery =
+    CHAT_QUERY_PATTERN.test(normalized) &&
+    !/(顺手|直接|马上|现在|帮我|替我|请你|去把|然后执行|并执行)/i.test(normalized);
+  if (isPureChatQuery) return false;
+
+  const referencesCurrentSurface =
+    BROWSER_SURFACE_PATTERN.test(normalized) ||
+    /(当前|这个|这里|选中|selected|当前选中)/i.test(normalized);
+
+  if (referencesCurrentSurface) return true;
+
+  return !GENERAL_WORK_PATTERN.test(normalized);
 };
 
 const getBrowserSessionStatusLabel = (status: string | null | undefined) => {
@@ -406,7 +415,12 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     setMessages,
     setPrompt: composer.setPrompt,
     setCreationMode: composer.setCreationMode,
-    resetActiveQuickSkill: () => {},
+    setInputBlocks,
+    setActiveBlockId,
+    clearPendingAttachments,
+    resetActiveQuickSkill: () => {
+      setActiveQuickSkillPreference(null);
+    },
     closeHistoryPopover,
   });
 
@@ -1164,7 +1178,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
               };
       const autonomousChatSkill: ChatMessage["skillData"] = {
         id: "autonomous-main-brain",
-        name: "自主主脑路由",
+        name: "自主 Agent 路由",
         iconName: "Sparkles",
         config: {
           allowAutonomousRouting: true,
@@ -1273,6 +1287,9 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     },
     [
       addMessage,
+      browserAgent.selectedElementId,
+      browserAgentModelLabel,
+      handleSend,
       chatEnabled,
       clearPendingAttachments,
       composer.creationMode,

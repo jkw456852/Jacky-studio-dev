@@ -7,6 +7,14 @@ import {
 import type { ImageGenerationConfig } from "../../../services/gemini";
 import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
 import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
+import {
+  patchWorkspaceGenerationTrace,
+  upsertWorkspaceGenerationTrace,
+} from "../browserAgentGenerationTrace";
+import type {
+  ImageResultSnapshot,
+  ImageUserRequestSnapshot,
+} from "../../../types/image-generation.types";
 
 type UseWorkspaceElementEditActionsOptions = {
   selectedElementId: string | null;
@@ -425,10 +433,35 @@ export function useWorkspaceElementEditActions(
       elements.length + 10,
       "text-edit",
     );
+    const traceRequestId = `text-edit-${newId}-${Date.now()}`;
 
     try {
       const base64Ref = await urlToBase64(element.url);
       const maskedBlocks = changedBlocks.filter(hasUsableTextBox);
+      upsertWorkspaceGenerationTrace({
+        requestId: traceRequestId,
+        requestElementId: newId,
+        sourceElementId: element.id,
+        targetElementIds: [newId],
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        status: "generating",
+        sourcePrompt: editPrompt,
+        model: String(resolveImageModel(element)),
+        aspectRatio: targetAspectRatio,
+        imageCount: 1,
+        userRequestSnapshot: {
+          requestedModel: String(resolveImageModel(element)),
+          requestedAspectRatio: targetAspectRatio,
+          requestedImageSize: null,
+          requestedExactSize: null,
+          requestedImageQuality: null,
+          referenceCount: 1,
+          hasMask: maskedBlocks.length > 0,
+        } satisfies ImageUserRequestSnapshot,
+        diagnostics: [],
+        variantResults: [],
+      });
       await persistEditSession("text-edit", element, {
         instruction: editPrompt,
         constraints: maskedBlocks.length > 0
@@ -473,6 +506,24 @@ export function useWorkspaceElementEditActions(
           providerId: element.genProviderId,
           aspectRatio: targetAspectRatio,
           referenceImage: base64Ref,
+          onTransportPrepared: (transportRequestSnapshot) => {
+            patchWorkspaceGenerationTrace(traceRequestId, {
+              updatedAt: Date.now(),
+              transportRequestSnapshot,
+            });
+          },
+          onSubmitted: ({ taskId, transportRequestSnapshot }) => {
+            patchWorkspaceGenerationTrace(traceRequestId, {
+              updatedAt: Date.now(),
+              transportRequestSnapshot: transportRequestSnapshot || null,
+              resultSnapshot: {
+                status: "submitted",
+                taskId,
+                resultKind: null,
+                error: null,
+              } satisfies ImageResultSnapshot,
+            });
+          },
         });
       }
 
@@ -521,8 +572,32 @@ export function useWorkspaceElementEditActions(
         1,
       );
       await applyGeneratedImageToElement(newId, finalUrl, true);
+      patchWorkspaceGenerationTrace(traceRequestId, {
+        updatedAt: Date.now(),
+        completedAt: Date.now(),
+        status: "completed",
+        lastError: null,
+        resultSnapshot: {
+          status: "completed",
+          taskId: null,
+          resultKind: String(finalUrl || "").startsWith("data:") ? "data-url" : "remote-url",
+          error: null,
+        } satisfies ImageResultSnapshot,
+      });
     } catch (error) {
       console.error("Text Edit Failed:", error);
+      patchWorkspaceGenerationTrace(traceRequestId, {
+        updatedAt: Date.now(),
+        completedAt: Date.now(),
+        status: "failed",
+        lastError: error instanceof Error ? error.message : String(error),
+        resultSnapshot: {
+          status: "failed",
+          taskId: null,
+          resultKind: null,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies ImageResultSnapshot,
+      });
       removeTemporaryElement(newId);
     }
   }, [

@@ -6,6 +6,14 @@ import { useAgentStore } from "../../../stores/agent.store";
 import { useProjectStore } from "../../../stores/project.store";
 import { imageGenSkill } from "../../../services/skills/image-gen.skill";
 import {
+  patchWorkspaceGenerationTrace,
+  upsertWorkspaceGenerationTrace,
+} from "../browserAgentGenerationTrace";
+import type {
+  ImageResultSnapshot,
+  ImageUserRequestSnapshot,
+} from "../../../types/image-generation.types";
+import {
   canUseNodeGraphParent,
   resolveNodeGraphPlacement,
 } from "../workspaceNodeGraph";
@@ -204,6 +212,7 @@ export function useWorkspaceSmartGenerate(
       const nextElementsWithPrompt = [...elementsRef.current, newEl];
       setElementsSynced(nextElementsWithPrompt);
       setSelectedElementId(id);
+      const traceRequestId = `smart-generate-${id}-${Date.now()}`;
 
       const markGenerationFailed = () => {
         setElementsSynced(
@@ -250,6 +259,31 @@ export function useWorkspaceSmartGenerate(
         const referenceStrength =
           referenceImages.length > 0 ? 0.88 : undefined;
 
+        upsertWorkspaceGenerationTrace({
+          requestId: traceRequestId,
+          requestElementId: id,
+          sourceElementId: id,
+          targetElementIds: [id],
+          startedAt: Date.now(),
+          updatedAt: Date.now(),
+          status: "generating",
+          sourcePrompt: prompt,
+          model: String(activeImageModel),
+          aspectRatio: newEl.genAspectRatio || "1:1",
+          imageCount: 1,
+          userRequestSnapshot: {
+            requestedModel: String(activeImageModel),
+            requestedAspectRatio: newEl.genAspectRatio || "1:1",
+            requestedImageSize: null,
+            requestedExactSize: null,
+            requestedImageQuality: null,
+            referenceCount: referenceImages.length,
+            hasMask: false,
+          } satisfies ImageUserRequestSnapshot,
+          diagnostics: [],
+          variantResults: [],
+        });
+
         const runImageGeneration = (fixPrompt?: string) =>
           imageGenSkill({
             prompt: fixPrompt
@@ -268,6 +302,24 @@ export function useWorkspaceSmartGenerate(
             textPolicy: {
               enforceChinese: enforceChineseTextInImage,
               requiredCopy: (requiredChineseCopy || "").trim() || undefined,
+            },
+            onTransportPrepared: (transportRequestSnapshot) => {
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot,
+              });
+            },
+            onSubmitted: ({ taskId, transportRequestSnapshot }) => {
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot: transportRequestSnapshot || null,
+                resultSnapshot: {
+                  status: "submitted",
+                  taskId,
+                  resultKind: null,
+                  error: null,
+                } satisfies ImageResultSnapshot,
+              });
             },
           });
 
@@ -307,8 +359,32 @@ export function useWorkspaceSmartGenerate(
         } else {
           await applyGeneratedImageToElement(id, finalUrl, false);
         }
+        patchWorkspaceGenerationTrace(traceRequestId, {
+          updatedAt: Date.now(),
+          completedAt: Date.now(),
+          status: "completed",
+          lastError: null,
+          resultSnapshot: {
+            status: "completed",
+            taskId: null,
+            resultKind: String(finalUrl || "").startsWith("data:") ? "data-url" : "remote-url",
+            error: null,
+          } satisfies ImageResultSnapshot,
+        });
       } catch (error) {
         console.error("Smart gen failed", error);
+        patchWorkspaceGenerationTrace(traceRequestId, {
+          updatedAt: Date.now(),
+          completedAt: Date.now(),
+          status: "failed",
+          lastError: error instanceof Error ? error.message : String(error),
+          resultSnapshot: {
+            status: "failed",
+            taskId: null,
+            resultKind: null,
+            error: error instanceof Error ? error.message : String(error),
+          } satisfies ImageResultSnapshot,
+        });
         markGenerationFailed();
       }
     },

@@ -31,8 +31,8 @@ export interface ReferenceInjectionTelemetry {
 
 export const SKILL_TIMEOUTS: Record<string, number> = {
   generateImage: 180_000,
-  smartEdit: 120_000,
-  touchEdit: 120_000,
+  smartEdit: 600_000,
+  touchEdit: 600_000,
   generateVideo: 180_000,
   generateCopy: 15_000,
   extractText: 15_000,

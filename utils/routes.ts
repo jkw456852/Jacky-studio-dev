@@ -5,7 +5,6 @@ export const ROUTES = {
   gptImageInspiration: '/gpt-image-inspiration',
   styleLibraryCenter: '/style-library-center',
   workspace: '/workspace',
-  workspaceNew: '/workspace-new',
   settings: '/settings',
   // 用户管理
   userLogin: '/user/login',
@@ -15,5 +14,4 @@ export const ROUTES = {
 } as const;
 
 export const workspacePath = (id: string) => `${ROUTES.workspace}/${id}`;
-export const workspaceNewPath = (id: string) => `${ROUTES.workspaceNew}/${id}`;
 export const createNewWorkspacePath = () => workspacePath(`new-${Date.now()}`);

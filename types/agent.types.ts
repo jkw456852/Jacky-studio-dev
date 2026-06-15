@@ -197,7 +197,7 @@ export interface AgentMultimodalContext {
   research?: AgentResearchContext;
   inlineParts?: Array<
     { type: 'text'; text: string } |
-    { type: 'image'; attachmentIndex?: number; attachmentLabel?: string }
+    { type: 'attachment'; url: string; label: string; markerInfo?: import('./common').WorkspaceMarkerInfo }
   >;
 }
 
@@ -303,6 +303,7 @@ export interface AgentTask {
     proposals?: AgentProposal[];
     assets?: GeneratedAsset[];
     imageUrls?: string[];
+    videoUrls?: string[];
     skillCalls?: SkillCall[];
     adjustments?: string[];
     roleGovernanceAudit?: MainBrainRoleGovernanceAudit;

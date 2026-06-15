@@ -320,6 +320,13 @@ const WorkspaceImageConfigPanelImpl: React.FC<
     });
   };
 
+  const commitDraftCustomSize = () => {
+    if (currentSizeMode === "auto") {
+      return;
+    }
+    applyCustomSize(Number(draftWidth), Number(draftHeight));
+  };
+
   const applyAutoSize = () => {
     if (!isAutoSizeSupported) {
       return;
@@ -597,11 +604,11 @@ const WorkspaceImageConfigPanelImpl: React.FC<
             step={16}
             value={draftWidth}
             onChange={(e) => setDraftWidth(e.target.value)}
-            onBlur={() => applyCustomSize(Number(draftWidth), Number(draftHeight))}
+            onBlur={commitDraftCustomSize}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Enter") {
-                applyCustomSize(Number(draftWidth), Number(draftHeight));
+                commitDraftCustomSize();
                 (e.target as HTMLInputElement).blur();
               }
             }}
@@ -628,11 +635,11 @@ const WorkspaceImageConfigPanelImpl: React.FC<
             step={16}
             value={draftHeight}
             onChange={(e) => setDraftHeight(e.target.value)}
-            onBlur={() => applyCustomSize(Number(draftWidth), Number(draftHeight))}
+            onBlur={commitDraftCustomSize}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Enter") {
-                applyCustomSize(Number(draftWidth), Number(draftHeight));
+                commitDraftCustomSize();
                 (e.target as HTMLInputElement).blur();
               }
             }}

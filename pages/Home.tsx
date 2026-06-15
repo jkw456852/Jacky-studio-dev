@@ -95,7 +95,7 @@ const MODE_OPTIONS: Array<{
   label: string;
   icon: React.ReactNode;
 }> = [
-  { id: "agent", label: "主脑", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
+  { id: "agent", label: "Agent", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
   { id: "image", label: "图片", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
   { id: "video", label: "视频", icon: <Video size={14} strokeWidth={2.2} /> },
 ];

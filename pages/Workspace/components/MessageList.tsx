@@ -69,7 +69,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     Boolean(
       msg.skillData &&
         msg.skillData.id !== "autonomous-main-brain" &&
-        msg.skillData.name !== "自主主脑路由",
+        msg.skillData.name !== "自主 Agent 路由",
     );
   const userProfileAvatarUrl = React.useMemo(
     () => getStudioUserAssetApi().getUserProfile().avatarUrl || "",

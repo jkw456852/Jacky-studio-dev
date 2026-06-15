@@ -185,9 +185,14 @@ export interface StudioUserAssetApi {
   ): StudioUserAssetState;
 }
 
-let studioUserAssetApi: StudioUserAssetApi = createLocalStudioUserAssetApi();
+let studioUserAssetApi: StudioUserAssetApi | null = null;
 
-export const getStudioUserAssetApi = (): StudioUserAssetApi => studioUserAssetApi;
+export const getStudioUserAssetApi = (): StudioUserAssetApi => {
+  if (!studioUserAssetApi) {
+    studioUserAssetApi = createLocalStudioUserAssetApi();
+  }
+  return studioUserAssetApi;
+};
 
 export const setStudioUserAssetApi = (nextApi: StudioUserAssetApi): void => {
   studioUserAssetApi = nextApi;

@@ -1,8 +1,13 @@
-import React from 'react';
-import { CirclePlus, Maximize2, Minimize2, PanelRightClose } from 'lucide-react';
-import type { ChatMessage, ConversationSession } from '../../../types';
-import { AssistantSidebarFilesPopover } from './AssistantSidebarFilesPopover';
-import { AssistantSidebarHistoryPopover } from './AssistantSidebarHistoryPopover';
+import React from "react";
+import {
+  CirclePlus,
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+} from "lucide-react";
+import type { ChatMessage, ConversationSession } from "../../../types";
+import { AssistantSidebarFilesPopover } from "./AssistantSidebarFilesPopover";
+import { AssistantSidebarHistoryPopover } from "./AssistantSidebarHistoryPopover";
 
 type AssistantSidebarHeaderProps = {
   title: string;
@@ -24,6 +29,12 @@ type AssistantSidebarHeaderProps = {
   onToggleFullscreen?: () => void;
 };
 
+const FULLSCREEN_LABEL = "\u5f53\u524d\u5bf9\u8bdd";
+const NEW_CONVERSATION_LABEL = "\u65b0\u5bf9\u8bdd";
+const ENTER_FULLSCREEN_LABEL = "\u8fdb\u5165\u5168\u5c4f";
+const EXIT_FULLSCREEN_LABEL = "\u9000\u51fa\u5168\u5c4f";
+const COLLAPSE_SIDEBAR_LABEL = "\u6536\u8d77\u4fa7\u680f";
+
 export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
   title,
   historyOpen,
@@ -43,12 +54,18 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
   isFullscreen = false,
   onToggleFullscreen,
 }) => {
+  const fullscreenToggleLabel = isFullscreen
+    ? EXIT_FULLSCREEN_LABEL
+    : ENTER_FULLSCREEN_LABEL;
+
   return (
-    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 shrink-0 select-none">
+    <div className="flex shrink-0 select-none items-center justify-between border-b border-gray-100 px-4 py-3">
       <div className="min-w-0 pr-3">
         <div className="truncate text-sm font-semibold text-gray-900">{title}</div>
         {isFullscreen ? (
-          <div className="mt-0.5 text-[11px] text-gray-500">当前对话</div>
+          <div className="mt-0.5 text-[11px] text-gray-500">
+            {FULLSCREEN_LABEL}
+          </div>
         ) : null}
       </div>
 
@@ -60,7 +77,7 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
               onClick={onCreateConversation}
             >
               <CirclePlus size={15} strokeWidth={1.5} className="mr-1" />
-              新对话
+              {NEW_CONVERSATION_LABEL}
             </button>
 
             <AssistantSidebarHistoryPopover
@@ -89,8 +106,8 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
             type="button"
             onClick={onToggleFullscreen}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
-            title={isFullscreen ? '退出全屏' : '进入全屏'}
-            aria-label={isFullscreen ? '退出全屏' : '进入全屏'}
+            title={fullscreenToggleLabel}
+            aria-label={fullscreenToggleLabel}
           >
             {isFullscreen ? (
               <Minimize2 size={15} strokeWidth={1.6} />
@@ -105,8 +122,8 @@ export const AssistantSidebarHeader: React.FC<AssistantSidebarHeaderProps> = ({
         <button
           onClick={onClose}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
-          title="收起侧栏"
-          aria-label="收起侧栏"
+          title={COLLAPSE_SIDEBAR_LABEL}
+          aria-label={COLLAPSE_SIDEBAR_LABEL}
         >
           <PanelRightClose size={15} strokeWidth={1.5} />
         </button>

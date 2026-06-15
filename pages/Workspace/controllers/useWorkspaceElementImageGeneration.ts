@@ -4,6 +4,10 @@ import type {
   ChatMessage,
   WorkspaceNodeInteractionMode,
 } from "../../../types";
+import type {
+  ImageResultSnapshot,
+  ImageTransportRequestSnapshot,
+} from "../../../types/image-generation.types";
 import { imageGenSkill } from "../../../services/skills/image-gen.skill";
 import { pollOpenAICompatibleImageResult } from "../../../services/gemini";
 import { getApiKeyByProviderId } from "../../../services/provider-config";
@@ -368,10 +372,13 @@ const normalizeReferenceCandidate = async (
   return null;
 };
 
-const inferAspectRatioFromReferenceImage = async (
+const inferReferenceImageAutoSize = async (
   value: string,
   getClosestAspectRatio: (width: number, height: number) => string,
-): Promise<string | null> => {
+): Promise<{
+  aspectRatio: string;
+  exactSize: string;
+} | null> => {
   const normalized = await normalizeReferenceCandidate(value);
   if (!normalized || typeof Image === "undefined") {
     return null;
@@ -382,7 +389,11 @@ const inferAspectRatioFromReferenceImage = async (
     image.onload = () => {
       const width = Math.max(1, image.naturalWidth || image.width || 1);
       const height = Math.max(1, image.naturalHeight || image.height || 1);
-      resolve(getClosestAspectRatio(width, height));
+      const normalizedSize = normalizeWorkspaceImageSize({ width, height });
+      resolve({
+        aspectRatio: getClosestAspectRatio(width, height),
+        exactSize: `${normalizedSize.width}x${normalizedSize.height}`,
+      });
     };
     image.onerror = () => resolve(null);
     image.src = normalized;
@@ -1476,15 +1487,15 @@ export function useWorkspaceElementImageGeneration(
           previewReferenceImages: rawPreviewReferenceImages,
         });
         const manualReferenceImages = repairedReferenceInput.referenceImages;
-        const inferredAutoAspectRatio =
+        const inferredAutoSize =
           currentSizeMode === "auto" && manualReferenceImages.length > 0
-            ? await inferAspectRatioFromReferenceImage(
+            ? await inferReferenceImageAutoSize(
                 manualReferenceImages[0],
                 getClosestAspectRatio,
               )
             : null;
         const fallbackAspectRatio =
-          inferredAutoAspectRatio ||
+          inferredAutoSize?.aspectRatio ||
           sourceElement.genAspectRatio ||
           getClosestAspectRatio(sourceElement.width, sourceElement.height);
         const baseCustomSize =
@@ -1507,18 +1518,33 @@ export function useWorkspaceElementImageGeneration(
             : resolvedWorkspaceImageSize.aspectRatio;
         const exactSize =
           currentSizeMode === "auto"
-            ? "auto"
+            ? inferredAutoSize?.exactSize
             : currentSizeMode === "preset"
               ? undefined
               : `${resolvedWorkspaceImageSize.width}x${resolvedWorkspaceImageSize.height}`;
+        const hasResolvedAutoExactSize =
+          currentSizeMode === "auto" && Boolean(exactSize);
+        const resolvedAutoWorkspaceImageSize =
+          hasResolvedAutoExactSize && exactSize
+            ? normalizeWorkspaceImageSize({
+                width: Number(exactSize.split("x")[0] || 0),
+                height: Number(exactSize.split("x")[1] || 0),
+              })
+            : null;
         const resolvedImageSizePreset =
-          currentSizeMode === "custom"
+          currentSizeMode === "custom" || hasResolvedAutoExactSize
             ? getClosestWorkspaceImageResolutionPresetForSize({
                 aspectRatio: currentAspectRatio,
-                width: resolvedWorkspaceImageSize.width,
-                height: resolvedWorkspaceImageSize.height,
+                width:
+                  resolvedAutoWorkspaceImageSize?.width ||
+                  resolvedWorkspaceImageSize.width,
+                height:
+                  resolvedAutoWorkspaceImageSize?.height ||
+                  resolvedWorkspaceImageSize.height,
               })
-            : imageSize;
+            : currentSizeMode === "preset"
+              ? imageSize
+              : imageSize;
         const shouldPreferManualReferencesForAutoSize =
           currentSizeMode === "auto" && manualReferenceImages.length > 0;
         const referenceImages = shouldPreferManualReferencesForAutoSize
@@ -2631,7 +2657,7 @@ export function useWorkspaceElementImageGeneration(
                   promptLanguagePolicy,
                   textPolicy,
                   consistencyContext,
-                  onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route }) => {
+                  onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route, transportRequestSnapshot }) => {
                     markWorkspaceGenerationPollingTask({
                       requestId: traceRequestId,
                       taskId,
@@ -2642,10 +2668,41 @@ export function useWorkspaceElementImageGeneration(
                       targetElementIds: [singleTargetElementId],
                       sourceElementId: sourceElement.id,
                     });
+                    patchWorkspaceGenerationTrace(traceRequestId, {
+                      updatedAt: Date.now(),
+                      transportRequestSnapshot:
+                        transportRequestSnapshot ||
+                        ({
+                          resolvedModel: String(submittedModel || model),
+                          resolvedAspectRatio: currentAspectRatio,
+                          resolvedSize: exactSize || resolvedImageSizePreset || imageSize,
+                          providerId: providerId || sourceElement.genProviderId || null,
+                          baseUrl: baseUrl || null,
+                          route: route || null,
+                          requestMode: null,
+                          payloadMode: null,
+                          requestFingerprint: null,
+                          referenceCount: plannedReferenceImages.length,
+                          hasMask: false,
+                          warnings: [],
+                        } satisfies ImageTransportRequestSnapshot),
+                      resultSnapshot: {
+                        status: "submitted",
+                        taskId,
+                        resultKind: null,
+                        error: null,
+                      } satisfies ImageResultSnapshot,
+                    });
                     setElementsGenerationStatus([singleTargetElementId], {
                       phase: "submitted",
                       title: "已提交任务，等待结果",
                       lines: [`任务 ID：${taskId}`],
+                    });
+                  },
+                  onTransportPrepared: (transportRequestSnapshot) => {
+                    patchWorkspaceGenerationTrace(traceRequestId, {
+                      updatedAt: Date.now(),
+                      transportRequestSnapshot,
                     });
                   },
                 });
@@ -2709,6 +2766,12 @@ export function useWorkspaceElementImageGeneration(
                 patchWorkspaceGenerationTrace(traceRequestId, {
                   updatedAt: Date.now(),
                   lastError: reason,
+                  resultSnapshot: {
+                    status: "failed",
+                    taskId: null,
+                    resultKind: null,
+                    error: reason,
+                  } satisfies ImageResultSnapshot,
                 });
                 throw error;
               }
@@ -2749,6 +2812,14 @@ export function useWorkspaceElementImageGeneration(
             status: "completed",
             targetElementIds: [singleTargetElementId],
             lastError: null,
+            resultSnapshot: {
+              status: "completed",
+              taskId: null,
+              resultKind: String(runtimeResult.resultUrl || "").startsWith("data:")
+                ? "data-url"
+                : "remote-url",
+              error: null,
+            } satisfies ImageResultSnapshot,
           });
           setElementGeneratingState(singleTargetElementId, false);
           if (shouldTrackSourceElementState) {
@@ -3003,7 +3074,7 @@ export function useWorkspaceElementImageGeneration(
             promptLanguagePolicy: pageGeneration.execution.promptLanguagePolicy,
             textPolicy: pageGeneration.execution.textPolicy,
             consistencyContext: pageGeneration.execution.consistencyContext,
-            onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route }) => {
+            onSubmitted: ({ taskId, providerId, baseUrl, model: submittedModel, route, transportRequestSnapshot }) => {
               const targetId = targetElementIds[index] || elementId;
               markWorkspaceGenerationPollingTask({
                 requestId: traceRequestId,
@@ -3015,10 +3086,41 @@ export function useWorkspaceElementImageGeneration(
                 targetElementIds: [targetId],
                 sourceElementId: sourceElement.id,
               });
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot:
+                  transportRequestSnapshot ||
+                  ({
+                    resolvedModel: String(submittedModel || model),
+                    resolvedAspectRatio: getVariantAspectRatio(index),
+                    resolvedSize: exactSize || resolvedImageSizePreset || imageSize,
+                    providerId: providerId || sourceElement.genProviderId || null,
+                    baseUrl: baseUrl || null,
+                    route: route || null,
+                    requestMode: null,
+                    payloadMode: null,
+                    requestFingerprint: null,
+                    referenceCount: pageGeneration.execution.referenceImages.length,
+                    hasMask: false,
+                    warnings: [],
+                  } satisfies ImageTransportRequestSnapshot),
+                resultSnapshot: {
+                  status: "submitted",
+                  taskId,
+                  resultKind: null,
+                  error: null,
+                } satisfies ImageResultSnapshot,
+              });
               setElementsGenerationStatus([targetId], {
                 phase: "submitted",
                 title: "已提交任务，等待结果",
                 lines: [`任务 ID：${taskId}`],
+              });
+            },
+            onTransportPrepared: (transportRequestSnapshot) => {
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot,
               });
             },
           });
@@ -3238,6 +3340,12 @@ export function useWorkspaceElementImageGeneration(
               patchWorkspaceGenerationTrace(traceRequestId, {
                 updatedAt: Date.now(),
                 lastError: reason,
+                resultSnapshot: {
+                  status: "failed",
+                  taskId: null,
+                  resultKind: null,
+                  error: reason,
+                } satisfies ImageResultSnapshot,
               });
               break;
             }
@@ -3251,6 +3359,12 @@ export function useWorkspaceElementImageGeneration(
             status: "failed",
             lastError:
               failedResults.length > 0 ? failedResults[0] : "No result returned",
+            resultSnapshot: {
+              status: "failed",
+              taskId: null,
+              resultKind: "empty",
+              error: failedResults.length > 0 ? failedResults[0] : "No result returned",
+            } satisfies ImageResultSnapshot,
           });
           if (shouldTrackSourceElementState) {
             setElementGeneratingState(elementId, false);
@@ -3284,6 +3398,12 @@ export function useWorkspaceElementImageGeneration(
           completedAt: Date.now(),
           status: failedResults.length > 0 ? "completed" : "completed",
           lastError: failedResults.length > 0 ? failedResults[0] : null,
+          resultSnapshot: {
+            status: "completed",
+            taskId: null,
+            resultKind: successCount > 0 ? "remote-url" : "empty",
+            error: failedResults.length > 0 ? failedResults[0] : null,
+          } satisfies ImageResultSnapshot,
         });
 
         if (failedResults.length > 0) {
@@ -3328,6 +3448,12 @@ export function useWorkspaceElementImageGeneration(
           status: "failed",
           targetElementIds,
           lastError: reason,
+          resultSnapshot: {
+            status: "failed",
+            taskId: null,
+            resultKind: null,
+            error: reason,
+          } satisfies ImageResultSnapshot,
         });
         if (targetElementIds.length > 0) {
           setElementsGenerationStatus(targetElementIds, null);

@@ -38,6 +38,7 @@ export async function imageGenSkill(params: ImageGenSkillParams): Promise<string
       textPolicy: params.textPolicy,
       consistencyContext: params.consistencyContext,
       onSubmitted: params.onSubmitted,
+      onTransportPrepared: params.onTransportPrepared,
     },
     params.model
   );

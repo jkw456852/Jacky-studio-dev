@@ -3,7 +3,16 @@ import { fetchWithResilience } from './http/api-client';
 import { getProviderConfig } from './provider-config';
 import { useImageHostStore } from '../stores/imageHost.store';
 
-const referenceDataUrlCache = new Map<string, Promise<string | null> | string | null>();
+type ReferenceDataUrlCacheValue =
+  | Promise<string | null>
+  | string
+  | null
+  | {
+      cachedAt: number;
+      value: string | null;
+    };
+
+const referenceDataUrlCache = new Map<string, ReferenceDataUrlCacheValue>();
 
 const isNetworkFetchError = (error: unknown): boolean => {
   const msg = ((error as any)?.message || '').toLowerCase();
@@ -151,11 +160,15 @@ export const normalizeReferenceToDataUrl = async (input: string): Promise<string
   const normalizedInput = String(input || '').trim();
   if (!normalizedInput) return null;
   const cached = referenceDataUrlCache.get(normalizedInput);
-  if (typeof cached === 'string' || cached === null) {
+  if (typeof cached === 'string') {
     return cached;
   }
-  if (cached) {
-    return cached;
+  if (cached && typeof cached === 'object' && 'cachedAt' in cached && 'value' in cached) {
+    const entry = cached as { cachedAt: number; value: string | null };
+    if (Date.now() - entry.cachedAt < 30000) {
+      return entry.value;
+    }
+    referenceDataUrlCache.delete(normalizedInput);
   }
 
   // Debug: make it obvious when we silently drop references.
@@ -238,7 +251,11 @@ export const normalizeReferenceToDataUrl = async (input: string): Promise<string
   referenceDataUrlCache.set(normalizedInput, resolvePromise);
   try {
     const resolved = await resolvePromise;
-    referenceDataUrlCache.set(normalizedInput, resolved);
+    if (resolved === null) {
+      referenceDataUrlCache.set(normalizedInput, { cachedAt: Date.now(), value: null });
+    } else {
+      referenceDataUrlCache.set(normalizedInput, resolved);
+    }
     return resolved;
   } catch (error) {
     referenceDataUrlCache.delete(normalizedInput);

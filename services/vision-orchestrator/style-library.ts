@@ -5,8 +5,8 @@ import type {
   WorkspaceStyleLibraryTestResult,
   WorkspaceStyleLibraryValidationStatus,
 } from "../../types";
-import { getStudioUserAssetApi } from "../runtime-assets/api";
-import { getStudioStyleLibraryAsset } from "../runtime-assets/studio-registry";
+import { getStudioUserAssetApi } from "../runtime-assets/api.ts";
+import { getStudioStyleLibraryAsset } from "../runtime-assets/studio-registry.ts";
 
 export type WorkspaceStyleLibraryMode = NonNullable<
   CanvasElement["genReferenceRoleMode"]

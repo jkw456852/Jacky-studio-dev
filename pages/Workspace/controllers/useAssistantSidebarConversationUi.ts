@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { deleteTopicMemory } from '../../../services/topic-memory';
 import { getMemoryKey } from '../../../services/topicMemory/key';
-import type { ChatMessage, ConversationSession } from '../../../types';
+import type { ChatMessage, ConversationSession, InputBlock } from '../../../types';
 
 type UseAssistantSidebarConversationUiArgs = {
   workspaceId: string;
@@ -14,6 +14,9 @@ type UseAssistantSidebarConversationUiArgs = {
   setMessages: (messages: ChatMessage[]) => void;
   setPrompt: (prompt: string) => void;
   setCreationMode: (mode: 'agent' | 'image' | 'video') => void;
+  setInputBlocks: (blocks: InputBlock[]) => void;
+  setActiveBlockId: (id: string) => void;
+  clearPendingAttachments: () => void;
   resetActiveQuickSkill: () => void;
   closeHistoryPopover: () => void;
 };
@@ -29,6 +32,9 @@ export const useAssistantSidebarConversationUi = ({
   setMessages,
   setPrompt,
   setCreationMode,
+  setInputBlocks,
+  setActiveBlockId,
+  clearPendingAttachments,
   resetActiveQuickSkill,
   closeHistoryPopover,
 }: UseAssistantSidebarConversationUiArgs) => {
@@ -41,12 +47,20 @@ export const useAssistantSidebarConversationUi = ({
     return getMemoryKey(workspaceId, conversationId);
   };
 
+  const resetComposerState = () => {
+    const textId = `text-${Date.now()}`;
+    setPrompt('');
+    setCreationMode('agent');
+    clearPendingAttachments();
+    setInputBlocks([{ id: textId, type: 'text', text: '' }]);
+    setActiveBlockId(textId);
+    resetActiveQuickSkill();
+  };
+
   const handleCreateConversation = () => {
     setActiveConversationId(createConversationId());
     clearMessages();
-    setPrompt('');
-    setCreationMode('agent');
-    resetActiveQuickSkill();
+    resetComposerState();
     closeHistoryPopover();
   };
 
@@ -56,6 +70,7 @@ export const useAssistantSidebarConversationUi = ({
     if (!conversation) return;
     setActiveConversationId(conversationId);
     setMessages(conversation.messages);
+    resetComposerState();
     closeHistoryPopover();
   };
 
@@ -68,6 +83,7 @@ export const useAssistantSidebarConversationUi = ({
     if (activeConversationId === conversationId) {
       setActiveConversationId(createConversationId());
       clearMessages();
+      resetComposerState();
     }
   };
 

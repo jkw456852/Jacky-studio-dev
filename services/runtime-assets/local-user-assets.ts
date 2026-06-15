@@ -842,10 +842,14 @@ const normalizeEvolutionRecordMap = (
 
 const normalizeStyleLibrary = (
   raw: unknown,
+  fallbackId?: string,
 ): StudioStoredStyleLibrary | null => {
   const normalized = normalizeWorkspaceStyleLibrary(raw);
   if (!normalized) return null;
-  const id = String(normalized.id || "").trim() || `style-${Date.now()}`;
+  const id =
+    String(normalized.id || "").trim() ||
+    String(fallbackId || "").trim() ||
+    `style-${Date.now()}`;
   const slug = String(normalized.slug || "").trim() || slugify(normalized.title);
   return {
     ...normalized,
@@ -860,10 +864,10 @@ const normalizeStyleLibraryMap = (
   raw: unknown,
 ): Record<string, StudioStoredStyleLibrary> => {
   if (!raw || typeof raw !== "object") return {};
-  return Object.values(raw as Record<string, unknown>).reduce<
+  return Object.entries(raw as Record<string, unknown>).reduce<
     Record<string, StudioStoredStyleLibrary>
-  >((acc, item) => {
-    const normalized = normalizeStyleLibrary(item);
+  >((acc, [key, item]) => {
+    const normalized = normalizeStyleLibrary(item, key);
     if (!normalized) return acc;
     acc[normalized.id] = normalized;
     return acc;
@@ -887,11 +891,15 @@ const normalizeStyleLibraryCandidateStatus = (
 
 const normalizeStyleLibraryCandidate = (
   raw: unknown,
+  fallbackId?: string,
 ): StudioStyleLibraryCandidateAsset | null => {
   const normalized = normalizeWorkspaceStyleLibrary(raw);
   if (!normalized) return null;
   const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const id = String(normalized.id || "").trim() || `style-candidate-${Date.now()}`;
+  const id =
+    String(normalized.id || "").trim() ||
+    String(fallbackId || "").trim() ||
+    `style-candidate-${Date.now()}`;
   const slug = String(normalized.slug || "").trim() || slugify(normalized.title);
   const createdAt = Number(value.createdAt || normalized.updatedAt || Date.now());
   const updatedAt = Number(value.updatedAt || normalized.updatedAt || Date.now());
@@ -919,10 +927,10 @@ const normalizeStyleLibraryCandidateMap = (
   raw: unknown,
 ): Record<string, StudioStyleLibraryCandidateAsset> => {
   if (!raw || typeof raw !== "object") return {};
-  return Object.values(raw as Record<string, unknown>).reduce<
+  return Object.entries(raw as Record<string, unknown>).reduce<
     Record<string, StudioStyleLibraryCandidateAsset>
-  >((acc, item) => {
-    const normalized = normalizeStyleLibraryCandidate(item);
+  >((acc, [key, item]) => {
+    const normalized = normalizeStyleLibraryCandidate(item, key);
     if (!normalized) return acc;
     acc[normalized.id] = normalized;
     return acc;

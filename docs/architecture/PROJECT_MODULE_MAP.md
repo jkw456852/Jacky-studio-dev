@@ -13,7 +13,6 @@ flowchart TD
         Home[pages/Home.tsx]
         Projects[pages/Projects.tsx]
         Workspace[pages/Workspace.tsx]
-        WorkspaceNew[pages/Workspace/WorkspaceNew.tsx]
         Settings[pages/Settings.tsx]
     end
 
@@ -56,7 +55,6 @@ flowchart TD
     App --> Home
     App --> Projects
     App --> Workspace
-    App --> WorkspaceNew
     App --> Settings
 
     Workspace --> WSComponents
@@ -128,8 +126,6 @@ sequenceDiagram
   负责路由注册与页面懒加载，串起 `Landing / Home / Projects / Workspace / Settings / User`。
 - `pages/Workspace.tsx`
   当前主工作区入口，承接画布、聊天、树状节点、经典节点、工作流、历史、持久化和快捷操作。
-- `pages/Workspace/WorkspaceNew.tsx`
-  新架构实验入口，使用更明确的 Store + 组件拆分方式组织工作区。
 ### Workspace 内部
 
 - `pages/Workspace/components/*`

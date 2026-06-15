@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { ChangeEvent, MutableRefObject } from "react";
-import type { CanvasElement, Marker } from "../../../types";
+import type { CanvasElement, Marker, WorkspaceNodeLinkKind } from "../../../types";
 import {
   DEFAULT_PROXY_MAX_DIM,
   compressImage,
@@ -220,7 +220,7 @@ export function useWorkspaceElementReferenceUploads(
                 ...current,
                 nodeParentId: nextParentIds[0],
                 nodeParentIds: nextParentIds,
-                nodeLinkKind: "generation",
+                nodeLinkKind: "generation" as WorkspaceNodeLinkKind,
                 genRefImages: nextSourceRefs,
                 genRefImage: nextSourceRefs[0],
                 genRefPreviewImages: nextPreviewRefs,

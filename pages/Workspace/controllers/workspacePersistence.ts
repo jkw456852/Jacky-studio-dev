@@ -9,6 +9,7 @@ import {
   getRenderableImageAssetUrl,
   sanitizePersistableAttachmentPreviewUrl,
 } from '../workspaceShared';
+import { getGeneratedConversationFilesFromAgentData } from "../components/generatedFiles";
 
 const MAX_HISTORY_STEPS = 30;
 const MAX_CONVERSATIONS = 12;
@@ -20,6 +21,7 @@ const MAX_SUGGESTIONS = 12;
 const MAX_IMAGE_URLS = 16;
 const MAX_VIDEO_URLS = 8;
 const DATA_URL_PREFIX = /^data:/i;
+const MAX_PERSISTED_ASSETS = 16;
 
 export type HistoryState = {
   elements: CanvasElement[];
@@ -91,6 +93,34 @@ const dedupeStrings = (items: unknown, maxCount: number): string[] => {
   return result;
 };
 
+const compactPersistedAssets = (
+  message: ChatMessage,
+): NonNullable<NonNullable<ChatMessage["agentData"]>["assets"]> | undefined => {
+  const files = getGeneratedConversationFilesFromAgentData(
+    message.agentData,
+    message.timestamp,
+  );
+  if (files.length === 0) {
+    return undefined;
+  }
+
+  return files.slice(0, MAX_PERSISTED_ASSETS).map((file, index) => ({
+    id:
+      (Array.isArray(message.agentData?.assets) &&
+        typeof message.agentData.assets[index] === "object" &&
+        message.agentData.assets[index] &&
+        typeof (message.agentData.assets[index] as { id?: unknown }).id === "string" &&
+        ((message.agentData.assets[index] as { id?: string }).id || "").trim()) ||
+      `persisted-asset-${message.id}-${index}`,
+    type: file.type,
+    url: file.url,
+    metadata: {
+      model: file.model,
+      agentId: "coco",
+    },
+  }));
+};
+
 const compactInlineParts = (message: ChatMessage): ChatMessage["inlineParts"] => {
   if (!Array.isArray(message.inlineParts)) {
     return undefined;
@@ -137,14 +167,19 @@ const compactInlineParts = (message: ChatMessage): ChatMessage["inlineParts"] =>
 };
 
 const trimChatMessage = (message: ChatMessage): ChatMessage => {
-  const imageUrls = compactPersistedUrls(
-    message.agentData?.imageUrls,
-    MAX_IMAGE_URLS,
+  const generatedFiles = getGeneratedConversationFilesFromAgentData(
+    message.agentData,
+    message.timestamp,
   );
-  const videoUrls = compactPersistedUrls(
-    message.agentData?.videoUrls,
-    MAX_VIDEO_URLS,
-  );
+  const imageUrls = generatedFiles
+    .filter((file) => file.type === "image")
+    .map((file) => file.url)
+    .slice(0, MAX_IMAGE_URLS);
+  const videoUrls = generatedFiles
+    .filter((file) => file.type === "video")
+    .map((file) => file.url)
+    .slice(0, MAX_VIDEO_URLS);
+  const assets = compactPersistedAssets(message);
   const attachments = compactPersistedUrls(message.attachments, MAX_IMAGE_URLS);
 
   return {
@@ -160,6 +195,7 @@ const trimChatMessage = (message: ChatMessage): ChatMessage => {
           description: trimText(message.agentData.description, 400),
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
           videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
+          assets,
           analysis:
             trimText(message.agentData.analysis, MAX_ANALYSIS_TEXT) || undefined,
           preGenerationMessage:

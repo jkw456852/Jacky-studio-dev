@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-05-28T06:49:46.889Z",
+  "generatedAt": "2026-06-15T04:49:31.263Z",
   "source": {
     "siteUrl": "https://gpt-image2.canghe.ai/",
     "repoUrl": "https://github.com/freestylefly/awesome-gpt-image-2",
@@ -10,7 +10,7 @@
   },
   "repository": "https://github.com/freestylefly/awesome-gpt-image-2",
   "templateDocument": "docs/templates.md",
-  "totalCases": 473,
+  "totalCases": 503,
   "categories": [
     {
       "id": "cat-ui",
@@ -1789,6 +1789,668 @@
     }
   ],
   "cases": [
+    {
+      "id": 506,
+      "title": "可爱发卡图文人像海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case506.jpg",
+      "imageAlt": "可爱发卡图文人像海报",
+      "sourceLabel": "@xiaoxiaodong01",
+      "sourceUrl": "https://x.com/xiaoxiaodong01/status/2062924832917029248",
+      "prompt": "围绕具体主题内容生成一张明亮清爽的图文合成视觉：画面以大面积高明度纯净色场承托主体，背景平整、通风、没有复杂景深，视觉重心由下方被大胆裁切的人像或真实主体建立，只露出最有记忆点的局部，使主体像从画面边缘进入。主体上方叠放一个极简图形符号或拟物角色，它要像轻轻坐在主体头顶或贴合轮廓生长出来，形体圆润、边缘干净、表情或结构由少量粗线完成，兼具标识感和亲近感。文字是画面的主动角色：顶部使用大号手写感标题，字距松、笔画柔软，像一句轻声招呼；中心用更强的竖向或轴向标题建立层级；边缘安放少量小字号信息，保持安静但精确，让空白继续占主导。色彩从主题自身的材质、情绪、地域或品牌语义中提取，映射为明亮底色、洁净主体亮面、清晰深色结构线与少量强调信息色，保留大面积轻快底场、小面积高对比文字线条、自然主体暗部的关系；整体保持高明度、清透、干净、饱和度清晰而不过度刺激，暗色只用于结构和阅读，不制造脏灰、烟雾或陈旧质感。摄影局部与扁平图形之间要形成真实与童趣的反差，边缘叠压准确，阴影极少，完成感像城市公共宣传与角色插画结合的轻松视觉系统。\n\n主题：柳岩\n\n比例9:16",
+      "promptPreview": "围绕具体主题内容生成一张明亮清爽的图文合成视觉：画面以大面积高明度纯净色场承托主体，背景平整、通风、没有复杂景深，视觉重心由下方被大胆裁切的人像或真实主体建立，只露出最有记忆点的局部，使主体像从画面边缘进入。主体上方叠放一个极简图形符号或拟物角色，它要像轻轻坐在主体头顶或贴合轮廓生长出来，形体圆润、边缘干净、表情或结构由少量粗线完成，兼具标识感和亲近感。文字是画面的主动角色：顶部使用大号手写感标题，字距松、笔画柔软，像一句轻声招呼；中心",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "Illustration",
+        "Brand"
+      ],
+      "scenes": [
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-506"
+    },
+    {
+      "id": 505,
+      "title": "夜间手机光沙发肖像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case505.jpg",
+      "imageAlt": "夜间手机光沙发肖像",
+      "sourceLabel": "@iamaiistudio",
+      "sourceUrl": "https://x.com/iamaiistudio/status/2063231612478017579",
+      "prompt": "A young adult woman with soft refined features, thin metal glasses, and shoulder-length dark tousled hair, leaning forward across a dark upholstered couch at night. She wears a pale cream lace-trim camisole with thin straps and matching soft shorts. One hand holds a smartphone close to the foreground, the screen glow casting cool reflections on her fingers and glasses lenses. Her expression is dreamy and softly tired, eyes lifted toward the camera as if she just looked up from scrolling, lips gently closed in a relaxed pout.\n\nShot in a vertical 3:4 frame at slightly above eye level, medium close-up to three-quarter portrait. Warm dim tungsten room light mixed with cool phone-screen reflections, no flash, soft falloff across the couch and wall. Shallow depth of field, soft low-light grain, slight motion blur, natural imperfect sharpness. Background: plain beige-gray wall, minimal decor, late-night atmosphere. Soft glam makeup: subtle eyeliner, long lashes, smooth skin, glossy pink-nude lips. Realistic social-media night portrait aesthetic.",
+      "promptPreview": "A young adult woman with soft refined features, thin metal glasses, and shoulder-length dark tousled hair, leaning forward across a dark upholstered couch at night. She wears a pale cream lace-trim camisole with thin str",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-505"
+    },
+    {
+      "id": 504,
+      "title": "粗糙涂鸦人像改图",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case504.jpg",
+      "imageAlt": "粗糙涂鸦人像改图",
+      "sourceLabel": "@Shorelyn_",
+      "sourceUrl": "https://x.com/Shorelyn_/status/2063235707632533954",
+      "prompt": "Turn this photo into a chaotic funny doodle illustration, intentionally messy and low-skill, as if drawn quickly with a cheap marker, crayon, or worn-out felt pen on paper.\n\nCreate exaggerated facial features with awkward proportions, uneven eyes, oversized head, tiny body, crooked smile, and clumsy anatomy while still keeping the person recognizable. Use rough childish sketch lines, shaky hand-drawn strokes, visible scribbles, overlapping outlines, accidental marks, and random doodles around the scene. Add a simple cartoon-style background with badly drawn buildings, trees, clouds, street elements, and uneven perspective. Coloring should look careless and imperfect, with visible stroke texture, inconsistent fill areas, wax crayon texture, marker bleed, and irregular shading. Include playful imperfections like crossed-out lines, unfinished details, random arrows, tiny notes, stars, swirls, and abstract scribbles. Overall aesthetic should feel humorous, spontaneous, handmade, energetic, goofy, and intentionally unpolished, resembling a child's sketchbook mixed with absurd internet meme art. High texture detail, paper grain visible, asymmetrical composition, awkward framing, expressive doodle chaos, raw sketch energy.",
+      "promptPreview": "Turn this photo into a chaotic funny doodle illustration, intentionally messy and low-skill, as if drawn quickly with a cheap marker, crayon, or worn-out felt pen on paper. Create exaggerated facial features with awkward",
+      "category": "Illustration & Art",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-504"
+    },
+    {
+      "id": 503,
+      "title": "霓虹设计师 3D 海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case503.jpg",
+      "imageAlt": "霓虹设计师 3D 海报",
+      "sourceLabel": "@AiwithLariab",
+      "sourceUrl": "https://x.com/AiwithLariab/status/2063240283786187251",
+      "prompt": "Create an ultra-detailed 3D stylized creative designer poster featuring a cool young digital artist standing confidently in the center of a futuristic blue neon studio. The character wears oversized black streetwear with electric-blue graphic accents, black cargo pants, layered silver chains, black sunglasses, and clean white sneakers. A cute fluffy puppy sits on the artist's shoulder. The camera angle is dramatic low-angle perspective, making the sneakers appear larger for a premium poster effect.\n\nSurround the character with floating creative elements including a glowing laptop, professional camera, design books, notebooks, 3D icons, social media symbols, holographic UI panels, graphic design tools, and futuristic blue geometric shapes. Add motivational typography such as \"DESIGN MODE\", \"CREATE • BUILD • INSPIRE\", and \"CREATIVE NEVER SLEEPS\" integrated into the scene.\n\nInclude a collectible chibi mini-figure version of the character standing beside the main subject on a display base. Use cinematic blue lighting, glossy reflections, volumetric glow, depth of field, floating particles, luxury toy-photography aesthetics, high-end 3D rendering, Octane Render quality, ultra-sharp details, vibrant neon blue color palette, futuristic creator workspace atmosphere, premium commercial poster design, trending ArtStation style, masterpiece quality, 8K resolution, vertical 9:16 composition.",
+      "promptPreview": "Create an ultra-detailed 3D stylized creative designer poster featuring a cool young digital artist standing confidently in the center of a futuristic blue neon studio. The character wears oversized black streetwear with",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-503"
+    },
+    {
+      "id": 502,
+      "title": "黑桃国王递归扑克牌",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case502.jpg",
+      "imageAlt": "黑桃国王递归扑克牌",
+      "sourceLabel": "@Professor_134",
+      "sourceUrl": "https://x.com/Professor_134/status/2063244295977800057",
+      "prompt": "Use my uploaded face image as the primary identity reference. Preserve my exact facial identity with extremely high fidelity: identical facial structure, jawline, cheekbones, eye shape, eyebrows, nose, lips, beard pattern, hairstyle, hair texture, skin tone, skin texture, and overall recognizable appearance. Do not beautify, alter, or reinterpret my face. Maintain realistic anatomy and authentic likeness.\n\nCreate an ultra-detailed, cinematic, surreal luxury playing-card artwork.\n\nThe main subject is me as the King of Spades, occupying the full design of a magnificent, royal Ace-quality playing card. I wear elaborate black-and-silver spade-themed regalia, a crown forged from obsidian and polished steel, intricate embroidered armor, and flowing royal garments decorated with subtle spade symbols. My expression is calm, intelligent, and powerful.\n\nIn my right hand, I am holding a pristine Ace of Spades card.\n\nThe creative twist: the Ace of Spades I am holding is not a normal card. It contains another complete playing-card illustration. Inside that card, I again appear as the King of Spades, and that entire card is being elegantly held between the fingers of a majestic Queen of Hearts. The Queen is graceful, regal, and visually striking, dressed in rich crimson and gold royal attire adorned with heart motifs.\n\nThe illusion continues with subtle recursive storytelling: the Queen of Hearts appears to be examining the card with fascination, creating a “card within a card” visual paradox. The composition should feel like a legendary tale of power, strategy, love, and destiny intertwined.\n\nAdd impossible Escher-inspired visual design elements:\n•Infinite recursion effect\n•Card-world folding into itself\n•Floating spade and heart symbols transforming into ravens and rose petals\n•Ornate golden borders extending beyond physical card edges\n•Royal chess pieces suspended in midair\n•Fractal patterns hidden within the card engravings\n•Elegant smoke forming suit symbols\n•Dimensional portals emerging from card corners\n\nStyle: ultra-realistic fantasy realism mixed with luxury casino art, Renaissance royal portraiture, and modern cinematic concept art.\n\nLighting: dramatic chiaroscuro, volumetric god rays, rich contrast, glowing metallic highlights, subtle magical energy around the Ace of Spades.\n\nColor palette:\n•Deep blacks\n•Silver chrome\n•Ivory white\n•Crimson red\n•Antique gold accents\n\nComposition:\n•Vertical masterpiece\n•Museum-quality detail\n•Hyper-realistic textures\n•Intricate card engravings\n•Perfectly symmetrical playing-card aesthetics blended with cinematic depth\n•Sharp focus on my face\n•Extremely high identity fidelity\n•Epic storytelling through visual symbolism\n\nThe final image should feel like the cover of a legendary fantasy card game where the King of Spades has become self-aware, existing across multiple layers of reality while being held in the hands of fate itself, represented by the Queen of Hearts.",
+      "promptPreview": "Use my uploaded face image as the primary identity reference. Preserve my exact facial identity with extremely high fidelity: identical facial structure, jawline, cheekbones, eye shape, eyebrows, nose, lips, beard patter",
+      "category": "Characters & People",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-502"
+    },
+    {
+      "id": 501,
+      "title": "夏日牵手回眸电影肖像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case501.jpg",
+      "imageAlt": "夏日牵手回眸电影肖像",
+      "sourceLabel": "@iamaiistudio",
+      "sourceUrl": "https://x.com/iamaiistudio/status/2063247373388992790",
+      "prompt": "Cinematic portrait photography, ultra-photorealistic, 2160x3840 vertical composition, 50mm or 85mm portrait lens rendering, shallow depth of field, clean translucent summer natural-light color grading — not overly yellow, not over-filtered.\n\nSubject: a young beautiful adult East Asian woman, [describe face shape and features, e.g. soft heart-shaped face, refined classical features, bright almond/fox eyes, petite nose bridge, naturally full lips], overall vibe sweet, sunny, energetic, cute with a touch of allure. Gaze highly engaging — bright, clear, natural catchlights, as if it speaks; corners of mouth slightly lifted, expression gentle, vivid, natural.\n\nShe walks along a [scene, e.g. garden stone path / tree-lined lane / European street / courtyard], right hand reaching back to hold the hand of someone behind her; only their hand appears in the lower-left corner — like a first-person couple's POV snapshot. She glances back at the camera while her body stays in a forward walking motion, posture elegant and natural, clearly a candid captured moment with a faint in-love feeling.\n\nLong [hair color] hair, [style, e.g. naturally wavy / relaxed big waves / airy bangs / half-up], many strands tousled and flying in the wind, richly layered and dynamic. Strong natural side-backlight rims the hair edges — clean, crisp rim light and semi-translucent glow, hair edges lit as if by sunlight, light and luminous. This is the core highlight of the image.\n\nShe wears [outfit, e.g. white lace slip dress / beige slip dress / light-blue short-sleeve top with white skirt / light-pink fitted dress], fabric texture natural, material light and soft. Bright natural summer sunlight realistically warms her skin, shoulders, collarbone, and clothing with soft, clean highlight transitions.\n\nSkin texture: extremely realistic — visible fine pores, natural skin texture, faint imperfections, subtle tone variation, soft sheen. Cheeks, nose tip, shoulders show natural delicate gradations in sunlight. Translucent, healthy, real and refined — no plastic look, no waxwork, no over-smoothing.\n\nBackground: soft atmospheric blur, never distracting.\n\nAvoid: over-smoothing, plastic skin, CG look, anime look, wig look, stiff expression, dead eyes, stiff poses, overall yellow cast, overexposed face, distorted features, wrong fingers, deformed hands, cluttered background, heavy influencer retouching.",
+      "promptPreview": "Cinematic portrait photography, ultra-photorealistic, 2160x3840 vertical composition, 50mm or 85mm portrait lens rendering, shallow depth of field, clean translucent summer natural-light color grading — not overly yellow",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic",
+        "Character",
+        "Classical"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-501"
+    },
+    {
+      "id": 500,
+      "title": "梦幻花冠仙境肖像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case500.jpg",
+      "imageAlt": "梦幻花冠仙境肖像",
+      "sourceLabel": "@HaniaAi12",
+      "sourceUrl": "https://x.com/HaniaAi12/status/2062696495741391006",
+      "prompt": "Ultra-realistic ethereal fantasy portrait of a breathtaking young woman with delicate porcelain skin, soft grey-blue eyes, and natural rosy lips. She gazes gently toward the viewer with a serene, dreamy expression, her fingertips lightly touching her chin. Wispy ash-brown hair flows softly in the breeze, styled in a loose romantic updo adorned with pastel blush roses, shimmering crystal ornaments, delicate feathers, and intricate floral accessories. She wears elegant dangling crystal earrings and a translucent, flowing gown made of sheer iridescent fabric embroidered with tiny sparkling flowers.\n\nThe scene is bathed in soft diffused morning light, creating a luminous glow around her face and shoulders. Surrounded by floating butterflies, sparkling dust particles, translucent petals, and dreamy floral textures, the background blends pastel lavender, pearl white, blush pink, and silver tones. Cinematic fine-art photography, fairycore aesthetic, enchanted garden atmosphere, magical realism, ultra-detailed skin texture, soft focus highlights, volumetric lighting, bokeh, masterpiece quality, highly detailed, 8K resolution, delicate feminine beauty, romantic fantasy artwork, elegant composition, dreamy color grading, soft glow, celestial ambiance.",
+      "promptPreview": "Ultra-realistic ethereal fantasy portrait of a breathtaking young woman with delicate porcelain skin, soft grey-blue eyes, and natural rosy lips. She gazes gently toward the viewer with a serene, dreamy expression, her f",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-500"
+    },
+    {
+      "id": 499,
+      "title": "极简精品店全身时尚写真",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case499.jpg",
+      "imageAlt": "极简精品店全身时尚写真",
+      "sourceLabel": "@john_my07",
+      "sourceUrl": "https://x.com/john_my07/status/2062579742759649486",
+      "prompt": "A full-body editorial fashion photograph of a beautiful young woman with the same appearance as the reference, long glossy dark hair, soft bangs, fair skin, and refined feminine features. She stands casually in an upscale minimalist fashion boutique, wearing an oversized pastel-blue knit sweater paired with a black pleated tennis-style skirt, white crew socks, and chunky designer sneakers. Relaxed confident pose, gentle smile, luxury retail interior with modern clothing racks, neutral-toned garments, warm ambient lighting, wood and stone textures, clean architectural lines, cinematic depth of field, realistic lighting, premium fashion advertising, Vogue-style editorial, ultra-detailed, sharp focus, photorealistic, 4K.",
+      "promptPreview": "A full-body editorial fashion photograph of a beautiful young woman with the same appearance as the reference, long glossy dark hair, soft bangs, fair skin, and refined feminine features. She stands casually in an upscal",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic",
+        "Character"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-499"
+    },
+    {
+      "id": 498,
+      "title": "铅笔画背景 3D 分身",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case498.jpg",
+      "imageAlt": "铅笔画背景 3D 分身",
+      "sourceLabel": "@AIwithkhan",
+      "sourceUrl": "https://x.com/AIwithkhan/status/2062567518389391540",
+      "prompt": "Create a handrawn pencil illustration of [image] yawning on paper, as background.\n\nAdd a 3D Pixar style render of [foto] standing casually infront of the giant handrawn pencil illustration. Soft cinematic lighting. 8K resolution. 3:4 ratio",
+      "promptPreview": "Create a handrawn pencil illustration of [image] yawning on paper, as background. Add a 3D Pixar style render of [foto] standing casually infront of the giant handrawn pencil illustration. Soft cinematic lighting. 8K res",
+      "category": "Illustration & Art",
+      "styles": [
+        "Illustration",
+        "3D"
+      ],
+      "scenes": [
+        "Commerce"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-498"
+    },
+    {
+      "id": 497,
+      "title": "单色水彩城市旅行海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case497.jpg",
+      "imageAlt": "单色水彩城市旅行海报",
+      "sourceLabel": "@Goodmanprotocol",
+      "sourceUrl": "https://x.com/Goodmanprotocol/status/2062564327140503787",
+      "prompt": "Minimalist vintage watercolor travel poster illustration of [CITY NAME], [COUNTRY], rendered entirely in elegant monochromatic [COLOR] watercolor and fine ink linework.\n\nAspect ratio: 4:5 vertical composition optimized for poster and social media presentation.\n\nA peaceful early-morning streetscape featuring the iconic [PRIMARY LANDMARK] and [SECONDARY LANDMARK/LOCATION] in the foreground, viewed from a slightly low pedestrian-level perspective. Historic local architecture, elegant facades, ornate details, arched windows, decorative cornices, and traditional street elements line the spacious surroundings, creating a timeless urban atmosphere. A classic [LOCAL STREET ELEMENT OR LAMP STYLE] stands prominently on the left side, while mature leafy trees frame portions of the scene, their foliage painted with soft watercolor washes and delicate splatter textures. In the distance, [DISTANT LANDMARK OR SKYLINE FEATURE] rises gracefully against the skyline, serving as a recognizable cultural landmark. A vintage [LOCAL VEHICLE] or a few small pedestrians add subtle life and scale without disturbing the tranquil mood.\n\nThe composition includes large areas of clean white negative space, soft cloudy watercolor textures in the sky, delicate paper grain, and subtle watercolor blooms. The paving, street, or plaza stretches dramatically across the foreground, leading the viewer’s eye toward the landmark ensemble. Typography in the upper-left corner reads “[CITY NAME], [COUNTRY]” in a refined serif font, styled like a sophisticated travel journal or collectible city poster.\n\nHandcrafted watercolor illustration, architectural sketch aesthetic, serene urban atmosphere, soft natural morning lighting, muted monochromatic palette, highly detailed line art, elegant travel-poster design, minimalist luxury wall-art style, timeless local charm, premium stationery illustration, ultra-detailed, high-resolution, clean composition, Pinterest-worthy, Instagram-worthy, gallery-quality artwork.",
+      "promptPreview": "Minimalist vintage watercolor travel poster illustration of [CITY NAME], [COUNTRY], rendered entirely in elegant monochromatic [COLOR] watercolor and fine ink linework. Aspect ratio: 4:5 vertical composition optimized fo",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-497"
+    },
+    {
+      "id": 496,
+      "title": "水雕品牌 Logo 六宫格",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case496.jpg",
+      "imageAlt": "水雕品牌 Logo 六宫格",
+      "sourceLabel": "@AIwithSynthia",
+      "sourceUrl": "https://x.com/AIwithSynthia/status/2062521441141088599",
+      "prompt": "Create a premium 3x2 grid collage of iconic global brand logos recreated entirely from dynamic water formations, floating above a crystal-clear ocean under a vibrant blue sky. Each panel features a different logo sculpted from realistic transparent water, with detailed splashes, droplets, reflections, refractions, and flowing liquid textures. The water forms should look physically accurate, elegant, and instantly recognizable while remaining made completely of water.",
+      "promptPreview": "Create a premium 3x2 grid collage of iconic global brand logos recreated entirely from dynamic water formations, floating above a crystal-clear ocean under a vibrant blue sky. Each panel features a different logo sculpte",
+      "category": "Brand & Logos",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-496"
+    },
+    {
+      "id": 495,
+      "title": "巴黎街头故事书插画",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case495.jpg",
+      "imageAlt": "巴黎街头故事书插画",
+      "sourceLabel": "@MissDelulu9",
+      "sourceUrl": "https://x.com/MissDelulu9/status/2062376738500526347",
+      "prompt": "Portrait illustration in a storybook style featuring a young adult woman exploring the streets of Paris. She is laughing happily with her eyes closed, holding a coffee cup in her hand. She has long, wavy hair and wears a beret hat. The scene is set near a Parisian café in a peaceful morning atmosphere. The woman has a sweet, charming smile. Soft, dreamy mood, romantic Paris street vibe, gentle lighting, and highly detailed artwork.",
+      "promptPreview": "Portrait illustration in a storybook style featuring a young adult woman exploring the streets of Paris. She is laughing happily with her eyes closed, holding a coffee cup in her hand. She has long, wavy hair and wears a",
+      "category": "Illustration & Art",
+      "styles": [
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-495"
+    },
+    {
+      "id": 494,
+      "title": "电动巴士工程信息图",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case494.jpg",
+      "imageAlt": "电动巴士工程信息图",
+      "sourceLabel": "@j_smeaton99",
+      "sourceUrl": "https://x.com/j_smeaton99/status/2062365258984177766",
+      "prompt": "Create a premium square “reference-style sustainable transportation infographic” centered around a futuristic electric city bus called the {E_BUS_NAME}, designed as a beautifully curated urban-mobility handbook page rather than a commercial vehicle advertisement.\n\nThe composition should feel like a modern visual encyclopedia mixed with an elite public-transit engineering guide and high-end editorial infographic system.\n\nVisual Direction\n\n• 1:1 square composition\n• Premium smart-city background with subtle transportation blueprints, circuit-inspired overlays, and urban infrastructure schematics\n• Elegant palette using deep navy, graphite black, electric green, steel gray, and soft cyan accents\n• Refined editorial typography hierarchy\n• Rounded modular information cards with clean spacing\n• Gentle realistic reflections and premium transit-system dividers\n• Minimal transportation engineering iconography\n• Extremely detailed central electric bus render viewed in dramatic three-quarter perspective driving through a futuristic smart-city boulevard\n• Thin precision annotation lines pointing toward key systems and technologies\n• Clean, organized “knowledge-first” layout with high information density but breathable spacing\n\nMain Subject Presentation\n\nA stunning ultra-detailed realistic render of the {E_BUS_NAME} placed at the center, featuring:\n\n• sleek aerodynamic body design\n• panoramic windshield\n• illuminated destination display\n• low-floor accessibility layout\n• futuristic LED lighting systems\n• premium electric drivetrain details\n• realistic urban reflections\n• smart-city transportation realism\n\nSurround the bus with engineering callouts explaining:\n\n• battery pack technology\n• electric motor system\n• regenerative braking system\n• charging infrastructure compatibility\n• smart fleet management systems\n• passenger accessibility features\n• thermal battery management\n• energy-efficiency technologies\n• safety monitoring systems\n• intelligent driver assistance features\n\nInclude Modular Sections\n\n• E-Bus Overview\n• Technical Specifications\n• Vehicle Dimensions & Capacity\n• Powertrain & Energy System\n• Battery Technology Breakdown\n• Charging Solutions\n• Passenger Comfort Features\n• Safety & Reliability Systems\n• Fleet Management Technology\n• Environmental Impact Analysis\n• Operating Cost Comparison\n• Construction & Material Engineering\n• Sustainability Lifecycle Assessment\n• Smart-City Integration\n• Global Adoption Trends\n• “Did You Know?” Facts Section\n• Future of Electric Public Transport\n\nAdd Premium Visualization Modules\n\n• battery architecture diagrams\n• charging workflow graphics\n• energy-consumption charts\n• passenger-capacity visualizations\n• smart-city integration maps\n• drivetrain cutaway illustrations\n• environmental impact comparisons\n• fleet-management dashboards\n• vehicle blueprint dimensions\n• lifecycle sustainability graphics\n\nStyle Keywords\n\n“premium transportation encyclopedia”\n“editorial electric mobility handbook”\n“high-end public transit infographic”\n“scientific transportation poster”\n“museum-quality electric bus reference page”\n“modular smart-city knowledge system”\n“clean engineering editorial design”\n“ultra-detailed mobility visualization”\n“future transportation showcase”\n“sustainable urban mobility design”\n\nAvoid\n\n• generic vehicle advertisements\n• cluttered commercial brochure layouts\n• cartoon transportation styling\n• unrealistic flying-bus concepts\n• excessive cyberpunk neon overload\n• low-detail stock-vehicle renders\n\nFinal Goal\n\nThe final result should resemble a professionally published transportation-engineering reference-book page created for urban planners, transportation engineers, sustainability researchers, architects, public-transit authorities, and smart-city enthusiasts, combining technical accuracy, sustainability insights, and premium editorial design.",
+      "promptPreview": "Create a premium square “reference-style sustainable transportation infographic” centered around a futuristic electric city bus called the {E_BUS_NAME}, designed as a beautifully curated urban-mobility handbook page rath",
+      "category": "Charts & Infographics",
+      "styles": [
+        "UI",
+        "Infographic",
+        "Poster"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Education"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-494"
+    },
+    {
+      "id": 493,
+      "title": "东京旅行 13 格视频封面",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case493.jpg",
+      "imageAlt": "东京旅行 13 格视频封面",
+      "sourceLabel": "@AIwithSynthia",
+      "sourceUrl": "https://x.com/AIwithSynthia/status/2062383568253505904",
+      "prompt": "Generate image of young female travel vlogger exploring Tokyo across multiple candid moments, extremely beautiful with long dark wavy hair, wearing stylish Japanese-inspired oversized streetwear, expressive and spontaneous personality, captured across a 13-frame grid collage (Row 1: 4 frames | Row 2: 5 frames | Row 3: 4 frames), each frame feels like a real casual phone capture with imperfect framing and natural inconsistencies.\n\nFrame Breakdown\n\nRow 1 - Frame 1 (Tokyo Tower): low angle selfie with Tokyo Tower behind her, slightly tilted horizon, sky overexposed to near white, she's mid-natural smile adjusting into frame, small lens smudge in corner, candid arrival energy.\nRow 1 - Frame 2 (Shibuya street level): walking through Shibuya crossing at night, handheld motion blur, she glances back at camera mid-step, neon reflections on wet pavement, slightly shaky framing, imperfect crop.\nRow 1 - Frame 3 (Convenience store): inside a brightly lit convenience store, she is holding onigiri close to camera, playful raised eyebrows, harsh fluorescent lighting flattening the scene, slight overexposure on whites, shelves softly blurred behind.\nRow 1 - Frame 4 (Yoyogi park): sitting on a bench under trees, looking away from camera, quiet candid moment, soft dappled daylight, slight focus miss on eyes, subtle lens smudge bottom corner.\nRow 2 - Frame 5 (Takoyaki reaction): close-up while eating single takoyaki, reacting mid-bite with laughter, slight motion blur, warm lantern light behind, face slightly out of focus due to movement.\nRow 2 - Frame 6 (Vending machine night): standing in front of glowing vending machine, blue and pink light casting uneven tones on her face, pressing button casually, high ISO grain visible.\nRow 2 - Frame 7 (Train reflection): her face reflected in train window at night, city lights streaking behind, layered reflection effect, slight ghosting on glass, she looks away from camera.\nRow 2 - Frame 8 (Torii gate): low angle shot of her walking through a torii gate, captured from slightly behind, motion blur in her movement, bright sky causing mild lens flare.\nRow 2 - Frame 9 (Digital art exhibit): inside immersive light exhibit, colored lights (blue, violet, gold) washing across her face, she looks upward in awe, slight motion blur, low-light noise visible.\nRow 3 - Frame 10 (Gundam statue): low angle wide shot, she stands small in frame while large statue towers above, slight barrel distortion from phone lens, sky slightly blown out.\nRow 3 - Frame 11 (Lantern alley): walking through narrow alley lit by warm lanterns, shot from behind, she glances back briefly, underexposed shadows, grainy night detail.\nRow 3 - Frame 12 (Rooftop skyline): selfie with Tokyo skyline behind, arm extended, wind blowing hair partially across lens, horizon slightly tilted, warm city glow overexposed in distance.\nRow 3 - Frame 13 (Nara park): crouching down in a park in Nara, she holds out a deer cracker toward a deer, the deer bows its head toward her, she bursts into genuine laughter mid-reaction, surprised and slightly leaning back, another deer nudges her from behind causing her to lose balance slightly, camera captures the moment imperfectly with slight shake and off-center framing, soft natural daylight, open park background with trees and space, unscripted chaotic energy, candid expression.\n\nYoung female travel vlogger exploring Tokyo across 13 candid moments in a grid collage, extremely beautiful with long dark wavy hair, wearing stylish Japanese streetwear, expressive and spontaneous, scenes include Tokyo Tower selfie, Shibuya crossing at night, convenience store snack moment, park bench quiet scene, takoyaki reaction, vending machine glow, train window reflection, torii gate walk, immersive light exhibit, Gundam statue low angle, lantern alley walk, rooftop skyline selfie, Harajuku street ending, each frame slightly imperfect with motion blur.",
+      "promptPreview": "Generate image of young female travel vlogger exploring Tokyo across multiple candid moments, extremely beautiful with long dark wavy hair, wearing stylish Japanese-inspired oversized streetwear, expressive and spontaneo",
+      "category": "Scenes & Storytelling",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-493"
+    },
+    {
+      "id": 492,
+      "title": "黑色高定酒店套房写真",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case492.jpg",
+      "imageAlt": "黑色高定酒店套房写真",
+      "sourceLabel": "@xRahultripathi",
+      "sourceUrl": "https://x.com/xRahultripathi/status/2062100757923733617",
+      "prompt": "Create a hyper-realistic luxury fashion portrait inspired by premium fashion-week editorials.\n\nIMPORTANT:\nGenerate ONLY ONE SINGLE VERTICAL IMAGE.\n\nSTYLE:\nLuxury fashion realism.\nProfessional couture photography.\nPremium editorial atmosphere.\n\nMAIN CONCEPT:\nA beautiful adult Asian fashion model photographed inside a luxury hotel suite.\n\nOUTFIT:\nElegant black couture mini dress.\nLuxury embroidered details.\nPremium designer fashion aesthetic.\n\nBACKGROUND:\nLuxury hotel interior.\nSoft neutral decor.\nElegant cinematic depth blur.\n\nLIGHTING:\nSoft luxury window lighting.\nProfessional fashion-editorial reflections.\nNatural skin texture.\n\nMOOD:\nBold.\nElegant.\nHigh-fashion energy.\n\nQUALITY:\nUltra realistic native 4K HDR realism.\nProfessional magazine quality.\nVertical 9:16.",
+      "promptPreview": "Create a hyper-realistic luxury fashion portrait inspired by premium fashion-week editorials. IMPORTANT: Generate ONLY ONE SINGLE VERTICAL IMAGE. STYLE: Luxury fashion realism. Professional couture photography. Premium e",
+      "category": "Photography & Realism",
+      "styles": [
+        "UI",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-492"
+    },
+    {
+      "id": 491,
+      "title": "Y2K 高楼浴室镜面自拍",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case491.jpg",
+      "imageAlt": "Y2K 高楼浴室镜面自拍",
+      "sourceLabel": "@jzaib4269",
+      "sourceUrl": "https://x.com/jzaib4269/status/2062184740849930384",
+      "prompt": "A moody late-night mirror selfie captured in a luxury high-rise bathroom overlooking a glowing city skyline. A young woman with long, slightly messy black hair leans forward over a marble sink, partially obscuring one eye with loose strands. The photo is taken through a smudged mirror with visible dust particles, water spots, and imperfections, creating an authentic raw aesthetic. A powerful direct camera flash explodes in the frame, producing harsh highlights, lens flare, and a nostalgic early-2000s digital camera look.\n\nThe bathroom counter is cluttered with luxury cosmetics, skincare products, jewelry, a smartphone, and everyday personal items, adding a lived-in editorial feel. Reflections of neon-lit skyscrapers and hotel windows shimmer in the background, emphasizing an urban nightlife atmosphere. Soft pale skin tones contrast against dark clothing and black hair. The composition feels intimate, candid, and effortlessly cool.\n\nStyle: Y2K flash photography, candid mirror selfie, Korean editorial aesthetic, indie sleaze, hotel bathroom scene, luxury lifestyle, cinematic nightlife, disposable camera look, grainy texture, flash burn, realistic skin texture, shallow depth of field, authentic imperfections, viral Pinterest mood, high-fashion casual energy, raw unfiltered photography.\n\nCamera: direct flash, compact digital camera, 35mm equivalent, harsh lighting, slight motion blur, visible noise, natural color grading, vertical composition, ultra-realistic, high detail.",
+      "promptPreview": "A moody late-night mirror selfie captured in a luxury high-rise bathroom overlooking a glowing city skyline. A young woman with long, slightly messy black hair leans forward over a marble sink, partially obscuring one ey",
+      "category": "Photography & Realism",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Product"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-491"
+    },
+    {
+      "id": 490,
+      "title": "双重曝光时尚肖像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case490.jpg",
+      "imageAlt": "双重曝光时尚肖像",
+      "sourceLabel": "@Anaya_Ai12",
+      "sourceUrl": "https://x.com/Anaya_Ai12/status/2062191518975508678",
+      "prompt": "A cinematic double-exposure fashion portrait featuring a woman with the uploaded face used 100% as reference, wearing stylish metallic aviator sunglasses. The composition artfully blends a large, semi-transparent close-up profile of her face on the left with her full-body figure standing confidently on the right. She wears an open, light-grey textured corduroy shirt layered over a dark grey fitted t-shirt and dark denim jeans, posing naturally with her hands in her pockets. She has long, flowing dark hair, flawless skin, elegant feminine features, and a confident, sophisticated expression.\n\nThe background is a minimalist neutral studio setting, allowing the double-exposure composition to remain the visual focus. The color grading features a sophisticated warm desaturated sepia and charcoal palette, enhanced by a soft golden-orange light-leak flare in the upper-right corner. Professional 85mm lens photography with high-contrast yet soft cinematic lighting accentuates the fabric textures, facial details, and layered portrait effect.\n\nUltra-realistic skin texture, luxury fashion-editorial aesthetic, premium magazine-cover quality, subtle film grain, cinematic depth, elegant shadows, refined color grading, modern retro-inspired styling, masterpiece composition, ultra-sharp focus, visually striking storytelling, high-end commercial fashion campaign look.",
+      "promptPreview": "A cinematic double-exposure fashion portrait featuring a woman with the uploaded face used 100% as reference, wearing stylish metallic aviator sunglasses. The composition artfully blends a large, semi-transparent close-u",
+      "category": "Photography & Realism",
+      "styles": [
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-490"
+    },
+    {
+      "id": 489,
+      "title": "城市地图微缩旅行海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case489.jpg",
+      "imageAlt": "城市地图微缩旅行海报",
+      "sourceLabel": "@SimplyAnnisa",
+      "sourceUrl": "https://x.com/SimplyAnnisa/status/2062358269172101240",
+      "prompt": "Create a highly detailed cinematic miniature tilt-shift travel scene of [CITY NAME] featuring a realistic [VEHICLE NAME] driving along a winding elevated road that emerges naturally from a printed vintage-style city map. The road should curve dramatically toward the background skyline and landmarks of [CITY NAME], while the vehicle remains the clear focal point in the foreground.\n\nBlend the real city seamlessly with the illustrated map surface so the road appears integrated into the map itself. Include recognizable local landmarks, waterways, architecture, vegetation, and atmosphere associated with [CITY NAME], but keep the composition clean and uncluttered.\n\nShow large bold typography of \"[CITY NAME]\" printed directly on the map in the foreground. Use warm golden-hour lighting, shallow depth of field, realistic textures, cinematic shadows, aerial perspective, and photorealistic detail. The overall aesthetic should feel like a premium Instagram travel poster mixed with a miniature diorama.\n\nAspect ratio 1:1.",
+      "promptPreview": "Create a highly detailed cinematic miniature tilt-shift travel scene of [CITY NAME] featuring a realistic [VEHICLE NAME] driving along a winding elevated road that emerges naturally from a printed vintage-style city map.",
+      "category": "Architecture & Spaces",
+      "styles": [
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-489"
+    },
+    {
+      "id": 488,
+      "title": "屋顶球场日落人像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case488.jpg",
+      "imageAlt": "屋顶球场日落人像",
+      "sourceLabel": "@HaniaAi12",
+      "sourceUrl": "https://x.com/HaniaAi12/status/2061313477696954522",
+      "prompt": "Ultra-realistic, high-quality portrait of a stylish young South Asian woman standing gracefully on a colorful urban rooftop basketball court at sunset. She is standing in a relaxed and elegant posture with her weight naturally shifted to one leg, shoulders relaxed, and one hand gently resting by her side while the other lightly touches the edge of her varsity jacket. Her body is slightly angled toward the camera, creating a confident yet sophisticated appearance. She is looking directly into the camera with a warm, natural smile, projecting confidence, charm, and effortless style.",
+      "promptPreview": "Ultra-realistic, high-quality portrait of a stylish young South Asian woman standing gracefully on a colorful urban rooftop basketball court at sunset. She is standing in a relaxed and elegant posture with her weight nat",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-488"
+    },
+    {
+      "id": 487,
+      "title": "法式药妆商业分镜封面",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case487.jpg",
+      "imageAlt": "法式药妆商业分镜封面",
+      "sourceLabel": "@AIwithSynthia",
+      "sourceUrl": "https://x.com/AIwithSynthia/status/2061300623530942922",
+      "prompt": "35mm anamorphic, 2.39:1, no flares. Ultra-realistic international French pharmacy skincare commercial for La Roche-Posay Anthelios UVMune 400 Hydrating Cream SPF50+. Soft premium music plus tactile realistic sound effects throughout. Rich warm natural grain, premium but not over-polished. Palette: warm ivory whites, soft stone neutrals, signature La Roche-Posay orange, subtle clinical cyan-blue, sunlit beige, realistic warm skin tones. The tube is iconic. The skin is the proof. Every shot builds toward the moment the product disappears into real skin and protection becomes confidence. Fast cuts, macro intimacy, tactile realism, one quiet transformation that feels earned: sunscreen that looks invisible, breathable, and real.\n\nMODEL / WARDROBE\n\nUse the same female model consistently across all shots, matching the approved character sheet: slim natural model proportions, warm medium skin tone, dark brown hair in a clean low bun, refined oval face, natural brows, realistic under-eye detail, subtle lips, minimal makeup. Same face, same hairstyle, same body structure, same skin tone, same wardrobe continuity throughout.\n\nWardrobe must be modest, elegant, and fully covered. No exposed body, no tank top, no fitted clothing, no cleavage, no bare shoulders, no body-hugging silhouette. Wardrobe: loose cream linen button-up shirt, full sleeves, fully buttoned or layered over a high-neck white inner top, soft beige trousers only if visible, minimal jewelry, refined French pharmacy skincare styling. Clothing should feel premium, breathable, clean, and international, never sensual, revealing, or fashion-body-focused.\n\nThe camera may show hands, face, neck-up portrait, shoulders, waist-up, mirror shots, bathroom ritual shots, and outdoor walking lifestyle shots, but the body must not be emphasized. Keep attention on skin texture, hands applying sunscreen, product packaging, morning ritual, and confident protected face.\n\nSKIN REALISM\n\nSkin must look human and unfiltered: visible pores, peach fuzz, tiny fine lines, slight under-eye texture, natural skin tone variation, realistic facial micro texture, matte-hydrated finish. No glossy skin, no oily shine, no wet-look face, no waxy AI skin, no porcelain smoothing, no glam beauty filter, no fake glow.\n\nPRODUCT REFERENCE\n\nUse the exact La Roche-Posay Anthelios UVMune 400 Hydrating Cream SPF50+ product reference: white tube, orange square logo, black La Roche-Posay typography, orange SPF50+ panel, light blue hydrating cream band, orange lower panel, white pump-cap base. Product shape and color blocking must remain consistent.\n\nMUSIC DIRECTION\n\nSoft elegant premium skincare music throughout: gentle piano, airy ambient pads, subtle low-end warmth, very light modern electronic pulse, calm emotional lift. Music should feel expensive, dermatological, trustworthy, and international. Never loud, never dramatic, never trailer-like, never distracting. The music should support the tactile sound design without overpowering it.",
+      "promptPreview": "35mm anamorphic, 2.39:1, no flares. Ultra-realistic international French pharmacy skincare commercial for La Roche-Posay Anthelios UVMune 400 Hydrating Cream SPF50+. Soft premium music plus tactile realistic sound effect",
+      "category": "Scenes & Storytelling",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-487"
+    },
+    {
+      "id": 486,
+      "title": "RCB 冠军混合媒介海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case486.jpg",
+      "imageAlt": "RCB 冠军混合媒介海报",
+      "sourceLabel": "@AIwithkhan",
+      "sourceUrl": "https://x.com/AIwithkhan/status/2061305471492096301",
+      "prompt": "Ultra-detailed mixed-media sports poster featuring the SAME woman from the reference image, wearing a Royal Challengers Bengaluru (RCB) jersey, holding the IPL trophy beside her. Dynamic fusion of realistic portrait photography, sketch art, watercolor splashes, paint strokes, ink scribbles, and digital painting effects. Explosive red, black, gold, and white color palette. Dramatic championship atmosphere with confetti, fireworks, cheering stadium crowd, RCB flags waving in the background, paint splatter textures, hand-drawn line art accents, and energetic brushwork.\n\nThe woman has a confident expression, bold red lipstick, flawless skin, short black bob haircut, cinematic lighting, ultra-sharp blue eyes, premium sports-fashion styling. RCB face paint on cheek, luxury gold jewelry accents, highly detailed jersey fabric.\n\nLarge typography on the right side reading:\n\nRCB\nIPL CHAMPIONS\n2026\n\nHandwritten slogan at bottom left:\n\nEe Sala Cup Namde!\n\nPremium championship poster design, trending Behance artwork, sports magazine cover aesthetic, layered paint textures, realistic trophy reflections, high contrast, ultra-detailed, 8K, masterpiece, award-winning digital art, vibrant colors, cinematic composition, splash art, sketch effect, watercolor effect, paint explosion effect, mixed-media illustration, poster-worthy design.",
+      "promptPreview": "Ultra-detailed mixed-media sports poster featuring the SAME woman from the reference image, wearing a Royal Challengers Bengaluru (RCB) jersey, holding the IPL trophy beside her. Dynamic fusion of realistic portrait phot",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-486"
+    },
+    {
+      "id": 485,
+      "title": "时尚目录电商拼贴",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case485.jpg",
+      "imageAlt": "时尚目录电商拼贴",
+      "sourceLabel": "@Mind_Boticni",
+      "sourceUrl": "https://x.com/Mind_Boticni/status/2061310969192870028",
+      "prompt": "Stylish fashion catalog shoot blending streetwear and luxury branding. Female model wearing burgundy slim-fit top and ivory tailored pants, posed in confident relaxed positions across multiple duplicated frames. Slight perspective tilt, dynamic layout collage, soft daylight studio lighting with warm tone grading. Modern shopping website aesthetic, minimal UI-inspired composition, high resolution fashion photography.",
+      "promptPreview": "Stylish fashion catalog shoot blending streetwear and luxury branding. Female model wearing burgundy slim-fit top and ivory tailored pants, posed in confident relaxed positions across multiple duplicated frames. Slight p",
+      "category": "Products & E-commerce",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-485"
+    },
+    {
+      "id": 484,
+      "title": "霓虹涂鸦黑白人像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case484.jpg",
+      "imageAlt": "霓虹涂鸦黑白人像",
+      "sourceLabel": "@harboriis",
+      "sourceUrl": "https://x.com/harboriis/status/2060208419811074350",
+      "prompt": "High-contrast black-and-white urban portrait of a curly-haired bearded man in a black leather jacket, holding two fingers near glowing neon green eyes, with bold graffiti doodles, colorful paint splashes, abstract arrows, crown sketches, and grunge street-art textures on a concrete background, cinematic lighting, edgy graphic poster style.",
+      "promptPreview": "High-contrast black-and-white urban portrait of a curly-haired bearded man in a black leather jacket, holding two fingers near glowing neon green eyes, with bold graffiti doodles, colorful paint splashes, abstract arrows",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster"
+      ],
+      "scenes": [
+        "Tech",
+        "Fashion",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-484"
+    },
+    {
+      "id": 483,
+      "title": "都市飞鸟街头肖像",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case483.jpg",
+      "imageAlt": "都市飞鸟街头肖像",
+      "sourceLabel": "@HaniaAi12",
+      "sourceUrl": "https://x.com/HaniaAi12/status/2060216757797978245",
+      "prompt": "A stylish cinematic portrait of a confident young woman leaning casually against a textured urban concrete wall, surrounded by vibrant flying birds including blue macaws, white seagulls, and a colorful hummingbird. Black graffiti-style bird silhouettes painted on the wall create an artistic street-art vibe. She is wearing a trendy all-white outfit — oversized denim jacket, fitted graphic tee, skinny jeans, and black sneakers. Soft natural daylight, realistic shadows, ultra-detailed fashion photography, urban luxury aesthetic, sharp facial features, glossy hair, high-end editorial style, dynamic composition, photorealistic, depth of field, 8K quality.",
+      "promptPreview": "A stylish cinematic portrait of a confident young woman leaning casually against a textured urban concrete wall, surrounded by vibrant flying birds including blue macaws, white seagulls, and a colorful hummingbird. Black",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-483"
+    },
+    {
+      "id": 482,
+      "title": "自我凝视超现实 Campaign",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case482.jpg",
+      "imageAlt": "自我凝视超现实 Campaign",
+      "sourceLabel": "@Shorelyn_",
+      "sourceUrl": "https://x.com/Shorelyn_/status/2060207260685791267",
+      "prompt": "Ultra-realistic conceptual portrait of a young man with curly hair and light stubble, wearing yellow-tinted rectangular sunglasses, a beige minimal t-shirt, blue jeans, and off-white sneakers. He is sitting casually with a relaxed posture.\n\nThe twist: he is seated on a large, hyper-realistic version of his own detached head placed on the ground. The head is scaled up, lying sideways, with the same facial features and sunglasses, creating a surreal self-reflection concept.\n\nComposition: centered, full-body shot, neutral studio background with soft beige tones, minimal aesthetic. Clean negative space.\n\nTypography integrated into the background:\n\n* Handwritten-style text at the top: “HEAVY”\n* Below it, smaller text: “ON MY OWN MIND” with “MIND” crossed out\n* Large, rough, scribbled text in black: “HEAD”\n\nLighting: soft diffused studio lighting, subtle shadows, high detail, fashion editorial quality.\n\nStyle: blend of surrealism and modern streetwear campaign, minimal yet expressive, high-resolution, 8k, sharp focus, natural skin texture.\n\nMood: introspective, mental weight, identity, self-awareness.",
+      "promptPreview": "Ultra-realistic conceptual portrait of a young man with curly hair and light stubble, wearing yellow-tinted rectangular sunglasses, a beige minimal t-shirt, blue jeans, and off-white sneakers. He is sitting casually with",
+      "category": "Photography & Realism",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-482"
+    },
+    {
+      "id": 481,
+      "title": "韩系春日 scrapbook 海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case481.jpg",
+      "imageAlt": "韩系春日 scrapbook 海报",
+      "sourceLabel": "@Taaruk_",
+      "sourceUrl": "https://x.com/Taaruk_/status/2060214163591614900",
+      "prompt": "Cute Korean spring aesthetic scrapbook poster, dreamy K-fashion portrait, soft blonde girl standing in a blooming flower garden, pastel blue sky background, cream floral blouse layered under a knitted ivory sweater vest, light blue high-waisted jeans, natural smile, glowing fair skin, soft makeup, cherry blossom trees, colorful spring flowers, cozy countryside garden, bright natural sunlight, kawaii doodle overlays, hand-drawn white hearts, smiley faces, stars, sparkles, rainbows, playful handwritten typography, polaroid photo frames, masking tape stickers, scrapbook collage layout, Pinterest aesthetic, Korean magazine editorial, cottagecore fashion, dreamy spring vibes, wholesome mood, soft pastel color palette, clean composition, aesthetic social media poster, ultra detailed, photorealistic, high quality, cute and charming atmosphere, subtle bokeh, lifestyle photography, Instagram reel cover, fashion moodboard, Y2K scrapbook design, white outline around subject, flower-themed decorations, 8k masterpiece",
+      "promptPreview": "Cute Korean spring aesthetic scrapbook poster, dreamy K-fashion portrait, soft blonde girl standing in a blooming flower garden, pastel blue sky background, cream floral blouse layered under a knitted ivory sweater vest,",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Social",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-481"
+    },
+    {
+      "id": 480,
+      "title": "粉丝速写本角色页",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case480.jpg",
+      "imageAlt": "粉丝速写本角色页",
+      "sourceLabel": "@Ciri_ai",
+      "sourceUrl": "https://x.com/Ciri_ai/status/2060211436232786357",
+      "prompt": "Draw me as if an obsessed fan artist filled an entire sketchbook page - messy, overlapping, full-body poses, tiny chibi doodles, exaggerated expressions, and random close-ups of their hands or eyes.\nWhite background. No grid, no order. Pure chaos energy. With (any color) aesthetic clothes",
+      "promptPreview": "Draw me as if an obsessed fan artist filled an entire sketchbook page - messy, overlapping, full-body poses, tiny chibi doodles, exaggerated expressions, and random close-ups of their hands or eyes. White background. No ",
+      "category": "Characters & People",
+      "styles": [
+        "Character"
+      ],
+      "scenes": [
+        "Creative"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-480"
+    },
+    {
+      "id": 479,
+      "title": "杂志纸艺拼贴重绘",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case479.jpg",
+      "imageAlt": "杂志纸艺拼贴重绘",
+      "sourceLabel": "@oggii_0",
+      "sourceUrl": "https://x.com/oggii_0/status/2060212097083146644",
+      "prompt": "Transform the uploaded image into a minimalist illustration in a magazine collage style, using paper cutouts. Retain the main subject, pose, and overall concept of the original image, but reimagine it as a warm, hand-edited collage. Style: Minimalist illustration in a magazine paper collage style, with flat, layered paper shapes, soft pastel paper textures, torn paper edges, paper shadow effects, neat black doodle accents, a handmade scrapbook atmosphere, modern Korean editorial design, a simple and cute composition, and large areas of clean white space. Character: Cute, simplified Korean characters with minimalist facial features, a small, relaxed smile, soft and rounded proportions, simple and casual clothing, and silhouettes constructed from layered paper cutouts. Composition: A 3:4 aspect ratio, with the main subject positioned slightly lower and off-center, leaving a large, open space on the opposite side for a breezy, minimalist composition that avoids clutter. Objects: Add only a few suitable collage elements: paper sticky notes, small hearts, plants, a cup of coffee, a window, tape fragments, and simple doodle icons. Typography: Add an elegant, handwritten English title that fits the scene's atmosphere. Use short phrases such as: [\"May you be like the morning sunshine, full of vitality and hope, embracing the beauty of each day.\",\"Take a small break,\" or \"Good day, good mood.\"] Atmosphere: Calm, comfortable, warm, sweet, and editorial style. Avoid: Photorealistic style, anime style, watercolor style, 3D clay style, overly detailed backgrounds, excessive collage elements, a luxury poster atmosphere, dark tones, harsh shadows, and sloppy text.",
+      "promptPreview": "Transform the uploaded image into a minimalist illustration in a magazine collage style, using paper cutouts. Retain the main subject, pose, and overall concept of the original image, but reimagine it as a warm, hand-edi",
+      "category": "Illustration & Art",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-479"
+    },
+    {
+      "id": 478,
+      "title": "夹层式品牌编辑海报",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case478.jpg",
+      "imageAlt": "夹层式品牌编辑海报",
+      "sourceLabel": "@iamaiistudio",
+      "sourceUrl": "https://x.com/iamaiistudio/status/2060000278657839398",
+      "prompt": "[BRAND NAME]. You are a world-class editorial designer.\n\nSTEP 1, DYNAMIC SUBJECT LOGIC:\n- Subject pick: independently study [BRAND NAME] and choose the right hero subject.\n- Sandwich layering: weave the subject through the background shapes. Parts of the car or figure must sit hidden behind geometric blocks, while other parts (wheels, limbs, props) overlap in front of those blocks to fake real 3D depth.\n\nSTEP 2, GRID & GEOMETRY:\n- Layout: a clean 2x2 grid composition.\n- Overlays: drop large bold geometric arcs and circles on top of the grid.\n- Visual balance: place one iconic product prop (a floating key fob for cars, a ball for sports, etc.) in its own quadrant to counterweight the subject.\n\nSTEP 3, SOPHISTICATED MUTED PALETTE:\n- No aggressive neon, no oversaturated colors.\n- Pull [BRAND NAME]'s core colors and shift them into a \"sophisticated muted\" range. Use desaturated, earthy, dusty versions of the brand colors (dusty rose instead of hot pink, sage green instead of bright mint, slate blue instead of royal blue).\n- Finish: matte flat color blocks, zero gradients.\n\nSTEP 4, PHOTOGRAPHY & LIGHTING:\n- Subject style: high-end commercial studio photography.\n- Lighting: soft diffused studio light, gentle highlights, no harsh shadows.\n- Integration: the subject must feel physically embedded into the graphic grid.\n\nSTEP 5, MINIMALIST BRANDING:\n- Drop a clean single-color [BRAND NAME] logo dead-center on one background block. No tagline, just the iconic symbol.",
+      "promptPreview": "[BRAND NAME]. You are a world-class editorial designer. STEP 1, DYNAMIC SUBJECT LOGIC: - Subject pick: independently study [BRAND NAME] and choose the right hero subject. - Sandwich layering: weave the subject through th",
+      "category": "Brand & Logos",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Product"
+      ],
+      "scenes": [
+        "Commerce",
+        "Food",
+        "Story"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-478"
+    },
+    {
+      "id": 477,
+      "title": "Instagram 餐桌俯拍创意",
+      "image": "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data/images/case477.jpg",
+      "imageAlt": "Instagram 餐桌俯拍创意",
+      "sourceLabel": "@iamaiistudio",
+      "sourceUrl": "https://x.com/iamaiistudio/status/2060210845225980366",
+      "prompt": "Top-down ultra-wide hyper-realistic shot of 4 real people seated at a square dining table. Pull the camera way back so a wide ring of empty floor surrounds the whole scene, giving a clean minimal composition. Scene [ATMOSPHERE + WARDROBE]: the four are styled in [OUTFIT STYLE]. Each one is doing something specific: [DESCRIBE EACH PERSON'S ACTION].\n\nThe table itself is a physical prop built to look like an Instagram post viewed from above:\n- A solid white band runs along the TOP and BOTTOM edges only, with no white on the left or right sides.\n- Top band: a small drawn profile avatar with [LOGO DESCRIPTION], the handle \"[USERNAME]\", a tiny blue verified check next to it, and a \"...\" on the far right.\n- Bottom band: red heart, comment bubble, and share icons painted on the left, bookmark icon on the right.\n\nThe center of the table is one flat color: [EXACT COLOR + HEX CODE]. All food, drinks, props, and any hand interacting with them must stay strictly inside that central colored zone, nothing crosses the white bands or the table edge. The floor around the table is [FLOOR COLOR] to create clear visual separation. Professional studio lighting with crisp shadows, 8k, tack-sharp focus.",
+      "promptPreview": "Top-down ultra-wide hyper-realistic shot of 4 real people seated at a square dining table. Pull the camera way back so a wide ring of empty floor surrounds the whole scene, giving a clean minimal composition. Scene [ATMO",
+      "category": "Scenes & Storytelling",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-477"
+    },
     {
       "id": 476,
       "title": "早安拿铁微缩女孩",

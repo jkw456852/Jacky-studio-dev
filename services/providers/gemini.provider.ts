@@ -14,6 +14,21 @@ export const geminiImageProvider: ImageProvider = {
     authMode: 'both',
     apiStyle: 'google',
     supports: ['modelList', 'chat', 'image', 'video'],
+    imageTransportProfile: {
+      routeStyle: 'openai-compatible',
+      generationRoute: '/v1/images/generations',
+      editRoute: '/v1/images/edits',
+      requestModes: ['standard-openai', 'reverse-compat', 'official-transfer', 'gemini-inline'],
+      editPayloadModes: ['json-image-ref-array', 'multi-file-repeated-field', 'single-file'],
+      jsonEditOfficialOnly: true,
+      supportsMultipartEdit: true,
+      supportsMultiReference: true,
+      supportsMask: true,
+      supportsExactSize: true,
+      aspectRatioPolicy: 'proxy-expanded',
+      pollingResultMode: 'task-poll',
+      gptImage2EditFormat: 'json-body',
+    },
   },
 
   async generateImage(request: ImageGenerationRequest, model: string): Promise<string | null> {
@@ -36,6 +51,8 @@ export const geminiImageProvider: ImageProvider = {
       promptLanguagePolicy: request.promptLanguagePolicy,
       textPolicy: request.textPolicy,
       consistencyContext: request.consistencyContext,
+      onSubmitted: request.onSubmitted,
+      onTransportPrepared: request.onTransportPrepared,
     });
   }
 };
@@ -45,7 +62,7 @@ export const geminiVideoProvider: VideoProvider = {
   name: 'Gemini Veo',
   models: [
     'Veo 3.1', 'Veo 3.1 Pro', 'Veo 3.1 Fast',
-    'Kling 3.0', 'Kling 3.0 Omni', 'Seedance 1.5 Pro', 'Kling 2.8',
+    'Kling Pro', 'Kling 3.0', 'Kling 3.0 Omni', 'Seedance 1.5 Pro', 'Kling 2.8',
     'Wan 2.6', 'Sora 2 Pro', 'Sora 2', 'Kling 01', 'Hailuo 2.3', 'Veo 3', 'Vidu Q2',
     'kling-v1', 'sora', 'veo', 'runway-gen3'
   ],

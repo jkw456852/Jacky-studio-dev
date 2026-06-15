@@ -1,3 +1,5 @@
+import type { ImageTransportRequestSnapshot } from '../../types/image-generation.types';
+
 export type PromptLanguagePolicy = 'original-zh' | 'translate-en';
 export type ImageReferenceRoleMode =
   | 'none'
@@ -33,6 +35,15 @@ export interface ImageGenerationRequest {
     referenceSummary?: string;
     forbiddenChanges?: string[];
   };
+  onSubmitted?: (payload: {
+    taskId: string;
+    providerId?: string | null;
+    baseUrl?: string | null;
+    model?: string | null;
+    route?: string | null;
+    transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+  }) => void;
+  onTransportPrepared?: (snapshot: ImageTransportRequestSnapshot) => void;
 }
 
 export interface VideoGenerationRequest {
@@ -47,10 +58,46 @@ export interface VideoGenerationRequest {
 export type ProviderAuthMode = 'bearer' | 'apiKeyQuery' | 'both';
 export type ProviderApiStyle = 'google' | 'openai' | 'custom';
 
+export type ImageTransportRouteStyle =
+  | 'openai-compatible'
+  | 'gemini-inline'
+  | 'replicate-prediction'
+  | 'custom';
+
+export type ImageTransportRequestMode =
+  | 'standard-openai'
+  | 'reverse-compat'
+  | 'official-transfer'
+  | 'gemini-inline'
+  | 'replicate-prediction';
+
+export type ImageEditPayloadMode =
+  | 'json-image-ref-array'
+  | 'multi-file-repeated-field'
+  | 'single-file'
+  | 'none';
+
+export interface ImageTransportProfile {
+  routeStyle: ImageTransportRouteStyle;
+  generationRoute?: string;
+  editRoute?: string;
+  requestModes?: ImageTransportRequestMode[];
+  editPayloadModes?: ImageEditPayloadMode[];
+  jsonEditOfficialOnly?: boolean;
+  supportsMultipartEdit?: boolean;
+  supportsMultiReference?: boolean;
+  supportsMask?: boolean;
+  supportsExactSize?: boolean;
+  aspectRatioPolicy?: 'strict-openai' | 'proxy-expanded' | 'provider-native';
+  pollingResultMode?: 'direct' | 'task-poll' | 'prediction-poll';
+  gptImage2EditFormat?: 'json-body' | 'chat-messages' | 'unsupported';
+}
+
 export interface ProviderCapability {
   authMode: ProviderAuthMode;
   apiStyle: ProviderApiStyle;
   supports: Array<'modelList' | 'chat' | 'image' | 'video'>;
+  imageTransportProfile?: ImageTransportProfile;
 }
 
 export interface ImageProvider {

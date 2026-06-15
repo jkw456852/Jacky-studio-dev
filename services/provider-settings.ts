@@ -1,6 +1,7 @@
 ﻿import { fetchAvailableModels } from './gemini.ts';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
 import { getStudioUserAssetApi } from './runtime-assets/api.ts';
+import { resolveCanonicalImageModelId } from './image-generation/core/openai-image-spec';
 
 export type ModelCategory = 'script' | 'image' | 'video';
 export type ModelBrand =
@@ -405,7 +406,7 @@ const canonicalizeMappedModelId = (category: ModelCategory, modelId: string): st
   if (!normalized) return normalized;
 
   if (category === 'image') {
-    return IMAGE_MODEL_ALIASES[normalized] || normalized;
+    return resolveCanonicalImageModelId(normalized);
   }
 
   if (category === 'video') {

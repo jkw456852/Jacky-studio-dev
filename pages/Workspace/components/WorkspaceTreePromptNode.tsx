@@ -93,7 +93,7 @@ const LABEL_STYLE_LIBRARY_DETAILS = "\u8be6\u60c5";
 const LABEL_STYLE_LIBRARY_EDIT = "\u7f16\u8f91";
 const LABEL_STYLE_LIBRARY_CONVERT = "\u8f6c\u4e3a\u81ea\u5b9a\u4e49";
 const LABEL_STYLE_LIBRARY_CREATE = "\u65b0\u5efa\u98ce\u683c\u5e93";
-const LABEL_STYLE_LIBRARY_SAVE = "\u4fdd\u5b58";
+const LABEL_STYLE_LIBRARY_SAVE = "\u5e94\u7528\u5230\u5f53\u524d\u8282\u70b9";
 const LABEL_STYLE_LIBRARY_SAVE_ASSET = "\u5b58\u4e3a\u6b63\u5f0f\u98ce\u683c\u5e93";
 const LABEL_STYLE_LIBRARY_DELETE = "\u5220\u9664\u8d44\u4ea7";
 const LABEL_STYLE_LIBRARY_SYSTEM = "\u7cfb\u7edf\u5185\u7f6e";
@@ -303,6 +303,21 @@ const buildDetachedStyleLibraryAsset = (
     slug: undefined,
     updatedAt: undefined,
     createdBy: "user",
+  };
+};
+
+const buildRuntimeStyleLibraryDraftResult = (
+  library: WorkspaceStyleLibrary | undefined,
+): WorkspaceStyleLibrary | undefined => {
+  const normalized = normalizeWorkspaceStyleLibrary(library);
+  if (!normalized) return undefined;
+  return {
+    ...normalized,
+    id: undefined,
+    slug: undefined,
+    updatedAt: Date.now(),
+    createdBy: "main-brain",
+    sourceMode: "custom",
   };
 };
 
@@ -975,7 +990,7 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                       编辑风格卡片
                     </div>
                     <p className="mt-3 text-[13px] leading-6 text-[#4b5563]">
-                      这里可以修改标题、定位、标签、参考图集和规则内容。保存后会直接更新这张风格卡片。
+                      这里可以修改标题、定位、标签、参考图集和规则内容。“应用到当前节点”只影响当前生图节点，只有“存为正式风格库”才会进入我的风格。
                     </p>
                   </div>
                   <button
@@ -1887,14 +1902,14 @@ const TreePromptToolbar: React.FC<{
     if (!nextLibrary) {
       return false;
     }
-    const persistedLibrary =
-      persistUserStyleLibraryAsset(nextLibrary, "custom") || nextLibrary;
-    onStyleLibrarySave(persistedLibrary);
+    const runtimeLibrary =
+      buildRuntimeStyleLibraryDraftResult(nextLibrary) || nextLibrary;
+    onStyleLibrarySave(runtimeLibrary);
     onStyleLibraryRuntimeOverlayChange(undefined);
     onStyleLibraryChange("custom");
     setIsEditingStyleLibrary(false);
     setStyleLibraryRevision((value) => value + 1);
-    setSelectedUserStyleLibraryId(persistedLibrary.id || null);
+    setSelectedUserStyleLibraryId(null);
     return true;
   }, [
     currentStyleLibrary,
@@ -2533,6 +2548,9 @@ const TreePromptSettingsModal: React.FC<{
   }));
 
   const commitDraftCustomSize = React.useCallback(() => {
+    if (currentSizeMode === "auto") {
+      return;
+    }
     const nextWidth = Number(draftWidth);
     const nextHeight = Number(draftHeight);
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
@@ -2542,7 +2560,7 @@ const TreePromptSettingsModal: React.FC<{
       return;
     }
     onApplyCustomSize(nextWidth, nextHeight);
-  }, [draftHeight, draftWidth, onApplyCustomSize]);
+  }, [currentSizeMode, draftHeight, draftWidth, onApplyCustomSize]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

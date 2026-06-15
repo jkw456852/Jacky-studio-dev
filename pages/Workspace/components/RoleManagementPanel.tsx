@@ -76,12 +76,12 @@ const ROLE_GOVERNANCE_MODE_OPTIONS: Array<{
   {
     value: 'manual_only',
     label: '仅手动维护',
-    description: '主脑只读取，不会主动改这个角色。',
+    description: 'Agent 只读取，不会主动改这个角色。',
   },
   {
     value: 'draft_only',
     label: '只给建议',
-    description: '主脑可以先写候选方案，但要你确认后才生效。',
+    description: 'Agent 可以先写候选方案，但要你确认后才生效。',
   },
   {
     value: 'approval_required',
@@ -91,7 +91,7 @@ const ROLE_GOVERNANCE_MODE_OPTIONS: Array<{
   {
     value: 'auto_manage',
     label: '允许自动整理',
-    description: '适合实验角色，允许主脑自动维护。',
+    description: '适合实验角色，允许 Agent 自动维护。',
   },
 ];
 
@@ -614,7 +614,7 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
                     </FieldBlock>
                   </SectionCard>
 
-                  <SectionCard title="4. 自动处理方式" description="最后再决定主脑能不能自动改这个角色。">
+                  <SectionCard title="4. 自动处理方式" description="最后再决定 Agent 能不能自动改这个角色。">
                     <div className="space-y-5">
                       <div>
                         <div className="text-[14px] font-semibold text-slate-900">默认处理方式</div>
@@ -652,7 +652,7 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
                       </div>
 
                       <div>
-                        <div className="text-[14px] font-semibold text-slate-900">允许主脑自动做什么</div>
+                        <div className="text-[14px] font-semibold text-slate-900">允许 Agent 自动做什么</div>
                         <div className="mt-1 text-[12px] leading-5 text-slate-500">
                           这里只保留最关键的 3 项开关。
                         </div>
@@ -829,7 +829,7 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
                       </details>
                       <details className="group rounded-2xl bg-slate-50 px-4 py-3">
                         <summary className="cursor-pointer list-none text-[13px] font-medium text-slate-900">
-                          查看主脑共享规则
+                          查看 Agent 共享规则
                         </summary>
                         <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-slate-600">
                           {inspectedMainBrainBlock || '当前没有额外共享规则。'}

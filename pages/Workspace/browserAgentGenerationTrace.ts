@@ -1,3 +1,14 @@
+import type {
+  ImageResultSnapshot,
+  ImageTransportRequestSnapshot,
+  ImageUserRequestSnapshot,
+} from "../../types/image-generation.types";
+import {
+  normalizeImageResultSnapshot,
+  normalizeImageTransportRequestSnapshot,
+  normalizeImageUserRequestSnapshot,
+} from "../../services/image-generation/request-trace";
+
 export type WorkspaceGenerationVariantTrace = {
   variantLabel: string;
   targetElementId: string;
@@ -106,6 +117,9 @@ export type WorkspaceGenerationTrace = {
   imageSize?: string;
   imageQuality?: string;
   imageCount?: number;
+  userRequestSnapshot?: ImageUserRequestSnapshot | null;
+  transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+  resultSnapshot?: ImageResultSnapshot | null;
   lastError?: string | null;
   diagnostics?: WorkspaceGenerationTraceDiagnostic[];
   variantResults: WorkspaceGenerationVariantTrace[];
@@ -347,6 +361,13 @@ export const upsertWorkspaceGenerationTrace = (
     plannerNotes: Array.isArray(input.plannerNotes)
       ? input.plannerNotes.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
+    userRequestSnapshot: normalizeImageUserRequestSnapshot(
+      input.userRequestSnapshot,
+    ),
+    transportRequestSnapshot: normalizeImageTransportRequestSnapshot(
+      input.transportRequestSnapshot,
+    ),
+    resultSnapshot: normalizeImageResultSnapshot(input.resultSnapshot),
     diagnostics: Array.isArray(input.diagnostics)
       ? input.diagnostics
           .map((item) => normalizeTraceDiagnostic(item))

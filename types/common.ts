@@ -445,6 +445,11 @@ export interface Template {
 
 export interface WorkspaceMarkerInfo {
   fullImageUrl?: string;
+  cropUrl?: string;
+  // 归一化坐标（0-1），表示标记点在原图的位置
+  normalizedX?: number;
+  normalizedY?: number;
+  // 兼容旧数据：x/y/width/height 是裁切框（已废弃，仅用于回放历史）
   x: number;
   y: number;
   width: number;

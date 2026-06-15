@@ -21,7 +21,6 @@ import type { StudioStyleLibraryCandidateAsset } from "../services/runtime-asset
 import Sidebar from "../components/Sidebar";
 import { ROUTES } from "../utils/routes";
 import {
-  listBuiltInStyleLibraries,
   listUserStyleLibraries,
 } from "../services/vision-orchestrator/style-library";
 import { getStudioUserAssetApi } from "../services/runtime-assets/api";
@@ -660,6 +659,55 @@ const buildCandidateMeta = (candidate: StudioStyleLibraryCandidateAsset) => {
   return { badge: "待完成", subBadge: "草稿" };
 };
 
+const removeSelectedStyleCards = (selectedKeys: string[]) => {
+  const normalizedKeys = Array.from(
+    new Set(selectedKeys.map((item) => String(item || "").trim()).filter(Boolean)),
+  );
+  if (normalizedKeys.length === 0) {
+    return 0;
+  }
+
+  const api = getStudioUserAssetApi();
+  const snapshot = api.getSnapshot();
+  let removedCount = 0;
+
+  normalizedKeys.forEach((key) => {
+    if (key.startsWith("candidate::")) {
+      const candidateId = key.slice("candidate::".length).trim();
+      if (candidateId && snapshot.styleLibraryCandidates[candidateId]) {
+        delete snapshot.styleLibraryCandidates[candidateId];
+        removedCount += 1;
+      }
+      return;
+    }
+
+    if (key.startsWith("user::")) {
+      const libraryId = key.slice("user::".length).trim();
+      if (libraryId && snapshot.styleLibraries[libraryId]) {
+        delete snapshot.styleLibraries[libraryId];
+        removedCount += 1;
+      }
+    }
+  });
+
+  if (removedCount === 0) {
+    return 0;
+  }
+
+  api.replaceSnapshot(snapshot, {
+    audit: {
+      action: "update",
+      targetKind: "style-library",
+      summary:
+        removedCount === 1
+          ? "Removed 1 style card via bulk delete."
+          : `Removed ${removedCount} style cards via bulk delete.`,
+    },
+  });
+
+  return removedCount;
+};
+
 const StyleLibraryCenter: React.FC = () => {
   const navigate = useNavigate();
   const [revision, setRevision] = React.useState(0);
@@ -685,7 +733,7 @@ const StyleLibraryCenter: React.FC = () => {
   const [selectedCardKeys, setSelectedCardKeys] = React.useState<string[]>([]);
   const galleryImportRequestRef = React.useRef(0);
 
-  const builtInLibraries = React.useMemo(() => listBuiltInStyleLibraries(), []);
+  const builtInLibraries = React.useMemo(() => [], []);
   const userLibraries = React.useMemo(() => {
     return [...listUserStyleLibraries()].sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
   }, [revision]);
@@ -879,16 +927,10 @@ const StyleLibraryCenter: React.FC = () => {
       return;
     }
     try {
-      const api = getStudioUserAssetApi();
-      selectedCardKeys.forEach((key) => {
-        if (key.startsWith("candidate::")) {
-          api.removeStyleLibraryCandidate(key.slice("candidate::".length));
-          return;
-        }
-        if (key.startsWith("user::")) {
-          api.removeStyleLibrary(key.slice("user::".length));
-        }
-      });
+      const deletedCount = removeSelectedStyleCards(selectedCardKeys);
+      if (deletedCount === 0) {
+        throw new Error("没有找到可删除的风格卡片记录。");
+      }
       const currentEditorKey =
         editor?.id && (editor.scope === "user" || editor.scope === "candidate")
           ? buildStyleCardSelectionKey(editor.scope, editor.id)
@@ -1463,12 +1505,12 @@ const StyleLibraryCenter: React.FC = () => {
               placeholder="搜索风格名称、标签、Prompt 或风格说明"
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {[
               { label: "我的风格", value: String(userCards.length) },
               { label: "待完成", value: String(candidateCards.length) },
               { label: "系统预设", value: String(builtInCards.length) },
-            ].map((item) => (
+            ].slice(0, 2).map((item) => (
               <div key={item.label} className={`${shellCardClass} min-w-[120px] px-4 py-3`}>
                 <div className="text-[12px] text-slate-500">{item.label}</div>
                 <div className="mt-1 text-[22px] font-semibold tracking-[-0.02em] text-slate-950">
@@ -1558,7 +1600,7 @@ const StyleLibraryCenter: React.FC = () => {
             </section>
           ) : null}
 
-          <section className={shellCardClass}>
+          {false && <section className={shellCardClass}>
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <div className="text-[16px] font-semibold text-slate-950">系统预设</div>
@@ -1568,7 +1610,7 @@ const StyleLibraryCenter: React.FC = () => {
               </div>
             </div>
             <div className="p-5">{renderCardGrid(filteredBuiltInCards, "没有可展示的系统预设。")}</div>
-          </section>
+          </section>}
         </div>
       </div>
 

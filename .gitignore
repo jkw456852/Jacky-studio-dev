@@ -49,6 +49,7 @@ tmp/
 .jk-studio-runtime/
 .roo/
 .roomodes
+.kilo/
 .xc-studio-runtime/
 XC-STUDIO.code-workspace
 test-results/

@@ -221,20 +221,82 @@ export function useWorkspaceCanvasElementInteraction(
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
 
-            const file = dataURLtoFile(
-              crop,
-              `marker-${markers.length + 1}.png`,
-            ) as WorkspaceInputFile;
+            // [Jacky-Studio] marker 文件内容改为“带标记的完整原图”，避免下游把 300x300 裁切图当 sourceUrl
+            let file: WorkspaceInputFile;
+            try {
+              const fullRes = await fetch(el.url);
+              const fullBlob = await fullRes.blob();
+              const annotatedBlob = await new Promise<Blob>((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = Math.max(1, img.naturalWidth || el.width || 1024);
+                  canvas.height = Math.max(1, img.naturalHeight || el.height || 1024);
+                  const ctx = canvas.getContext("2d");
+                  if (!ctx) {
+                    resolve(fullBlob);
+                    return;
+                  }
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                  const mx = (x / 100) * canvas.width;
+                  const my = (y / 100) * canvas.height;
+                  const ringRadius = Math.max(6, Math.min(canvas.width, canvas.height) * 0.01);
+                  const dotRadius = Math.max(2, ringRadius * 0.22);
+
+                  ctx.beginPath();
+                  ctx.arc(mx, my, ringRadius, 0, Math.PI * 2);
+                  ctx.strokeStyle = "rgba(255, 64, 64, 0.85)";
+                  ctx.lineWidth = Math.max(1.5, ringRadius * 0.12);
+                  ctx.stroke();
+
+                  ctx.beginPath();
+                  ctx.arc(mx, my, dotRadius, 0, Math.PI * 2);
+                  ctx.fillStyle = "rgba(255, 64, 64, 0.88)";
+                  ctx.fill();
+
+                  canvas.toBlob((blob) => resolve(blob || fullBlob), "image/png");
+                };
+                img.onerror = () => resolve(fullBlob);
+                img.src = URL.createObjectURL(fullBlob);
+              });
+              file = new File([annotatedBlob], `marker-annotated-${markers.length + 1}.png`, {
+                type: "image/png",
+              }) as WorkspaceInputFile;
+              // [Jacky-Studio] 用原图天然尺寸记录 markerInfo，避免下游把画布缩放后的 1:1 当原图比例
+              const fallbackWidth = el.width || 0;
+              const fallbackHeight = el.height || 0;
+              (file as any).__naturalMarkerImageWidth = await new Promise<number>((resolve) => {
+                const probe = new Image();
+                probe.onload = () => resolve(probe.naturalWidth || fallbackWidth);
+                probe.onerror = () => resolve(fallbackWidth);
+                probe.src = URL.createObjectURL(fullBlob);
+              });
+              (file as any).__naturalMarkerImageHeight = await new Promise<number>((resolve) => {
+                const probe = new Image();
+                probe.onload = () => resolve(probe.naturalHeight || fallbackHeight);
+                probe.onerror = () => resolve(fallbackHeight);
+                probe.src = URL.createObjectURL(fullBlob);
+              });
+            } catch {
+              // 拉原图失败时退回裁切图，保证流程不挂
+              file = dataURLtoFile(
+                crop,
+                `marker-${markers.length + 1}.png`,
+              ) as WorkspaceInputFile;
+            }
             file.markerId = newMarkerId;
             file.markerName = "Selection";
             file.markerInfo = {
               fullImageUrl: el.url,
+              cropUrl: crop,
+              normalizedX: x / 100,
+              normalizedY: y / 100,
               x: (x / 100) * el.width - cropWidth / 2,
               y: (y / 100) * el.height - cropHeight / 2,
               width: cropWidth,
               height: cropHeight,
-              imageWidth: el.width,
-              imageHeight: el.height,
+              imageWidth: (file as any).__naturalMarkerImageWidth || el.width,
+              imageHeight: (file as any).__naturalMarkerImageHeight || el.height,
             };
 
             if (creationMode === "agent") {
@@ -243,25 +305,8 @@ export function useWorkspaceCanvasElementInteraction(
               }, 150);
             }
 
-            analyzeImageRegion(crop)
-              .then((name) => {
-                const trimmed = name.trim().slice(0, 10);
-                if (
-                  trimmed &&
-                  trimmed !== "Could not analyze selection." &&
-                  trimmed !== "Analysis failed."
-                ) {
-                  file.markerName = trimmed;
-                  file.lastAiAnalysis = trimmed;
-                  setInputBlocks([...useAgentStore.getState().composer.inputBlocks]);
-                  setMarkersSynced((prev) =>
-                    prev.map((m) =>
-                      m.id === newMarkerId ? { ...m, analysis: trimmed } : m,
-                    ),
-                  );
-                }
-              })
-              .catch(() => {});
+            // [Jacky-Studio] 不再调 analyzeImageRegion 给 marker 取语义名
+            // 新 mark 方案直接传完整原图 + 归一化坐标给多模态模型，由模型自己识别标记区域语义
           }
         }
       } catch (err) {

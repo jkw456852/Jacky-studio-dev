@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { useAgentStore } from '../../../stores/agent.store';
 import { useInputAreaFileHandling } from '../controllers/useInputAreaFileHandling';
+import { getActiveQuickSkillPreference } from '../../../services/runtime-assets/preferences';
 import { InputAreaBottomToolbar } from './InputAreaBottomToolbar';
 import { InputAreaEditor } from './InputAreaEditor';
 import { InputAreaMarkerEditPopover } from './InputAreaMarkerEditPopover';
@@ -163,6 +164,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const imageGenRatio = generation.imageGenRatio;
   const imageGenRes = generation.imageGenRes;
   const imageGenCount = generation.imageGenCount;
+  const sendSkill = getActiveQuickSkillPreference() || undefined;
 
   const {
     setInputBlocks,
@@ -305,6 +307,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
           setSelectionIndex={setSelectionIndex}
           setInputBlocks={setInputBlocks}
           handleSend={handleSend}
+          sendSkill={sendSkill}
           removeInputBlock={removeInputBlock}
           removePendingAttachment={removePendingAttachment}
           setEditingMarkerId={setEditingMarkerId}
@@ -372,6 +375,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
           setRequiredChineseCopy={setRequiredChineseCopy}
           inputBlocks={inputBlocks}
           browserAgent={browserAgent}
+          sendSkill={sendSkill}
           isSoraVideoModel={isSoraVideoModel}
           handlePickedFiles={handlePickedFiles}
         />

@@ -1,5 +1,10 @@
 import type React from "react";
 import type {
+  ImageResultSnapshot,
+  ImageTransportRequestSnapshot,
+  ImageUserRequestSnapshot,
+} from "../../types/image-generation.types";
+import type {
   BrowserAgentHostActionDefinition,
   BrowserConsoleEvent,
   BrowserToolExecutorContext,
@@ -170,6 +175,9 @@ export type WorkspaceGenerationObservationPayload = {
   };
   recentActivityKinds: string[];
   recentActivitySummary: string[];
+  userRequestSnapshot?: ImageUserRequestSnapshot | null;
+  transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+  resultSnapshot?: ImageResultSnapshot | null;
   recommendedNextActions: Array<{
     kind: "tool" | "host_action";
     id: string;
@@ -196,6 +204,10 @@ export type WorkspaceAwaitGenerationPayload = {
   };
   recentActivityKinds: string[];
   recentActivitySummary: string[];
+  userRequestSnapshot?: ImageUserRequestSnapshot | null;
+  transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+  resultSnapshot?: ImageResultSnapshot | null;
+  effectiveRoute?: string | null;
 };
 
 export type WorkspaceRepairGenerationStatePayload = {
@@ -226,6 +238,10 @@ export type WorkspaceGenerationDiagnosisPayload = {
   unresolvedIssueCount: number;
   recentActivityKinds: string[];
   recentActivitySummary: string[];
+  userRequestSnapshot?: ImageUserRequestSnapshot | null;
+  transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
+  resultSnapshot?: ImageResultSnapshot | null;
+  effectiveRoute?: string | null;
   recommendedNextActions: Array<{
     kind: "tool" | "host_action";
     id: string;
@@ -877,6 +893,9 @@ export const registerWorkspaceBrowserAgentTools = ({
               variantSummary,
               recentActivityKinds: activities.map((item) => item.kind),
               recentActivitySummary: activities.map((item) => item.summary),
+              userRequestSnapshot: trace?.userRequestSnapshot || null,
+              transportRequestSnapshot: trace?.transportRequestSnapshot || null,
+              resultSnapshot: trace?.resultSnapshot || null,
             },
           },
         };
@@ -919,6 +938,10 @@ export const registerWorkspaceBrowserAgentTools = ({
             variantSummary,
             recentActivityKinds: activities.map((item) => item.kind),
             recentActivitySummary: activities.map((item) => item.summary),
+            userRequestSnapshot: trace.userRequestSnapshot || null,
+            transportRequestSnapshot: trace.transportRequestSnapshot || null,
+            resultSnapshot: trace.resultSnapshot || null,
+            effectiveRoute: trace.transportRequestSnapshot?.effectiveRoute || null,
           },
         },
       };
@@ -1414,6 +1437,9 @@ const buildWorkspaceGenerationObservationResult = ({
       variantSummary,
       recentActivityKinds: activities.map((item) => item.kind),
       recentActivitySummary: activities.map((item) => item.summary),
+      userRequestSnapshot: trace?.userRequestSnapshot || null,
+      transportRequestSnapshot: trace?.transportRequestSnapshot || null,
+      resultSnapshot: trace?.resultSnapshot || null,
       recommendedNextActions,
     },
   };
@@ -1642,18 +1668,22 @@ const buildWorkspaceGenerationDiagnosisResult = ({
             ]
           : undefined,
     retryable: Boolean(canGenerate || capabilities.isGenerating),
-    payload: {
-      elementId: capabilities.targetElementId,
-      requestId: trace?.requestId || null,
-      status: trace?.status || null,
-      lastError: trace?.lastError || null,
-      diagnosisItems: uniqueDiagnosisItems,
-      repairedIssueCount,
-      unresolvedIssueCount,
-      recentActivityKinds: activities.map((item) => item.kind),
-      recentActivitySummary: activities.map((item) => item.summary),
-      recommendedNextActions,
-    },
+      payload: {
+        elementId: capabilities.targetElementId,
+        requestId: trace?.requestId || null,
+        status: trace?.status || null,
+        lastError: trace?.lastError || null,
+        diagnosisItems: uniqueDiagnosisItems,
+        repairedIssueCount,
+        unresolvedIssueCount,
+        recentActivityKinds: activities.map((item) => item.kind),
+        recentActivitySummary: activities.map((item) => item.summary),
+        userRequestSnapshot: trace?.userRequestSnapshot || null,
+        transportRequestSnapshot: trace?.transportRequestSnapshot || null,
+        resultSnapshot: trace?.resultSnapshot || null,
+        effectiveRoute: trace?.transportRequestSnapshot?.effectiveRoute || null,
+        recommendedNextActions,
+      },
   };
 };
 

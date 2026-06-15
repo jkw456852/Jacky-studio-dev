@@ -141,6 +141,18 @@ export const buildAgentTaskOutput = ({
   const normalizedQuestions = Array.isArray(questions) ? questions : undefined;
   const normalizedSuggestions = Array.isArray(suggestions) ? suggestions : undefined;
   const normalizedAdjustments = Array.isArray(adjustments) ? adjustments : [];
+  const imageUrls = normalizedAssets
+    .filter(
+      (asset): asset is GeneratedAsset & { type: 'image'; url: string } =>
+        asset?.type === 'image' && typeof asset.url === 'string',
+    )
+    .map((asset) => asset.url);
+  const videoUrls = normalizedAssets
+    .filter(
+      (asset): asset is GeneratedAsset & { type: 'video'; url: string } =>
+        asset?.type === 'video' && typeof asset.url === 'string',
+    )
+    .map((asset) => asset.url);
 
   return {
     message,
@@ -151,7 +163,8 @@ export const buildAgentTaskOutput = ({
     suggestions: normalizedSuggestions,
     proposals: normalizedProposals,
     assets: normalizedAssets,
-    imageUrls: normalizedAssets.map((asset) => asset.url),
+    imageUrls,
+    videoUrls,
     skillCalls: normalizedSkillCalls,
     adjustments: normalizedAdjustments,
     roleGovernanceAudit,

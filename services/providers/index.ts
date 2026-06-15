@@ -8,6 +8,7 @@ import { geminiImageProvider, geminiVideoProvider } from "./gemini.provider";
 import { replicateImageProvider } from "./replicate.provider";
 import { klingVideoProvider } from "./kling.provider";
 import { ProviderError } from "../../utils/provider-error";
+import { resolveCanonicalImageModelDisplayName } from "../image-generation/core/openai-image-spec";
 
 // All registered providers
 const imageProviders: Map<string, ImageProvider> = new Map([
@@ -19,6 +20,16 @@ const videoProviders: Map<string, VideoProvider> = new Map([
   ["gemini", geminiVideoProvider],
   ["kling", klingVideoProvider],
 ]);
+
+export const getImageProviderById = (providerId?: string | null): ImageProvider | undefined => {
+  if (!providerId) return undefined;
+  return imageProviders.get(String(providerId).trim());
+};
+
+export const getVideoProviderById = (providerId?: string | null): VideoProvider | undefined => {
+  if (!providerId) return undefined;
+  return videoProviders.get(String(providerId).trim());
+};
 
 // Model → Provider lookup (built from provider registry)
 const modelToImageProvider: Record<string, string> = {};
@@ -41,6 +52,18 @@ videoProviders.forEach((provider, providerId) =>
   registerModels(modelToVideoProvider, providerId, provider.models),
 );
 
+const resolvePreferredImageProviderId = (): string | null => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('workspace_preferred_image_provider_id');
+      if (raw) return raw;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
 // Video model aliases for compatibility with old settings/model ids
 const VIDEO_MODEL_ALIASES: Record<string, string> = {
   auto: "Veo 3.1 Fast",
@@ -58,31 +81,6 @@ const VIDEO_MODEL_ALIASES: Record<string, string> = {
   "kling 3.0": "Kling Pro",
 };
 
-const IMAGE_MODEL_ALIASES: Record<string, string> = {
-  auto: "NanoBanana2",
-  nanobanana2: "NanoBanana2",
-  "nanobanana 2": "NanoBanana2",
-  "nano banana 2": "NanoBanana2",
-  "nano banana pro": "Nano Banana Pro",
-  "nanobanana pro": "Nano Banana Pro",
-  "gemini-3-pro-image-preview": "Nano Banana Pro",
-  "gemini-3.1-flash-image-preview": "NanoBanana2",
-  "doubao-seedream-5-0-260128": "Seedream5.0",
-  "seedream5.0": "Seedream5.0",
-  "seedream 5.0": "Seedream5.0",
-  "seedream 4": "Seedream5.0",
-  "gpt image 2": "gpt-image-2",
-  "gpt-image-2": "gpt-image-2",
-  gptimage2: "gpt-image-2",
-  image2: "gpt-image-2",
-  "image 2": "gpt-image-2",
-  "gpt image2": "gpt-image-2",
-  "gpt-image-2-all": "gpt-image-2-all",
-  "gpt image 2 all": "gpt-image-2-all",
-  "gpt image 1.5": "gpt-image-1.5-all",
-  "gpt-image-1.5-all": "gpt-image-1.5-all",
-};
-
 const resolveVideoModel = (model: string): string => {
   const normalized = (model || "").trim();
   if (!normalized) return "Veo 3.1 Fast";
@@ -90,23 +88,7 @@ const resolveVideoModel = (model: string): string => {
 };
 
 const resolveImageModel = (model: string): string => {
-  // 兜底修复：历史错误模型名会触发代理 "No available channels"
-  // Default model should be NanoBanana2 (alias: nanobanana2)
-  const normalized = String(model || "").trim();
-  if (!normalized) return "NanoBanana2";
-  const lower = normalized.toLowerCase();
-  const aliasedModel = IMAGE_MODEL_ALIASES[lower];
-  if (aliasedModel) {
-    return aliasedModel;
-  }
-  if (lower.includes("gemini-1.5-pro-image-preview-tok"))
-    return "Nano Banana Pro";
-  if (
-    lower.includes("1.5-pro-image-preview") ||
-    lower.includes("1.5-flash-image-preview")
-  )
-    return "Nano Banana Pro";
-  return normalized;
+  return resolveCanonicalImageModelDisplayName(model);
 };
 
 const warnModelFallback = (
@@ -157,23 +139,41 @@ export async function generateImageWithProvider(
   const requestedModel = String(model || "").trim();
   const resolvedModel = resolveImageModel(requestedModel);
   const matchedProviderId = modelToImageProvider[resolvedModel];
+  const preferredProviderId = request.providerId || resolvePreferredImageProviderId();
   if (!matchedProviderId && shouldUseStrictModelRouting()) {
     throw createModelNotFoundError("image", requestedModel, resolvedModel);
   }
-  const providerId = matchedProviderId || "gemini"; // 默认回落到 Gemini / 云雾中转大管家
+  const providerId = matchedProviderId
+    || (preferredProviderId && imageProviders.has(preferredProviderId) ? preferredProviderId : null)
+    || "gemini"; // 默认回落到 Gemini / 云雾中转大管家
   if (!matchedProviderId) {
     warnModelFallback("image", requestedModel, resolvedModel, providerId);
   }
   const provider = imageProviders.get(providerId);
 
   if (!provider) {
-    throw new ProviderError({
-      provider: providerId,
-      code: "PROVIDER_NOT_FOUND",
-      retryable: false,
-      stage: "config",
-      details: `image:${resolvedModel}`,
-      message: `未找到提供商: ${providerId}`,
+    // custom provider — delegate to the full generateImage path which handles custom channels
+    const { generateImage } = await import('../gemini');
+    return generateImage({
+      prompt: request.prompt,
+      model: resolvedModel,
+      providerId,
+      aspectRatio: request.aspectRatio,
+      imageSize: request.imageSize as '1K' | '2K' | '4K' | undefined,
+      exactSize: request.exactSize,
+      imageQuality: request.imageQuality,
+      referenceImage: request.referenceImage,
+      referenceImages: request.referenceImages,
+      maskImage: request.maskImage,
+      referenceStrength: request.referenceStrength,
+      referencePriority: request.referencePriority,
+      referenceMode: request.referenceMode,
+      referenceRoleMode: request.referenceRoleMode,
+      promptLanguagePolicy: request.promptLanguagePolicy,
+      textPolicy: request.textPolicy,
+      consistencyContext: request.consistencyContext,
+      onSubmitted: request.onSubmitted as any,
+      onTransportPrepared: request.onTransportPrepared as any,
     });
   }
 

@@ -536,7 +536,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   }, [currentAutoRoleMeta, latestAutoRoleDraftMeta]);
   const assistantModeLabel =
     creationMode === 'agent'
-      ? '主脑对话'
+      ? 'Agent 对话'
       : creationMode === 'image'
         ? '图片任务'
         : '视频任务';
@@ -979,7 +979,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 className={creationMode === 'agent' ? 'mt-0.5 text-blue-500' : 'mt-0.5 text-gray-400'}
               />
               <div>
-                <div>主脑对话</div>
+                <div>Agent 对话</div>
                 <div className="mt-0.5 text-[11px] font-normal text-gray-400">
                   先理解需求，再决定是否调用执行能力
                 </div>

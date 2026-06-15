@@ -1252,6 +1252,12 @@ export abstract class EnhancedBaseAgent {
         allowAutonomousRouting,
       });
       const fullPrompt = promptBuild.fullPrompt;
+      const MAX_PROMPT_CHARS = 240000;
+      const safePrompt =
+        fullPrompt.length > MAX_PROMPT_CHARS
+          ? fullPrompt.slice(0, MAX_PROMPT_CHARS) +
+            '\n\n[提示：对话内容过长，后续已自动截断]'
+          : fullPrompt;
 
       const attachmentInlineParts = (
         await Promise.all((attachments || []).map((file) => fileToInlinePart(file)))
@@ -1274,7 +1280,7 @@ export abstract class EnhancedBaseAgent {
             ).filter(Boolean) as InlineImagePart[]
           : [];
       const parts: any[] = [
-        { text: fullPrompt },
+        { text: safePrompt },
         ...attachmentInlineParts,
         ...inheritedReferenceInlineParts,
       ];
@@ -1285,7 +1291,7 @@ export abstract class EnhancedBaseAgent {
       );
 
       const payloadDiagnostics = {
-        promptChars: fullPrompt.length,
+        promptChars: safePrompt.length,
         historyCount: promptBuild.historyCount,
         historyUsed: promptBuild.historyCount,
         attachmentCount: attachments?.length || 0,
@@ -1293,7 +1299,7 @@ export abstract class EnhancedBaseAgent {
         inheritedReferenceInlineImageCount: inheritedReferenceInlineParts.length,
         includesInlineImages:
           attachmentInlineParts.length > 0 || inheritedReferenceInlineParts.length > 0,
-        estimatedPayloadChars: JSON.stringify({ prompt: fullPrompt }).length,
+        estimatedPayloadChars: JSON.stringify({ prompt: safePrompt }).length,
         model: bestModel.modelId,
         providerId: bestModel.providerId || null,
       };
@@ -1468,6 +1474,7 @@ export abstract class EnhancedBaseAgent {
   ): Promise<any> {
     console.log(
       `[${this.agentInfo.id}] [executeSkills] 解析技能参数: ${call.skillName}`,
+      { params: call.params, editType: call.params?.editType, prompt: call.params?.prompt?.slice(0, 200), model: call.params?.model },
     );
 
     const prepared = await prepareSkillExecutionCall({

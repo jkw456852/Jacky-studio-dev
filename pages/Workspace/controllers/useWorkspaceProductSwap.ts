@@ -4,6 +4,14 @@ import {
   generateImage,
   type ImageGenerationConfig,
 } from "../../../services/gemini";
+import {
+  patchWorkspaceGenerationTrace,
+  upsertWorkspaceGenerationTrace,
+} from "../browserAgentGenerationTrace";
+import type {
+  ImageResultSnapshot,
+  ImageUserRequestSnapshot,
+} from "../../../types/image-generation.types";
 import type { CanvasElement } from "../../../types";
 import type { DesignTaskMode } from "../../../types/common";
 
@@ -127,6 +135,7 @@ export function useWorkspaceProductSwap(options: UseWorkspaceProductSwapOptions)
     };
     setElementsSynced([...elementsRef.current, newEl]);
     setSelectedElementId(newId);
+    const traceRequestId = `product-swap-${newId}-${Date.now()}`;
 
     try {
       const sceneBase64 = await urlToBase64(el.url);
@@ -144,6 +153,32 @@ export function useWorkspaceProductSwap(options: UseWorkspaceProductSwapOptions)
         "Do not promise pixel-perfect local replacement; prefer believable controlled scene reconstruction",
       ];
 
+      upsertWorkspaceGenerationTrace({
+        requestId: traceRequestId,
+        requestElementId: newId,
+        sourceElementId: el.id,
+        targetElementIds: [newId],
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        status: "generating",
+        sourcePrompt: prompt,
+        model: String(selectedModel),
+        aspectRatio: targetAspectRatio,
+        imageSize: productSwapRes,
+        imageCount: 1,
+        userRequestSnapshot: {
+          requestedModel: String(selectedModel),
+          requestedAspectRatio: targetAspectRatio,
+          requestedImageSize: productSwapRes,
+          requestedExactSize: null,
+          requestedImageQuality: null,
+          referenceCount: allImages.length,
+          hasMask: false,
+        } satisfies ImageUserRequestSnapshot,
+        diagnostics: [],
+        variantResults: [],
+      });
+
       await persistEditSession("edit", el, {
         instruction:
           "Run a controlled reference-based product replacement that preserves the original scene as much as possible.",
@@ -154,18 +189,36 @@ export function useWorkspaceProductSwap(options: UseWorkspaceProductSwapOptions)
           "Current phase uses controlled multi-reference scene reconstruction rather than true local mask replacement.",
       });
 
-      const runProductSwap = (fixPrompt?: string) =>
-        generateImage({
-          prompt: fixPrompt ? `${prompt}\n\nConsistency fix: ${fixPrompt}` : prompt,
+        const runProductSwap = (fixPrompt?: string) =>
+          generateImage({
+            prompt: fixPrompt ? `${prompt}\n\nConsistency fix: ${fixPrompt}` : prompt,
           model: selectedModel,
           providerId: el.genProviderId,
           aspectRatio: targetAspectRatio,
           imageSize: productSwapRes,
           referenceImages: allImages,
-          referenceMode: "product",
-          referencePriority: "all",
-          consistencyContext: getDesignConsistencyContext(),
-        });
+            referenceMode: "product",
+            referencePriority: "all",
+            consistencyContext: getDesignConsistencyContext(),
+            onTransportPrepared: (transportRequestSnapshot) => {
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot,
+              });
+            },
+            onSubmitted: ({ taskId, transportRequestSnapshot }) => {
+              patchWorkspaceGenerationTrace(traceRequestId, {
+                updatedAt: Date.now(),
+                transportRequestSnapshot: transportRequestSnapshot || null,
+                resultSnapshot: {
+                  status: "submitted",
+                  taskId,
+                  resultKind: null,
+                  error: null,
+                } satisfies ImageResultSnapshot,
+              });
+            },
+          });
 
       const result = await runProductSwap();
       if (!result) {
@@ -181,8 +234,32 @@ export function useWorkspaceProductSwap(options: UseWorkspaceProductSwapOptions)
         allImages.length,
       );
       await applyGeneratedImageToElement(newId, finalResult, true);
+      patchWorkspaceGenerationTrace(traceRequestId, {
+        updatedAt: Date.now(),
+        completedAt: Date.now(),
+        status: "completed",
+        lastError: null,
+        resultSnapshot: {
+          status: "completed",
+          taskId: null,
+          resultKind: String(finalResult || "").startsWith("data:") ? "data-url" : "remote-url",
+          error: null,
+        } satisfies ImageResultSnapshot,
+      });
     } catch (error) {
       console.error("Product Swap Failed:", error);
+      patchWorkspaceGenerationTrace(traceRequestId, {
+        updatedAt: Date.now(),
+        completedAt: Date.now(),
+        status: "failed",
+        lastError: error instanceof Error ? error.message : String(error),
+        resultSnapshot: {
+          status: "failed",
+          taskId: null,
+          resultKind: null,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies ImageResultSnapshot,
+      });
       setElementsSynced(
         elementsRef.current.filter((element) => element.id !== newId),
       );

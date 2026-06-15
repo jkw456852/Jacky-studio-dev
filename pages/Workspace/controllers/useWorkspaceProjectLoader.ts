@@ -35,6 +35,7 @@ import {
   normalizeNestedImageDataUrl,
   sanitizePersistableAttachmentPreviewUrl,
 } from "../workspaceShared";
+import { getGeneratedConversationFilesFromAgentData } from "../components/generatedFiles";
 import {
   getAllNodeParentIds,
   resolveWorkspaceTreeNodeKind,
@@ -452,17 +453,31 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
         })
         .filter(Boolean) as NonNullable<ChatMessage["inlineParts"]>
     : undefined;
-  const imageUrls = Array.isArray(message.agentData?.imageUrls)
-    ? message.agentData.imageUrls
-        .map((item) => getRenderableImageAssetUrl(item))
-        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        .slice(0, 12)
-    : [];
-  const videoUrls = Array.isArray(message.agentData?.videoUrls)
-    ? message.agentData.videoUrls
-        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        .slice(0, 8)
-    : [];
+  const generatedFiles = getGeneratedConversationFilesFromAgentData(
+    message.agentData,
+    message.timestamp,
+  );
+  const imageUrls = generatedFiles
+    .filter((file) => file.type === "image")
+    .map((file) => getRenderableImageAssetUrl(file.url))
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, 12);
+  const videoUrls = generatedFiles
+    .filter((file) => file.type === "video")
+    .map((file) => file.url)
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, 8);
+  const assets = generatedFiles
+    .map((file, index) => ({
+      id: `loaded-asset-${message.id}-${index}`,
+      type: file.type,
+      url: file.url,
+      metadata: {
+        model: file.model,
+        agentId: "coco",
+      },
+    }))
+    .slice(0, 16);
 
   return {
     ...message,
@@ -480,6 +495,7 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
           description: trimLoadText(message.agentData.description, 240) || undefined,
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
           videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
+          assets: assets.length > 0 ? assets : undefined,
           analysis: trimLoadText(message.agentData.analysis, 800) || undefined,
           preGenerationMessage:
             trimLoadText(message.agentData.preGenerationMessage, 600) || undefined,

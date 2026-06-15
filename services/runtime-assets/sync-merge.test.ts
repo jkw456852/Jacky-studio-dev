@@ -137,6 +137,7 @@ const createState = (
   roleVersions: {},
   roleAuditEntries: {},
   styleLibraries: {},
+  styleLibraryCandidates: {},
   evolutionRecords: {},
   ...patch,
 });

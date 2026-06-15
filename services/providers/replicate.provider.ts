@@ -48,6 +48,18 @@ export const replicateImageProvider: ImageProvider = {
     authMode: 'bearer',
     apiStyle: 'custom',
     supports: ['image'],
+    imageTransportProfile: {
+      routeStyle: 'replicate-prediction',
+      requestModes: ['replicate-prediction'],
+      editPayloadModes: ['none'],
+      jsonEditOfficialOnly: false,
+      supportsMultipartEdit: false,
+      supportsMultiReference: false,
+      supportsMask: true,
+      supportsExactSize: false,
+      aspectRatioPolicy: 'provider-native',
+      pollingResultMode: 'prediction-poll',
+    },
   },
 
   async generateImage(request: ImageGenerationRequest, model: string): Promise<string | null> {

@@ -30,6 +30,12 @@ type WorkspaceLeftPanelProps = {
   workflowRecipesPanel?: React.ReactNode;
 };
 
+const PANEL_TITLE = {
+  layers: "\u56fe\u5c42",
+  files: "\u5df2\u751f\u6210\u6587\u4ef6\u5217\u8868",
+  workflowRecipes: "Workflow Recipe",
+} as const;
+
 export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
   leftPanelMode,
   onClose,
@@ -60,23 +66,23 @@ export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
           exit={{ opacity: 0, x: -280 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className={[
-            "absolute bg-white/98 backdrop-blur-xl z-50 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.04)]",
+            "absolute z-50 flex flex-col bg-white/98 shadow-[4px_0_24px_rgba(0,0,0,0.04)] backdrop-blur-xl",
             leftPanelMode === "workflow-recipes"
-              ? "top-16 left-5 right-5 bottom-5 rounded-[24px] border border-gray-200 overflow-hidden shadow-[0_24px_64px_rgba(15,23,42,0.16)]"
+              ? "top-16 left-5 right-5 bottom-5 overflow-hidden rounded-[24px] border border-gray-200 shadow-[0_24px_64px_rgba(15,23,42,0.16)]"
               : "top-0 left-0 bottom-0 w-[220px] border-r border-gray-200/60",
           ].join(" ")}
         >
-          <div className="px-4 py-3.5 flex items-center justify-between border-b border-gray-100 shrink-0">
-            <span className="font-semibold text-sm text-gray-900">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-3.5">
+            <span className="text-sm font-semibold text-gray-900">
               {leftPanelMode === "layers"
-                ? "图层"
+                ? PANEL_TITLE.layers
                 : leftPanelMode === "files"
-                  ? "已生成文件列表"
-                  : "Workflow Recipe"}
+                  ? PANEL_TITLE.files
+                  : PANEL_TITLE.workflowRecipes}
             </span>
             <button
               onClick={onClose}
-              className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
             >
               <X size={14} />
             </button>
@@ -105,7 +111,9 @@ export const WorkspaceLeftPanel: React.FC<WorkspaceLeftPanelProps> = ({
               />
             ) : (
               workflowRecipesPanel || (
-                <div className="p-4 text-sm text-gray-500">Workflow recipe 面板骨架尚未接入运行时数据。</div>
+                <div className="p-4 text-sm text-gray-500">
+                  Workflow recipe 面板骨架尚未接入运行时数据。
+                </div>
               )
             )}
 

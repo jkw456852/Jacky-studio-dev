@@ -1,4 +1,5 @@
 import { ImageModel, VideoModel } from './common';
+import type { ImageTransportRequestSnapshot } from './image-generation.types';
 
 export interface ImageTextPolicy {
   enforceChinese?: boolean;
@@ -50,7 +51,9 @@ export interface ImageGenSkillParams {
     baseUrl?: string | null;
     model?: string | null;
     route?: string | null;
+    transportRequestSnapshot?: ImageTransportRequestSnapshot | null;
   }) => void;
+  onTransportPrepared?: (snapshot: ImageTransportRequestSnapshot) => void;
 }
 
 export interface VideoGenSkillParams {

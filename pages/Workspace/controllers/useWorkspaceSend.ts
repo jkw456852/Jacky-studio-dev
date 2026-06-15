@@ -4,7 +4,9 @@ import { getAgentInfo } from "../../../services/agents";
 import type {
   CanvasElement,
   ChatMessage,
+  GeneratedAsset,
   InputBlock,
+  WorkspaceMarkerInfo,
   WorkspaceInputFile,
 } from "../../../types";
 import { useAgentStore } from "../../../stores/agent.store";
@@ -627,6 +629,15 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
         if (result && result.output) {
           const agentInfo = getAgentInfo(result.agentId);
           const derivedImageUrls = collectDerivedImageUrlsFromTask(result);
+          const derivedVideoUrls = (result.output.assets || [])
+            .filter(
+              (asset): asset is GeneratedAsset =>
+                asset?.type === "video" &&
+                typeof asset.id === "string" &&
+                typeof asset.url === "string" &&
+                Boolean(asset?.metadata),
+            )
+            .map((asset) => asset.url);
           const agentMsg: ChatMessage = {
             id: result.id,
             role: "model",
@@ -638,6 +649,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
               title: agentInfo.name,
               description: agentInfo.description,
               imageUrls: Array.from(new Set(derivedImageUrls)),
+              videoUrls: Array.from(new Set(derivedVideoUrls)),
+              assets: result.output.assets,
               proposals: result.output.proposals,
               skillCalls: result.output.skillCalls,
               analysis: result.output.analysis,
