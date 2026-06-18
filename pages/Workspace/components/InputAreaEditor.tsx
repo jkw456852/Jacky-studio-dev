@@ -1,5 +1,10 @@
 ﻿import React from 'react';
 import type { ChatMessage, ChatSendOptions, InputBlock, Marker } from '../../../types';
+import {
+  getFrontstageSkillLabelKind,
+  isUnifiedSidebarAgentSkill,
+  normalizeFrontstageSkillPresentation,
+} from '../../../services/runtime-assets/skill-identity';
 import { createInputBlockId } from '../../../stores/agent.store';
 import { InputAreaFileBlock } from './InputAreaFileBlock';
 import { InputAreaPendingAttachments } from './InputAreaPendingAttachments';
@@ -85,6 +90,7 @@ type InputAreaEditorProps = {
   ) => Promise<void>;
   sendSkill?: ChatMessage['skillData'];
   onClearSendSkill?: () => void;
+  onEditSendSkill?: () => void;
   removeInputBlock: (id: string) => void;
   removePendingAttachment: (id: string) => void;
   setEditingMarkerId: (id: string | null) => void;
@@ -119,35 +125,82 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   handleSend,
   sendSkill,
   onClearSendSkill,
+  onEditSendSkill,
   removeInputBlock,
   removePendingAttachment,
   setEditingMarkerId,
   setEditingMarkerLabel,
 }) => {
+  const displaySendSkill = React.useMemo(
+    () => normalizeFrontstageSkillPresentation(sendSkill),
+    [sendSkill],
+  );
   const hasTypedText = inputBlocks.some(
     (block) => block.type === 'text' && (block.text || '').trim().length > 0,
   );
   const hasAttachedFiles = inputBlocks.some((block) => block.type === 'file' && block.file);
   const showComposerHint =
     !archivedReadOnly && !hasTypedText && !hasAttachedFiles && pendingAttachments.length === 0;
+  const activeSkillState = React.useMemo(() => {
+    const config =
+      sendSkill?.config && typeof sendSkill.config === 'object'
+        ? (sendSkill.config as Record<string, unknown>)
+        : null;
+    const usesCustomBehavior = config?.isCustomSkill === true;
+    const customConfig = usesCustomBehavior ? config : null;
+
+    return {
+      usesCustomBehavior,
+      customConfig,
+      customSummary: String(
+        customConfig?.summary || customConfig?.description || '',
+      ).trim(),
+      customExamplePrompt: String(
+        customConfig?.examplePrompt || customConfig?.sourceUserPrompt || '',
+      ).trim(),
+    };
+  }, [sendSkill?.config]);
 
   const composerPlaceholder =
     creationMode === 'agent'
-      ? sendSkill?.id === 'ecom-oneclick-workflow'
+      ? displaySendSkill?.id === 'ecom-oneclick-workflow'
         ? '先说商品、目标和约束，我会按电商工作流继续补问并推进。'
-        : sendSkill?.id === 'clothing-studio-workflow'
+        : displaySendSkill?.id === 'clothing-studio-workflow'
           ? '先说服饰图、风格目标和限制条件，我会按服饰工作流继续推进。'
-          : sendSkill?.id === 'cn-detail-page'
-            ? '先说商品、卖点和详情页目标，我会按中文详情页流程继续拆解。'
-            : sendSkill?.id === 'jkai-oneclick'
-              ? '先说你要的结果和参考方向，我会按 One Click 流程继续推进。'
-              : sendSkill?.id === 'autonomous-main-brain'
-                ? '描述目标、上下文和限制条件，我会自动选择合适流程推进。'
+        : displaySendSkill?.id === 'cn-detail-page'
+          ? '先说商品、卖点和详情页目标，我会按中文详情页流程继续拆解。'
+        : displaySendSkill?.id === 'jkai-oneclick'
+          ? '先说你要的结果和参考方向，我会按 One Click 流程继续推进。'
+          : isUnifiedSidebarAgentSkill(displaySendSkill)
+                ? `继续说明这次要做什么，我会按「${displaySendSkill?.name || '当前 Skill'}」的方式继续推进。`
+                : activeSkillState.usesCustomBehavior
+                  ? activeSkillState.customExamplePrompt ||
+                    activeSkillState.customSummary ||
+                    `继续说明这次要做什么，我会按「${displaySendSkill?.name || '当前 Skill'}」的方式继续推进。`
                 : agentPlaceholder || '告诉助手要检查、修改或继续推进的下一步。'
       : creationMode === 'image'
         ? '描述画面、风格、构图和必须保留的关键细节。'
         : '描述场景、镜头运动、节奏和时长要求。';
-  const skillHintVisible = creationMode === 'agent' && Boolean(sendSkill?.name);
+  const skillHintVisible = creationMode === 'agent' && Boolean(displaySendSkill?.name);
+  const selectedSkillMeta = React.useMemo(() => {
+    switch (getFrontstageSkillLabelKind(displaySendSkill)) {
+      case 'workflow':
+        return { label: 'Workflow', detail: '', tone: 'blue' as const };
+      case 'my-skill':
+        return {
+          label: 'My Skill',
+          detail: activeSkillState.customSummary || '',
+          tone: 'violet' as const,
+        };
+      case 'skill':
+      default:
+        return {
+          label: 'Skill',
+          detail: '',
+          tone: isUnifiedSidebarAgentSkill(displaySendSkill) ? 'emerald' as const : 'amber' as const,
+        };
+    }
+  }, [activeSkillState.customSummary, displaySendSkill]);
   const inputFlowRef = React.useRef<HTMLDivElement | null>(null);
   const baseComposerHeight = showComposerHint ? 96 : 84;
   const maxComposerHeight = baseComposerHeight * 2;
@@ -193,8 +246,8 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
     creationMode,
     inputBlocks.length,
     pendingAttachments.length,
-    sendSkill?.id,
-    sendSkill?.name,
+    displaySendSkill?.id,
+    displaySendSkill?.name,
     showComposerHint,
   ]);
 
@@ -228,7 +281,7 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
 
   return (
     <div
-      className={`px-4 pb-1.5 pt-3 transition-all ${
+      className={`px-4 pb-1 pt-2.5 transition-all ${
         archivedReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-text'
       }`}
       onKeyDownCapture={(event) => {
@@ -288,7 +341,7 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
     >
       <div
         ref={inputFlowRef}
-        className={`input-flow-container custom-scrollbar relative flex w-full flex-wrap items-start content-start gap-1 overflow-y-auto px-2 pb-3.5 pr-2 pt-1.5 transition-[height] duration-150 ${
+        className={`input-flow-container custom-scrollbar relative flex w-full flex-wrap items-start content-start gap-1 overflow-y-auto px-2 pb-3 pr-2 pt-1 transition-[height] duration-150 ${
           showComposerHint ? 'min-h-[96px]' : 'min-h-[84px]'
         }`}
         style={{
@@ -301,17 +354,57 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
       >
         {skillHintVisible ? (
           <div
-            data-active-skill-hint={sendSkill?.id || 'active-skill'}
-            className="mb-1.5 inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-50/92 pl-[3px] pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+            data-active-skill-hint={displaySendSkill?.id || 'active-skill'}
+            className={`mb-1.5 inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border pl-[3px] pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${
+              activeSkillState.usesCustomBehavior
+                ? 'border-violet-200/90 bg-violet-50/80'
+                : 'border-slate-200/90 bg-slate-50/92'
+            }`}
           >
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="inline-flex h-6 items-center rounded-full bg-white px-2.5 text-[10px] font-semibold tracking-[0.08em] text-slate-400">
-                工作流
+              <span
+                className={`inline-flex h-6 items-center rounded-full px-2.5 text-[9px] font-semibold tracking-[0.08em] ${
+                  selectedSkillMeta.tone === 'emerald'
+                    ? 'bg-emerald-50 text-emerald-700'
+                  : selectedSkillMeta.tone === 'blue'
+                      ? 'bg-blue-50 text-blue-700'
+                    : selectedSkillMeta.tone === 'amber'
+                        ? 'bg-amber-50 text-amber-700'
+                      : selectedSkillMeta.tone === 'violet'
+                        ? 'bg-violet-100/90 text-violet-700'
+                        : 'bg-white text-slate-400'
+                }`}
+              >
+                {selectedSkillMeta.label}
               </span>
-              <div className="truncate text-[12px] font-semibold text-slate-700">
-                {sendSkill?.name}
+              <div className="min-w-0">
+                <div className="truncate text-[12px] font-semibold text-slate-700">
+                  {displaySendSkill?.name}
+                </div>
+                {selectedSkillMeta.detail ? (
+                  <div className={`truncate text-[9px] leading-3 ${
+                    activeSkillState.usesCustomBehavior ? 'text-violet-500/80' : 'text-slate-400'
+                  }`}>
+                    {selectedSkillMeta.detail}
+                  </div>
+                ) : null}
               </div>
             </div>
+            {activeSkillState.usesCustomBehavior && onEditSendSkill ? (
+              <button
+                type="button"
+                data-edit-active-skill
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEditSendSkill();
+                }}
+                className="inline-flex h-6 items-center rounded-full bg-white/90 px-2 text-[10px] font-medium text-violet-600 transition hover:bg-white hover:text-violet-700"
+                aria-label="编辑当前 Skill"
+                title="编辑当前 Skill"
+              >
+                编辑
+              </button>
+            ) : null}
             <button
               type="button"
               data-clear-active-skill
@@ -320,7 +413,7 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
                 onClearSendSkill?.();
               }}
               className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-[11px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"
-              aria-label="清除当前技能"
+              aria-label="清除当前 Skill"
             >
               ×
             </button>

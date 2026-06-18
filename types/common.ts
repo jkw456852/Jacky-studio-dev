@@ -279,6 +279,8 @@ export interface ConversationSession {
     inputBlocks?: InputBlock[];
     creationMode?: "agent" | "image" | "video";
     quickSkill?: ChatMessage["skillData"];
+    modelMode?: "thinking" | "fast";
+    webEnabled?: boolean;
   };
   parentConversationId?: string;
   parentConversationTitle?: string;
@@ -378,6 +380,10 @@ export interface ChatMessage {
     }>;
     adjustments?: string[];
     analysis?: string;
+    answerSegments?: Array<{
+      text: string;
+      citationOrdinals?: number[];
+    }>;
     preGenerationMessage?: string;
     postGenerationSummary?: string;
     suggestions?: string[]; // 可点击的建议按钮（如"温馨日常故事"、"科技感风格"）

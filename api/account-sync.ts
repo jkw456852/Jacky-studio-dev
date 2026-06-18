@@ -110,6 +110,8 @@ const createEmptyState = (): StudioUserAssetState => ({
   workspacePreferences: {
     schemaVersion: 1,
     updatedAt: Date.now(),
+    chatModelMode: 'fast',
+    chatWebEnabled: false,
     selectedScriptModels: ['gemini-3.1-flash-lite-preview'],
     selectedImageModels: ['Auto'],
     selectedVideoModels: ['veo-3.1-fast-generate-preview'],

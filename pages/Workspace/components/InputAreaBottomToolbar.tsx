@@ -1,6 +1,5 @@
 ﻿import React from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
 import {
   Activity,
   ArrowUp,
@@ -14,7 +13,6 @@ import {
   Library,
   Lightbulb,
   Paperclip,
-  Search,
   Sparkles,
   Type,
   Video,
@@ -30,7 +28,6 @@ import type {
   ImageModel,
   VideoModel,
 } from '../../../types';
-import type { AgentType, RoleGovernanceMode } from '../../../types/agent.types';
 import {
   getMappedModelConfigs,
   getMappedModelDisplaySummary,
@@ -38,30 +35,13 @@ import {
   getMappedPrimaryModelLabel,
   getModelDisplayLabel,
 } from '../../../services/provider-settings';
-import { getAgentInfo, listAgentInfos } from '../../../services/agents';
-import {
-  buildRoleDraftAddonText,
-  clearAgentPromptAddon,
-  buildUserCustomRoleAddonBlock,
-  getAgentPromptLayers,
-  getEffectiveAgentPrompt,
-  hasAgentPromptAddon,
-  mergePromptAddonWithRoleDraft,
-  setAgentPromptAddon,
-} from '../../../services/agents/role-config';
-import { getAgentRoleProfile } from '../../../services/agents/role-catalog';
 import { getStudioUserAssetApi } from '../../../services/runtime-assets/api';
 import {
-  getDefaultMainBrainPreferences,
-  normalizeMainBrainPreferences,
-} from '../../../services/runtime-assets/main-brain';
-import {
-  pinSkillPreference,
   setActiveQuickSkillPreference,
+  upsertCustomSkillPreference,
 } from '../../../services/runtime-assets/preferences';
+import { getFrontstageSkillId } from '../../../services/runtime-assets/skill-identity';
 import { useAgentStore } from '../../../stores/agent.store';
-import { RoleManagementPanel } from './RoleManagementPanel';
-import { MainBrainConfigCenter } from './MainBrainConfigCenter';
 
 const MODEL_OPTIONS: Record<
   string,
@@ -103,26 +83,13 @@ type ToolbarModelOption = {
   icon: React.ElementType;
   badge?: string;
   providerId?: string | null;
+  providerName?: string | null;
 };
 
 const DEFAULT_MODEL_ICON_BY_CATEGORY: Record<'image' | 'video' | '3d', React.ElementType> = {
   image: Sparkles,
   video: Video,
   '3d': Box,
-};
-
-const ROLE_SOURCE_LABELS: Record<string, string> = {
-  system: '系统内置',
-  user: '用户创建',
-  temporary: '临时角色',
-  promoted: '已提升',
-};
-
-const GOVERNANCE_MODE_LABELS: Record<string, string> = {
-  manual_only: '手动管理',
-  draft_only: '仅草稿',
-  approval_required: '需审批',
-  auto_manage: '自动管理',
 };
 
 const toToolbarOptions = (
@@ -139,6 +106,7 @@ const toToolbarOptions = (
     ...option,
     optionKey: option.id,
     providerId: null,
+    providerName: null,
   }));
 
 type InputAreaBottomToolbarProps = {
@@ -195,10 +163,6 @@ type InputAreaBottomToolbarProps = {
   modelMode: 'thinking' | 'fast';
   webEnabled: boolean;
   setWebEnabled: (value: boolean) => void;
-  agentSelectionMode: 'auto' | 'manual';
-  setAgentSelectionMode: (value: 'auto' | 'manual') => void;
-  pinnedAgentId: AgentType;
-  setPinnedAgentId: (value: AgentType) => void;
   setIsAgentMode: (value: boolean) => void;
   translatePromptToEnglish: boolean;
   setTranslatePromptToEnglish: (value: boolean) => void;
@@ -220,6 +184,11 @@ type InputAreaBottomToolbarProps = {
   };
   sendSkill?: ChatMessage['skillData'];
   setSendSkill?: (skill: ChatMessage['skillData'] | null) => void;
+  skillBookContext?: {
+    activeConversationTitle?: string;
+    recentMessages?: ChatMessage[];
+    onCreateSkillFromConversation?: () => void;
+  };
   isSoraVideoModel: boolean;
   handlePickedFiles: (files: File[]) => void;
   archivedReadOnly?: boolean;
@@ -230,24 +199,105 @@ type QuickSkillPreset = {
   name: string;
   description: string;
   category: 'workflow' | 'agent' | 'edit' | 'research';
+  frontstagePriority: 'primary' | 'secondary';
+  executionType: 'agent' | 'workflow' | 'skill';
+  activationHint: string;
+  requiresAttachments?: boolean;
+  followUpMode?: 'auto-clarify' | 'direct-run';
   icon: React.ElementType;
   skillData: NonNullable<ChatMessage['skillData']>;
 };
 
+type SkillSectionKey = 'my-skills' | 'lovart-skills' | 'more-skills';
+
+type SkillCategoryTab = 'video' | 'social' | 'commerce' | 'branding';
+
+type CustomSkillConfig = Record<string, unknown> & {
+  name?: string;
+  iconName?: string;
+  summary?: string;
+  description?: string;
+  activationHint?: string;
+  instruction?: string;
+  customInstruction?: string;
+  examplePrompt?: string;
+  sourceConversationTitle?: string | null;
+  sourceUserPrompt?: string;
+  isCustomSkill?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+  lastUsedAt?: number;
+};
+
+const formatRelativeSkillTime = (timestamp?: number): string => {
+  const value = Number(timestamp || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const diff = Date.now() - value;
+  if (diff < 60 * 1000) return '刚刚使用';
+  if (diff < 60 * 60 * 1000) return `${Math.max(1, Math.floor(diff / (60 * 1000)))} 分钟前`;
+  if (diff < 24 * 60 * 60 * 1000) return `${Math.max(1, Math.floor(diff / (60 * 60 * 1000)))} 小时前`;
+  return `${Math.max(1, Math.floor(diff / (24 * 60 * 60 * 1000)))} 天前`;
+};
+
+const QUICK_SKILL_EXECUTION_LABELS: Record<
+  QuickSkillPreset['executionType'],
+  string
+> = {
+  agent: 'Skill',
+  workflow: 'Workflow',
+  skill: 'Skill',
+};
+
 const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
   {
-    id: 'autonomous-main-brain',
-    name: '智能技能编排',
-    description: '像 Lovart 一样先理解任务，再自动调用合适能力与流程。',
+    id: 'autonomous-video-director',
+    name: '视频创作',
+    description: '先理解脚本、镜头与参考，再优先往视频生成与分镜方向组织执行。',
     category: 'agent',
-    icon: Sparkles,
+    frontstagePriority: 'primary',
+    executionType: 'agent',
+    activationHint: '适合短视频、动画、分镜到视频、镜头节奏这类任务。',
+    followUpMode: 'auto-clarify',
+    icon: Video,
     skillData: {
       id: 'autonomous-main-brain',
-      name: '自主 Agent 路由',
+      name: '视频创作',
       iconName: 'Sparkles',
       config: {
+        frontstageSkillId: 'autonomous-video-director',
         allowAutonomousRouting: true,
         mode: 'unified-sidebar-agent',
+        routeIntent: 'video',
+        routeLabel: 'Video',
+        routeSummary: 'Prioritize storyboard, motion, video generation, and clip sequencing when the request allows it.',
+        preferredSkills: ['generateVideo', 'generateImage', 'smartEdit'],
+        suggestedTaskMode: 'generate',
+      },
+    },
+  },
+  {
+    id: 'autonomous-social-campaign',
+    name: '社媒内容',
+    description: '围绕封面、帖子、社媒系列图与传播场景来组织创意和执行。',
+    category: 'agent',
+    frontstagePriority: 'primary',
+    executionType: 'agent',
+    activationHint: '适合小红书、封面、海报、社媒系列内容和传播导向任务。',
+    followUpMode: 'auto-clarify',
+    icon: Hash,
+    skillData: {
+      id: 'autonomous-main-brain',
+      name: '社媒内容',
+      iconName: 'Hash',
+      config: {
+        frontstageSkillId: 'autonomous-social-campaign',
+        allowAutonomousRouting: true,
+        mode: 'unified-sidebar-agent',
+        routeIntent: 'social',
+        routeLabel: 'Social Media',
+        routeSummary: 'Bias toward campaign, poster, copy, and multi-asset social content workflows.',
+        preferredSkills: ['generateImage', 'generateCopy', 'generateVideo'],
+        suggestedTaskMode: 'generate',
       },
     },
   },
@@ -256,6 +306,11 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
     name: '电商一键方案',
     description: '围绕商品图与诉求自动补问并推进整套电商工作流。',
     category: 'workflow',
+    frontstagePriority: 'primary',
+    executionType: 'workflow',
+    activationHint: '进入电商工作流，会先补问再推进，不是普通聊天。',
+    requiresAttachments: true,
+    followUpMode: 'auto-clarify',
     icon: Library,
     skillData: {
       id: 'ecom-oneclick-workflow',
@@ -268,10 +323,41 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
     },
   },
   {
+    id: 'autonomous-brand-system',
+    name: '品牌视觉',
+    description: '围绕品牌语气、视觉系统、KV 与延展素材来拆解和推进任务。',
+    category: 'agent',
+    frontstagePriority: 'primary',
+    executionType: 'agent',
+    activationHint: '适合品牌调性、视觉系统、KV、campaign look and feel 这类任务。',
+    followUpMode: 'auto-clarify',
+    icon: Lightbulb,
+    skillData: {
+      id: 'autonomous-main-brain',
+      name: '品牌视觉',
+      iconName: 'Lightbulb',
+      config: {
+        frontstageSkillId: 'autonomous-brand-system',
+        allowAutonomousRouting: true,
+        mode: 'unified-sidebar-agent',
+        routeIntent: 'branding',
+        routeLabel: 'Branding',
+        routeSummary: 'Bias toward visual systems, brand direction, key visuals, and identity-aware execution.',
+        preferredSkills: ['generateImage', 'generateCopy', 'workspaceSearch'],
+        suggestedTaskMode: 'generate',
+      },
+    },
+  },
+  {
     id: 'clothing-studio-workflow',
     name: '服饰工作流',
     description: '适合服饰图、模特图和穿搭任务的多阶段处理流程。',
     category: 'workflow',
+    frontstagePriority: 'secondary',
+    executionType: 'workflow',
+    activationHint: '进入服饰工作流，会围绕服装图和诉求分阶段推进。',
+    requiresAttachments: true,
+    followUpMode: 'auto-clarify',
     icon: ImageIcon,
     skillData: {
       id: 'clothing-studio-workflow',
@@ -288,6 +374,11 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
     name: '中文详情页',
     description: '基于商品图和 brief 直接产出中文详情页套图。',
     category: 'workflow',
+    frontstagePriority: 'primary',
+    executionType: 'skill',
+    activationHint: '直接进入详情页套图执行，最好先附上商品图。',
+    requiresAttachments: true,
+    followUpMode: 'direct-run',
     icon: Box,
     skillData: {
       id: 'cn-detail-page',
@@ -300,6 +391,9 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
     name: 'One Click',
     description: '走 JKAI One-Click 流程，适合快速生成整套方案建议。',
     category: 'workflow',
+    executionType: 'skill',
+    activationHint: '直接进入 One Click 执行链路，优先给出整套方案建议。',
+    followUpMode: 'direct-run',
     icon: Zap,
     skillData: {
       id: 'jkai-oneclick',
@@ -309,26 +403,30 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
   },
 ];
 
-type RoleEntityEditorDraft = {
-  title: string;
-  summary: string;
-  avatarUrl: string;
-  tagsText: string;
-  useWhenText: string;
-  avoidWhenText: string;
-  durableRoleAddon: string;
-  governanceMode: RoleGovernanceMode;
-  allowMainBrainMutation: boolean;
-  allowMainBrainPromotion: boolean;
-  allowMainBrainArchive: boolean;
-};
+const SKILL_CATEGORY_TABS: Array<{
+  id: SkillCategoryTab;
+  label: string;
+}> = [
+  { id: 'video', label: 'Video' },
+  { id: 'social', label: 'Social Media' },
+  { id: 'commerce', label: 'E-Commerce' },
+  { id: 'branding', label: 'Branding' },
+];
 
-const normalizeRoleEditorTextList = (
-  value: string,
-  mode: 'line' | 'tag' = 'line',
-): string[] => {
-  const segments = mode === 'tag' ? value.split(/[\n,，]/) : value.split(/\r?\n/);
-  return segments.map((item) => item.trim()).filter(Boolean);
+const getSkillCategoryTab = (skill: QuickSkillPreset): SkillCategoryTab => {
+  if (skill.id === 'autonomous-video-director') {
+    return 'video';
+  }
+  if (skill.id === 'autonomous-social-campaign' || skill.id === 'jkai-oneclick') {
+    return 'social';
+  }
+  if (skill.id === 'cn-detail-page' || skill.id === 'ecom-oneclick-workflow') {
+    return 'commerce';
+  }
+  if (skill.id === 'autonomous-brand-system' || skill.id === 'clothing-studio-workflow') {
+    return 'branding';
+  }
+  return 'video';
 };
 
 export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
@@ -382,10 +480,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     modelMode,
     webEnabled,
     setWebEnabled,
-    agentSelectionMode,
-    setAgentSelectionMode,
-    pinnedAgentId,
-    setPinnedAgentId,
     setIsAgentMode,
     translatePromptToEnglish,
     setTranslatePromptToEnglish,
@@ -397,6 +491,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     browserAgent,
     sendSkill,
     setSendSkill,
+    skillBookContext,
     isSoraVideoModel,
     handlePickedFiles,
     archivedReadOnly = false,
@@ -424,7 +519,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
 
   const mappedImageSummary = getMappedModelDisplaySummary('image');
   const mappedVideoSummary = getMappedModelDisplaySummary('video');
-  const mappedScriptSummary = getMappedModelDisplaySummary('script');
   const mappedPrimaryImageConfig = getMappedPrimaryModelConfig('image');
   const mappedPrimaryVideoConfig = getMappedPrimaryModelConfig('video');
   const activeMappingSummary =
@@ -457,11 +551,12 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           id: getModelDisplayLabel(config.modelId),
           name: getModelDisplayLabel(config.modelId),
           providerId: config.providerId || null,
+          providerName: config.providerName || null,
           desc:
             preset?.desc ||
             (config.providerName
-              ? `当前已在设置中映射到 ${config.providerName}`
-              : '当前已在设置中映射'),
+              ? `当前默认来自 ${config.providerName}`
+              : '当前默认选项'),
           time: preset?.time,
           icon: preset?.icon || DEFAULT_MODEL_ICON_BY_CATEGORY.image,
           badge: preset?.badge,
@@ -480,11 +575,12 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           id: config.modelId,
           name: getModelDisplayLabel(config.modelId),
           providerId: config.providerId || null,
+          providerName: config.providerName || null,
           desc:
             preset?.desc ||
             (config.providerName
-              ? `当前已在设置中映射到 ${config.providerName}`
-              : '当前已在设置中映射'),
+              ? `当前默认来自 ${config.providerName}`
+              : '当前默认选项'),
           time: preset?.time,
           icon: preset?.icon || DEFAULT_MODEL_ICON_BY_CATEGORY.video,
           badge: preset?.badge,
@@ -505,10 +601,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   );
   const [showImageCountPicker, setShowImageCountPicker] = React.useState(false);
   const [showImageTextSettings, setShowImageTextSettings] = React.useState(false);
-  const [showAgentRolePicker, setShowAgentRolePicker] = React.useState(false);
   const [showSkillBook, setShowSkillBook] = React.useState(false);
-  const [skillBookQuery, setSkillBookQuery] = React.useState('');
-  const [rolePickerQuery, setRolePickerQuery] = React.useState('');
   const ratioPickerTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const ratioPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const videoSettingsTriggerRef = React.useRef<HTMLButtonElement | null>(null);
@@ -519,105 +612,23 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const imageTextSettingsPanelRef = React.useRef<HTMLDivElement | null>(null);
   const modeSelectorTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const modeSelectorPanelRef = React.useRef<HTMLDivElement | null>(null);
-  const agentRolePickerTriggerRef = React.useRef<HTMLButtonElement | null>(null);
-  const agentRolePickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const skillBookTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const skillBookPanelRef = React.useRef<HTMLDivElement | null>(null);
-  const [agentRolePickerAnchorRect, setAgentRolePickerAnchorRect] = React.useState<DOMRect | null>(
-    null,
-  );
   const modelPickerTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const modelPickerPanelRef = React.useRef<HTMLDivElement | null>(null);
   const modelPreferenceTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const modelPreferencePanelRef = React.useRef<HTMLDivElement | null>(null);
   const [modelPickerAnchorRect, setModelPickerAnchorRect] = React.useState<DOMRect | null>(null);
   const [skillBookAnchorRect, setSkillBookAnchorRect] = React.useState<DOMRect | null>(null);
-  const [roleInspectorAgentId, setRoleInspectorAgentId] = React.useState<AgentType | null>(null);
-  const [roleInspectorRoleId, setRoleInspectorRoleId] = React.useState<string | null>(null);
-  const [showRoleManagementPanel, setShowRoleManagementPanel] = React.useState(false);
-  const [roleInspectorDraft, setRoleInspectorDraft] = React.useState('');
-  const [roleEntityDraft, setRoleEntityDraft] = React.useState<RoleEntityEditorDraft | null>(null);
-  const [roleEntityBaseline, setRoleEntityBaseline] = React.useState<RoleEntityEditorDraft | null>(null);
-  const [roleInspectorRevision, setRoleInspectorRevision] = React.useState(0);
-  const [showMainBrainInspector, setShowMainBrainInspector] = React.useState(false);
-  const [mainBrainDraft, setMainBrainDraft] = React.useState('');
-  const currentAutoRoleSession = useAgentStore((state) => state.currentAutoRoleSession);
+  const [skillCategoryTab, setSkillCategoryTab] = React.useState<SkillCategoryTab>('video');
+  const [skillPreferenceVersion, setSkillPreferenceVersion] = React.useState(0);
+  const [editingCustomSkillId, setEditingCustomSkillId] = React.useState<string | null>(null);
+  const [customSkillDraftName, setCustomSkillDraftName] = React.useState('');
+  const [customSkillDraftSummary, setCustomSkillDraftSummary] = React.useState('');
+  const [customSkillDraftInstruction, setCustomSkillDraftInstruction] = React.useState('');
   const videoStartFrame = useAgentStore((state) => state.generation.videoStartFrame);
   const videoEndFrame = useAgentStore((state) => state.generation.videoEndFrame);
   const videoMultiRefs = useAgentStore((state) => state.generation.videoMultiRefs);
-  const selectedRoleId = useAgentStore((state) => state.selectedRoleId);
-  const selectedRoleSource = useAgentStore((state) => state.selectedRoleSource);
-  const setSelectedRoleSelection = useAgentStore(
-    (state) => state.actions.setSelectedRoleSelection,
-  );
-  const clearSelectedRoleSelection = useAgentStore(
-    (state) => state.actions.clearSelectedRoleSelection,
-  );
-  const availableAgentInfos = React.useMemo(() => listAgentInfos(), []);
-  const userAssetApi = React.useMemo(() => getStudioUserAssetApi(), []);
-  const skillPreferences = React.useMemo(
-    () => userAssetApi.getSkillPreferences(),
-    [sendSkill, userAssetApi],
-  );
-  const pinnedSkillIds = skillPreferences.pinnedSkillIds || [];
-  const recentSkillIds = skillPreferences.recentSkillIds || [];
-  const availableDurableRoles = React.useMemo(
-    () => userAssetApi.listRoles(),
-    [roleInspectorRevision, userAssetApi],
-  );
-  const selectedDurableRole = React.useMemo(
-    () => (selectedRoleId ? userAssetApi.getRoleById(selectedRoleId) : null),
-    [roleInspectorRevision, selectedRoleId, userAssetApi],
-  );
-  const resolvedPinnedAgentId = selectedDurableRole?.baseAgentId || pinnedAgentId;
-  const pinnedAgentInfo = getAgentInfo(resolvedPinnedAgentId);
-  const agentRoleLabel =
-    agentSelectionMode === 'manual'
-      ? selectedDurableRole?.title || pinnedAgentInfo.name
-      : '自动角色';
-  const agentRoleDescription =
-    agentSelectionMode === 'manual'
-      ? selectedDurableRole?.summary ||
-        `绑定到 ${pinnedAgentInfo.name} 专家壳${
-          selectedRoleSource ? ` · 来源 ${selectedRoleSource}` : ''
-        }`
-      : '由 Coco 先判断，再交给最合适的角色';
-  const openRoleInspector = React.useCallback(
-    (agentId: AgentType, roleId?: string | null) => {
-      setRoleInspectorAgentId(agentId);
-      setRoleInspectorRoleId(roleId || null);
-      setShowRoleManagementPanel(false);
-      setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(agentId));
-    },
-    [userAssetApi],
-  );
-  const openRoleManagementPanel = React.useCallback(
-    (agentId: AgentType, roleId?: string | null) => {
-      setRoleInspectorAgentId(agentId);
-      setRoleInspectorRoleId(roleId || null);
-      setShowRoleManagementPanel(true);
-      setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(agentId));
-    },
-    [userAssetApi],
-  );
-  const closeRoleInspector = React.useCallback(() => {
-    setRoleInspectorAgentId(null);
-    setRoleInspectorRoleId(null);
-    setShowRoleManagementPanel(false);
-    setRoleInspectorDraft('');
-  }, []);
-  const openMainBrainInspector = React.useCallback(() => {
-    setMainBrainDraft(userAssetApi.getMainBrainPreferences().join('\n'));
-    setShowMainBrainInspector(true);
-  }, [userAssetApi]);
-  const closeMainBrainInspector = React.useCallback(() => {
-    setShowMainBrainInspector(false);
-    setMainBrainDraft('');
-  }, []);
-  const syncAgentRolePickerPosition = React.useCallback(() => {
-    if (!agentRolePickerTriggerRef.current) return;
-    setAgentRolePickerAnchorRect(agentRolePickerTriggerRef.current.getBoundingClientRect());
-  }, []);
   const syncModelPickerPosition = React.useCallback(() => {
     if (!modelPickerTriggerRef.current) return;
     setModelPickerAnchorRect(modelPickerTriggerRef.current.getBoundingClientRect());
@@ -626,222 +637,395 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     if (!skillBookTriggerRef.current) return;
     setSkillBookAnchorRect(skillBookTriggerRef.current.getBoundingClientRect());
   }, []);
-  const inspectedAgentInfo = roleInspectorAgentId
-    ? getAgentInfo(roleInspectorAgentId)
-    : null;
-  const inspectedDurableRole = roleInspectorRoleId
-    ? userAssetApi.getRoleById(roleInspectorRoleId)
-    : null;
-  const inspectedRoleVersions = React.useMemo(
-    () =>
-      inspectedDurableRole ? userAssetApi.listRoleVersions(inspectedDurableRole.id) : [],
-    [inspectedDurableRole?.id, roleInspectorRevision, userAssetApi],
-  );
-  const inspectedRoleAuditEntries = React.useMemo(
-    () =>
-      inspectedDurableRole
-        ? userAssetApi
-            .listAuditEntries()
-            .filter(
-              (entry) =>
-                entry.targetId === inspectedDurableRole.id &&
-                (entry.targetKind === 'role-entity' || entry.targetKind === 'role-version'),
-            )
-        : [],
-    [inspectedDurableRole?.id, roleInspectorRevision, userAssetApi],
-  );
-  const inspectedRoleProfile = roleInspectorAgentId
-    ? getAgentRoleProfile(roleInspectorAgentId)
-    : null;
-  const inspectedLatestRoleDraft = roleInspectorAgentId
-    ? userAssetApi.getLatestRoleDraft(roleInspectorAgentId)
-    : null;
-  const latestAutoRoleDraftMeta = React.useMemo(() => {
-    const drafts = availableAgentInfos
-      .map((agent) => {
-        const draft = userAssetApi.getLatestRoleDraft(agent.id);
-        return draft ? { agent, draft } : null;
-      })
-      .filter(
-        (
-          item,
-        ): item is {
-          agent: (typeof availableAgentInfos)[number];
-          draft: NonNullable<ReturnType<typeof userAssetApi.getLatestRoleDraft>>;
-        } => Boolean(item),
-      )
-      .sort((left, right) => right.draft.updatedAt - left.draft.updatedAt);
-
-    return drafts[0] || null;
-  }, [availableAgentInfos, roleInspectorRevision, userAssetApi]);
-  const currentAutoRoleMeta = React.useMemo(() => {
-    if (!currentAutoRoleSession) return null;
-    return {
-      agent: getAgentInfo(currentAutoRoleSession.targetAgent),
-      roleStrategy: currentAutoRoleSession.roleStrategy,
-      roleStrategyReason: currentAutoRoleSession.roleStrategyReason,
-      draft: currentAutoRoleSession.roleDraft,
-      updatedAt: currentAutoRoleSession.updatedAt,
-      isLive: true,
-    };
-  }, [currentAutoRoleSession]);
-  const visibleAutoRoleMeta = React.useMemo(() => {
-    if (currentAutoRoleMeta) {
-      return currentAutoRoleMeta;
-    }
-    if (!latestAutoRoleDraftMeta) {
-      return null;
-    }
-    return {
-      agent: latestAutoRoleDraftMeta.agent,
-      roleStrategy: latestAutoRoleDraftMeta.draft.roleStrategy || 'reuse',
-      roleStrategyReason: latestAutoRoleDraftMeta.draft.roleStrategyReason || '',
-      draft: {
-        title: latestAutoRoleDraftMeta.draft.title,
-        summary: latestAutoRoleDraftMeta.draft.summary,
-        instructions: latestAutoRoleDraftMeta.draft.instructions,
-      },
-      updatedAt: latestAutoRoleDraftMeta.draft.updatedAt,
-      isLive: false,
-    };
-  }, [currentAutoRoleMeta, latestAutoRoleDraftMeta]);
-  const autoExecutionStrategyLabel = React.useMemo(() => {
-    if (!visibleAutoRoleMeta) return '';
-    if (visibleAutoRoleMeta.roleStrategy === 'create') return '新建方案';
-    if (visibleAutoRoleMeta.roleStrategy === 'augment') return '临时补充';
-    return '沿用现有方式';
-  }, [visibleAutoRoleMeta]);
-  const autoExecutionSummary = React.useMemo(() => {
-    if (!visibleAutoRoleMeta) return '';
-    const primary = String(visibleAutoRoleMeta.draft?.title || '').trim();
-    if (primary) return primary;
-    return String(
-      visibleAutoRoleMeta.draft?.summary || visibleAutoRoleMeta.roleStrategyReason || '',
-    )
-      .replace(/\s+/g, ' ')
-      .trim();
-  }, [visibleAutoRoleMeta]);
-  const normalizedRolePickerQuery = rolePickerQuery.trim().toLowerCase();
-  const filteredDurableRoles = React.useMemo(
-    () =>
-      availableDurableRoles.filter((role) => {
-        if (!normalizedRolePickerQuery) return true;
-        const roleAgentInfo = getAgentInfo(role.baseAgentId);
-        return [
-          role.title,
-          role.summary,
-          role.source,
-          role.governance.mode,
-          roleAgentInfo.name,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(normalizedRolePickerQuery);
-      }),
-    [availableDurableRoles, normalizedRolePickerQuery],
-  );
-  const filteredAgentInfos = React.useMemo(
-    () =>
-      availableAgentInfos.filter((agent) => {
-        if (!normalizedRolePickerQuery) return true;
-        return [agent.name, ...agent.capabilities]
-          .join(' ')
-          .toLowerCase()
-          .includes(normalizedRolePickerQuery);
-      }),
-    [availableAgentInfos, normalizedRolePickerQuery],
-  );
-  const currentRoleStatusMeta =
-    agentSelectionMode === 'auto'
-      ? {
-          badge: '自动分配',
-          title: '自动角色',
-          summary: visibleAutoRoleMeta?.draft?.title || '由 Coco 先判断，再调用合适的专家与技能',
-          accentClass: 'bg-blue-50 text-blue-700 border-blue-200/80',
-        }
-      : selectedDurableRole
-        ? {
-            badge: '已绑定角色',
-            title: selectedDurableRole.title,
-            summary:
-              selectedDurableRole.summary || `绑定到 ${pinnedAgentInfo.name} 专家壳`,
-            accentClass: 'bg-amber-50 text-amber-700 border-amber-200/80',
-          }
-        : {
-            badge: '已锁定专家',
-            title: pinnedAgentInfo.name,
-            summary: agentRoleDescription,
-            accentClass: 'bg-slate-100 text-slate-700 border-slate-200/90',
-          };
-  const getRoleSourceLabel = React.useCallback(
-    (source?: string | null) => ROLE_SOURCE_LABELS[String(source || '')] || '未标记来源',
-    [],
-  );
-  const getGovernanceModeLabel = React.useCallback(
-    (mode?: string | null) =>
-      GOVERNANCE_MODE_LABELS[String(mode || '')] || '未设置治理',
-    [],
-  );
-  const roleEntryStatusLabel =
-    agentSelectionMode === 'manual'
-      ? selectedRoleId
-        ? '固定角色'
-        : '固定专家'
-      : '自动分配';
-  const roleEntryTitle =
-    agentSelectionMode === 'manual' ? '执行方式' : '自动执行';
-  const roleEntryDescription =
-    agentSelectionMode === 'manual'
-      ? selectedDurableRole?.summary || `当前固定到 ${pinnedAgentInfo.name}`
-      : '默认由 Coco 判断任务并自动选择合适执行路径';
   const assistantModeLabel =
     creationMode === 'agent'
-      ? 'Agent'
+      ? '智能对话'
       : creationMode === 'image'
         ? '图片任务'
         : '视频任务';
-  const skillPresetMap = React.useMemo(
-    () => new Map(QUICK_SKILL_PRESETS.map((skill) => [skill.id, skill])),
-    [],
+  const activeQuickSkillId = getFrontstageSkillId(sendSkill);
+  const hasActiveQuickSkill = activeQuickSkillId.length > 0;
+  const skillPreferences = React.useMemo(
+    () => getStudioUserAssetApi().getSkillPreferences(),
+    [skillPreferenceVersion],
   );
-  const activeQuickSkillId = String(sendSkill?.id || '').trim();
   const visibleQuickSkills = React.useMemo(() => {
-    const normalizedQuery = skillBookQuery.trim().toLowerCase();
-    const base = QUICK_SKILL_PRESETS.filter((skill) => {
-      if (!normalizedQuery) return true;
-      return (
-        skill.name.toLowerCase().includes(normalizedQuery) ||
-        skill.description.toLowerCase().includes(normalizedQuery)
-      );
+    const curatedOrder = new Map(
+      QUICK_SKILL_PRESETS.map((skill, index) => [skill.id, index]),
+    );
+    return [...QUICK_SKILL_PRESETS].sort((left, right) => {
+      const leftOrder = curatedOrder.get(left.id) ?? 999;
+      const rightOrder = curatedOrder.get(right.id) ?? 999;
+      return leftOrder - rightOrder;
     });
-
-    return [...base].sort((left, right) => {
-      const leftPinned = pinnedSkillIds.includes(left.id) ? 1 : 0;
-      const rightPinned = pinnedSkillIds.includes(right.id) ? 1 : 0;
-      if (leftPinned !== rightPinned) return rightPinned - leftPinned;
-      const leftRecentIndex = recentSkillIds.indexOf(left.id);
-      const rightRecentIndex = recentSkillIds.indexOf(right.id);
-      const normalizedLeftRecent = leftRecentIndex === -1 ? 999 : leftRecentIndex;
-      const normalizedRightRecent = rightRecentIndex === -1 ? 999 : rightRecentIndex;
-      if (normalizedLeftRecent !== normalizedRightRecent) {
-        return normalizedLeftRecent - normalizedRightRecent;
-      }
-      return left.name.localeCompare(right.name, 'zh-CN');
-    });
-  }, [pinnedSkillIds, recentSkillIds, skillBookQuery]);
-  const recentQuickSkills = React.useMemo(
-    () =>
-      recentSkillIds
-        .map((id) => skillPresetMap.get(id))
-        .filter((item): item is QuickSkillPreset => Boolean(item)),
-    [recentSkillIds, skillPresetMap],
+  }, []);
+  const lovartSkillBookSkills = React.useMemo(
+    () => visibleQuickSkills,
+    [visibleQuickSkills],
   );
-  const pinnedQuickSkills = React.useMemo(
-    () =>
-      pinnedSkillIds
-        .map((id) => skillPresetMap.get(id))
-        .filter((item): item is QuickSkillPreset => Boolean(item)),
-    [pinnedSkillIds, skillPresetMap],
+  const visibleLovartSkillBookSkills = React.useMemo(
+    () => {
+      const inCategory = lovartSkillBookSkills.filter(
+        (skill) => getSkillCategoryTab(skill) === skillCategoryTab,
+      );
+      return inCategory.length > 0 ? inCategory : lovartSkillBookSkills;
+    },
+    [lovartSkillBookSkills, skillCategoryTab],
+  );
+  const customSkillPresets = React.useMemo<QuickSkillPreset[]>(() => {
+    const customConfigs = skillPreferences.customSkillConfigs || {};
+    return Object.entries(customConfigs)
+      .map(([skillId, config]) => {
+        const name = String(config?.name || '').trim();
+        const iconName = String(config?.iconName || 'Sparkles').trim();
+        if (!name) return null;
+        return {
+          id: skillId,
+          name,
+          description: String(
+            config?.summary ||
+              config?.description ||
+              '基于最近一次成功对话沉淀出的可复用 Skill。',
+          ).trim(),
+          category: 'workflow',
+          frontstagePriority: 'primary',
+          executionType: 'skill',
+          activationHint: String(
+            config?.activationHint || '复用这次对话里沉淀下来的执行方式。',
+          ).trim(),
+          followUpMode: 'direct-run',
+          icon: Sparkles,
+          skillData: {
+            id: skillId,
+            name,
+            iconName,
+            config: {
+              ...(typeof config === 'object' ? config : {}),
+              isCustomSkill: true,
+            },
+          },
+        } satisfies QuickSkillPreset;
+      })
+      .filter((skill): skill is QuickSkillPreset => Boolean(skill))
+      .sort((left, right) => {
+        const leftConfig = left.skillData.config as CustomSkillConfig | undefined;
+        const rightConfig = right.skillData.config as CustomSkillConfig | undefined;
+        const leftScore = Number(leftConfig?.lastUsedAt || leftConfig?.updatedAt || 0);
+        const rightScore = Number(rightConfig?.lastUsedAt || rightConfig?.updatedAt || 0);
+        return rightScore - leftScore;
+      });
+  }, [skillPreferences.customSkillConfigs]);
+  const mySkillEntries = customSkillPresets;
+  const blendedSkillEntries = React.useMemo(
+    () => [...mySkillEntries, ...visibleLovartSkillBookSkills],
+    [mySkillEntries, visibleLovartSkillBookSkills],
+  );
+
+  const editingCustomSkillConfig = React.useMemo(() => {
+    if (!editingCustomSkillId) return null;
+    const config = skillPreferences.customSkillConfigs?.[editingCustomSkillId];
+    if (!config || typeof config !== 'object') return null;
+    return config as CustomSkillConfig;
+  }, [editingCustomSkillId, skillPreferences.customSkillConfigs]);
+
+  const handleCreateSkillFromConversation = React.useCallback(() => {
+    const recentMessages = skillBookContext?.recentMessages || [];
+    const userMessages = recentMessages.filter((message) => message.role === 'user');
+    const modelMessages = recentMessages.filter((message) => message.role === 'model');
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    const lastModelMessage = modelMessages[modelMessages.length - 1];
+    const baseName = String(skillBookContext?.activeConversationTitle || lastUserMessage?.text || '新 Skill')
+      .trim()
+      .slice(0, 24);
+    const skillId = `custom-skill-${Date.now()}`;
+    const summary =
+      String(lastModelMessage?.text || lastUserMessage?.text || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120) || '基于当前对话总结出的可复用 Skill。';
+    upsertCustomSkillPreference({
+      id: skillId,
+      name: `${baseName} Skill`,
+      iconName: 'Sparkles',
+      pin: true,
+      config: {
+        summary,
+        activationHint: '基于此对话创建的 Skill Seed，可继续补充配置。',
+        instruction:
+          String(lastModelMessage?.text || lastUserMessage?.text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 360) ||
+          '先复用这次对话里验证过的思路，再根据新的输入补齐缺失信息并继续执行。',
+        examplePrompt: String(lastUserMessage?.text || '').trim().slice(0, 200),
+        sourceConversationTitle: skillBookContext?.activeConversationTitle || null,
+        sourceUserPrompt: String(lastUserMessage?.text || '').trim(),
+        allowAutonomousRouting: true,
+        mode: 'unified-sidebar-agent',
+      },
+    });
+    const createdSkill = {
+      id: skillId,
+      name: `${baseName} Skill`,
+      iconName: 'Sparkles',
+      config: {
+        isCustomSkill: true,
+        allowAutonomousRouting: true,
+        mode: 'unified-sidebar-agent',
+        summary,
+        instruction:
+          String(lastModelMessage?.text || lastUserMessage?.text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 360) ||
+          '先复用这次对话里验证过的思路，再根据新的输入补齐缺失信息并继续执行。',
+        examplePrompt: String(lastUserMessage?.text || '').trim().slice(0, 200),
+        sourceConversationTitle: skillBookContext?.activeConversationTitle || null,
+        sourceUserPrompt: String(lastUserMessage?.text || '').trim(),
+      },
+    } satisfies NonNullable<ChatMessage['skillData']>;
+    setSendSkill?.(createdSkill);
+    setActiveQuickSkillPreference(createdSkill);
+    setSkillPreferenceVersion((value) => value + 1);
+    skillBookContext?.onCreateSkillFromConversation?.();
+  }, [setSendSkill, skillBookContext]);
+
+  const openCustomSkillEditor = React.useCallback((skillId: string) => {
+    const config = skillPreferences.customSkillConfigs?.[skillId];
+    if (!config || typeof config !== 'object') return;
+    const typedConfig = config as CustomSkillConfig;
+    setEditingCustomSkillId(skillId);
+    setCustomSkillDraftName(String(typedConfig.name || '').trim());
+    setCustomSkillDraftSummary(
+      String(typedConfig.summary || typedConfig.description || '').trim(),
+    );
+    setCustomSkillDraftInstruction(
+      String(typedConfig.instruction || typedConfig.customInstruction || '').trim(),
+    );
+  }, [skillPreferences.customSkillConfigs]);
+
+  const closeCustomSkillEditor = React.useCallback(() => {
+    setEditingCustomSkillId(null);
+    setCustomSkillDraftName('');
+    setCustomSkillDraftSummary('');
+    setCustomSkillDraftInstruction('');
+  }, []);
+
+  const handleSaveCustomSkill = React.useCallback(() => {
+    if (!editingCustomSkillId || !editingCustomSkillConfig) return;
+    const nextName = customSkillDraftName.trim() || String(editingCustomSkillConfig.name || 'Custom Skill').trim();
+    const nextSummary =
+      customSkillDraftSummary.trim() ||
+      String(editingCustomSkillConfig.summary || editingCustomSkillConfig.description || '').trim();
+    const nextInstruction =
+      customSkillDraftInstruction.trim() ||
+      String(editingCustomSkillConfig.instruction || editingCustomSkillConfig.customInstruction || '').trim();
+    upsertCustomSkillPreference({
+      id: editingCustomSkillId,
+      name: nextName,
+      iconName: String(editingCustomSkillConfig.iconName || 'Sparkles'),
+      config: {
+        ...editingCustomSkillConfig,
+        summary: nextSummary,
+        description: nextSummary,
+        instruction: nextInstruction,
+        customInstruction: nextInstruction,
+      },
+    });
+    if (activeQuickSkillId === editingCustomSkillId) {
+      const nextSkill = {
+        id: editingCustomSkillId,
+        name: nextName,
+        iconName: String(editingCustomSkillConfig.iconName || 'Sparkles'),
+        config: {
+          ...editingCustomSkillConfig,
+          isCustomSkill: true,
+          summary: nextSummary,
+          description: nextSummary,
+          instruction: nextInstruction,
+          customInstruction: nextInstruction,
+        },
+      } satisfies NonNullable<ChatMessage['skillData']>;
+      setSendSkill?.(nextSkill);
+      setActiveQuickSkillPreference(nextSkill);
+    }
+    setSkillPreferenceVersion((value) => value + 1);
+    closeCustomSkillEditor();
+  }, [
+    activeQuickSkillId,
+    closeCustomSkillEditor,
+    customSkillDraftInstruction,
+    customSkillDraftName,
+    customSkillDraftSummary,
+    editingCustomSkillConfig,
+    editingCustomSkillId,
+    setSendSkill,
+  ]);
+
+  React.useEffect(() => {
+    const handleOpenEditor = () => {
+      const activeSkillId = getFrontstageSkillId(sendSkill);
+      if (!activeSkillId) return;
+      const activeConfig = sendSkill?.config as Record<string, unknown> | undefined;
+      if (activeConfig?.isCustomSkill !== true) return;
+      openCustomSkillEditor(activeSkillId);
+    };
+    window.addEventListener('workspace:edit-active-skill', handleOpenEditor as EventListener);
+    return () => {
+      window.removeEventListener('workspace:edit-active-skill', handleOpenEditor as EventListener);
+    };
+  }, [openCustomSkillEditor, sendSkill?.config, sendSkill?.id]);
+
+  const renderSkillBookMeta = React.useCallback((skill: QuickSkillPreset) => {
+    const isCustomSkill =
+      (skill.skillData?.config as Record<string, unknown> | undefined)?.isCustomSkill === true;
+    const metaTokens: string[] = [];
+    if (isCustomSkill) metaTokens.push('My Skill');
+    if (skill.requiresAttachments) metaTokens.push('需参考图');
+    if (skill.followUpMode === 'direct-run') metaTokens.push('直接执行');
+    if (!skill.requiresAttachments && skill.followUpMode === 'auto-clarify') {
+      metaTokens.push('会先补问');
+    }
+    if (!isCustomSkill && metaTokens.length === 0) {
+      metaTokens.push(QUICK_SKILL_EXECUTION_LABELS[skill.executionType]);
+    }
+    return metaTokens.slice(0, 2);
+  }, []);
+
+  const renderSkillBookDescription = React.useCallback((skill: QuickSkillPreset) => {
+    const config =
+      skill.skillData?.config && typeof skill.skillData.config === 'object'
+        ? (skill.skillData.config as Record<string, unknown>)
+        : undefined;
+    const summary = String(config?.summary || config?.description || '').trim();
+    const examplePrompt = String(config?.examplePrompt || config?.sourceUserPrompt || '').trim();
+    if ((config?.isCustomSkill as boolean | undefined) === true) {
+      return summary || examplePrompt || skill.description;
+    }
+    return skill.description;
+  }, []);
+
+  const renderSkillBookSecondaryMeta = React.useCallback((skill: QuickSkillPreset) => {
+    const config =
+      skill.skillData?.config && typeof skill.skillData.config === 'object'
+        ? (skill.skillData.config as CustomSkillConfig)
+        : undefined;
+    const sourceConversation = String(config?.sourceConversationTitle || '').trim();
+    const lastUsedText = formatRelativeSkillTime(Number(config?.lastUsedAt || 0));
+    const examplePrompt = String(config?.examplePrompt || config?.sourceUserPrompt || '').trim();
+    if ((config?.isCustomSkill as boolean | undefined) !== true) return null;
+    return {
+      sourceConversation,
+      lastUsedText,
+      examplePrompt,
+    };
+  }, []);
+
+  const renderSkillBookCard = React.useCallback(
+    (skill: QuickSkillPreset) => {
+      const isActive = activeQuickSkillId === skill.id;
+      const isCustomSkill =
+        (skill.skillData?.config as Record<string, unknown> | undefined)?.isCustomSkill === true;
+      const metaTokens = renderSkillBookMeta(skill);
+      const description = renderSkillBookDescription(skill);
+      const secondaryMeta = renderSkillBookSecondaryMeta(skill);
+        return (
+        <button
+          key={skill.id}
+          type="button"
+          data-skill-book-select={skill.id}
+          onClick={() => {
+            setSendSkill?.(skill.skillData);
+            setActiveQuickSkillPreference(skill.skillData);
+            setCreationMode('agent');
+            setIsAgentMode(true);
+            setShowSkillBook(false);
+          }}
+          title={skill.activationHint}
+          className={`group flex w-full items-start gap-3 rounded-[16px] px-2.5 py-2.5 text-left transition ${
+            isActive
+              ? 'bg-slate-50/92 text-slate-900'
+              : 'bg-transparent hover:bg-slate-50/78'
+          }`}
+        >
+          <div
+            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/70 ${
+              isActive
+                ? 'bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(226,232,240,0.96))] text-slate-700 shadow-[0_10px_22px_-18px_rgba(15,23,42,0.28)]'
+                : 'bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] text-slate-500'
+            }`}
+          >
+            <skill.icon size={15} strokeWidth={1.9} />
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-slate-900">
+                {skill.name}
+              </div>
+              {isCustomSkill ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openCustomSkillEditor(skill.id);
+                  }}
+                  className="mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium text-slate-300 opacity-0 transition group-hover:opacity-100 hover:text-slate-600"
+                  title="编辑 Skill"
+                  aria-label="编辑 Skill"
+                >
+                  编辑
+                </button>
+              ) : null}
+            </div>
+            <div className={`mt-0.5 line-clamp-2 text-[12px] leading-5 ${
+              isCustomSkill ? 'text-violet-600/70' : 'text-slate-500'
+            }`}>
+              {description}
+            </div>
+            {isCustomSkill && secondaryMeta ? (
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
+                {secondaryMeta.sourceConversation ? (
+                  <span className="truncate">
+                    来源：{secondaryMeta.sourceConversation}
+                  </span>
+                ) : null}
+                {secondaryMeta.lastUsedText ? (
+                  <span>{secondaryMeta.lastUsedText}</span>
+                ) : null}
+                {!secondaryMeta.sourceConversation && secondaryMeta.examplePrompt ? (
+                  <span className="truncate">示例：{secondaryMeta.examplePrompt}</span>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="mt-1.25 flex min-w-0 flex-wrap items-center gap-1.5">
+              {metaTokens.map((token) => (
+                <span
+                  key={`${skill.id}-${token}`}
+                  className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                    isCustomSkill
+                      ? 'bg-violet-50 text-violet-600/80'
+                      : 'bg-slate-100/90 text-slate-500'
+                  }`}
+                >
+                  {token}
+                </span>
+              ))}
+            </div>
+          </div>
+        </button>
+      );
+    },
+    [
+      activeQuickSkillId,
+      openCustomSkillEditor,
+      renderSkillBookDescription,
+      renderSkillBookMeta,
+      renderSkillBookSecondaryMeta,
+      setCreationMode,
+      setIsAgentMode,
+      setSendSkill,
+    ],
   );
   const inlineAttachmentFiles = React.useMemo(
     () =>
@@ -882,6 +1066,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     !inputBlocks.every((block) => block.type === 'text' && !block.text);
   const agentModeSummaryLabel = modelMode === 'thinking' ? '深思' : '快速';
   const agentNetworkSummaryLabel = webEnabled ? '联网检索已开启' : '仅使用当前上下文';
+  const updateChatWebEnabled = (nextValue: boolean) => {
+    setWebEnabled(nextValue);
+    getStudioUserAssetApi().setWorkspacePreferences({ chatWebEnabled: nextValue });
+  };
   const unifiedIconButtonClass =
     'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200';
   const secondaryToolbarButtonClass =
@@ -890,82 +1078,18 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     'absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-slate-900';
   const lovartModePillClass =
     'inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900';
-  const inspectedBuiltInPrompt = roleInspectorAgentId
-    ? getAgentPromptLayers(roleInspectorAgentId).systemBaselinePrompt
-    : '';
-  const inspectedPromptAddon = roleInspectorAgentId
-    ? userAssetApi.getAgentPromptAddon(roleInspectorAgentId)
-    : '';
-  const inspectedEffectivePrompt = roleInspectorAgentId
-    ? getEffectiveAgentPrompt(roleInspectorAgentId)
-    : '';
-  const inspectedMainBrainBlock = roleInspectorAgentId
-    ? getAgentPromptLayers(roleInspectorAgentId).mainBrainPreferenceBlock
-    : '';
-  const mainBrainStoredLines = React.useMemo(
-    () => userAssetApi.getMainBrainPreferences(),
-    [roleInspectorRevision, userAssetApi],
+  const floatingPanelClass =
+    'overflow-hidden rounded-[20px] border border-slate-200/85 bg-white/97 shadow-[0_18px_44px_-28px_rgba(15,23,42,0.22)] backdrop-blur-md animate-in fade-in slide-in-from-bottom-3 duration-200';
+  const currentModelPreferenceLabel =
+    modelPreferenceTab === 'video'
+      ? effectiveVideoPreference
+      : modelPreferenceTab === 'image'
+        ? effectiveImagePreference
+        : preferred3DModel;
+  const shouldShowCreateSkillRow = Boolean(
+    skillBookContext?.activeConversationTitle ||
+      (skillBookContext?.recentMessages?.length || 0) > 0,
   );
-  const mainBrainDefaultText = React.useMemo(
-    () => getDefaultMainBrainPreferences().join('\n'),
-    [],
-  );
-  const mainBrainDirty =
-    normalizeMainBrainPreferences(mainBrainDraft).join('\n') !==
-    normalizeMainBrainPreferences(mainBrainStoredLines).join('\n');
-  const inspectedPromptDirty =
-    roleInspectorAgentId !== null &&
-    roleInspectorDraft.trim() !== inspectedPromptAddon.trim();
-  const inspectedHasAddon =
-    roleInspectorAgentId !== null && hasAgentPromptAddon(roleInspectorAgentId);
-  const buildRoleEntityEditorDraft = (): RoleEntityEditorDraft | null => {
-    if (!roleInspectorAgentId || !inspectedAgentInfo) return null;
-    return {
-      title:
-        inspectedDurableRole?.title ||
-        inspectedLatestRoleDraft?.title ||
-        `${inspectedAgentInfo.name} 自定义角色`,
-      summary:
-        inspectedDurableRole?.summary ||
-        inspectedLatestRoleDraft?.summary ||
-        inspectedRoleProfile?.purpose ||
-        '',
-      avatarUrl: inspectedDurableRole?.avatarUrl || '',
-      tagsText: inspectedDurableRole?.tags.join('，') || '',
-      useWhenText:
-        inspectedDurableRole?.useWhen.join('\n') || inspectedRoleProfile?.useWhen.join('\n') || '',
-      avoidWhenText:
-        inspectedDurableRole?.avoidWhen.join('\n') ||
-        inspectedRoleProfile?.avoidWhen.join('\n') ||
-        '',
-      durableRoleAddon:
-        inspectedDurableRole?.promptLayers.durableRoleAddon ||
-        roleInspectorDraft.trim() ||
-        (inspectedLatestRoleDraft ? buildRoleDraftAddonText(inspectedLatestRoleDraft) : ''),
-      governanceMode: inspectedDurableRole?.governance.mode || 'approval_required',
-      allowMainBrainMutation: inspectedDurableRole?.governance.allowMainBrainMutation || false,
-      allowMainBrainPromotion: inspectedDurableRole?.governance.allowMainBrainPromotion || false,
-      allowMainBrainArchive: inspectedDurableRole?.governance.allowMainBrainArchive || false,
-    };
-  };
-  const roleEntityDirty = React.useMemo(
-    () =>
-      Boolean(roleEntityDraft) &&
-      Boolean(roleEntityBaseline) &&
-      JSON.stringify(roleEntityDraft) !== JSON.stringify(roleEntityBaseline),
-    [roleEntityBaseline, roleEntityDraft],
-  );
-  const roleEntityCanSubmit = Boolean(roleEntityDraft?.title.trim());
-  React.useEffect(() => {
-    if (!showRoleManagementPanel) {
-      setRoleEntityDraft(null);
-      setRoleEntityBaseline(null);
-      return;
-    }
-    const nextDraft = buildRoleEntityEditorDraft();
-    setRoleEntityDraft(nextDraft);
-    setRoleEntityBaseline(nextDraft);
-  }, [showRoleManagementPanel, roleInspectorAgentId, roleInspectorRoleId, roleInspectorRevision]);
   React.useEffect(() => {
     if (!showModeSelector) return;
 
@@ -989,42 +1113,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [setShowModeSelector, showModeSelector]);
-  React.useEffect(() => {
-    if (!showAgentRolePicker) {
-      setRolePickerQuery('');
-      return;
-    }
-
-    syncAgentRolePickerPosition();
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (agentRolePickerPanelRef.current?.contains(target)) return;
-      if (agentRolePickerTriggerRef.current?.contains(target)) return;
-      setShowAgentRolePicker(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowAgentRolePicker(false);
-      }
-    };
-    const handleViewportChange = () => {
-      syncAgentRolePickerPosition();
-    };
-
-    window.addEventListener('resize', handleViewportChange);
-    window.addEventListener('scroll', handleViewportChange, true);
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('resize', handleViewportChange);
-      window.removeEventListener('scroll', handleViewportChange, true);
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [showAgentRolePicker, syncAgentRolePickerPosition]);
   React.useEffect(() => {
     if (!showModelPicker) return;
 
@@ -1162,224 +1250,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     showRatioPicker,
     showVideoSettingsDropdown,
   ]);
-  const handleSavePromptAddon = React.useCallback(() => {
-    if (!roleInspectorAgentId) return;
-    setAgentPromptAddon(roleInspectorAgentId, roleInspectorDraft);
-    setRoleInspectorDraft(userAssetApi.getAgentPromptAddon(roleInspectorAgentId));
-    setRoleInspectorRevision((value) => value + 1);
-  }, [roleInspectorAgentId, roleInspectorDraft, userAssetApi]);
-  const handleResetPromptAddon = React.useCallback(() => {
-    if (!roleInspectorAgentId) return;
-    clearAgentPromptAddon(roleInspectorAgentId);
-    setRoleInspectorDraft('');
-    setRoleInspectorRevision((value) => value + 1);
-  }, [roleInspectorAgentId]);
-  const handleApplyLatestRoleDraft = React.useCallback(() => {
-    if (!inspectedLatestRoleDraft) return;
-    const nextDraft = buildRoleDraftAddonText(inspectedLatestRoleDraft);
-    setRoleInspectorDraft((current) =>
-      current.trim()
-        ? `${current.trim()}\n\n${nextDraft}`
-        : nextDraft,
-    );
-  }, [inspectedLatestRoleDraft]);
-  const handleSaveLatestRoleDraftAsFormalRole = React.useCallback(() => {
-    if (!roleInspectorAgentId || !inspectedLatestRoleDraft) return;
-    const persistedDraft = userAssetApi.saveTemporaryRoleDraft({
-      targetRoleId: roleInspectorRoleId || selectedRoleId || null,
-      targetBaseAgentId: roleInspectorAgentId,
-      title: inspectedLatestRoleDraft.title,
-      summary: inspectedLatestRoleDraft.summary,
-      instructions: inspectedLatestRoleDraft.instructions,
-      roleStrategy: inspectedLatestRoleDraft.roleStrategy || 'augment',
-      roleStrategyReason:
-        inspectedLatestRoleDraft.roleStrategyReason || '从专家壳最近自动草案提升为长期角色。',
-      promotionSuggested: true,
-    });
-    if (!persistedDraft) return;
-    const promotedRole = userAssetApi.promoteTemporaryRole(persistedDraft.id, {
-      targetRoleId: roleInspectorRoleId || selectedRoleId || null,
-    });
-    if (!promotedRole) return;
-    setPinnedAgentId(promotedRole.baseAgentId);
-    setSelectedRoleSelection({
-      roleId: promotedRole.id,
-      roleSource: promotedRole.source,
-      baseAgentId: promotedRole.baseAgentId,
-      governanceMode: promotedRole.governance.mode,
-      allowMainBrainRoleMutation: promotedRole.governance.allowMainBrainMutation,
-      allowMainBrainRolePromotion: promotedRole.governance.allowMainBrainPromotion,
-    });
-    setRoleInspectorRoleId(promotedRole.id);
-    setRoleInspectorRevision((value) => value + 1);
-  }, [
-    inspectedLatestRoleDraft,
-    roleInspectorAgentId,
-    roleInspectorRoleId,
-    selectedRoleId,
-    setPinnedAgentId,
-    setSelectedRoleSelection,
-    userAssetApi,
-  ]);
-  const handleClearLatestRoleDraft = React.useCallback(() => {
-    if (!roleInspectorAgentId) return;
-    userAssetApi.clearLatestRoleDraft(roleInspectorAgentId);
-    setRoleInspectorRevision((value) => value + 1);
-  }, [roleInspectorAgentId, userAssetApi]);
-  const handleRoleEntityDraftChange = React.useCallback((patch: Partial<RoleEntityEditorDraft>) => {
-    setRoleEntityDraft((current) => (current ? { ...current, ...patch } : current));
-  }, []);
-  const handleResetRoleEntityDraft = React.useCallback(() => {
-    setRoleEntityDraft(roleEntityBaseline ? { ...roleEntityBaseline } : null);
-  }, [roleEntityBaseline]);
-  const handleSaveRoleEntity = React.useCallback(() => {
-    if (!roleInspectorAgentId || !roleEntityDraft) return;
-    const savedRole = userAssetApi.saveRole(
-      {
-        ...(inspectedDurableRole ? { id: inspectedDurableRole.id } : {}),
-        title: roleEntityDraft.title,
-        summary: roleEntityDraft.summary,
-        avatarUrl: roleEntityDraft.avatarUrl.trim(),
-        baseAgentId: roleInspectorAgentId,
-        source: inspectedDurableRole?.source || 'user',
-        status: inspectedDurableRole?.status || 'active',
-        tags: normalizeRoleEditorTextList(roleEntityDraft.tagsText, 'tag'),
-        useWhen: normalizeRoleEditorTextList(roleEntityDraft.useWhenText, 'line'),
-        avoidWhen: normalizeRoleEditorTextList(roleEntityDraft.avoidWhenText, 'line'),
-        toolPolicy: inspectedDurableRole?.toolPolicy || {
-          allowedSkills: [],
-          blockedSkills: [],
-          canRouteSubtasks: true,
-          canUseNetworkResearch: true,
-        },
-        routingPolicy: inspectedDurableRole?.routingPolicy || {
-          priority: 100,
-          keywords: [],
-          preferredTaskModes: [],
-          autoRouteEligible: true,
-        },
-        promptLayers: {
-          systemBaseline: inspectedDurableRole?.promptLayers.systemBaseline || inspectedBuiltInPrompt,
-          mainBrainShared: inspectedDurableRole?.promptLayers.mainBrainShared || inspectedMainBrainBlock,
-          durableRoleAddon: roleEntityDraft.durableRoleAddon.trim(),
-        },
-        governance: {
-          mode: roleEntityDraft.governanceMode,
-          requiresHumanApproval: roleEntityDraft.governanceMode !== 'auto_manage',
-          allowMainBrainMutation: roleEntityDraft.allowMainBrainMutation,
-          allowMainBrainPromotion: roleEntityDraft.allowMainBrainPromotion,
-          allowMainBrainArchive: roleEntityDraft.allowMainBrainArchive,
-        },
-      },
-      {
-        preferredId: inspectedDurableRole?.id,
-      },
-    );
-    if (!savedRole) return;
-    setAgentSelectionMode('manual');
-    setPinnedAgentId(savedRole.baseAgentId);
-    setSelectedRoleSelection({
-      roleId: savedRole.id,
-      roleSource: savedRole.source,
-      baseAgentId: savedRole.baseAgentId,
-      governanceMode: savedRole.governance.mode,
-      allowMainBrainRoleMutation: savedRole.governance.allowMainBrainMutation,
-      allowMainBrainRolePromotion: savedRole.governance.allowMainBrainPromotion,
-    });
-    setRoleInspectorRoleId(savedRole.id);
-    setRoleInspectorRevision((value) => value + 1);
-  }, [
-    inspectedBuiltInPrompt,
-    inspectedDurableRole,
-    inspectedMainBrainBlock,
-    roleEntityDraft,
-    roleInspectorAgentId,
-    setAgentSelectionMode,
-    setPinnedAgentId,
-    setSelectedRoleSelection,
-    userAssetApi,
-  ]);
-  const handlePublishRole = React.useCallback(() => {
-    if (!inspectedDurableRole) return;
-    const publishedRole = userAssetApi.saveRole(
-      {
-        ...inspectedDurableRole,
-        status: 'active',
-      },
-      {
-        preferredId: inspectedDurableRole.id,
-      },
-    );
-    if (!publishedRole) return;
-    if (selectedRoleId === publishedRole.id) {
-      setPinnedAgentId(publishedRole.baseAgentId);
-      setSelectedRoleSelection({
-        roleId: publishedRole.id,
-        roleSource: publishedRole.source,
-        baseAgentId: publishedRole.baseAgentId,
-        governanceMode: publishedRole.governance.mode,
-        allowMainBrainRoleMutation: publishedRole.governance.allowMainBrainMutation,
-        allowMainBrainRolePromotion: publishedRole.governance.allowMainBrainPromotion,
-      });
-    }
-    setRoleInspectorRoleId(publishedRole.id);
-    setRoleInspectorRevision((value) => value + 1);
-  }, [inspectedDurableRole, selectedRoleId, setPinnedAgentId, setSelectedRoleSelection, userAssetApi]);
-  const handleArchiveRole = React.useCallback(() => {
-    if (!inspectedDurableRole) return;
-    userAssetApi.archiveRole(inspectedDurableRole.id);
-    const archivedRole = userAssetApi.getRoleById(inspectedDurableRole.id);
-    if (!archivedRole) return;
-    if (selectedRoleId === archivedRole.id) {
-      setPinnedAgentId(archivedRole.baseAgentId);
-      clearSelectedRoleSelection();
-      setAgentSelectionMode('manual');
-    }
-    setRoleInspectorRoleId(archivedRole.id);
-    setRoleInspectorRevision((value) => value + 1);
-  }, [
-    clearSelectedRoleSelection,
-    inspectedDurableRole,
-    selectedRoleId,
-    setAgentSelectionMode,
-    setPinnedAgentId,
-    userAssetApi,
-  ]);
-  const handleRollbackRoleVersion = React.useCallback(
-    (version: number) => {
-      if (!inspectedDurableRole) return;
-      const restoredRole = userAssetApi.rollbackRoleVersion(inspectedDurableRole.id, version);
-      if (!restoredRole) return;
-      if (selectedRoleId === restoredRole.id) {
-        setPinnedAgentId(restoredRole.baseAgentId);
-        setSelectedRoleSelection({
-          roleId: restoredRole.id,
-          roleSource: restoredRole.source,
-          baseAgentId: restoredRole.baseAgentId,
-          governanceMode: restoredRole.governance.mode,
-          allowMainBrainRoleMutation: restoredRole.governance.allowMainBrainMutation,
-          allowMainBrainRolePromotion: restoredRole.governance.allowMainBrainPromotion,
-        });
-      }
-      setRoleInspectorRoleId(restoredRole.id);
-      setRoleInspectorRevision((value) => value + 1);
-    },
-    [inspectedDurableRole, selectedRoleId, setPinnedAgentId, setSelectedRoleSelection, userAssetApi],
-  );
-  const handleSaveMainBrainPreferences = React.useCallback(() => {
-    userAssetApi.setMainBrainPreferences(normalizeMainBrainPreferences(mainBrainDraft));
-    setMainBrainDraft(userAssetApi.getMainBrainPreferences().join('\n'));
-    setRoleInspectorRevision((value) => value + 1);
-  }, [mainBrainDraft, userAssetApi]);
-  const handleResetMainBrainPreferences = React.useCallback(() => {
-    userAssetApi.setMainBrainPreferences([]);
-    setMainBrainDraft('');
-    setRoleInspectorRevision((value) => value + 1);
-  }, [userAssetApi]);
   const modeOptions = [
     {
       id: 'agent' as const,
-      label: 'Agent',
+      label: '智能对话',
       icon: Sparkles,
     },
     {
@@ -1409,7 +1283,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
               onClick={() => {
                 setCreationMode(mode.id);
                 setShowModeSelector(false);
-                setShowAgentRolePicker(false);
                 setIsAgentMode(mode.id === 'agent');
               }}
               className={`flex w-full items-center gap-2.5 rounded-[14px] px-2.5 py-2 text-left transition ${
@@ -1432,9 +1305,11 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       <div className="mt-1 border-t border-slate-200/70 px-1.25 pb-1 pt-1.5">
         <button
           type="button"
-          onClick={() =>
-            handleModeSwitch(modelMode === 'thinking' ? 'fast' : 'thinking')
-          }
+          onClick={() => {
+            const nextMode = modelMode === 'thinking' ? 'fast' : 'thinking';
+            handleModeSwitch(nextMode);
+            getStudioUserAssetApi().setWorkspacePreferences({ chatModelMode: nextMode });
+          }}
           className={`mb-1 flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
             modelMode === 'thinking'
               ? 'bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.95)]'
@@ -1455,7 +1330,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         </button>
         <button
           type="button"
-          onClick={() => setWebEnabled(!webEnabled)}
+          onClick={() => updateChatWebEnabled(!webEnabled)}
           className={`flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
             webEnabled
               ? 'bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(191,219,254,0.95)]'
@@ -2039,8 +1914,8 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           )}
 
           {creationMode === 'agent' && (
-            <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 pb-2 pt-0.5">
-              <div className="relative flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-1.5 px-1.5 pb-1.5 pt-0.5">
+              <div className="relative flex min-w-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -2059,332 +1934,13 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   title={`当前模式：${assistantModeLabel}`}
                   aria-label={`当前模式：${assistantModeLabel}`}
                 >
-                  <span>Agent</span>
+                  <span>{assistantModeLabel}</span>
                   <ChevronDown size={14} strokeWidth={2} />
                 </button>
                 {modeSelectorMenu}
               </div>
 
-              <div className="ml-auto flex min-w-0 items-center justify-end gap-1.5">
-              <div className="hidden">
-                <button
-                  onClick={() => setWebEnabled(!webEnabled)}
-                  className={`${unifiedIconButtonClass} ${
-                    webEnabled
-                      ? 'bg-blue-50 text-blue-600 shadow-[inset_0_0_0_1px_rgba(191,219,254,0.95)]'
-                      : secondaryToolbarButtonClass
-                  }`}
-                  title={webEnabled ? '已开启联网检索' : '当前不联网'}
-                  aria-label="联网开关"
-                >
-                  <Globe size={16} strokeWidth={1.9} />
-                </button>
-                {webEnabled ? <span className={secondaryToolbarActiveDotClass} /> : null}
-              </div>
-
-              <div className="relative">
-                <button
-                  ref={agentRolePickerTriggerRef}
-                  type="button"
-                  onClick={(event) => {
-                    setAgentRolePickerAnchorRect(event.currentTarget.getBoundingClientRect());
-                    setShowAgentRolePicker(!showAgentRolePicker);
-                    setShowModeSelector(false);
-                    setShowModelPicker(false);
-                    setShowRatioPicker(false);
-                    setShowVideoSettingsDropdown(false);
-                  }}
-                  className={`${unifiedIconButtonClass} ${
-                    agentSelectionMode === 'manual'
-                      ? 'bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.95)]'
-                      : secondaryToolbarButtonClass
-                  }`}
-                  title={agentSelectionMode === 'manual' ? `执行偏好：${agentRoleLabel}` : '执行偏好：自动分配'}
-                  aria-label={agentSelectionMode === 'manual' ? `执行偏好：${agentRoleLabel}` : '执行偏好：自动分配'}
-                >
-                  <Sparkles size={16} strokeWidth={1.9} />
-                </button>
-                {agentSelectionMode === 'manual' ? (
-                  <span className={secondaryToolbarActiveDotClass} />
-                ) : null}
-                {showAgentRolePicker &&
-                  agentRolePickerAnchorRect &&
-                  typeof document !== 'undefined' &&
-                  createPortal(
-                    <div
-                      ref={agentRolePickerPanelRef}
-                      className="fixed z-[320] flex max-h-[min(78vh,760px)] w-[min(352px,calc(100vw-24px))] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white p-2 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.28)] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200"
-                      style={{
-                        right: Math.max(12, window.innerWidth - agentRolePickerAnchorRect.right),
-                        bottom: Math.max(
-                          12,
-                          window.innerHeight - agentRolePickerAnchorRect.top + 12,
-                        ),
-                      }}
-                    >
-                      <div className="sticky top-0 z-10 rounded-[20px] bg-white px-2.5 pb-2 pt-1.5">
-                        <div className="flex items-center justify-between gap-3 px-1">
-                          <div className="text-[13px] font-semibold text-slate-900">
-                            执行方式
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openRoleManagementPanel(resolvedPinnedAgentId);
-                              setShowAgentRolePicker(false);
-                            }}
-                            className="inline-flex h-7 items-center rounded-full bg-slate-100 px-2.5 text-[10px] font-medium text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-                          >
-                            管理
-                          </button>
-                        </div>
-                        <div className="relative mt-2.5">
-                          <Search
-                            size={13}
-                            strokeWidth={1.8}
-                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                          />
-                          <input
-                            type="text"
-                            value={rolePickerQuery}
-                            onChange={(event) => setRolePickerQuery(event.target.value)}
-                            placeholder="搜索方式或专家"
-                            className="h-8.5 w-full rounded-2xl bg-slate-50/90 pl-9 pr-10 text-[11px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]"
-                          />
-                          {rolePickerQuery ? (
-                            <button
-                              type="button"
-                              onClick={() => setRolePickerQuery('')}
-                              className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                              title="清空搜索"
-                              aria-label="清空搜索"
-                            >
-                              <X size={12} strokeWidth={2.2} />
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2.5">
-                        <div className="space-y-1.5">
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              clearSelectedRoleSelection();
-                              setAgentSelectionMode('auto');
-                              setShowAgentRolePicker(false);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                clearSelectedRoleSelection();
-                                setAgentSelectionMode('auto');
-                                setShowAgentRolePicker(false);
-                              }
-                            }}
-                            className={`flex w-full items-center justify-between gap-3 rounded-[14px] border px-2.5 py-2.5 text-left transition ${
-                              agentSelectionMode === 'auto'
-                                ? 'border-sky-200 bg-sky-50/80 shadow-[0_8px_18px_-20px_rgba(14,165,233,0.75)]'
-                                : 'border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className="flex min-w-0 items-center gap-3">
-                              {visibleAutoRoleMeta ? (
-                                <span className="text-base leading-none">
-                                  {visibleAutoRoleMeta.agent.avatar}
-                                </span>
-                              ) : (
-                                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                                  <Sparkles size={13} />
-                                </span>
-                              )}
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-[12px] font-semibold text-slate-800">
-                                    自动选择
-                                  </div>
-                                  <span className="rounded-full bg-slate-100/90 px-2 py-0.5 text-[9px] font-medium text-slate-400">
-                                    推荐
-                                  </span>
-                                </div>
-                                <div className="truncate text-[10.5px] text-slate-500">
-                                  {visibleAutoRoleMeta && autoExecutionStrategyLabel
-                                    ? `${autoExecutionStrategyLabel} · ${autoExecutionSummary || '先判断任务，再分配最合适的执行方式。'}`
-                                    : autoExecutionSummary || '先判断任务，再分配最合适的执行方式。'}
-                                </div>
-                              </div>
-                            </div>
-                            {agentSelectionMode === 'auto' ? (
-                              <Check size={15} className="shrink-0 text-sky-500" />
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1">
-                            <div className="px-1 text-[9px] font-medium tracking-[0.1em] text-slate-300">
-                              手动选择
-                            </div>
-                            <div className="max-h-[min(44vh,360px)] overflow-y-auto pr-1">
-                              {filteredDurableRoles.length > 0 ? (
-                                <div className="space-y-0.5">
-                                  {filteredDurableRoles.map((role) => {
-                                    const isActive =
-                                      agentSelectionMode === 'manual' && selectedRoleId === role.id;
-                                    const roleAgentInfo = getAgentInfo(role.baseAgentId);
-                                    return (
-                                      <div
-                                        key={role.id}
-                                        className={`flex items-center justify-between gap-3 rounded-[12px] px-2.5 py-2 transition ${
-                                          isActive
-                                            ? 'bg-amber-50/90 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.9)]'
-                                            : 'hover:bg-slate-50/80'
-                                        }`}
-                                      >
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setAgentSelectionMode('manual');
-                                            setPinnedAgentId(role.baseAgentId);
-                                            setSelectedRoleSelection({
-                                              roleId: role.id,
-                                              roleSource: role.source,
-                                              baseAgentId: role.baseAgentId,
-                                              governanceMode: role.governance.mode,
-                                              allowMainBrainRoleMutation:
-                                                role.governance.allowMainBrainMutation,
-                                              allowMainBrainRolePromotion:
-                                                role.governance.allowMainBrainPromotion,
-                                            });
-                                            setShowAgentRolePicker(false);
-                                          }}
-                                          className="min-w-0 flex flex-1 items-center gap-3 text-left"
-                                        >
-                                          <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]">
-                                            {role.avatarUrl ? (
-                                              <img
-                                                src={role.avatarUrl}
-                                                alt={role.title}
-                                                className="h-full w-full object-cover"
-                                              />
-                                            ) : (
-                                              <span className="text-sm leading-none">
-                                                {roleAgentInfo.avatar}
-                                              </span>
-                                            )}
-                                          </span>
-                                          <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2">
-                                              <span className="truncate text-[12px] font-semibold text-slate-800">
-                                                {role.title}
-                                              </span>
-                                              {isActive ? (
-                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-medium text-amber-700">
-                                                  当前
-                                                </span>
-                                              ) : null}
-                                            </div>
-                                            <div className="truncate text-[10.5px] text-slate-500">
-                                              {role.summary || `固定到 ${roleAgentInfo.name}`}
-                                            </div>
-                                          </div>
-                                        </button>
-                                        {isActive ? (
-                                          <Check size={14} className="shrink-0 text-amber-500" />
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-
-                              {filteredAgentInfos.length > 0 ? (
-                                <div className={filteredDurableRoles.length > 0 ? 'mt-1.5 space-y-0.5' : 'space-y-0.5'}>
-                                  {filteredAgentInfos.map((agent) => {
-                                    const isActive =
-                                      agentSelectionMode === 'manual' &&
-                                      !selectedRoleId &&
-                                      pinnedAgentId === agent.id;
-                                    const isCustomized = hasAgentPromptAddon(agent.id);
-                                    return (
-                                      <div
-                                        key={agent.id}
-                                        className={`flex items-center justify-between gap-3 rounded-[12px] px-2.5 py-2 transition ${
-                                          isActive
-                                            ? 'bg-amber-50/90 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.9)]'
-                                            : 'hover:bg-slate-50/80'
-                                        }`}
-                                      >
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            clearSelectedRoleSelection();
-                                            setAgentSelectionMode('manual');
-                                            setPinnedAgentId(agent.id);
-                                            setShowAgentRolePicker(false);
-                                          }}
-                                          className="min-w-0 flex flex-1 items-center gap-3 text-left"
-                                        >
-                                          <span className="text-base leading-none">{agent.avatar}</span>
-                                          <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2">
-                                              <span className="truncate text-[12px] font-semibold text-slate-800">
-                                                {agent.name}
-                                              </span>
-                                              {isActive ? (
-                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-medium text-amber-700">
-                                                  当前
-                                                </span>
-                                              ) : null}
-                                            </div>
-                                            <div className="truncate text-[10.5px] text-slate-500">
-                                              {[...agent.capabilities.slice(0, 2), agent.description]
-                                                .filter(Boolean)
-                                                .join(' 路 ')}
-                                            </div>
-                                          </div>
-                                        </button>
-                                        {isActive ? (
-                                          <Check size={14} className="shrink-0 text-amber-500" />
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-
-                              {filteredDurableRoles.length === 0 && filteredAgentInfos.length === 0 ? (
-                                <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-[12px] leading-5 text-slate-500">
-                                  {normalizedRolePickerQuery
-                                    ? '没有匹配的方式，试试换个关键词。'
-                                    : '还没有可直接选择的执行方式。'}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>,
-                    document.body,
-                  )}
-              </div>
-
-              <div className="hidden">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAgentRolePicker(false);
-                    openMainBrainInspector();
-                  }}
-                  className={`${unifiedIconButtonClass} ${secondaryToolbarButtonClass}`}
-                  title="编辑全局偏好：影响长期语气、项目类型和创作偏好"
-                  aria-label="编辑全局偏好"
-                >
-                  <Lightbulb size={16} className="text-amber-500" />
-                </button>
-                {mainBrainStoredLines.length > 0 ? (
-                  <span className={secondaryToolbarActiveDotClass} />
-                ) : null}
-              </div>
-
+              <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
               <div className="relative">
                 <button
                   ref={skillBookTriggerRef}
@@ -2392,7 +1948,9 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   onClick={() => {
                     syncSkillBookPosition();
                     setShowSkillBook(!showSkillBook);
-                    setShowAgentRolePicker(false);
+                    if (showSkillBook) {
+                      setShowExtendedExecutionModes(false);
+                    }
                     setShowModelPreference(false);
                   }}
                   className={`${unifiedIconButtonClass} ${
@@ -2400,8 +1958,8 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       ? 'bg-slate-900 text-white'
                       : secondaryToolbarButtonClass
                   }`}
-                  title={activeQuickSkillId ? '技能库：已选择技能' : '技能库'}
-                  aria-label="技能库"
+                  title={activeQuickSkillId ? 'Skill：已选择' : 'Skill'}
+                  aria-label="Skill"
                 >
                   <Library size={16} strokeWidth={1.9} />
                 </button>
@@ -2414,197 +1972,93 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   createPortal(
                     <div
                       ref={skillBookPanelRef}
-                      className="fixed z-[320] flex max-h-[min(76vh,720px)] w-[min(376px,calc(100vw-24px))] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white p-2 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.24)]"
+                      className={`fixed z-[320] flex max-h-[min(62vh,560px)] w-[min(404px,calc(100vw-20px))] max-w-[calc(100vw-20px)] flex-col overflow-hidden rounded-[18px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.985),rgba(250,250,249,0.98))] shadow-[0_28px_72px_-36px_rgba(15,23,42,0.3)] backdrop-blur-md`}
                       style={{
                         right: Math.max(12, window.innerWidth - skillBookAnchorRect.right),
                         bottom: Math.max(12, window.innerHeight - skillBookAnchorRect.top + 12),
                       }}
                     >
-                      <div className="sticky top-0 z-10 rounded-[20px] bg-white px-2 pb-2 pt-1.5">
-                        <div className="flex items-center justify-between gap-2.5">
-                          <div className="text-[13px] font-semibold text-slate-900">
-                            技能
+                      <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+                        <div className="min-w-0">
+                          <div className="text-[17px] font-semibold leading-none tracking-[-0.02em] text-slate-900">
+                            Skill
                           </div>
-                          {activeQuickSkillId ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSendSkill?.(null);
-                                setActiveQuickSkillPreference(null);
-                              }}
-                              className="inline-flex h-7 items-center justify-center rounded-full border border-slate-200 bg-white px-2.5 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                            >
-                              清除
-                            </button>
-                          ) : null}
                         </div>
+                        {activeQuickSkillId ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSendSkill?.(null);
+                              setActiveQuickSkillPreference(null);
+                            }}
+                            className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                            title="清除当前 Skill"
+                            aria-label="清除当前 Skill"
+                          >
+                            清除
+                          </button>
+                        ) : null}
+                      </div>
 
-                        <div className="relative mt-2.5">
-                          <Search
-                            size={13}
-                            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                          />
-                          <input
-                            type="text"
-                            value={skillBookQuery}
-                            onChange={(event) => setSkillBookQuery(event.target.value)}
-                            placeholder="搜索技能"
-                            className="h-9 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-[11.5px] font-medium text-slate-700 outline-none transition focus:border-slate-300 focus:bg-white"
-                          />
+                      <div className="px-4 pb-1.5">
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                          {SKILL_CATEGORY_TABS.map((tab) => {
+                            const isActive = skillCategoryTab === tab.id;
+                            return (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setSkillCategoryTab(tab.id)}
+                                className={`shrink-0 rounded-full border px-3 py-1.5 text-[12px] transition ${
+                                  isActive
+                                    ? 'border-slate-300 bg-slate-100 text-slate-900'
+                                    : 'border-slate-200/90 bg-white/90 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-                        {pinnedQuickSkills.length > 0 ? (
-                          <div className="mt-2">
-                            <div className="mb-1.5 text-[10px] font-medium text-slate-400">
-                              甯哥敤
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {pinnedQuickSkills.map((skill) => (
-                                <button
-                                  key={`pinned-${skill.id}`}
-                                  type="button"
-                                  onClick={() => {
-                                    setSendSkill?.(skill.skillData);
-                                    setActiveQuickSkillPreference(skill.skillData);
-                                    setShowSkillBook(false);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.25 text-[10px] font-medium text-slate-700 transition hover:border-slate-300"
-                                >
-                                  <skill.icon size={12} strokeWidth={2} />
-                                  {skill.name}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {recentQuickSkills.length > 0 && !pinnedQuickSkills.length ? (
-                          <div className="mt-2">
-                            <div className="mb-1.5 text-[10px] font-medium text-slate-400">
-                              最近
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {recentQuickSkills.slice(0, 4).map((skill) => (
-                                <button
-                                  key={`recent-${skill.id}`}
-                                  type="button"
-                                  onClick={() => {
-                                    setSendSkill?.(skill.skillData);
-                                    setActiveQuickSkillPreference(skill.skillData);
-                                    setShowSkillBook(false);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.25 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                                >
-                                  <skill.icon size={12} strokeWidth={2} />
-                                  {skill.name}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <div className="mt-2.5">
-                          <div className="mb-1.5 text-[10px] font-medium text-slate-400">
-                            全部
-                          </div>
-                        </div>
-                        <div className="max-h-[min(42vh,320px)] space-y-0.5 overflow-y-auto pr-1">
-                          {visibleQuickSkills.map((skill) => {
-                            const isActive = activeQuickSkillId === skill.id;
-                            const isPinned = pinnedSkillIds.includes(skill.id);
-                            return (
-                              <div
-                                key={skill.id}
-                                data-skill-book-card={skill.id}
-                                className={`rounded-[14px] border px-2.5 py-1.5 transition ${
-                                  isActive
-                                    ? 'border-slate-900 bg-slate-900/95 text-white'
-                                    : 'border-transparent bg-transparent hover:border-slate-200 hover:bg-slate-50/90'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <button
-                                    type="button"
-                                    data-skill-book-select={skill.id}
-                                    onClick={() => {
-                                      setSendSkill?.(skill.skillData);
-                                      setActiveQuickSkillPreference(skill.skillData);
-                                      setShowSkillBook(false);
-                                    }}
-                                    className="min-w-0 flex-1 text-left"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div
-                                        className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                                          isActive ? 'bg-white/14 text-white' : 'bg-slate-100 text-slate-600'
-                                        }`}
-                                      >
-                                        <skill.icon size={13} strokeWidth={1.9} />
-                                      </div>
-                                        <div className="min-w-0">
-                                          <div className="flex items-center gap-1.5">
-                                            <div className="truncate text-[11.5px] font-semibold">
-                                              {skill.name}
-                                            </div>
-                                            {isActive ? (
-                                              <span className="shrink-0 rounded-full bg-white/12 px-1.5 py-0.5 text-[9px] font-semibold text-slate-100">
-                                                当前
-                                              </span>
-                                            ) : null}
-                                            <span
-                                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                                                isActive
-                                                ? 'bg-white/12 text-slate-100'
-                                                : skill.category === 'agent'
-                                                  ? 'bg-blue-50 text-blue-600'
-                                                  : skill.category === 'workflow'
-                                                    ? 'bg-amber-50 text-amber-700'
-                                                  : skill.category === 'edit'
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : 'bg-slate-100 text-slate-500'
-                                            }`}
-                                          >
-                                            {skill.category === 'agent'
-                                              ? '编排'
-                                              : skill.category === 'workflow'
-                                                ? '工作流'
-                                                : skill.category === 'edit'
-                                                  ? '编辑'
-                                                  : '研究'}
-                                          </span>
-                                        </div>
-                                        {skill.description ? (
-                                          <div
-                                            className={`mt-0.5 line-clamp-1 text-[9px] leading-4 ${
-                                              isActive ? 'text-slate-200' : 'text-slate-500'
-                                            }`}
-                                          >
-                                            {skill.description}
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-skill-book-pin={skill.id}
-                                    onClick={() => pinSkillPreference(skill.id, !isPinned)}
-                                    className={`rounded-full px-2 py-0.75 text-[9px] font-medium transition ${
-                                      isActive
-                                        ? 'bg-white/12 text-white'
-                                        : isPinned
-                                          ? 'bg-amber-50 text-amber-700'
-                                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                    }`}
-                                  >
-                                    {isPinned ? '已置顶' : '置顶'}
-                                  </button>
-                                </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+                        <div className="space-y-1 overflow-y-auto">
+                          {shouldShowCreateSkillRow ? (
+                            <button
+                              type="button"
+                              onClick={handleCreateSkillFromConversation}
+                              disabled={modelMode !== 'thinking'}
+                              className={`group flex w-full items-start gap-3 rounded-[16px] px-2.5 py-2.5 text-left transition ${
+                                modelMode === 'thinking'
+                                  ? 'hover:bg-slate-50/78'
+                                  : 'cursor-not-allowed opacity-55'
+                              }`}
+                            >
+                              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] text-slate-500">
+                                <Sparkles size={15} strokeWidth={1.9} />
                               </div>
-                            );
-                          })}
+                              <div className="min-w-0 flex-1 pt-0.5">
+                                <div className="truncate text-[12.5px] font-medium tracking-[-0.01em] text-slate-900">
+                                  基于此对话创建 Skill
+                                </div>
+                                <div className="mt-0.5 line-clamp-2 text-[12px] leading-5 text-slate-500">
+                                  {modelMode === 'thinking'
+                                    ? '在 Thinking 模式下将对话总结为可复用 Skill。'
+                                    : '切到 Thinking 模式后才能创建 Skill。'}
+                                </div>
+                                {modelMode !== 'thinking' ? (
+                                  <div className="mt-1.25 flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                                      需 Thinking
+                                    </span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </button>
+                          ) : null}
+
+                          <div>{blendedSkillEntries.map(renderSkillBookCard)}</div>
                         </div>
                       </div>
                     </div>,
@@ -2612,19 +2066,113 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   )}
               </div>
 
-              <div className="hidden">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`${unifiedIconButtonClass} ${secondaryToolbarButtonClass}`}
-                  title="添加参考图"
-                  aria-label="添加参考图"
-                >
-                  <Paperclip size={16} strokeWidth={1.9} />
-                </button>
-                {inlineAttachmentFiles.length > 0 ? (
-                  <span className={secondaryToolbarActiveDotClass} />
-                ) : null}
-              </div>
+              {editingCustomSkillId && editingCustomSkillConfig
+                ? createPortal(
+                    <div className="fixed inset-0 z-[340] flex items-center justify-center bg-slate-950/14 p-4 backdrop-blur-[2px]">
+                      <button
+                        type="button"
+                        aria-label="关闭 Skill 编辑"
+                        className="absolute inset-0"
+                        onClick={closeCustomSkillEditor}
+                      />
+                      <div className="relative z-[341] flex w-[min(480px,calc(100vw-24px))] flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_28px_72px_-36px_rgba(15,23,42,0.32)]">
+                        <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3">
+                          <div>
+                            <div className="text-[15px] font-semibold text-slate-900">
+                              编辑 Skill
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              让这个 Skill 更像 Lovart 的可复用执行方式，而不只是一个入口。
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={closeCustomSkillEditor}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:text-slate-700"
+                          >
+                            <X size={14} strokeWidth={2.1} />
+                          </button>
+                        </div>
+                        <div className="space-y-3 px-4 py-4">
+                          <label className="block">
+                            <div className="mb-1.5 text-[11px] font-medium text-slate-500">
+                              Skill 名称
+                            </div>
+                            <input
+                              value={customSkillDraftName}
+                              onChange={(event) => setCustomSkillDraftName(event.target.value)}
+                              className="w-full rounded-[14px] border border-slate-200 px-3 py-2.5 text-[13px] text-slate-900 outline-none transition focus:border-slate-300"
+                              placeholder="例如：胶原炮海报 Skill"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="mb-1.5 text-[11px] font-medium text-slate-500">
+                              Skill 摘要
+                            </div>
+                            <textarea
+                              value={customSkillDraftSummary}
+                              onChange={(event) => setCustomSkillDraftSummary(event.target.value)}
+                              rows={3}
+                              className="w-full resize-none rounded-[14px] border border-slate-200 px-3 py-2.5 text-[13px] leading-5 text-slate-900 outline-none transition focus:border-slate-300"
+                              placeholder="概括这个 Skill 的适用场景与产出方式"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="mb-1.5 text-[11px] font-medium text-slate-500">
+                              可复用执行说明
+                            </div>
+                            <textarea
+                              value={customSkillDraftInstruction}
+                              onChange={(event) => setCustomSkillDraftInstruction(event.target.value)}
+                              rows={6}
+                              className="w-full resize-none rounded-[16px] border border-slate-200 px-3 py-2.5 text-[13px] leading-5 text-slate-900 outline-none transition focus:border-slate-300"
+                              placeholder="说明这个 Skill 遇到新任务时，应该先补什么信息、按什么顺序推进、输出成什么形式。"
+                            />
+                          </label>
+                          <div className="rounded-[16px] bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500">
+                            来源对话：
+                            {String(editingCustomSkillConfig.sourceConversationTitle || '当前会话').trim()}
+                          </div>
+                          {String(
+                            editingCustomSkillConfig.examplePrompt ||
+                              editingCustomSkillConfig.sourceUserPrompt ||
+                              '',
+                          ).trim() ? (
+                            <div className="rounded-[16px] border border-slate-200/80 bg-white px-3 py-2.5 text-[11px] leading-5 text-slate-500">
+                              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                                Example Prompt
+                              </div>
+                              <div>
+                                {String(
+                                  editingCustomSkillConfig.examplePrompt ||
+                                    editingCustomSkillConfig.sourceUserPrompt ||
+                                    '',
+                                ).trim()}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-200/80 px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={closeCustomSkillEditor}
+                            className="inline-flex h-9 items-center rounded-full border border-slate-200 px-4 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveCustomSkill}
+                            className="inline-flex h-9 items-center rounded-full bg-slate-900 px-4 text-[12px] font-medium text-white transition hover:bg-slate-800"
+                          >
+                            保存 Skill
+                          </button>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body,
+                  )
+                : null}
 
               <div className="relative shrink-0">
                 <button
@@ -2635,8 +2183,8 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       ? 'bg-slate-900 text-white'
                       : secondaryToolbarButtonClass
                   }`}
-                  aria-label="模型偏好设置"
-                  title="模型偏好设置"
+                  aria-label="模型偏好"
+                  title="模型偏好"
                 >
                   <Box size={16} />
                 </button>
@@ -2646,40 +2194,42 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 {showModelPreference && (
                   <div
                     ref={modelPreferencePanelRef}
-                    className="absolute bottom-full right-0 z-50 mb-4 w-[340px] max-w-[calc(100vw-24px)] overflow-hidden rounded-[24px] border border-slate-200/85 bg-white shadow-[0_20px_48px_-24px_rgba(15,23,42,0.26)] animate-in fade-in slide-in-from-bottom-3 duration-300"
+                    className={`absolute bottom-full right-0 z-50 mb-4 w-[286px] max-w-[calc(100vw-24px)] ${floatingPanelClass}`}
                   >
-                    <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3.5">
-                      <div className="min-w-0">
-                        <div className="text-[15px] font-semibold tracking-tight text-slate-900">
-                          模型偏好
+                    <div className="border-b border-slate-200/70 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-slate-900">
+                            模型偏好
+                          </div>
+                          <div className="truncate text-[10px] text-slate-400">
+                            {autoModelSelect ? '跟随映射' : currentModelPreferenceLabel}
+                          </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => setAutoModelSelect(!autoModelSelect)}
-                        className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-[11px] font-semibold transition ${
-                          autoModelSelect
-                            ? 'border-slate-900 bg-slate-900 text-white'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            autoModelSelect ? 'bg-white' : 'bg-slate-400'
+                        <button
+                          onClick={() => setAutoModelSelect(!autoModelSelect)}
+                          className={`inline-flex h-7 shrink-0 items-center gap-2 rounded-full border px-2.5 text-[10px] font-semibold transition ${
+                            autoModelSelect
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                           }`}
-                        />
-                        自动
-                      </button>
-                    </div>
-
-                    <div className="px-4 pt-3">
-                      <div className="flex rounded-2xl bg-slate-100/90 p-1">
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              autoModelSelect ? 'bg-white' : 'bg-slate-400'
+                            }`}
+                          />
+                          自动
+                        </button>
+                      </div>
+                      <div className="mt-2 flex rounded-[14px] bg-slate-100/90 p-1">
                         {['image', 'video', '3d'].map((tab) => (
                           <button
                             key={tab}
                             onClick={() =>
                               setModelPreferenceTab(tab as 'image' | 'video' | '3d')
                             }
-                            className={`flex-1 rounded-xl py-2 text-[11px] font-semibold transition-all duration-200 ${
+                            className={`flex-1 rounded-[10px] py-1.5 text-[10px] font-semibold transition-all duration-200 ${
                               modelPreferenceTab === tab
                                 ? 'bg-white text-black shadow-sm'
                                 : 'text-slate-400 hover:text-slate-600'
@@ -2691,32 +2241,19 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       </div>
                     </div>
 
-                    <div className="px-4 pb-4 pt-3">
-                      <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/80 px-3 py-2.5">
-                        <div className="mb-1.5 text-[10px] font-semibold tracking-[0.14em] text-slate-400">
-                          当前映射
-                        </div>
-                        <div className="space-y-1.5 text-[11.5px] leading-5 text-slate-600">
-                          <div>图像：{mappedImageSummary}</div>
-                          <div>视频：{mappedVideoSummary}</div>
-                          <div>文本：{mappedScriptSummary}</div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="text-[10px] font-semibold tracking-[0.14em] text-slate-400">
+                    <div className="px-3 pb-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                           {modelPreferenceTab === 'image'
-                            ? '图片模型'
+                            ? 'image'
                             : modelPreferenceTab === 'video'
-                              ? '视频模型'
-                              : '3D 模型'}
+                              ? 'video'
+                              : '3d'}
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {autoModelSelect ? '跟随映射' : '手动选择'}
-                        </div>
+                        <div className="text-[9px] text-slate-400">{autoModelSelect ? '自动' : '手动'}</div>
                       </div>
 
-                      <div className="mt-2.5 flex max-h-[248px] flex-col gap-2 overflow-y-auto pr-1 select-none custom-scrollbar">
+                      <div className="mt-2 flex max-h-[236px] flex-col gap-1.5 overflow-y-auto pr-1 select-none custom-scrollbar">
                         {(
                           modelPreferenceTab === 'video'
                             ? visibleVideoOptions
@@ -2759,39 +2296,52 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                 setAutoModelSelect(false);
                                 setShowModelPreference(false);
                               }}
-                              className={`rounded-[18px] border px-3 py-2.5 text-left transition-all ${
+                              className={`rounded-[14px] border px-3 py-2 text-left transition-all ${
                                 isSelected
                                   ? 'border-slate-900/10 bg-slate-100/90 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.45)]'
                                   : 'border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2.5">
                                 <div
-                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                                     isSelected
                                       ? 'bg-slate-900 text-white'
                                       : 'border border-slate-200 bg-white text-slate-700'
                                   }`}
                                 >
-                                  <preset.icon size={16} strokeWidth={2} />
+                                  <preset.icon size={15} strokeWidth={2} />
                                 </div>
-                                <div className="flex min-w-0 flex-1 flex-col justify-center">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="flex min-w-0 items-center gap-1.5">
                                       <span
-                                        className={`text-[13px] font-semibold ${
+                                        className={`truncate text-[11.5px] font-semibold ${
                                           isSelected ? 'text-slate-900' : 'text-slate-700'
                                         }`}
                                       >
                                         {preset.name}
                                       </span>
-                                      {preset.badge && (
-                                        <span className="rounded-md border border-blue-100/50 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-500">
-                                          {preset.badge}
+                                      {preset.providerName ? (
+                                        <span
+                                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${
+                                            isSelected
+                                              ? 'bg-white/90 text-slate-500'
+                                              : 'bg-slate-100 text-slate-500'
+                                          }`}
+                                        >
+                                          {preset.providerName}
                                         </span>
-                                      )}
+                                      ) : null}
                                     </div>
-                                    {isSelected && (
+                                    <div className="mt-0.5 text-[9px] text-slate-400">
+                                      {preset.providerName
+                                        ? `${preset.providerName}${preset.time ? ` · ${preset.time}` : ''}`
+                                        : preset.time || (autoModelSelect ? '跟随映射' : '手动指定')}
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-1.5">
+                                    {isSelected ? (
                                       <div className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
                                         <Check
                                           size={12}
@@ -2799,18 +2349,8 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                                           strokeWidth={3}
                                         />
                                       </div>
-                                    )}
+                                    ) : null}
                                   </div>
-                                  <span className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-                                    {preset.desc}
-                                  </span>
-                                  {preset.time && (
-                                    <div className="mt-1.5 flex items-center">
-                                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-400">
-                                        {preset.time}
-                                      </span>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             </button>
@@ -2856,199 +2396,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           )}
         </div>
       </div>
-      {roleInspectorAgentId && inspectedAgentInfo && !showRoleManagementPanel && (
-        <div className="fixed inset-0 z-[138] flex items-center justify-center bg-slate-950/32 p-4 backdrop-blur-[3px]">
-          <button
-            type="button"
-            aria-label="close role quick inspector"
-            onClick={closeRoleInspector}
-            className="absolute inset-0"
-          />
-          <div className="relative z-[139] flex max-h-[min(74vh,720px)] w-[min(760px,100%)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_72px_-24px_rgba(15,23,42,0.42)]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xl leading-none">{inspectedAgentInfo.avatar}</span>
-                  <h3 className="text-[18px] font-bold text-slate-900">
-                    {inspectedDurableRole ? inspectedDurableRole.title : `${inspectedAgentInfo.name} 快速查看`}
-                  </h3>
-                  {inspectedDurableRole ? (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                      durable role
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-2 text-[13px] leading-6 text-slate-500">
-                  输入区只保留轻交互；完整版本、发布、回滚和审计流程请进入独立角色管理面板。
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    openRoleManagementPanel(roleInspectorAgentId, roleInspectorRoleId)
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-slate-800"
-                >
-                  <Sparkles size={13} />
-                  打开角色管理
-                </button>
-                <button
-                  type="button"
-                  onClick={closeRoleInspector}
-                  className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-            <div className="grid gap-4 overflow-y-auto px-6 py-5 lg:grid-cols-[1fr_1fr]">
-              <section className="rounded-3xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 px-5 py-4">
-                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    当前绑定概览
-                  </div>
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    这里优先确认当前会话到底是绑定长期角色，还是只在使用专家壳。
-                  </p>
-                </div>
-                <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
-                  <div>
-                    <div className="font-semibold text-slate-900">专家壳</div>
-                    <div className="mt-1 text-slate-600">{inspectedAgentInfo.name}</div>
-                  </div>
-                  {inspectedDurableRole ? (
-                    <>
-                      <div>
-                        <div className="font-semibold text-slate-900">长期角色摘要</div>
-                        <div className="mt-1 text-slate-600">
-                          {inspectedDurableRole.summary || '当前没有摘要。'}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                          来源 {inspectedDurableRole.source}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                          状态 {inspectedDurableRole.status}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                          治理 {inspectedDurableRole.governance.mode}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
-                          版本 v{inspectedDurableRole.version}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-slate-500">
-                      当前没有绑定 durable role，仍处于“内置专家壳 + 用户补充层”模式。
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-3xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 px-5 py-4">
-                  <div className="text-[12px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                    轻交互动作
-                  </div>
-                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
-                    保留最常用的会话内动作；复杂编辑、审计与回滚不再塞在输入区里。
-                  </p>
-                </div>
-                <div className="space-y-4 px-5 py-4 text-[12px] leading-6 text-slate-700">
-                  {inspectedLatestRoleDraft ? (
-                    <>
-                      <div>
-                        <div className="font-semibold text-slate-900">最近自动草案</div>
-                        <div className="mt-1 text-slate-600">
-                          {inspectedLatestRoleDraft.title || '未命名草案'}
-                          {inspectedLatestRoleDraft.summary
-                            ? ` 路 ${inspectedLatestRoleDraft.summary}`
-                            : ''}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={handleApplyLatestRoleDraft}
-                          className="rounded-full bg-slate-900 px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
-                        >
-                          应用到补充层
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveLatestRoleDraftAsFormalRole}
-                          className="rounded-full border border-slate-200 px-4 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                        >
-                          升级为正式角色
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-slate-500">
-                      当前没有可快速处理的自动草案。
-                    </div>
-                  )}
-                  <div className="rounded-2xl bg-slate-50/70 px-4 py-3 text-[11px] leading-5 text-slate-500">
-                    若要查看完整提示词层、版本记录、治理权限、发布和回滚，请使用上方“打开角色管理”。
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
-      {showRoleManagementPanel && roleInspectorAgentId && inspectedAgentInfo && (
-        <RoleManagementPanel
-          agentId={roleInspectorAgentId}
-          roleId={roleInspectorRoleId}
-          roleInspectorDraft={roleInspectorDraft}
-          inspectedHasAddon={inspectedHasAddon}
-          inspectedPromptDirty={inspectedPromptDirty}
-          inspectedBuiltInPrompt={inspectedBuiltInPrompt}
-          inspectedMainBrainBlock={inspectedMainBrainBlock}
-          inspectedEffectivePrompt={inspectedEffectivePrompt}
-          inspectedDurableRole={inspectedDurableRole}
-          inspectedRoleVersions={inspectedRoleVersions}
-          inspectedRoleProfile={inspectedRoleProfile}
-          inspectedLatestRoleDraft={inspectedLatestRoleDraft}
-          selectedRoleId={selectedRoleId}
-          inspectedRoleAuditEntries={inspectedRoleAuditEntries}
-          roleEntityDraft={roleEntityDraft || undefined}
-          roleEntityDirty={roleEntityDirty}
-          roleEntityCanSubmit={roleEntityCanSubmit}
-          onClose={closeRoleInspector}
-          onDraftChange={setRoleInspectorDraft}
-          onResetPromptAddon={handleResetPromptAddon}
-          onSavePromptAddon={handleSavePromptAddon}
-          onApplyLatestRoleDraft={handleApplyLatestRoleDraft}
-          onSaveLatestRoleDraftAsFormalRole={handleSaveLatestRoleDraftAsFormalRole}
-          onClearLatestRoleDraft={handleClearLatestRoleDraft}
-          onRoleEntityDraftChange={handleRoleEntityDraftChange}
-          onSaveRoleEntity={handleSaveRoleEntity}
-          onResetRoleEntityDraft={handleResetRoleEntityDraft}
-          onRollbackRoleVersion={handleRollbackRoleVersion}
-          onPublishRole={handlePublishRole}
-          onArchiveRole={handleArchiveRole}
-        />
-      )}
-      {showMainBrainInspector && (
-        <MainBrainConfigCenter
-          onClose={closeMainBrainInspector}
-          userAssetApi={userAssetApi}
-          revision={roleInspectorRevision}
-          onSaved={() => setRoleInspectorRevision((value) => value + 1)}
-          legacyPreferenceDraft={mainBrainDraft}
-          legacyPreferenceDirty={mainBrainDirty}
-          legacyPreferenceDefaultText={mainBrainDefaultText}
-          legacyPreferenceStoredCount={mainBrainStoredLines.length}
-          onLegacyPreferenceDraftChange={setMainBrainDraft}
-          onSaveLegacyPreferences={handleSaveMainBrainPreferences}
-          onResetLegacyPreferences={handleResetMainBrainPreferences}
-        />
-      )}
       <input
         ref={fileInputRef}
         type="file"

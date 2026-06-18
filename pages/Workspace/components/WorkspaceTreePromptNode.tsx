@@ -1810,7 +1810,11 @@ const TreePromptToolbar: React.FC<{
     event.stopPropagation();
   };
   const normalizedStyleLibraryMode = (
-    styleLibraryMode || "default"
+    styleLibraryMode === "default" ||
+    styleLibraryMode === "poster-product" ||
+    styleLibraryMode === "custom"
+      ? styleLibraryMode
+      : "none"
   ) as NonNullable<CanvasElement["genReferenceRoleMode"]>;
   const styleLibraryLabel = getStyleLibraryLabel(
     normalizedStyleLibraryMode,

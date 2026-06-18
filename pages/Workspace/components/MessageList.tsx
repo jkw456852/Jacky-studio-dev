@@ -1,10 +1,15 @@
-import React, { useEffect, useRef } from "react";
+﻿import React, { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Check, Copy, Sparkles } from "lucide-react";
 import { ChatMessage } from "../../../types";
 import type { AgentTask, AgentType } from "../../../types/agent.types";
 import { getAgentInfo } from "../../../services/agents";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
+import {
+  getFrontstageSkillLabelKind,
+  isUnifiedSidebarAgentSkill,
+  normalizeFrontstageSkillPresentation,
+} from "../../../services/runtime-assets/skill-identity";
 import { AgentMessage } from "./AgentMessage";
 import { useAgentStore } from "../../../stores/agent.store";
 import { TaskProgress } from "../../../components/agents/TaskProgress";
@@ -72,7 +77,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   ecommerceActions,
 }) => {
   const messages = useAgentStore((s) => s.messages);
-  // 渲染前去重，防止 store 里意外出现同 id 消息导致 React key 冲突
+  // 娓叉煋鍓嶅幓閲嶏紝闃叉 store 閲屾剰澶栧嚭鐜板悓 id 娑堟伅瀵艰嚧 React key 鍐茬獊
   const dedupedMessages = React.useMemo(() => {
     const seen = new Set<string>();
     return messages.filter((message) => {
@@ -135,9 +140,20 @@ export const MessageList: React.FC<MessageListProps> = ({
   const shouldShowUserSkillBadge = (message: ChatMessage) =>
     Boolean(
       message.skillData &&
-        message.skillData.id !== "autonomous-main-brain" &&
-        message.skillData.name !== "自主 Agent 路由",
+        normalizeFrontstageSkillPresentation(message.skillData)?.name &&
+        !isUnifiedSidebarAgentSkill(message.skillData),
     );
+  const getUserSkillExecutionLabel = (skillData?: ChatMessage["skillData"]) => {
+    switch (getFrontstageSkillLabelKind(skillData)) {
+      case "workflow":
+        return "Workflow";
+      case "my-skill":
+        return "My Skill";
+      case "skill":
+      default:
+        return "Skill";
+    }
+  };
   const userProfileAvatarUrl = React.useMemo(
     () => getStudioUserAssetApi().getUserProfile().avatarUrl || "",
     [],
@@ -235,6 +251,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             : null;
         const versionLabel = getMessageVersionLabel(msg);
         const versionSourceLabel = getMessageVersionSourceLabel(msg.lineage);
+        const displaySkillData = normalizeFrontstageSkillPresentation(msg.skillData);
         const agentInfo = KNOWN_AGENT_IDS.has(modelId as AgentType)
           ? getAgentInfo(modelId as AgentType)
           : null;
@@ -244,21 +261,11 @@ export const MessageList: React.FC<MessageListProps> = ({
             {userProfileAvatarUrl ? (
               <img
                 src={userProfileAvatarUrl}
-                alt="用户头像"
+                alt="鐢ㄦ埛澶村儚"
                 className="h-full w-full object-cover"
               />
             ) : (
               <span>我</span>
-            )}
-          </div>
-        );
-
-        const agentAvatarNode = (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-sky-100 bg-[#e8f3ff] text-slate-700 shadow-sm">
-            {agentInfo ? (
-              <span className="text-[20px] leading-none">{agentInfo.avatar}</span>
-            ) : (
-              <Sparkles size={17} className="text-sky-600" />
             )}
           </div>
         );
@@ -284,8 +291,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     disabled={!previousVersion}
                     className="rounded-full px-2 py-0.5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    上一版
-                  </button>
+                    涓婁竴鐗?                  </button>
                   <span className="px-1 text-[10px] text-slate-400">
                     {activeVersionIndex + 1}/{versionSiblings.length}
                   </span>
@@ -295,8 +301,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     disabled={!nextVersion}
                     className="rounded-full px-2 py-0.5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    下一版
-                  </button>
+                    涓嬩竴鐗?                  </button>
                 </div>
               ) : null}
             </div>
@@ -334,7 +339,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                 disabled={isSubmittingEdit}
                 className="inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                取消
+                鍙栨秷
               </button>
               <button
                 type="button"
@@ -350,12 +355,12 @@ export const MessageList: React.FC<MessageListProps> = ({
             </div>
           </div>
         ) : (
-          <div className="mt-2 flex flex-wrap justify-end gap-1.5 px-0.5 text-slate-500">
+          <div className="mt-1.5 inline-flex w-fit max-w-[320px] flex-wrap items-center gap-1 rounded-full border border-slate-200/90 bg-white/92 px-1.5 py-1 text-slate-500 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.14)]">
             <button
               type="button"
               onClick={() => void copyUserMessage(msg)}
               disabled={!String(msg.text || "").trim()}
-              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full px-2 text-[10px] font-medium transition-colors hover:bg-white/80 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
               title={copiedUserMessageId === msg.id ? "已复制" : "复制消息"}
             >
               {copiedUserMessageId === msg.id ? (
@@ -369,7 +374,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               <button
                 type="button"
                 onClick={() => startEditingMessage(msg)}
-                className="inline-flex h-7 items-center justify-center rounded-full px-2 text-[10px] font-medium transition-colors hover:bg-white/80 hover:text-slate-900"
+                className="inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-900"
                 title="编辑这条消息后直接重发"
               >
                 编辑
@@ -379,7 +384,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               <button
                 type="button"
                 onClick={() => void onResendMessage(msg)}
-                className="inline-flex h-7 items-center justify-center rounded-full px-2 text-[10px] font-medium transition-colors hover:bg-white/80 hover:text-slate-900"
+                className="inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-900"
                 title="重新发送这一条消息"
               >
                 重发
@@ -389,7 +394,7 @@ export const MessageList: React.FC<MessageListProps> = ({
               <button
                 type="button"
                 onClick={() => void onReuseToComposer(msg)}
-                className="inline-flex h-7 items-center justify-center rounded-full px-2 text-[10px] font-medium transition-colors hover:bg-white/80 hover:text-slate-900"
+                className="inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-900"
                 title="回填到输入框继续编辑"
               >
                 回填到输入框
@@ -411,8 +416,11 @@ export const MessageList: React.FC<MessageListProps> = ({
                 {shouldShowUserSkillBadge(msg) ? (
                   <div className="inline-flex w-auto max-w-[min(calc(100%-56px),520px)] min-w-0 flex-none flex-col gap-1.5 overflow-hidden rounded-[22px] rounded-br-md border border-slate-200/90 bg-white px-3.5 py-2.5 text-[12.5px] text-gray-800 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.12)]">
                     <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        {getUserSkillExecutionLabel(displaySkillData)}
+                      </span>
                       <span className="font-semibold text-gray-900">
-                        {msg.skillData?.name || "快捷操作"}
+                        {displaySkillData?.name || "快捷操作"}
                       </span>
                     </div>
                     {msg.inlineParts && msg.inlineParts.length > 0 ? (
@@ -465,13 +473,12 @@ export const MessageList: React.FC<MessageListProps> = ({
                 {userAvatarNode}
               </div>
             ) : msg.error && !shouldRenderAsAgentCard ? (
-              <div className="flex w-fit max-w-[92%] items-start gap-2.5">
-                {agentAvatarNode}
+              <div className="flex w-fit max-w-[92%] items-start">
                 <div className="min-w-0 w-auto max-w-[min(100%,560px)]">
                   <div className="w-auto max-w-[min(100%,520px)] rounded-[22px] rounded-tl-md border border-rose-200 bg-rose-50/90 px-3.5 py-2.5 text-[12.5px] text-rose-800 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.12)]">
                     <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500">
                       <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                      回复失败
+                      鍥炲澶辫触
                     </div>
                     <div className="whitespace-pre-wrap break-words leading-6">
                       {msg.text}
@@ -483,17 +490,16 @@ export const MessageList: React.FC<MessageListProps> = ({
                         type="button"
                         onClick={() => void onRetryAssistantResponse(msg)}
                         className="inline-flex h-8 items-center justify-center rounded-full border border-rose-200 bg-white px-3 text-[11px] font-semibold text-rose-600 shadow-sm transition-colors hover:border-rose-300 hover:bg-rose-50"
-                        title="重新尝试这条回复"
+                        title="閲嶆柊灏濊瘯杩欐潯鍥炲"
                       >
-                        重试
+                        閲嶈瘯
                       </button>
                     </div>
                   ) : null}
                 </div>
               </div>
             ) : (
-              <div className="flex w-fit max-w-[92%] items-start gap-2.5">
-                {agentAvatarNode}
+              <div className="flex w-fit max-w-[92%] items-start">
                 <div className="min-w-0 w-auto max-w-[min(100%,520px)]">
                   <AgentMessage
                     message={msg}
@@ -521,7 +527,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     <div className="mt-2 px-1">
                       <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-medium text-slate-500 shadow-sm">
                         <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                        <span>已停止，本次上下文已保留</span>
+                        <span>宸插仠姝紝鏈涓婁笅鏂囧凡淇濈暀</span>
                       </div>
                     </div>
                   ) : null}
@@ -538,20 +544,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           animate={{ opacity: 1, y: 0 }}
           className="mb-5 mt-1.5 ml-1 flex justify-start"
         >
-          <div className="flex w-fit max-w-[92%] items-start gap-2.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-sky-100 bg-[#e8f3ff] text-slate-700 shadow-sm">
-              {KNOWN_AGENT_IDS.has(
-                String(liveTaskMessage.agentData?.model || "").trim().toLowerCase() as AgentType,
-              ) ? (
-                <span className="text-[20px] leading-none">
-                  {getAgentInfo(
-                    String(liveTaskMessage.agentData?.model || "").trim().toLowerCase() as AgentType,
-                  ).avatar}
-                </span>
-              ) : (
-                <Sparkles size={17} className="animate-pulse text-sky-600" />
-              )}
-            </div>
+          <div className="flex w-fit max-w-[92%] items-start">
             <div className="min-w-0 w-auto max-w-[min(100%,520px)]">
               <AgentMessage
                 message={liveTaskMessage}
@@ -596,7 +589,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           <TaskProgress task={currentTask} className="ml-1" />
         )}
 
-      {/* 完成或失败后保留执行记录折叠入口 */}
+      {/* 瀹屾垚鎴栧け璐ュ悗淇濈暀鎵ц璁板綍鎶樺彔鍏ュ彛 */}
       {showCurrentTaskProgress &&
         currentTask &&
         (currentTask.status === "completed" ||
@@ -611,3 +604,4 @@ export const MessageList: React.FC<MessageListProps> = ({
     </div>
   );
 };
+

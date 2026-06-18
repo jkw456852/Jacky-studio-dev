@@ -269,15 +269,7 @@ export const useWorkspaceModelPreferences = ({
 
   const handleModeSwitch = (newMode: WorkspaceModelMode) => {
     if (newMode === modelMode) return;
-
-    if (doNotAskModeSwitch) {
-      setModelMode(newMode);
-      clearMessages();
-      return;
-    }
-
-    setPendingModelMode(newMode);
-    setShowModeSwitchDialog(true);
+    setModelMode(newMode);
   };
 
   const closeModeSwitchDialog = () => {

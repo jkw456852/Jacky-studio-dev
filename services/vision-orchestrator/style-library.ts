@@ -315,7 +315,13 @@ export const getStyleLibraryLabel = (
   mode: CanvasElement["genReferenceRoleMode"] | null | undefined,
   customLibrary?: WorkspaceStyleLibrary | null,
 ) => {
-  const normalizedMode = (mode || "default") as WorkspaceStyleLibraryMode;
+  const normalizedMode = (
+    mode === "default" ||
+    mode === "poster-product" ||
+    mode === "custom"
+      ? mode
+      : "none"
+  ) as WorkspaceStyleLibraryMode;
   if (normalizedMode === "custom") {
     return (
       String(customLibrary?.title || "").trim() ||
@@ -329,7 +335,13 @@ export const getEffectiveStyleLibrary = (args: {
   mode: CanvasElement["genReferenceRoleMode"] | null | undefined;
   customLibrary?: WorkspaceStyleLibrary | null;
 }): WorkspaceStyleLibrary | undefined => {
-  const normalizedMode = (args.mode || "default") as WorkspaceStyleLibraryMode;
+  const normalizedMode = (
+    args.mode === "default" ||
+    args.mode === "poster-product" ||
+    args.mode === "custom"
+      ? args.mode
+      : "none"
+  ) as WorkspaceStyleLibraryMode;
   if (normalizedMode === "none") {
     return undefined;
   }

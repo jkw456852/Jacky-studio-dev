@@ -2,6 +2,7 @@ import type {
   AgentTaskMetadata,
   ProjectContext,
 } from '../../types/agent.types.ts';
+import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 import { summarizeReferenceSet } from '../topic-memory.ts';
 import { getMemoryKey } from '../topicMemory/key.ts';
 import { getStudioUserAssetApi } from '../runtime-assets/api.ts';
@@ -77,6 +78,10 @@ const dedupeUrls = (urls: string[]) =>
       !!url &&
       arr.indexOf(url) === index,
   );
+
+const isUnifiedSidebarAgentMetadata = (metadata?: AgentTaskMetadata) =>
+  metadata?.allowAutonomousRouting === true &&
+  isUnifiedSidebarAgentSkill(metadata?.skillData);
 
 const FOLLOW_UP_REFERENCE_PATTERN =
   /(换个|换种|换成|改变|调整|重新|再来|重做|另一|不同|其他|新的风格|新的色调|新角度|change|another|different|new style|retry|redo|again)/i;
@@ -192,7 +197,21 @@ export const buildExecutionTaskMetadata = ({
   uploadedUrls,
   resolved,
 }: BuildExecutionTaskMetadataOptions): OrchestratorExecutionMetadata => {
-  const selectedRoleId = String(metadata?.selectedRoleId || '').trim();
+  const unifiedSidebarAgent = isUnifiedSidebarAgentMetadata(metadata);
+  const baseMetadata = metadata ? { ...metadata } : undefined;
+
+  if (unifiedSidebarAgent && baseMetadata) {
+    delete baseMetadata.agentSelectionMode;
+    delete baseMetadata.pinnedAgentId;
+    delete baseMetadata.selectedRoleId;
+    delete baseMetadata.selectedRoleSource;
+    delete baseMetadata.baseAgentId;
+    delete baseMetadata.roleGovernanceMode;
+    delete baseMetadata.allowMainBrainRoleMutation;
+    delete baseMetadata.allowMainBrainRolePromotion;
+  }
+
+  const selectedRoleId = String(baseMetadata?.selectedRoleId || '').trim();
   const selectedRole = selectedRoleId
     ? getStudioUserAssetApi().getRoleById(selectedRoleId)
     : null;
@@ -210,7 +229,7 @@ export const buildExecutionTaskMetadata = ({
       : undefined;
 
   return {
-    ...(metadata || {}),
+    ...(baseMetadata || {}),
     imageHostProvider: hostProvider,
     topicId,
     roleStrategy,
@@ -227,7 +246,7 @@ export const buildExecutionTaskMetadata = ({
     allReferenceImageUrls: [...uploadedUrls],
     injectedReferenceImageUrls: [],
     multimodalContext: {
-      ...(metadata?.multimodalContext || {
+      ...(baseMetadata?.multimodalContext || {
         referenceImageUrls: [],
       }),
       referenceImageUrls: resolved.effectiveReferenceUrls,

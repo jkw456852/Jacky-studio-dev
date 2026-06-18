@@ -338,30 +338,20 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   }, [activeResearchCitationId, researchView]);
   const researchOutcomeSummary = useMemo(() => {
     if (!researchView) return '';
-    const stats = researchView.stats.map((item) => `${item.value} 个${item.label}`);
     if (researchView.status === 'failed') {
       return '本轮研究未成功完成，以下仅保留已拿到的线索。';
     }
     if (researchView.status === 'searching') {
       return '正在收集网页与正文证据，完成后会自动整理成结论。';
     }
-    if (stats.length === 0) {
+    const parts = researchView.stats.map((item) => `${item.value} 个${item.label}`);
+    if (parts.length === 0) {
       return '已完成联网检索，并整理出可引用的结论。';
     }
-    return `本轮已完成联网检索，命中 ${stats.join('、')}。`;
+    return `本次研究包含 ${parts.join('、')}。`;
   }, [researchView]);
-  const researchSupportCitations = useMemo(
-    () => researchView?.citations.slice(0, 4) || [],
-    [researchView],
-  );
-  const researchMetaLabel = useMemo(() => {
-    if (!researchView) return '';
-    const parts = [
-      researchView.providerLabel,
-      researchView.query ? `查询：${researchView.query}` : '',
-    ].filter(Boolean);
-    return parts.join(' · ');
-  }, [researchView]);
+  const isResearchSearching = researchView?.status === 'searching';
+  const isResearchCompleted = researchView?.status === 'completed';
   const presentationView = useMemo(
     () => deriveAgentMessagePresentation(agentData),
     [agentData],
@@ -413,6 +403,10 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   const analysisContent =
     agentData?.analysis ||
     (presentationView?.kind === 'execution_plan' ? agentData?.description || '' : '');
+  const sanitizedAnalysisContent = deriveThinkingSummary(
+    String(analysisContent || ''),
+    '',
+  );
   const safeAssistantBodyText = deriveUserFacingAssistantText(
     sanitizedVisibleText,
     agentData,
@@ -424,6 +418,26 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         .map((item) => item.trim())
         .filter(Boolean),
     [safeAssistantBodyText],
+  );
+  const assistantAnswerSegments = useMemo(
+    () =>
+      Array.isArray(agentData?.answerSegments)
+        ? agentData.answerSegments
+            .map((item) =>
+              item && typeof item === 'object'
+                ? {
+                    text: String(item.text || '').trim(),
+                    citationOrdinals: Array.isArray(item.citationOrdinals)
+                      ? item.citationOrdinals
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isInteger(value) && value > 0)
+                      : [],
+                  }
+                : null,
+            )
+            .filter((item) => Boolean(item?.text))
+        : [],
+    [agentData?.answerSegments],
   );
   const executionModeBadgeLabel =
     presentationView?.modeLabel ||
@@ -442,13 +456,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
 
   return (
     <div className="group inline-block max-w-full align-top">
-      <div
-        className={`overflow-hidden rounded-[22px] rounded-tl-md px-2.5 py-2.5 shadow-sm ${
-          isFailedReply
-            ? 'border border-rose-200/80 bg-[linear-gradient(180deg,rgba(255,249,249,0.98)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_44px_-34px_rgba(190,24,93,0.24)]'
-            : 'border border-sky-100 bg-[#eef6ff]'
-        }`}
-      >
+      <div className="overflow-visible px-0.5 py-0.5">
         <div className="mb-1 flex justify-start px-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-medium text-gray-400">
@@ -558,15 +566,15 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           <div className="px-1" data-testid="agent-research-message">
             <div
               data-testid="agent-research-shell"
-              className="overflow-visible rounded-[18px] border border-sky-100/60 bg-[linear-gradient(180deg,rgba(249,252,255,0.97),rgba(255,255,255,0.94))] shadow-[0_14px_30px_-28px_rgba(59,130,246,0.22)] backdrop-blur-sm"
+              className="overflow-visible border-l-2 border-sky-200/85 pl-3"
             >
-              <div className="px-3 py-2.5" data-testid="agent-research-summary">
-                <div className="flex items-start gap-2.5">
-                  <div className="mt-0.5 shrink-0 rounded-full border border-white/90 bg-white/92 p-1.5 text-sky-500 shadow-[0_10px_24px_-24px_rgba(14,165,233,0.42)]">
-                    <Search size={12} />
+              <div className="py-1.5" data-testid="agent-research-summary">
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5 shrink-0 rounded-full bg-sky-50/80 p-1.5 text-sky-500">
+                    <Search size={11} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                           researchView.status === 'failed'
@@ -578,56 +586,66 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                       >
                         {researchView.statusLabel}
                       </span>
+                      {researchView.providerLabel ? (
+                        <span className="inline-flex items-center rounded-full border border-slate-200/70 bg-white/78 px-2 py-0.5 text-[10px] text-slate-500">
+                          {researchView.providerLabel}
+                        </span>
+                      ) : null}
                       {researchView.fallback && (
                         <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
                           备用结果
                         </span>
                       )}
+                      {isResearchCompleted
+                        ? researchView.stats.map((stat) => (
+                            <span
+                              key={`${stat.label}-${stat.value}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-slate-200/55 bg-white/72 px-2 py-0.5 text-[10px] text-slate-500"
+                            >
+                              <span>{stat.label}</span>
+                              <span className="font-semibold text-slate-700">{stat.value}</span>
+                            </span>
+                          ))
+                        : null}
                     </div>
-                    <div className="mt-1.5 text-[12.5px] font-semibold leading-5 text-slate-800">
-                      {researchOutcomeSummary}
-                    </div>
-                    {researchMetaLabel ? (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px] leading-4 text-slate-500">
-                        {researchView.providerLabel ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/70 bg-white/88 px-2 py-0.5 text-[10px] text-slate-600">
-                            <Globe size={10} />
-                            {researchView.providerLabel}
-                          </span>
-                        ) : null}
-                        {researchView.query ? (
-                          <span className="truncate text-slate-500">
-                            {researchView.query}
-                          </span>
-                        ) : null}
+                    {researchView.query ? (
+                      <div className="mt-0.5 line-clamp-1 text-[12.5px] font-semibold leading-5 text-slate-800">
+                        {researchView.query}
                       </div>
                     ) : null}
-                    {researchView.summary && (
-                      <div className="mt-1.5 text-[11px] leading-5 text-slate-500">
-                        {researchView.summary}
-                      </div>
-                    )}
+                    <div className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-slate-500">
+                      {researchOutcomeSummary}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="agent-research-stats">
-                  {researchView.stats.map((stat) => (
-                    <div
-                      key={`${stat.label}-${stat.value}`}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-white/85 bg-white/92 px-2 py-0.5 text-[10px] text-slate-600"
-                    >
-                      <span className="text-slate-400">{stat.label}</span>
-                      <span className="font-semibold text-slate-800">{stat.value}</span>
-                    </div>
-                  ))}
-                </div>
+                {isResearchSearching && researchView.steps.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1" data-testid="agent-research-steps">
+                    {researchView.steps.map((step) => (
+                      <span
+                        key={step.key}
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9.5px] font-medium transition ${
+                          step.status === 'current'
+                            ? 'border-sky-200 bg-sky-50 text-sky-700'
+                            : step.status === 'done'
+                              ? 'border-emerald-100/90 bg-emerald-50/90 text-emerald-700'
+                              : step.status === 'error'
+                                ? 'border-rose-100 bg-rose-50 text-rose-700'
+                                : 'border-slate-200/60 bg-white/70 text-slate-500'
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               {(researchView.citations.length > 0 ||
                 researchView.extractedPages.length > 0 ||
                 researchView.suggestedQueries.length > 0) && (
                 <div
-                  className="border-t border-sky-100/60 bg-white/72 px-3 py-2"
+                  className="pb-1 pt-1"
                   data-testid="agent-research-evidence"
                 >
                   <div
@@ -635,7 +653,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                     className="relative"
                     data-testid="agent-research-floating-area"
                   >
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
                       {researchView.citations.length > 0 && (
                         <button
                           type="button"
@@ -643,13 +661,14 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                             setIsResearchSourcesExpanded((value) => !value);
                             setIsResearchExtractsExpanded(false);
                           }}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
+                          className={`inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[10px] font-medium transition ${
                             isResearchSourcesExpanded
                               ? 'border-sky-200 bg-sky-50/90 text-sky-700'
-                              : 'border-slate-200/70 bg-white/88 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-800'
+                              : 'border-slate-200/65 bg-white/78 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-800'
                           }`}
                         >
-                          引用来源
+                          <ExternalLink size={11} />
+                          来源
                           <span className="text-slate-400">
                             {researchView.citations.length}
                           </span>
@@ -662,14 +681,19 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                             setIsResearchExtractsExpanded((value) => !value);
                             setIsResearchSourcesExpanded(false);
                           }}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
+                          className={`inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[10px] font-medium transition ${
                             isResearchExtractsExpanded
                               ? 'border-sky-200 bg-sky-50/90 text-sky-700'
-                              : 'border-slate-200/60 bg-slate-50/70 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700'
+                              : 'border-slate-200/60 bg-white/76 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700'
                           }`}
                         >
                           <FileText size={11} />
-                          网页摘录
+                          摘录
+                          {researchView.extractedPages.length > 0 ? (
+                            <span className="text-slate-400">
+                              {researchView.extractedPages.length}
+                            </span>
+                          ) : null}
                         </button>
                       )}
                     </div>
@@ -684,20 +708,16 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                           className="absolute left-0 top-full z-10 mt-1.5 w-[min(100%,280px)]"
                         >
                           <div
-                            className="rounded-[12px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.18)] backdrop-blur-md"
+                            className="rounded-[14px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.16)] backdrop-blur-md"
                             data-testid="agent-research-source-list"
                           >
-                            <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
-                                <div className="text-[10px] font-semibold text-slate-700">
-                                  来源
-                                </div>
-                              <button
-                                type="button"
-                                onClick={() => setIsResearchSourcesExpanded(false)}
-                                className="text-[9.5px] text-slate-400 transition hover:text-slate-700"
-                              >
-                                关闭
-                              </button>
+                            <div className="mb-1.5 flex items-center gap-2 px-1">
+                              <div className="text-[10px] font-semibold text-slate-700">
+                                来源
+                              </div>
+                              <div className="text-[9.5px] text-slate-400">
+                                {researchView.citations.length}
+                              </div>
                             </div>
                             <div className="space-y-1">
                               {researchView.citations.slice(0, 5).map((citation, index) => (
@@ -709,12 +729,12 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                                   onMouseEnter={() => setActiveResearchCitationId(citation.id)}
                                   className={`block rounded-[10px] border px-2 py-1 transition ${
                                     activeResearchCitation?.id === citation.id
-                                      ? 'border-sky-200 bg-sky-50/60'
-                                      : 'border-slate-200/80 bg-white hover:border-slate-300'
+                                      ? 'border-sky-200 bg-sky-50/55'
+                                      : 'border-slate-200/75 bg-white/88 hover:border-slate-300'
                                   }`}
                                 >
                                   <div className="flex items-center gap-2">
-                                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
+                                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-700">
                                       {index + 1}
                                     </span>
                                     <div className="min-w-0 flex-1">
@@ -742,26 +762,22 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                           className="absolute left-0 top-full z-10 mt-1.5 w-[min(100%,280px)]"
                         >
                           <div
-                            className="rounded-[12px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.18)] backdrop-blur-md"
+                            className="rounded-[14px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.16)] backdrop-blur-md"
                             data-testid="agent-research-extracts"
                           >
-                            <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
-                                <div className="text-[10px] font-semibold text-slate-700">
-                                  摘录
-                                </div>
-                              <button
-                                type="button"
-                                onClick={() => setIsResearchExtractsExpanded(false)}
-                                className="text-[9.5px] text-slate-400 transition hover:text-slate-700"
-                              >
-                                关闭
-                              </button>
+                            <div className="mb-1.5 flex items-center gap-2 px-1">
+                              <div className="text-[10px] font-semibold text-slate-700">
+                                摘录
+                              </div>
+                              <div className="text-[9.5px] text-slate-400">
+                                {researchView.extractedPages.length}
+                              </div>
                             </div>
                             <div className="space-y-1">
                               {researchView.extractedPages.slice(0, 4).map((page, index) => (
                                 <div
                                   key={page.id}
-                                  className="rounded-[10px] border border-slate-200/80 bg-white px-2 py-1"
+                                  className="rounded-[10px] border border-slate-200/75 bg-white/88 px-2 py-1"
                                 >
                                   <div className="truncate text-[10px] font-medium text-slate-800">
                                     {index + 1}. {page.title}
@@ -805,7 +821,10 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
               <div className="border-t border-sky-100/50 px-3 py-3">
                 {liveUserFacingText ? (
                   <div className="agent-msg-text break-words">
-                    <MarkdownRenderer text={liveUserFacingText} className="text-[13px]" />
+                    <MarkdownRenderer
+                      text={liveUserFacingText}
+                      className="text-[13px] font-medium tracking-[0.01em] leading-[1.8] text-slate-900 [&_p]:font-medium [&_strong]:text-slate-950"
+                    />
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-[12px] text-slate-500">
@@ -833,45 +852,65 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 : ''
             }`}
           >
-            {researchSupportCitations.length > 0 ? (
-              <div className="space-y-2.5">
-                {assistantBodyParagraphs.map((paragraph, paragraphIndex) => {
-                  const isLastParagraph =
-                    paragraphIndex === assistantBodyParagraphs.length - 1;
+            {assistantAnswerSegments.length > 0 && researchView?.citations.length ? (
+              <div className="px-1 py-0.5">
+                {assistantAnswerSegments.map((segment, segmentIndex) => {
+                  const segmentCitations = segment.citationOrdinals
+                    .map((ordinal) => ({
+                      ordinal,
+                      citation: researchView.citations[ordinal - 1] || null,
+                    }))
+                    .filter((item) => item.citation);
+
                   return (
-                  <div
-                    key={`assistant-paragraph-${paragraphIndex}`}
-                    className="rounded-[14px] bg-white/46 px-2.5 py-2"
-                  >
-                    <MarkdownRenderer text={paragraph} className="text-[12.5px]" />
-                    {isLastParagraph ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {researchSupportCitations.map((citation, citationIndex) => (
-                          <button
-                            key={`paragraph-${paragraphIndex}-${citation.id}`}
-                            type="button"
-                            onClick={() => {
-                              setActiveResearchCitationId(citation.id);
-                              setIsResearchSourcesExpanded(true);
-                            }}
-                            className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[10px] font-semibold transition ${
-                              activeResearchCitation?.id === citation.id
-                                ? 'border-sky-200 bg-sky-50 text-sky-700'
-                                : 'border-slate-200/80 bg-white/85 text-slate-500 hover:border-slate-300 hover:text-slate-800'
-                            }`}
-                            title={citation.host}
-                          >
-                            {citationIndex + 1}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
+                    <div
+                      key={`assistant-segment-${segmentIndex}`}
+                      className={`${
+                        segmentIndex === 0
+                          ? 'pb-2'
+                          : 'pt-2'
+                      }`}
+                    >
+                      <MarkdownRenderer
+                        text={segment.text}
+                        className={
+                          segmentIndex === 0
+                            ? 'text-[13px] font-medium tracking-[0.01em] leading-[1.84] text-slate-900 [&_p]:mb-0 [&_p]:font-medium [&_strong]:font-semibold [&_strong]:text-slate-950'
+                            : 'text-[13px] font-medium tracking-[0.01em] leading-[1.8] text-slate-900 [&_p]:mb-0 [&_p]:font-medium [&_strong]:font-semibold [&_strong]:text-slate-950'
+                        }
+                      />
+                      {segmentCitations.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {segmentCitations.map(({ ordinal, citation }) => (
+                            <button
+                              key={`${citation!.id}-${ordinal}`}
+                              type="button"
+                              onClick={() => {
+                                setActiveResearchCitationId(citation!.id);
+                                setIsResearchExtractsExpanded(false);
+                                setIsResearchSourcesExpanded(true);
+                              }}
+                              className={`inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full border px-1.5 text-[9px] font-semibold transition ${
+                                activeResearchCitation?.id === citation!.id
+                                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                                  : 'border-slate-200/80 bg-white/96 text-slate-500 hover:border-slate-300 hover:text-slate-800'
+                              }`}
+                              title={citation!.host}
+                            >
+                              {ordinal}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
             ) : (
-              <MarkdownRenderer text={safeAssistantBodyText} className="text-[12.5px]" />
+              <MarkdownRenderer
+                text={safeAssistantBodyText}
+                className="text-[13px] font-medium tracking-[0.01em] leading-[1.8] text-slate-900 [&_p]:font-medium [&_strong]:font-semibold [&_strong]:text-slate-950"
+              />
             )}
           </div>
         )}
@@ -1110,7 +1149,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {!isLiveStreamingReply && analysisContent ? (
+        {!isLiveStreamingReply && sanitizedAnalysisContent ? (
           <div className="px-1">
             <button
               onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
@@ -1139,7 +1178,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                   className="overflow-hidden"
                 >
                   <div className="mt-2 rounded-[18px] border border-slate-200/75 bg-white/82 px-3 py-3 whitespace-pre-wrap text-[12px] leading-6 text-slate-600 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.16)] backdrop-blur-sm">
-                    {analysisContent}
+                    {sanitizedAnalysisContent}
                   </div>
                 </motion.div>
               )}
@@ -1320,7 +1359,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         ) : null}
 
-        <div className="mt-1.5 inline-flex w-fit max-w-[292px] flex-wrap items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-[5px] py-[3px] text-slate-500 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.14)]">
+        <div className="mt-1.5 inline-flex w-fit max-w-[320px] flex-wrap items-center gap-1 rounded-full border border-slate-200/90 bg-white/92 px-1.5 py-1 text-slate-500 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.14)]">
           {onFeedback ? (
             <>
               <button
@@ -1328,7 +1367,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 onClick={() => handleFeedback("up")}
                 aria-pressed={currentFeedback === "up"}
                 title={currentFeedback === "up" ? "取消赞同" : "赞同这条回复"}
-                className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
                   currentFeedback === "up"
                     ? "bg-emerald-50 text-emerald-600"
                     : "hover:bg-slate-50 hover:text-slate-700"
@@ -1343,7 +1382,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 title={
                   currentFeedback === "down" ? "取消点踩" : "这条回复还不够好"
                 }
-                className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
                   currentFeedback === "down"
                     ? "bg-rose-50 text-rose-600"
                     : "hover:bg-slate-50 hover:text-slate-700"
@@ -1357,7 +1396,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
             <button
               type="button"
               onClick={() => void onRetryResponse(message)}
-              className="inline-flex h-6 items-center rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              className="inline-flex h-7 items-center rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
               title="重新生成这条回复"
             >
               重试
@@ -1367,7 +1406,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
             <button
               type="button"
               onClick={() => void onReuseToComposer(message)}
-              className="inline-flex h-6 items-center rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              className="inline-flex h-7 items-center rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
               title="回填到输入框继续编辑"
             >
               回填
@@ -1377,7 +1416,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
             <button
               type="button"
               onClick={() => void onBranchConversation(message)}
-              className="inline-flex h-6 items-center gap-1 rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
               title="从这条回复分支为新对话"
             >
               <GitBranch size={10} />
@@ -1387,7 +1426,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           <button
             type="button"
             onClick={handleCopy}
-            className="relative inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-slate-50 hover:text-slate-700"
+            className="relative inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-slate-50 hover:text-slate-700"
             title={copied ? "已复制" : "复制回复"}
           >
             {copied ? (

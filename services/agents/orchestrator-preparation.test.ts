@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prepareAgentExecutionTask } from './orchestrator-preparation.ts';
+import {
+  prepareAgentExecutionTask,
+  prepareOrchestratorContext,
+} from './orchestrator-preparation.ts';
 
 test('prepareAgentExecutionTask assembles task metadata, syncs state, and validates passthrough', async () => {
   const designSessionUpdates: any[] = [];
@@ -208,4 +211,159 @@ test('prepareAgentExecutionTask preserves selected durable role governance metad
   assert.equal(result.task.input.metadata?.selectedRoleId, 'role-coco-pro');
   assert.equal(result.task.input.metadata?.baseAgentId, 'coco');
   assert.equal(result.task.input.metadata?.roleGovernanceMode, 'approval_required');
+});
+
+test('prepareOrchestratorContext keeps unified sidebar agent skill-first even when legacy role state exists', async () => {
+  const result = await prepareOrchestratorContext({
+    message: 'Continue with the sidebar task',
+    attachments: [],
+    metadata: {
+      allowAutonomousRouting: true,
+      agentSelectionMode: 'manual',
+      pinnedAgentId: 'poster',
+      selectedRoleId: 'legacy-role',
+      baseAgentId: 'poster',
+      skillData: {
+        id: 'autonomous-main-brain',
+        config: {
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+        },
+      },
+    } as any,
+    projectContext: {
+      projectId: 'project-unified-sidebar',
+      conversationId: '',
+      designSession: {
+        taskMode: 'chat',
+        brand: { name: 'Brand' },
+        styleHints: [],
+        subjectAnchors: [],
+        constraints: [],
+        forbiddenChanges: [],
+        approvedAssetIds: [],
+        referenceWebPages: [],
+      },
+      conversationHistory: [],
+      existingAssets: [],
+    } as any,
+    freshDesignSession: {
+      taskMode: 'chat',
+      brand: { name: 'Brand' },
+      styleHints: [],
+      subjectAnchors: [],
+      constraints: [],
+      forbiddenChanges: [],
+      approvedAssetIds: [],
+      referenceWebPages: [],
+    } as any,
+    brandInfo: { name: 'Brand' } as any,
+    conversationHistory: [],
+    selectedHostProvider: 'none',
+    setIsUploadingAttachments: () => {},
+    setCurrentTask: () => {},
+    updateMessageAttachments: () => {},
+    setTaskMode: () => {},
+  });
+
+  assert.equal(result.isUnifiedSidebarAgent, true);
+  assert.equal(result.pinnedAgent, null);
+});
+
+test('prepareAgentExecutionTask strips legacy role governance metadata from unified sidebar agent tasks', async () => {
+  const result = await prepareAgentExecutionTask({
+    agentId: 'coco',
+    message: 'Use the unified sidebar agent',
+    messageForExecution: 'Use the unified sidebar agent',
+    attachments: [],
+    metadata: {
+      allowAutonomousRouting: true,
+      agentSelectionMode: 'manual',
+      pinnedAgentId: 'coco',
+      selectedRoleId: 'role-coco-pro',
+      selectedRoleSource: 'user',
+      baseAgentId: 'coco',
+      roleGovernanceMode: 'approval_required',
+      allowMainBrainRoleMutation: false,
+      allowMainBrainRolePromotion: true,
+      skillData: {
+        id: 'autonomous-main-brain',
+        config: {
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+        },
+      },
+      multimodalContext: {
+        referenceImageUrls: [],
+      },
+    } as any,
+    uploadedUrls: [],
+    updatedContext: {
+      projectId: 'project-unified-sidebar-task',
+      designSession: {
+        taskMode: 'chat',
+        brand: { name: 'Brand' },
+        styleHints: [],
+        subjectAnchors: [],
+        constraints: [],
+        forbiddenChanges: [],
+        approvedAssetIds: [],
+        referenceWebPages: [],
+      },
+      conversationHistory: [],
+      existingAssets: [],
+    } as any,
+    projectActions: {
+      updateDesignSession: () => {},
+    },
+    existingDesignSession: {
+      taskMode: 'chat',
+      brand: { name: 'Brand' },
+      styleHints: [],
+      subjectAnchors: [],
+      constraints: [],
+      forbiddenChanges: [],
+      approvedAssetIds: [],
+      referenceWebPages: [],
+    },
+    hostProvider: 'mock-host',
+    topicId: 'topic-unified-sidebar',
+    topicPinnedContext: '',
+    topicPinnedRefs: [],
+    inferredTaskMode: 'chat',
+    optimizerUsed: false,
+    optimizerStatus: 'skipped',
+    originalMessage: 'Use the unified sidebar agent',
+    shouldPreferUploadedReferences: false,
+    currentTaskAssetUrls: [],
+    sessionApprovedUrls: [],
+    recentHistoryAttachmentUrls: [],
+    isAttachmentValidationStrict: true,
+    dependencies: {
+      collectInheritedReferenceUrlsFn: () => [],
+      resolveMultimodalReferencesFn: () => ({
+        directReferenceUrls: [],
+        mergedReferenceUrls: [],
+        inheritedReferenceUrls: [],
+        effectiveReferenceUrls: [],
+        isolateVisualQa: false,
+        referenceSummary: 'no refs',
+      }) as any,
+      syncDesignSessionStateFn: () => {},
+      syncTopicSnapshotStateFn: async () => {},
+      validateAttachmentPassthroughFn: () => {},
+    },
+  });
+
+  assert.equal(result.taskMetadata.allowAutonomousRouting, true);
+  assert.equal(result.taskMetadata.selectedRoleId, undefined);
+  assert.equal(result.taskMetadata.selectedRoleSource, undefined);
+  assert.equal(result.taskMetadata.baseAgentId, undefined);
+  assert.equal(result.taskMetadata.roleGovernanceMode, undefined);
+  assert.equal(result.taskMetadata.pinnedAgentId, undefined);
+  assert.equal(result.taskMetadata.agentSelectionMode, undefined);
+  assert.equal(result.taskMetadata.allowMainBrainRoleMutation, undefined);
+  assert.equal(result.taskMetadata.allowMainBrainRolePromotion, undefined);
+  assert.equal(result.task.input.metadata?.selectedRoleId, undefined);
+  assert.equal(result.task.input.metadata?.baseAgentId, undefined);
 });

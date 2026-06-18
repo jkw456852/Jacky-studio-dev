@@ -286,17 +286,35 @@ export function useWorkspaceCanvasElementInteraction(
             }
             file.markerId = newMarkerId;
             file.markerName = "Selection";
+            const markerImageWidth =
+              (file as any).__naturalMarkerImageWidth || el.width;
+            const markerImageHeight =
+              (file as any).__naturalMarkerImageHeight || el.height;
+            const markerLeft = Math.max(
+              0,
+              Math.min(
+                markerImageWidth - cropWidth,
+                (x / 100) * markerImageWidth - cropWidth / 2,
+              ),
+            );
+            const markerTop = Math.max(
+              0,
+              Math.min(
+                markerImageHeight - cropHeight,
+                (y / 100) * markerImageHeight - cropHeight / 2,
+              ),
+            );
             file.markerInfo = {
               fullImageUrl: el.url,
               cropUrl: crop,
               normalizedX: x / 100,
               normalizedY: y / 100,
-              x: (x / 100) * el.width - cropWidth / 2,
-              y: (y / 100) * el.height - cropHeight / 2,
+              x: markerLeft,
+              y: markerTop,
               width: cropWidth,
               height: cropHeight,
-              imageWidth: (file as any).__naturalMarkerImageWidth || el.width,
-              imageHeight: (file as any).__naturalMarkerImageHeight || el.height,
+              imageWidth: markerImageWidth,
+              imageHeight: markerImageHeight,
             };
 
             if (creationMode === "agent") {

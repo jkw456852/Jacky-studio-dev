@@ -42,14 +42,6 @@ type WorkspaceSendOptions = {
   isTyping: boolean;
   webEnabled: boolean;
   modelMode: "thinking" | "fast";
-  agentSelectionMode: "auto" | "manual";
-  pinnedAgentId: AgentType;
-  selectedRoleId: string | null;
-  selectedRoleSource: AgentTaskMetadata["selectedRoleSource"] | null;
-  baseAgentId: AgentType;
-  roleGovernanceMode: NonNullable<AgentTaskMetadata["roleGovernanceMode"]>;
-  allowMainBrainRoleMutation: boolean;
-  allowMainBrainRolePromotion: boolean;
   creationMode: WorkspaceSendCreationMode;
   researchMode: WorkspaceSendResearchMode;
   imageGenRatio: string;
@@ -86,14 +78,6 @@ type BuildRequestMetadataParams = {
   topicId: string;
   isWeb: boolean;
   modelMode: "thinking" | "fast";
-  agentSelectionMode: "auto" | "manual";
-  pinnedAgentId: AgentType;
-  selectedRoleId: string | null;
-  selectedRoleSource: AgentTaskMetadata["selectedRoleSource"] | null;
-  baseAgentId: AgentType;
-  roleGovernanceMode: NonNullable<AgentTaskMetadata["roleGovernanceMode"]>;
-  allowMainBrainRoleMutation: boolean;
-  allowMainBrainRolePromotion: boolean;
   creationMode: WorkspaceSendCreationMode;
   imageGenRatio: string;
   imageGenRes: '1K' | '2K' | '4K';
@@ -151,6 +135,10 @@ const buildAgentResearchPayload = ({
 }) => {
   if (!researchPayload) return undefined;
 
+  const extractedCount = researchWebPages.filter((page) =>
+    Boolean(String(page.cleanedTextExcerpt || "").trim()),
+  ).length;
+
   return {
     status: 'completed' as const,
     mode: researchPayload.mode,
@@ -163,22 +151,143 @@ const buildAgentResearchPayload = ({
     fallback: Boolean(researchPayload.provider?.fallback),
     webCount: Array.isArray(researchPayload.web) ? researchPayload.web.length : 0,
     imageCount: Array.isArray(researchPayload.images) ? researchPayload.images.length : 0,
-    extractedCount: researchWebPages.length,
+    extractedCount,
     citations: researchWebPages.map((page) => ({
       title: page.title,
       url: page.url,
       host: buildResearchHost(page.url),
       siteName: page.siteName,
       snippet: page.snippet,
-      excerpt: page.snippet,
+      excerpt: page.cleanedTextExcerpt || page.snippet,
     })),
     extractedPages: researchWebPages.map((page) => ({
       title: page.title,
       url: page.url,
       excerpt: page.snippet,
-      cleanedTextExcerpt: page.snippet,
+      cleanedTextExcerpt: page.cleanedTextExcerpt,
+      length: page.length,
     })),
     suggestedQueries: researchPayload.hints?.suggestedQueries || [],
+  };
+};
+
+const buildAgentResearchPayloadFromSkillResults = (
+  skillResults: unknown,
+) => {
+  if (!Array.isArray(skillResults)) return undefined;
+
+  const latestWorkspaceSearch = [...skillResults]
+    .reverse()
+    .find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        (item as { success?: boolean }).success === true &&
+        (item as { skillName?: string }).skillName === "workspaceSearch" &&
+        (item as { result?: unknown }).result &&
+        typeof (item as { result?: unknown }).result === "object",
+    ) as
+    | {
+        result?: {
+          mode?: "web" | "images" | "web+images";
+          query?: string;
+          summary?: string;
+          provider?: {
+            web?: string;
+            images?: string;
+            fallback?: boolean;
+          };
+          webResults?: Array<{
+            title?: string;
+            url?: string;
+            snippet?: string;
+            siteName?: string;
+            excerpt?: string;
+          }>;
+          imageResults?: Array<unknown>;
+          citations?: Array<{
+            title?: string;
+            url?: string;
+          }>;
+          extractedPages?: Array<{
+            title?: string;
+            url?: string;
+            excerpt?: string;
+            cleanedTextExcerpt?: string;
+            length?: number;
+            error?: string;
+          }>;
+          suggestedQueries?: string[];
+        };
+      }
+    | undefined;
+
+  const result = latestWorkspaceSearch?.result;
+  if (!result) return undefined;
+
+  const citations = Array.isArray(result.citations)
+    ? result.citations
+        .map((item) => {
+          const title = String(item?.title || "").trim();
+          const url = String(item?.url || "").trim();
+          if (!title || !url) return null;
+
+          const webMatch = Array.isArray(result.webResults)
+            ? result.webResults.find((page) => String(page?.url || "").trim() === url)
+            : undefined;
+
+          return {
+            title,
+            url,
+            host: buildResearchHost(url),
+            siteName: String(webMatch?.siteName || "").trim() || undefined,
+            snippet: String(webMatch?.snippet || "").trim() || undefined,
+            excerpt:
+              String(webMatch?.excerpt || "").trim() ||
+              String(webMatch?.snippet || "").trim() ||
+              undefined,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const extractedPages = Array.isArray(result.extractedPages)
+    ? result.extractedPages
+        .map((page) => {
+          const title = String(page?.title || "").trim();
+          const url = String(page?.url || "").trim();
+          if (!title || !url) return null;
+          return {
+            title,
+            url,
+            excerpt: String(page?.excerpt || "").trim() || undefined,
+            cleanedTextExcerpt:
+              String(page?.cleanedTextExcerpt || "").trim() || undefined,
+            length:
+              typeof page?.length === "number" ? page.length : undefined,
+            error: String(page?.error || "").trim() || undefined,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    status: "completed" as const,
+    mode: result.mode || "web",
+    query: String(result.query || "").trim() || undefined,
+    summary: String(result.summary || "").trim() || undefined,
+    providerLabel:
+      [result.provider?.web, result.provider?.images].filter(Boolean).join(" / ") ||
+      undefined,
+    fallback: Boolean(result.provider?.fallback),
+    webCount: Array.isArray(result.webResults) ? result.webResults.length : 0,
+    imageCount: Array.isArray(result.imageResults) ? result.imageResults.length : 0,
+    extractedCount: extractedPages.filter((page) => page.cleanedTextExcerpt).length,
+    citations,
+    extractedPages,
+    suggestedQueries: Array.isArray(result.suggestedQueries)
+      ? result.suggestedQueries
+      : [],
   };
 };
 
@@ -221,6 +330,25 @@ const cloneWorkspaceInputFileFromBlob = (
   nextFile._attachmentId = sourceFile._attachmentId;
   nextFile._chipPreviewUrl = sourceFile._chipPreviewUrl;
   return nextFile;
+};
+
+const shouldPreloadResearchBeforeAgent = ({
+  creationMode,
+  skillData,
+}: {
+  creationMode: WorkspaceSendCreationMode;
+  skillData?: ChatMessage["skillData"];
+}) => {
+  const allowAutonomousRouting =
+    skillData?.config &&
+    typeof skillData.config === "object" &&
+    (skillData.config as Record<string, unknown>).allowAutonomousRouting === true;
+
+  if (allowAutonomousRouting) {
+    return false;
+  }
+
+  return creationMode !== "agent";
 };
 
 const hydrateCanvasAttachmentFile = async (
@@ -273,14 +401,6 @@ const buildRequestMetadata = ({
   topicId,
   isWeb,
   modelMode,
-  agentSelectionMode,
-  pinnedAgentId,
-  selectedRoleId,
-  selectedRoleSource,
-  baseAgentId,
-  roleGovernanceMode,
-  allowMainBrainRoleMutation,
-  allowMainBrainRolePromotion,
   creationMode,
   imageGenRatio,
   imageGenRes,
@@ -304,7 +424,19 @@ const buildRequestMetadata = ({
     skillData?.config &&
     typeof skillData.config === "object" &&
     (skillData.config as Record<string, unknown>).allowAutonomousRouting === true;
+  const skillConfig =
+    skillData?.config && typeof skillData.config === "object"
+      ? (skillData.config as Record<string, unknown>)
+      : undefined;
   const effectiveCreationMode = allowAutonomousRouting ? "agent" : creationMode;
+  const suggestedTaskMode = String(skillConfig?.suggestedTaskMode || "").trim().toLowerCase();
+  const effectiveTaskMode =
+    allowAutonomousRouting &&
+    ['chat', 'research', 'layout-edit', 'text-edit', 'touch-edit', 'edit', 'generate'].includes(
+      suggestedTaskMode,
+    )
+      ? suggestedTaskMode
+      : undefined;
 
   return {
     topicId,
@@ -314,15 +446,8 @@ const buildRequestMetadata = ({
       researchStatus === "failed"
         ? researchErrorMessage || "检索失败，请稍后重试"
         : undefined,
-    agentSelectionMode,
-    pinnedAgentId: agentSelectionMode === "manual" ? pinnedAgentId : undefined,
-    selectedRoleId: selectedRoleId || undefined,
-    selectedRoleSource: selectedRoleSource || undefined,
-    baseAgentId,
-    roleGovernanceMode,
-    allowMainBrainRoleMutation,
-    allowMainBrainRolePromotion,
     creationMode: effectiveCreationMode,
+    taskMode: effectiveTaskMode,
     workflowMode: modelMode === "fast" ? "fast" : "designer",
     preferredAspectRatio:
       effectiveCreationMode === "video" ? videoGenRatio : imageGenRatio,
@@ -388,14 +513,6 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
     isTyping,
     webEnabled,
     modelMode,
-    agentSelectionMode,
-    pinnedAgentId,
-    selectedRoleId,
-    selectedRoleSource,
-    baseAgentId,
-    roleGovernanceMode,
-    allowMainBrainRoleMutation,
-    allowMainBrainRolePromotion,
     creationMode,
     researchMode,
     imageGenRatio,
@@ -598,26 +715,40 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           pendingAttachments: useAgentStore.getState().composer.pendingAttachments || [],
           getElementSourceUrl,
         });
-        const {
-          researchPayload,
-          researchReferenceImageUrls,
-          researchWebPages,
-          researchStatus,
-          researchErrorMessage,
-        } = await gatherWorkspaceResearchContext(text, researchMode, isWeb);
+        let researchPayload: SearchResponse | null = null;
+        let researchReferenceImageUrls: string[] = [];
+        let researchWebPages: WorkspaceSendReferenceWebPage[] = [];
+        let researchStatus: "skipped" | "success" | "failed" = "skipped";
+        let researchErrorMessage: string | undefined;
+
+        if (
+          shouldPreloadResearchBeforeAgent({
+            creationMode,
+            skillData,
+          })
+        ) {
+          ({
+            researchPayload,
+            researchReferenceImageUrls,
+            researchWebPages,
+            researchStatus,
+            researchErrorMessage,
+          } = await gatherWorkspaceResearchContext(text, researchMode, isWeb));
+        } else {
+          console.log(
+            "[Workspace] handleSend: skip eager research, defer to agent workspaceSearch",
+            {
+              creationMode,
+              isWeb,
+              hasSkill: Boolean(skillData?.id || skillData?.name),
+            },
+          );
+        }
 
         const requestMetadata = buildRequestMetadata({
           topicId: effectiveTopicId,
           isWeb,
           modelMode,
-          agentSelectionMode,
-          pinnedAgentId,
-          selectedRoleId,
-          selectedRoleSource,
-          baseAgentId,
-          roleGovernanceMode,
-          allowMainBrainRoleMutation,
-          allowMainBrainRolePromotion,
           creationMode,
           imageGenRatio,
           imageGenRes,
@@ -710,6 +841,7 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
               proposals: result.output.proposals,
               skillCalls: result.output.skillCalls,
               analysis: result.output.analysis,
+              answerSegments: result.output.answerSegments,
               preGenerationMessage: result.output.preGenerationMessage,
               postGenerationSummary: result.output.postGenerationSummary,
               suggestions: result.output.adjustments || [],
@@ -740,11 +872,15 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
                 errorCode: result.output.error?.code,
                 errorMessage: result.output.error?.message,
               },
-              research: buildAgentResearchPayload({
-                researchPayload,
-                researchReferenceImageUrls,
-                researchWebPages,
-              }),
+              research:
+                buildAgentResearchPayload({
+                  researchPayload,
+                  researchReferenceImageUrls,
+                  researchWebPages,
+                }) ||
+                buildAgentResearchPayloadFromSkillResults(
+                  result.output.skillCalls,
+                ),
             },
           };
           addMessage(agentMsg);

@@ -40,6 +40,9 @@ type NormalizedWebItem = {
   snippet: string;
   publishedTime: string;
   siteName: string;
+  excerpt?: string;
+  cleanedTextExcerpt?: string;
+  length?: number;
 };
 
 type NormalizedImageItem = {
@@ -502,15 +505,18 @@ async function searchTavily(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${normalizedKey}`,
       },
       body: JSON.stringify({
-        api_key: normalizedKey,
         query,
         search_depth: "advanced",
         topic: "general",
         max_results: Math.max(1, Math.min(20, webCount)),
         include_images: mode !== "web",
         include_image_descriptions: false,
+        include_answer: "advanced",
+        include_raw_content: "text",
+        chunks_per_source: 3,
       }),
     },
   );
@@ -524,6 +530,15 @@ async function searchTavily(
       snippet: String(item?.content || ""),
       publishedTime: String(item?.published_date || ""),
       siteName: hostFromUrl(String(item?.url || "")),
+      excerpt: String(item?.content || "").trim() || undefined,
+      cleanedTextExcerpt: String(
+        item?.raw_content || item?.content || "",
+      ).trim() || undefined,
+      length: typeof item?.raw_content === "string"
+        ? item.raw_content.length
+        : typeof item?.content === "string"
+          ? item.content.length
+          : undefined,
     }))
     .filter((item: NormalizedWebItem) => /^https?:\/\//i.test(item.url))
     .slice(0, webCount);
@@ -592,12 +607,13 @@ async function searchExa(
         query,
         numResults: Math.max(1, Math.min(20, webCount)),
         type: "auto",
+        livecrawl: "always",
         contents: {
-          text: true,
-          highlights: {
-            numSentences: 2,
-            highlightsPerUrl: 2,
+          text: {
+            maxCharacters: 2400,
           },
+          highlights: true,
+          summary: true,
         },
       }),
     },
@@ -611,9 +627,12 @@ async function searchExa(
       displayUrl: hostFromUrl(String(item?.url || "")),
       snippet: Array.isArray(item?.highlights)
         ? item.highlights.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).join(" ")
-        : String(item?.text || item?.summary || ""),
+        : String(item?.summary || item?.text || ""),
       publishedTime: String(item?.publishedDate || item?.published_date || ""),
       siteName: hostFromUrl(String(item?.url || "")),
+      excerpt: String(item?.summary || "").trim() || undefined,
+      cleanedTextExcerpt: String(item?.text || "").trim() || undefined,
+      length: typeof item?.text === "string" ? item.text.length : undefined,
     }))
     .filter((item: NormalizedWebItem) => /^https?:\/\//i.test(item.url))
     .slice(0, webCount);

@@ -17,6 +17,8 @@ export type WorkspaceSendReferenceWebPage = {
   url: string;
   snippet?: string;
   siteName?: string;
+  cleanedTextExcerpt?: string;
+  length?: number;
 };
 
 export type WorkspaceSendResearchStatus = "skipped" | "success" | "failed";
@@ -84,14 +86,38 @@ const executeWorkspaceResearchContext = async (
   const webCandidates = (researchPayload.web || [])
     .filter((item) => isExtractableResearchUrl(item.url))
     .slice(0, 8);
+  const directExtractedWebs = webCandidates
+    .filter((item) => String(item.cleanedTextExcerpt || "").trim())
+    .map((item) => ({
+      title: item.title,
+      url: item.url,
+      snippet:
+        String(item.excerpt || "").trim() ||
+        String(item.snippet || "").trim() ||
+        undefined,
+      siteName: item.siteName,
+      cleanedTextExcerpt: String(item.cleanedTextExcerpt || "").trim(),
+      length: typeof item.length === "number" ? item.length : undefined,
+    }));
+  const needsFallbackExtraction = webCandidates.filter(
+    (item) => !String(item.cleanedTextExcerpt || "").trim(),
+  );
   const extractedWebs = await Promise.allSettled(
-    webCandidates.map(async (item) => {
-      const extracted = await extractWebPage(item.url);
+    needsFallbackExtraction.map(async (item) => {
+      const extracted = await extractWebPage(item.url, {
+        query: text,
+      });
       return {
         title: extracted.title || item.title,
         url: item.url,
         snippet: extracted.excerpt || item.snippet,
         siteName: item.siteName,
+        cleanedTextExcerpt:
+          String(extracted.cleanedText || "").trim() ||
+          String(extracted.excerpt || "").trim() ||
+          String(item.snippet || "").trim() ||
+          undefined,
+        length: extracted.length,
       };
     }),
   );
@@ -108,12 +134,14 @@ const executeWorkspaceResearchContext = async (
   researchWebPages = extractedWebs
     .map((item, index) => {
       if (item.status === "fulfilled") return item.value;
-      const fallback = webCandidates[index];
+      const fallback = needsFallbackExtraction[index];
       return {
         title: fallback?.title || "",
         url: fallback?.url || "",
         snippet: fallback?.snippet,
         siteName: fallback?.siteName,
+        cleanedTextExcerpt: fallback?.cleanedTextExcerpt,
+        length: fallback?.length,
       };
     })
     .filter((item) => /^https?:\/\//i.test(item.url))
@@ -122,7 +150,10 @@ const executeWorkspaceResearchContext = async (
       url: item.url,
       snippet: item.snippet,
       siteName: item.siteName,
+      cleanedTextExcerpt: item.cleanedTextExcerpt,
+      length: item.length,
     }));
+  researchWebPages = [...directExtractedWebs, ...researchWebPages].slice(0, 8);
 
   const hasUsableSearchResult =
     researchReferenceImageUrls.length > 0 ||

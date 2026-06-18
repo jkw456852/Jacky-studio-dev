@@ -628,6 +628,27 @@ const trimChatMessage = (message: ChatMessage): ChatMessage => {
           skillCalls: compactSkillCalls(message.agentData.skillCalls),
           analysis:
             trimText(message.agentData.analysis, MAX_ANALYSIS_TEXT) || undefined,
+          answerSegments: Array.isArray(message.agentData.answerSegments)
+            ? message.agentData.answerSegments
+                .map((item) =>
+                  item && typeof item === "object"
+                    ? {
+                        text: trimText(item.text, 1200),
+                        citationOrdinals: Array.isArray(item.citationOrdinals)
+                          ? item.citationOrdinals
+                              .map((value) => Number(value))
+                              .filter(
+                                (value) =>
+                                  Number.isInteger(value) && value > 0,
+                              )
+                              .slice(0, 6)
+                          : undefined,
+                      }
+                    : null,
+                )
+                .filter((item) => Boolean(item?.text))
+                .slice(0, 16)
+            : undefined,
           preGenerationMessage:
             trimText(message.agentData.preGenerationMessage, MAX_SUMMARY_TEXT) ||
             undefined,
@@ -714,6 +735,15 @@ export const trimConversationsForPersist = (
                           ? conversation.draft.quickSkill.config
                           : undefined,
                     }
+                  : undefined,
+              modelMode:
+                conversation.draft.modelMode === "thinking" ||
+                conversation.draft.modelMode === "fast"
+                  ? conversation.draft.modelMode
+                  : undefined,
+              webEnabled:
+                typeof conversation.draft.webEnabled === "boolean"
+                  ? conversation.draft.webEnabled
                   : undefined,
             }
           : undefined,

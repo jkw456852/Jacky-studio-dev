@@ -19,6 +19,8 @@ type UseWorkspaceConversationPersistenceArgs = {
   currentInputBlocks: InputBlock[];
   creationMode: "agent" | "image" | "video";
   activeQuickSkill?: ChatMessage["skillData"];
+  modelMode: "thinking" | "fast";
+  webEnabled: boolean;
   setConversations: Dispatch<SetStateAction<ConversationSession[]>>;
 };
 
@@ -30,6 +32,8 @@ export const useWorkspaceConversationPersistence = ({
   currentInputBlocks,
   creationMode,
   activeQuickSkill,
+  modelMode,
+  webEnabled,
   setConversations,
 }: UseWorkspaceConversationPersistenceArgs) => {
   const derivePersistedConversationTitle = (
@@ -40,6 +44,8 @@ export const useWorkspaceConversationPersistence = ({
           inputBlocks: InputBlock[];
           creationMode: "agent" | "image" | "video";
           quickSkill?: ChatMessage["skillData"];
+          modelMode?: "thinking" | "fast";
+          webEnabled?: boolean;
         }
       | undefined,
   ) => {
@@ -65,18 +71,23 @@ export const useWorkspaceConversationPersistence = ({
       const draftInputBlocks = Array.isArray(currentInputBlocks)
         ? currentInputBlocks.map((block) => ({ ...block }))
         : [];
-      const hasDraft =
+      const hasDraftContent =
         draftInputBlocks.length > 0 &&
         draftInputBlocks.some((block) =>
           block.type === "text"
             ? Boolean(String(block.text || "").trim())
             : Boolean(block.file),
         );
+      const hasNonDefaultPreferences =
+        modelMode !== "fast" || webEnabled || Boolean(activeQuickSkill);
+      const hasDraft = hasDraftContent || hasNonDefaultPreferences;
       const nextDraft = hasDraft
         ? {
             inputBlocks: draftInputBlocks,
             creationMode,
             quickSkill: activeQuickSkill,
+            modelMode,
+            webEnabled,
           }
         : undefined;
 
@@ -128,6 +139,8 @@ export const useWorkspaceConversationPersistence = ({
     currentInputBlocks,
     creationMode,
     activeQuickSkill,
+    modelMode,
+    webEnabled,
     setConversations,
   ]);
 };

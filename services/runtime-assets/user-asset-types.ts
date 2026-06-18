@@ -248,6 +248,8 @@ export interface StudioImageModelPostPathConfig {
 export interface StudioWorkspacePreferencesAsset {
   schemaVersion: StudioAssetVersion;
   updatedAt: number;
+  chatModelMode: "thinking" | "fast";
+  chatWebEnabled: boolean;
   selectedScriptModels: string[];
   selectedImageModels: string[];
   selectedVideoModels: string[];

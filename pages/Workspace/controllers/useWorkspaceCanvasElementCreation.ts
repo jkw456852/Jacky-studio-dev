@@ -383,6 +383,8 @@ export function useWorkspaceCanvasElementCreation(
           (fallbackPrimaryParentId ? "generation" : undefined),
         treeNodeKind:
           nextNodeInteractionMode === "branch" ? "prompt" : undefined,
+        genReferenceRoleMode:
+          nextNodeInteractionMode === "branch" ? "none" : undefined,
         treeNodeTone:
           nextNodeInteractionMode === "branch" ? "lavender" : undefined,
         treeChildrenCollapsed:

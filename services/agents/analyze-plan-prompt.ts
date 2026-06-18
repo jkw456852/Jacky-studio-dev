@@ -1,5 +1,6 @@
 import type { ProjectContext } from '../../types/common';
 import type { RoleGovernanceMode } from '../../types/agent.types';
+import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 import { buildRuntimeRolePrompt } from './runtime-role.ts';
 import {
   buildMainBrainCapabilityPromptSummary,
@@ -75,6 +76,87 @@ export interface AnalyzePlanPromptOutput {
   historyCount: number;
 }
 
+const isUnifiedSidebarAgentMetadata = (metadata?: Record<string, any>) =>
+  metadata?.allowAutonomousRouting === true &&
+  isUnifiedSidebarAgentSkill(metadata?.skillData);
+
+const buildCustomSkillContextSection = (metadata?: Record<string, any>): string => {
+  const skillData =
+    metadata?.skillData && typeof metadata.skillData === 'object'
+      ? (metadata.skillData as Record<string, any>)
+      : undefined;
+  const config =
+    skillData?.config && typeof skillData.config === 'object'
+      ? (skillData.config as Record<string, any>)
+      : undefined;
+  if (!config || config.isCustomSkill !== true) return '';
+
+  const skillName = truncateText(skillData?.name || 'Custom Skill', 80);
+  const skillSummary = truncateText(
+    config.summary || config.description || '',
+    320,
+  );
+  const skillInstruction = truncateText(
+    config.instruction || config.customInstruction || '',
+    900,
+  );
+  const examplePrompt = truncateText(config.examplePrompt || config.sourceUserPrompt || '', 320);
+  const sourceConversationTitle = truncateText(
+    config.sourceConversationTitle || '',
+    120,
+  );
+
+  return `
+[Custom Skill Context]
+- active custom skill: ${skillName}
+- summary: ${skillSummary || 'none'}
+- reusable instruction: ${skillInstruction || 'Follow the proven workflow from the original conversation and adapt it to the new request.'}
+- example prompt: ${examplePrompt || 'none'}
+- source conversation: ${sourceConversationTitle || 'none'}
+- Treat this custom skill as a reusable workflow shell distilled from a successful prior conversation.
+- Reuse its questioning style, sequencing, output structure, and quality bar before falling back to generic habits.
+- Keep the workflow flexible: adapt to the new request, ask for any missing inputs, and do not overfit to the original example literally.
+- When the user request conflicts with the saved custom skill, prioritize the current request and explain the adjustment.
+`;
+};
+
+const buildAutonomousSkillBiasSection = (metadata?: Record<string, any>): string => {
+  const skillData =
+    metadata?.skillData && typeof metadata.skillData === 'object'
+      ? (metadata.skillData as Record<string, any>)
+      : undefined;
+  const config =
+    skillData?.config && typeof skillData.config === 'object'
+      ? (skillData.config as Record<string, any>)
+      : undefined;
+  if (!config || config.allowAutonomousRouting !== true) return '';
+
+  const routeLabel = truncateText(config.routeLabel || skillData?.name || '', 80);
+  const routeIntent = truncateText(config.routeIntent || '', 40);
+  const routeSummary = truncateText(config.routeSummary || '', 320);
+  const preferredSkills = Array.isArray(config.preferredSkills)
+    ? config.preferredSkills
+        .map((item: unknown) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 6)
+    : [];
+
+  if (!routeLabel && !routeIntent && !routeSummary && preferredSkills.length === 0) {
+    return '';
+  }
+
+  return `
+[Autonomous Skill Bias]
+- selected frontstage skill: ${routeLabel || 'none'}
+- route intent: ${routeIntent || 'none'}
+- route summary: ${routeSummary || 'none'}
+- preferred executable skills for this skill: ${preferredSkills.join(', ') || 'none'}
+- Treat this as a frontstage execution preference, not a hard lock.
+- Keep the user's latest request first, but when multiple valid paths exist, bias your planning, questioning, and tool choice toward this selected skill's intent.
+- If the selected skill suggests video, social, commerce, or branding focus, reflect that in the analysis and chosen tool path before falling back to generic autonomous routing.
+`;
+};
+
 export const buildAnalyzePlanPrompt = ({
   agentId,
   systemPrompt,
@@ -87,6 +169,7 @@ export const buildAnalyzePlanPrompt = ({
   forceImageToolCall,
   allowAutonomousRouting,
 }: AnalyzePlanPromptInput): AnalyzePlanPromptOutput => {
+  const unifiedSidebarAgent = isUnifiedSidebarAgentMetadata(metadata);
   const hasAttachments = Boolean(attachments && attachments.length > 0);
   const isEdit =
     /换成|改成|改为|替换|修改|调整|变成|去掉|删除|移除|去背景|换背景|换颜色|改颜色|抠图|高清|放大画质|upscale|remove|replace|recolor|edit/i.test(
@@ -356,6 +439,11 @@ ${(attachedResearch.citations || [])
 - For current-info requests such as weather, news, prices, traffic, or schedules, you must first provide a concise fact answer from the attached research before adding any caveat.
 - Only say "没有拿到结果" or equivalent when no attached research result exists at all.
 - If the sources are partial, summarize the verifiable facts and clearly mark anything that remains uncertain.
+- When your final answer is materially based on attached research results, also return \`answerSegments\`.
+- \`answerSegments\` must be an array of concise answer chunks in display order.
+- Each answer segment item must be \`{ "text": string, "citationOrdinals": number[] }\`.
+- \`citationOrdinals\` must reference the numbered citations from the attached research list above, using 1-based indexes.
+- Only include a citation ordinal when that segment is actually supported by that cited source.
 `
     : '';
 
@@ -363,26 +451,40 @@ ${(attachedResearch.citations || [])
     ? '- 联网研究既可能以系统附带研究上下文出现，也可以在需要时通过 workspaceSearch skill 主动触发。'
     : '';
   const roleGovernanceMode: RoleGovernanceMode =
-    metadata?.roleGovernanceMode === 'approval_required' ||
-    metadata?.roleGovernanceMode === 'auto_manage'
+    !unifiedSidebarAgent &&
+    (metadata?.roleGovernanceMode === 'approval_required' ||
+      metadata?.roleGovernanceMode === 'auto_manage')
       ? metadata.roleGovernanceMode
       : 'manual_only';
   const selectedRoleId =
-    typeof metadata?.selectedRoleId === 'string' ? metadata.selectedRoleId.trim() : '';
+    !unifiedSidebarAgent &&
+    typeof metadata?.selectedRoleId === 'string'
+      ? metadata.selectedRoleId.trim()
+      : '';
   const selectedRoleSource =
+    !unifiedSidebarAgent &&
     typeof metadata?.selectedRoleSource === 'string'
       ? metadata.selectedRoleSource.trim()
       : '';
   const baseAgentId =
-    typeof metadata?.baseAgentId === 'string' ? metadata.baseAgentId.trim() : '';
-  const roleGovernanceSection = buildRoleGovernancePromptContract({
-    selectedRoleId,
-    selectedRoleSource,
-    baseAgentId,
-    roleGovernanceMode,
-    allowMainBrainRoleMutation: metadata?.allowMainBrainRoleMutation === true,
-    allowMainBrainRolePromotion: metadata?.allowMainBrainRolePromotion === true,
-  });
+    !unifiedSidebarAgent &&
+    typeof metadata?.baseAgentId === 'string'
+      ? metadata.baseAgentId.trim()
+      : '';
+  const allowMainBrainRoleMutation =
+    !unifiedSidebarAgent && metadata?.allowMainBrainRoleMutation === true;
+  const allowMainBrainRolePromotion =
+    !unifiedSidebarAgent && metadata?.allowMainBrainRolePromotion === true;
+  const roleGovernanceSection = unifiedSidebarAgent
+    ? ''
+    : buildRoleGovernancePromptContract({
+        selectedRoleId,
+        selectedRoleSource,
+        baseAgentId,
+        roleGovernanceMode,
+        allowMainBrainRoleMutation,
+        allowMainBrainRolePromotion,
+      });
 
   const attachmentSection = (attachments || [])
     .map((file, index) => {
@@ -414,8 +516,8 @@ ${(attachedResearch.citations || [])
     networkResearchEnabled,
     hasResearchContext,
     roleGovernanceMode,
-    allowMainBrainRoleMutation: metadata?.allowMainBrainRoleMutation === true,
-    allowMainBrainRolePromotion: metadata?.allowMainBrainRolePromotion === true,
+    allowMainBrainRoleMutation,
+    allowMainBrainRolePromotion,
   });
   const capabilityBoundaryAnsweringSection = isCapabilityBoundaryQuestion
     ? `
@@ -430,7 +532,12 @@ ${(attachedResearch.citations || [])
 `
     : '';
 
-  const fullPrompt = `${buildRuntimeRolePrompt(systemPrompt, metadata)}
+  const runtimeRoleMetadata = unifiedSidebarAgent
+    ? undefined
+    : metadata;
+  const customSkillContextSection = buildCustomSkillContextSection(metadata);
+  const autonomousSkillBiasSection = buildAutonomousSkillBiasSection(metadata);
+  const fullPrompt = `${buildRuntimeRolePrompt(systemPrompt, runtimeRoleMetadata)}
 
 [Language Rule]
 - 所有 analysis、message、title、description、suggestions 等说明性字段必须使用中文。
@@ -462,7 +569,7 @@ ${capabilityTruthSnapshot}
 ${message}
 ${inlinePartsDescription ? `\n[Request Structure]\n${inlinePartsDescription}` : ''}
 
-${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}${visualQaIsolationSection}${visualQaJsonContract}${autonomousDecisionContract}${capabilityBoundaryAnsweringSection}${roleGovernanceSection}
+${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}${visualQaIsolationSection}${visualQaJsonContract}${customSkillContextSection}${autonomousSkillBiasSection}${autonomousDecisionContract}${capabilityBoundaryAnsweringSection}${roleGovernanceSection}
 [Response Contract]
 - Return executable JSON directly.
 - Do not ask the user to click again for confirmation unless confirmation is truly necessary.
@@ -478,6 +585,12 @@ ${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${mul
  
 {
   "analysis": "用中文简要分析用户需求",
+  "answerSegments": [
+    {
+      "text": "当回答依赖联网来源时，把正文拆成 1 到多个片段。",
+      "citationOrdinals": [1]
+    }
+  ],
   "preGenerationMessage": "如果要调用视觉工具，先用中文说明你将如何处理参考图、风格和构图；如果要先联网检索，也可以说明你将先核实哪些事实；否则可省略",
   "skillCalls": [
     {

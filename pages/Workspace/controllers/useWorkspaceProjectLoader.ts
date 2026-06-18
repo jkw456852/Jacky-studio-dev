@@ -7,6 +7,7 @@
 import { createChatSession, getBestModelSelection } from "../../../services/gemini";
 import { formatDate, getProject, saveProject } from "../../../services/storage";
 import { createInputBlockId, useAgentStore } from "../../../stores/agent.store";
+import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
 import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences";
 import type {
   CanvasElement,
@@ -56,6 +57,7 @@ type WorkspaceBootstrapLocationState = {
   initialWebEnabled?: boolean;
   initialImageModel?: string;
   initialCreationMode?: "agent" | "image" | "video";
+  initialSkillData?: ChatMessage["skillData"];
   backgroundUrl?: string;
   backgroundType?: string;
 };
@@ -519,6 +521,27 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
             ? message.agentData.skillCalls.slice(0, 12)
             : undefined,
           analysis: trimLoadText(message.agentData.analysis, 800) || undefined,
+          answerSegments: Array.isArray(message.agentData.answerSegments)
+            ? message.agentData.answerSegments
+                .map((item) =>
+                  item && typeof item === "object"
+                    ? {
+                        text: trimLoadText(item.text, 1200) || "",
+                        citationOrdinals: Array.isArray(item.citationOrdinals)
+                          ? item.citationOrdinals
+                              .map((value) => Number(value))
+                              .filter(
+                                (value) =>
+                                  Number.isInteger(value) && value > 0,
+                              )
+                              .slice(0, 6)
+                          : undefined,
+                      }
+                    : null,
+                )
+                .filter((item) => Boolean(item?.text))
+                .slice(0, 16)
+            : undefined,
           preGenerationMessage:
             trimLoadText(message.agentData.preGenerationMessage, 600) || undefined,
           postGenerationSummary:
@@ -1207,6 +1230,30 @@ export const useWorkspaceProjectLoader = ({
         useAgentStore.getState().actions.reset();
 
         try {
+          const workspacePreferences =
+            getStudioUserAssetApi().getWorkspacePreferences();
+          const preferredChatModelMode =
+            workspacePreferences.chatModelMode === "thinking" ||
+            workspacePreferences.chatModelMode === "fast"
+              ? workspacePreferences.chatModelMode
+              : "fast";
+          const preferredChatWebEnabled =
+            typeof workspacePreferences.chatWebEnabled === "boolean"
+              ? workspacePreferences.chatWebEnabled
+              : false;
+          if (
+            workspacePreferences.chatModelMode === "thinking" ||
+            workspacePreferences.chatModelMode === "fast"
+          ) {
+            setModelMode(workspacePreferences.chatModelMode);
+          } else {
+            setModelMode("fast");
+          }
+          if (typeof workspacePreferences.chatWebEnabled === "boolean") {
+            setWebEnabled(workspacePreferences.chatWebEnabled);
+          } else {
+            setWebEnabled(false);
+          }
           const project = await getProject(id);
           if (cancelled) {
             return;
@@ -1267,6 +1314,8 @@ export const useWorkspaceProjectLoader = ({
                 setActiveQuickSkillPreference(
                   activeConversation.draft?.quickSkill || null,
                 );
+                setModelMode(preferredChatModelMode);
+                setWebEnabled(preferredChatWebEnabled);
               }
             } else {
               setActiveConversationId(createConversationId());
@@ -1375,12 +1424,15 @@ export const useWorkspaceProjectLoader = ({
         if (locationState.initialCreationMode && setCreationMode) {
           setCreationMode(locationState.initialCreationMode);
         }
+        if (locationState.initialSkillData) {
+          setActiveQuickSkillPreference(locationState.initialSkillData);
+        }
 
         void handleSend(
           locationState.initialPrompt,
           locationState.initialAttachments,
           locationState.initialWebEnabled,
-          undefined,
+          locationState.initialSkillData,
         );
       }
     }

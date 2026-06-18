@@ -241,7 +241,7 @@ export const AssistantSidebarFilesPopover: React.FC<
           className={`overflow-hidden ${
             inlinePanel
               ? "flex h-full flex-col bg-[#f8f9fc]"
-              : "absolute right-0 top-full z-[60] mt-2 w-[320px] rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.985),rgba(247,249,252,0.96))] shadow-[0_26px_72px_-48px_rgba(15,23,42,0.34)] backdrop-blur-md"
+              : "absolute right-0 top-full z-[60] mt-2 w-[296px] rounded-[20px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.988),rgba(248,249,252,0.97))] shadow-[0_20px_52px_-36px_rgba(15,23,42,0.24)] backdrop-blur-md"
           }`}
           onClick={(event) => event.stopPropagation()}
         >
@@ -249,7 +249,7 @@ export const AssistantSidebarFilesPopover: React.FC<
             className={`${
               inlinePanel
                 ? "border-b border-slate-200/80 bg-[#f8f9fc] px-4 py-3.5"
-                : "border-b border-slate-200/80 px-4 py-3.5"
+                : "border-b border-slate-200/80 px-3 py-2.5"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -273,7 +273,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                 {fileCount} 个文件
               </span>
             </div>
-            <div className="mt-3 space-y-2.5">
+              <div className="mt-2 space-y-2">
               <div className="relative">
                 <Search
                   size={13}
@@ -285,10 +285,10 @@ export const AssistantSidebarFilesPopover: React.FC<
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索文件名或模型"
-                  className="h-10 w-full rounded-2xl bg-white/88 pl-9 pr-3 text-[12px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]"
+                  className="h-9 w-full rounded-full bg-white/88 pl-9 pr-3 text-[12px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {[
                   { key: "all", label: "全部", count: files.length },
                   { key: "image", label: "图片", count: imageCount },
@@ -302,7 +302,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                       onClick={() =>
                         setFilter(option.key as "all" | "image" | "video")
                       }
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition ${
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.25 text-[10px] font-semibold transition ${
                         isActive
                           ? "bg-slate-900 text-white"
                           : "bg-white/88 text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] hover:bg-white hover:text-slate-800"
@@ -322,7 +322,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                       current === "latest" ? "oldest" : "latest",
                     )
                   }
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/88 px-2.5 py-1.5 text-[10px] font-semibold text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] transition hover:bg-white hover:text-slate-800"
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/88 px-2.5 py-1.25 text-[10px] font-semibold text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] transition hover:bg-white hover:text-slate-800"
                 >
                   <span>{sortMode === "latest" ? "最新优先" : "最早优先"}</span>
                 </button>
@@ -335,7 +335,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                       void handleDownloadCurrentResults();
                     }}
                     disabled={isDownloadingAll}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Download size={12} strokeWidth={1.8} />
                     <span>{isDownloadingAll ? "打包中..." : "下载当前结果"}</span>
@@ -345,7 +345,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                     onClick={() => {
                       void handleCopySummary();
                     }}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                    className="inline-flex h-7 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                   >
                     <Copy size={12} strokeWidth={1.8} />
                     <span>{copiedSummary ? "已复制摘要" : "复制摘要"}</span>
@@ -353,7 +353,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                 </div>
               ) : null}
               {hasActiveFilters ? (
-                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-[10px] text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.75)]">
+                <div className="flex items-center justify-between gap-3 rounded-[16px] bg-slate-50 px-3 py-2 text-[10px] text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.75)]">
                   <span>当前筛出 {fileCount} 个结果</span>
                   <button
                     type="button"
@@ -405,7 +405,7 @@ export const AssistantSidebarFilesPopover: React.FC<
             </div>
           ) : (
             <div
-              className={`space-y-2 overflow-y-auto p-3 custom-scrollbar ${
+              className={`space-y-2 overflow-y-auto p-2.5 custom-scrollbar ${
                 inlinePanel
                   ? "min-h-0 flex-1 bg-[#f8f9fc]"
                   : "max-h-[320px]"
@@ -440,7 +440,7 @@ export const AssistantSidebarFilesPopover: React.FC<
                     {group.files.map((file, index) => (
                       <div
                         key={`${file.url}-${index}`}
-                        className="group flex cursor-pointer items-center gap-3 rounded-[18px] bg-white/74 px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.84)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white hover:shadow-[0_16px_30px_-28px_rgba(15,23,42,0.2),inset_0_0_0_1px_rgba(203,213,225,0.9)]"
+                        className="group flex cursor-pointer items-center gap-3 rounded-[16px] bg-white/78 px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.84)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-white hover:shadow-[0_12px_24px_-26px_rgba(15,23,42,0.16),inset_0_0_0_1px_rgba(203,213,225,0.9)]"
                         onClick={() =>
                           file.type === "image"
                             ? onPreview(file.url)

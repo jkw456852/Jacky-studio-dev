@@ -1679,7 +1679,12 @@ export function useWorkspaceElementImageGeneration(
         let currentConsistencyContext = getDesignConsistencyContext();
         let currentReferenceRoleMode: NonNullable<
           CanvasElement["genReferenceRoleMode"]
-        > = sourceElement.genReferenceRoleMode || "default";
+        > =
+          sourceElement.genReferenceRoleMode === "default" ||
+          sourceElement.genReferenceRoleMode === "poster-product" ||
+          sourceElement.genReferenceRoleMode === "custom"
+            ? sourceElement.genReferenceRoleMode
+            : "none";
         let currentBaseStyleLibrary = getEffectiveStyleLibrary({
           mode: currentReferenceRoleMode,
           customLibrary: sourceElement.genStyleLibrary,

@@ -1316,6 +1316,20 @@ export abstract class EnhancedBaseAgent {
           properties: {
             analysis: { type: Type.STRING },
             message: { type: Type.STRING },
+            answerSegments: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  text: { type: Type.STRING },
+                  citationOrdinals: {
+                    type: Type.ARRAY,
+                    items: { type: Type.NUMBER },
+                  },
+                },
+                required: ['text'],
+              },
+            },
             preGenerationMessage: { type: Type.STRING },
             postGenerationSummary: { type: Type.STRING },
             proposals: {

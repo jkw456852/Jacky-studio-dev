@@ -5,40 +5,33 @@ import {
   getPreparedPlanContinuationStatus,
 } from './assistantSidebarBrowserAgentMetadata.ts';
 
-test('buildSidebarBrowserAgentTaskMetadata preserves role governance metadata for manual autonomous routing', () => {
+test('buildSidebarBrowserAgentTaskMetadata keeps browser-agent chat skill-first', () => {
   const metadata = buildSidebarBrowserAgentTaskMetadata({
     skillData: {
       id: 'autonomous-main-brain',
-      name: '自主主脑路由',
+      name: '自主 Agent 路由',
       iconName: 'Sparkles',
       config: {
         allowAutonomousRouting: true,
       },
     },
-    agentSelectionMode: 'manual',
-    pinnedAgentId: 'coco',
-    selectedRoleId: 'role-coco-pro',
-    selectedRoleSource: 'user',
-    baseAgentId: 'coco',
-    roleGovernanceMode: 'approval_required',
-    allowMainBrainRoleMutation: true,
-    allowMainBrainRolePromotion: false,
+    brandContextSummary: '品牌：Demo',
+    topicPinnedContext: '当前主题围绕首页改版。',
+    conversationConstraintSummary: '保持现有品牌色与模块结构。',
   });
 
   assert.equal(metadata.allowAutonomousRouting, true);
   assert.equal(metadata.creationMode, 'agent');
-  assert.equal(metadata.agentSelectionMode, 'manual');
-  assert.equal(metadata.pinnedAgentId, 'coco');
-  assert.equal(metadata.selectedRoleId, 'role-coco-pro');
-  assert.equal(metadata.selectedRoleSource, 'user');
-  assert.equal(metadata.baseAgentId, 'coco');
-  assert.equal(metadata.roleGovernanceMode, 'approval_required');
-  assert.equal(metadata.allowMainBrainRoleMutation, true);
-  assert.equal(metadata.allowMainBrainRolePromotion, false);
   assert.equal(metadata.skillData?.id, 'autonomous-main-brain');
+  assert.equal(metadata.brandContextSummary, '品牌：Demo');
+  assert.equal(metadata.topicPinnedContext, '当前主题围绕首页改版。');
+  assert.equal(
+    metadata.conversationConstraintSummary,
+    '保持现有品牌色与模块结构。',
+  );
 });
 
-test('buildSidebarBrowserAgentTaskMetadata omits manual-only fields for auto selection', () => {
+test('buildSidebarBrowserAgentTaskMetadata omits residual role metadata entirely', () => {
   const metadata = buildSidebarBrowserAgentTaskMetadata({
     skillData: {
       id: 'plain-chat',
@@ -46,23 +39,16 @@ test('buildSidebarBrowserAgentTaskMetadata omits manual-only fields for auto sel
       iconName: 'MessageSquare',
       config: {},
     },
-    agentSelectionMode: 'auto',
-    pinnedAgentId: 'poster',
-    selectedRoleId: null,
-    selectedRoleSource: null,
-    baseAgentId: 'poster',
-    roleGovernanceMode: 'manual_only',
-    allowMainBrainRoleMutation: false,
-    allowMainBrainRolePromotion: false,
+    referenceIntentSummary: '本轮新增 2 张参考图。',
   });
 
   assert.equal(metadata.allowAutonomousRouting, false);
   assert.equal(metadata.creationMode, undefined);
-  assert.equal(metadata.agentSelectionMode, 'auto');
-  assert.equal(metadata.pinnedAgentId, undefined);
-  assert.equal(metadata.selectedRoleId, undefined);
-  assert.equal(metadata.selectedRoleSource, undefined);
-  assert.equal(metadata.baseAgentId, 'poster');
+  assert.equal(metadata.referenceIntentSummary, '本轮新增 2 张参考图。');
+  assert.equal('agentSelectionMode' in metadata, false);
+  assert.equal('pinnedAgentId' in metadata, false);
+  assert.equal('selectedRoleId' in metadata, false);
+  assert.equal('baseAgentId' in metadata, false);
 });
 
 test('getPreparedPlanContinuationStatus follows planner done flag', () => {

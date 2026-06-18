@@ -233,6 +233,8 @@ const DEFAULT_USER_PROFILE = {
 };
 
 const DEFAULT_WORKSPACE_PREFERENCES = {
+  chatModelMode: "fast" as const,
+  chatWebEnabled: false,
   selectedScriptModels: ["gemini-3.1-flash-lite-preview"],
   selectedImageModels: ["Auto"],
   selectedVideoModels: ["veo-3.1-fast-generate-preview"],

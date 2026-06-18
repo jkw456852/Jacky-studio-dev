@@ -87,7 +87,7 @@ const RUNNING_SESSION_STATUSES = new Set<BrowserAgentSessionStatus>([
 ]);
 
 const DEFAULT_GOAL_TEMPLATE =
-  "先查看当前节点的上下文、可用工具和最近执行痕迹，再直接执行最合适的下一步，并把关键信息回写到对话里。";
+  "告诉我下一步要完成什么，我会先读上下文再继续执行。";
 
 const clipContextText = (value: string | null | undefined, max = 480) => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
@@ -389,18 +389,6 @@ export const useAssistantSidebarBrowserAgentUi = ({
   const autoContinuationSessionIdRef = React.useRef<string | null>(null);
   const autoContinuationSignatureRef = React.useRef<string | null>(null);
   const autoRepairSignatureRef = React.useRef<string | null>(null);
-  const agentSelectionMode = useAgentStore((state) => state.agentSelectionMode);
-  const pinnedAgentId = useAgentStore((state) => state.pinnedAgentId);
-  const selectedRoleId = useAgentStore((state) => state.selectedRoleId);
-  const selectedRoleSource = useAgentStore((state) => state.selectedRoleSource);
-  const baseAgentId = useAgentStore((state) => state.baseAgentId);
-  const roleGovernanceMode = useAgentStore((state) => state.roleGovernanceMode);
-  const allowMainBrainRoleMutation = useAgentStore(
-    (state) => state.allowMainBrainRoleMutation,
-  );
-  const allowMainBrainRolePromotion = useAgentStore(
-    (state) => state.allowMainBrainRolePromotion,
-  );
   const brandInfo = useProjectStore((state) => state.brandInfo);
   const designSession = useProjectStore((state) => state.designSession);
 
@@ -1051,14 +1039,6 @@ export const useAssistantSidebarBrowserAgentUi = ({
         );
         const browserAgentTaskMetadata = buildSidebarBrowserAgentTaskMetadata({
           skillData,
-          agentSelectionMode,
-          pinnedAgentId,
-          selectedRoleId,
-          selectedRoleSource,
-          baseAgentId,
-          roleGovernanceMode,
-          allowMainBrainRoleMutation,
-          allowMainBrainRolePromotion,
           ...executionContextMetadata,
         });
         const result = (await invokeBrowserAgentTool("browser.plan_goal_session", {
@@ -1125,18 +1105,10 @@ export const useAssistantSidebarBrowserAgentUi = ({
       }
     },
     [
-      agentSelectionMode,
-      allowMainBrainRoleMutation,
-      allowMainBrainRolePromotion,
-      baseAgentId,
       buildExecutionContextMetadata,
       buildReferenceImagesFromAttachments,
       currentSession,
-      pinnedAgentId,
       resolveGoalTargetElementId,
-      roleGovernanceMode,
-      selectedRoleId,
-      selectedRoleSource,
     ],
   );
 

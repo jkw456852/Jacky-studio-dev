@@ -6,13 +6,13 @@ import {
   getActiveQuickSkillPreference,
   setActiveQuickSkillPreference,
 } from '../../../services/runtime-assets/preferences';
+import { normalizeFrontstageSkillPresentation } from '../../../services/runtime-assets/skill-identity';
 import { InputAreaBottomToolbar } from './InputAreaBottomToolbar';
 import { InputAreaEditor } from './InputAreaEditor';
 import { InputAreaMarkerEditPopover } from './InputAreaMarkerEditPopover';
 import { InputAreaMediaUploadPanel } from './InputAreaMediaUploadPanel';
 import { ImageModel, Marker, VideoModel } from '../../../types';
 import type { ChatMessage, ChatSendOptions } from '../../../types';
-import type { AgentType } from '../../../types/agent.types';
 
 const isSora2Model = (model?: string | null) => /sora\s*2/i.test(String(model || ''));
 
@@ -93,6 +93,11 @@ interface InputAreaProps {
   inputUi: InputAreaInputUiProps;
   modelPreferences: InputAreaModelPreferencesProps;
   browserAgent?: InputAreaBrowserAgentProps;
+  skillBookContext?: {
+    activeConversationTitle?: string;
+    recentMessages?: ChatMessage[];
+    onCreateSkillFromConversation?: () => void;
+  };
   markers: Marker[];
   onSaveMarkerLabel?: (markerId: string, label: string) => void;
   archivedView?: {
@@ -142,6 +147,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
     setPreferred3DModel,
   },
   browserAgent,
+  skillBookContext,
   markers,
   onSaveMarkerLabel,
   archivedView,
@@ -165,8 +171,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const imageGenUploads = generation.imageGenUploads;
   const isPickingFromCanvas = generation.isPickingFromCanvas;
   const pendingAttachments = composer.pendingAttachments;
-  const agentSelectionMode = useAgentStore((state) => state.agentSelectionMode);
-  const pinnedAgentId = useAgentStore((state) => state.pinnedAgentId);
   const translatePromptToEnglish = useAgentStore((state) => state.translatePromptToEnglish);
   const enforceChineseTextInImage = useAgentStore((state) => state.enforceChineseTextInImage);
   const requiredChineseCopy = useAgentStore((state) => state.requiredChineseCopy);
@@ -175,12 +179,21 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const imageGenCount = generation.imageGenCount;
   const [activeQuickSkill, setActiveQuickSkill] = useState<
     ChatMessage['skillData'] | null
-  >(() => getActiveQuickSkillPreference());
-  const sendSkill = activeQuickSkill || undefined;
+  >(() => normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()));
+  const sendSkill = creationMode === 'agent' ? activeQuickSkill || undefined : undefined;
 
   useEffect(() => {
-    setActiveQuickSkill(getActiveQuickSkillPreference());
+    setActiveQuickSkill(
+      normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
+    );
   }, []);
+
+  useEffect(() => {
+    if (creationMode === 'agent') return;
+    if (!activeQuickSkill) return;
+    setActiveQuickSkill(null);
+    setActiveQuickSkillPreference(null);
+  }, [activeQuickSkill, creationMode]);
 
   const {
     setInputBlocks,
@@ -198,8 +211,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
     setVideoEndFrame,
     setVideoMultiRefs,
     setWebEnabled,
-    setAgentSelectionMode,
-    setPinnedAgentId,
     setIsAgentMode,
     setImageGenUploads,
     setIsPickingFromCanvas,
@@ -244,11 +255,11 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const isArchivedConversation = archivedView?.isArchived === true;
 
   return (
-    <div className="z-20 flex-shrink-0 px-3 pb-3 pt-1.5">
+    <div className="z-20 flex-shrink-0 px-2.5 pb-2.5 pt-1.5">
       <div
         className={`group relative flex flex-col overflow-visible ${
           creationMode === 'agent'
-            ? 'rounded-[30px] border border-slate-200/82 bg-white shadow-[0_18px_42px_-34px_rgba(15,23,42,0.18)]'
+            ? 'rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(249,250,251,0.97))] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.16)] focus-within:border-slate-300/80 focus-within:shadow-[0_22px_48px_-34px_rgba(15,23,42,0.2)]'
             : 'rounded-[22px] border border-white/92 bg-[linear-gradient(180deg,rgba(255,255,255,0.985),rgba(247,249,252,0.97))] shadow-[0_20px_42px_-34px_rgba(15,23,42,0.18)] focus-within:border-slate-300/88 focus-within:shadow-[0_24px_50px_-34px_rgba(15,23,42,0.22)]'
         } transition-all duration-200 ${
           isDragOver ? 'border-blue-400 bg-blue-50/30 ring-2 ring-blue-100' : ''
@@ -368,6 +379,9 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 setActiveQuickSkill(null);
                 setActiveQuickSkillPreference(null);
               }}
+              onEditSendSkill={() => {
+                window.dispatchEvent(new CustomEvent('workspace:edit-active-skill'));
+              }}
               removeInputBlock={removeInputBlock}
               removePendingAttachment={removePendingAttachment}
               setEditingMarkerId={setEditingMarkerId}
@@ -423,10 +437,6 @@ export const InputArea: React.FC<InputAreaProps> = ({
               modelMode={modelMode}
               webEnabled={webEnabled}
               setWebEnabled={setWebEnabled}
-              agentSelectionMode={agentSelectionMode}
-              setAgentSelectionMode={setAgentSelectionMode}
-              pinnedAgentId={pinnedAgentId}
-              setPinnedAgentId={setPinnedAgentId as (value: AgentType) => void}
               setIsAgentMode={setIsAgentMode}
               translatePromptToEnglish={translatePromptToEnglish}
               setTranslatePromptToEnglish={setTranslatePromptToEnglish}
@@ -441,6 +451,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
                 setActiveQuickSkill(skill || null);
                 setActiveQuickSkillPreference(skill || null);
               }}
+              skillBookContext={skillBookContext}
               isSoraVideoModel={isSoraVideoModel}
               handlePickedFiles={handlePickedFiles}
               archivedReadOnly={isArchivedConversation}

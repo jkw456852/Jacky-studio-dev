@@ -1,4 +1,5 @@
 import type {
+  AgentAnswerSegment,
   AgentTaskRuntimeEnvelope,
   GeneratedAsset,
   MainBrainRoleGovernanceAudit,
@@ -9,6 +10,7 @@ import type { MainBrainRuntimeResult } from './main-brain-runtime';
 export interface BuildAgentTaskOutputOptions {
   message: string;
   analysis?: string;
+  answerSegments?: AgentAnswerSegment[];
   preGenerationMessage?: string;
   postGenerationSummary?: string;
   questions?: string[];
@@ -98,6 +100,9 @@ export const buildMainBrainTaskOutput = ({
     message: resolvedOutput.message,
     analysis:
       typeof finalPlan.analysis === 'string' ? finalPlan.analysis : undefined,
+    answerSegments: Array.isArray(finalPlan.answerSegments)
+      ? finalPlan.answerSegments
+      : undefined,
     preGenerationMessage:
       typeof finalPlan.preGenerationMessage === 'string'
         ? finalPlan.preGenerationMessage
@@ -124,6 +129,7 @@ export const buildMainBrainTaskOutput = ({
 export const buildAgentTaskOutput = ({
   message,
   analysis,
+  answerSegments,
   preGenerationMessage,
   postGenerationSummary,
   questions,
@@ -138,6 +144,23 @@ export const buildAgentTaskOutput = ({
   const normalizedProposals = Array.isArray(proposals) ? proposals : [];
   const normalizedSkillCalls = Array.isArray(skillCalls) ? skillCalls : [];
   const normalizedAssets = Array.isArray(assets) ? assets : [];
+  const normalizedAnswerSegments = Array.isArray(answerSegments)
+    ? answerSegments
+        .map((item) =>
+          item && typeof item === 'object'
+            ? {
+                text: String(item.text || '').trim(),
+                citationOrdinals: Array.isArray(item.citationOrdinals)
+                  ? item.citationOrdinals
+                      .map((value) => Number(value))
+                      .filter((value) => Number.isInteger(value) && value > 0)
+                      .slice(0, 6)
+                  : undefined,
+              }
+            : null,
+        )
+        .filter((item) => Boolean(item?.text))
+    : undefined;
   const normalizedQuestions = Array.isArray(questions) ? questions : undefined;
   const normalizedSuggestions = Array.isArray(suggestions) ? suggestions : undefined;
   const normalizedAdjustments = Array.isArray(adjustments) ? adjustments : [];
@@ -157,6 +180,10 @@ export const buildAgentTaskOutput = ({
   return {
     message,
     analysis,
+    answerSegments:
+      normalizedAnswerSegments && normalizedAnswerSegments.length > 0
+        ? normalizedAnswerSegments
+        : undefined,
     preGenerationMessage,
     postGenerationSummary,
     questions: normalizedQuestions,

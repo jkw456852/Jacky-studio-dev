@@ -279,6 +279,11 @@ export interface AgentProposal {
   skillCalls: SkillCall[];
 }
 
+export interface AgentAnswerSegment {
+  text: string;
+  citationOrdinals?: number[];
+}
+
 export interface AgentTask {
   id: string;
   agentId: AgentType;
@@ -299,6 +304,7 @@ export interface AgentTask {
   output?: {
     message: string;
     analysis?: string;
+    answerSegments?: AgentAnswerSegment[];
     preGenerationMessage?: string;
     postGenerationSummary?: string;
     questions?: string[];

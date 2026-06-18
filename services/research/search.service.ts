@@ -14,6 +14,9 @@ export type SearchWebItem = {
   displayUrl?: string;
   snippet?: string;
   siteName?: string;
+  excerpt?: string;
+  cleanedTextExcerpt?: string;
+  length?: number;
 };
 
 export type SearchImageItem = {
@@ -45,10 +48,29 @@ export type ExtractResponse = {
   length: number;
 };
 
+type ExtractProviderConfig = {
+  providerType?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  query?: string;
+};
+
 export type RehostResponse = {
   imageUrl: string;
   hostedUrl: string;
   provider: string;
+};
+
+const DETAILED_EXTRACTION_QUERY_PATTERN =
+  /天气|气温|温度|体感|下雨|降雨|风力|风速|实时|现在|今天|明天|新闻|热搜|汇率|股价|油价|金价|路况|航班|高铁|台风|预报|预警|气象站|实况|雨量|天气实况/i;
+
+export const shouldForceDetailedExtract = (
+  query: string,
+  providerType?: string,
+): boolean => {
+  const normalizedProvider = String(providerType || "").trim().toLowerCase();
+  if (normalizedProvider === "tavily") return true;
+  return DETAILED_EXTRACTION_QUERY_PATTERN.test(String(query || ""));
 };
 
 export async function runResearchSearch(
@@ -134,8 +156,24 @@ export function pickUsableReferenceImages(items: SearchImageItem[], max: number 
     .slice(0, max);
 }
 
-export async function extractWebPage(url: string): Promise<ExtractResponse> {
+export async function extractWebPage(
+  url: string,
+  providerConfig?: ExtractProviderConfig,
+): Promise<ExtractResponse> {
   logResearchTelemetry('extract.request', { url });
+
+  const searchSettings = loadSearchSettings();
+  const activeProvider = getActiveSearchProvider(searchSettings);
+  const effectiveProviderType = String(
+    providerConfig?.providerType || activeProvider?.providerType || '',
+  ).trim();
+  const effectiveApiKey = String(
+    providerConfig?.apiKey || activeProvider?.apiKey || '',
+  ).trim();
+  const effectiveBaseUrl = String(
+    providerConfig?.baseUrl || activeProvider?.baseUrl || '',
+  ).trim();
+  const effectiveQuery = String(providerConfig?.query || '').trim();
 
   try {
     const response = await fetch("/api/extract", {
@@ -143,7 +181,15 @@ export async function extractWebPage(url: string): Promise<ExtractResponse> {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({
+        url,
+        query: effectiveQuery || undefined,
+        provider: {
+          providerType: effectiveProviderType || undefined,
+          apiKey: effectiveApiKey || undefined,
+          baseUrl: effectiveBaseUrl || undefined,
+        },
+      }),
     });
     const payload = await response.json();
     if (!response.ok) {

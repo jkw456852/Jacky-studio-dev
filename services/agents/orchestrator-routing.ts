@@ -3,6 +3,7 @@ import type {
   AgentTaskMetadata,
   AgentType,
 } from '../../types/agent.types.ts';
+import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 
 const QUESTION_INTENT_PATTERN =
   /\b(what|why|how|which|explain|describe|analy[sz]e|identify|tell me|look at)\b/i;
@@ -162,11 +163,7 @@ export const inferTaskModeFromRequest = (
 
 export const isUnifiedSidebarAgent = (metadata?: AgentTaskMetadata) =>
   metadata?.allowAutonomousRouting === true &&
-  metadata?.skillData?.id === 'autonomous-main-brain' &&
-  metadata?.skillData?.config &&
-  typeof metadata.skillData.config === 'object' &&
-  (metadata.skillData.config as Record<string, unknown>).mode ===
-    'unified-sidebar-agent';
+  isUnifiedSidebarAgentSkill(metadata?.skillData);
 
 export const shouldPreferAutonomousChatFallback = (
   message: string,

@@ -24,6 +24,7 @@ import {
   getActiveQuickSkillPreference,
   setActiveQuickSkillPreference,
 } from "../../../services/runtime-assets/preferences";
+import { normalizeFrontstageSkillPresentation } from "../../../services/runtime-assets/skill-identity";
 import { createInputBlockId } from "../../../stores/agent.store";
 import { hasConversationDraft, isConversationArchived } from "../conversationMeta";
 import { AssistantSidebarHeader } from "./AssistantSidebarHeader";
@@ -148,7 +149,7 @@ const buildEmptyConversationStarters = (
   return [
     {
       id: "audit-ui",
-      title: "审视这个界面",
+      title: "检查界面",
       description: selectedSurface
         ? `检查 ${selectedSurface}，先找出最值得优先处理的界面问题。`
         : "检查当前工作区界面，先找出最值得优先处理的问题。",
@@ -159,7 +160,7 @@ const buildEmptyConversationStarters = (
     },
     {
       id: "plan-execution",
-      title: "规划下一步",
+      title: "规划任务",
       description: "把目标拆成明确步骤、风险点和最省力的高质量路径。",
       prompt:
         "帮我把这个工作区想法整理成可执行的构建计划。拆成里程碑，指出风险，并给出最快的高质量推进方式。",
@@ -167,7 +168,7 @@ const buildEmptyConversationStarters = (
     },
     {
       id: "image-concept",
-      title: "视觉方向",
+      title: "做图方向",
       description: "生成更干净的画面方向、概念图或产品图提示词。",
       prompt:
         "为这个项目生成一版更完整的视觉方向。给我一个明确的图像概念，并说明构图、光线、材质和风格细节。",
@@ -175,7 +176,7 @@ const buildEmptyConversationStarters = (
     },
     {
       id: "motion-concept",
-      title: "运动分镜",
+      title: "视频节奏",
       description: "生成更像产品内容的短动作思路或节奏提纲。",
       prompt:
         "为这个工作区生成一版简洁的高级感分镜。重点描述节奏、镜头运动和关键视觉节点。",
@@ -1457,21 +1458,22 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                 attachmentMetadata: undefined,
                 inlineParts: undefined,
               };
-      const autonomousChatSkill: ChatMessage["skillData"] = {
+      const autonomousChatSkill: ChatMessage["skillData"] = normalizeFrontstageSkillPresentation({
         id: "autonomous-main-brain",
-        name: "鑷富 Agent 璺敱",
+        name: "品牌视觉",
         iconName: "Sparkles",
         config: {
           allowAutonomousRouting: true,
           mode: "unified-sidebar-agent",
         },
-      };
-      const normalizedSkillData = shouldTreatAsDirectComposerSubmit(
-        overridePrompt,
-        overrideAttachments,
-      )
-        ? undefined
-        : skillData;
+      });
+      const storedQuickSkill = getActiveQuickSkillPreference() || undefined;
+      const normalizedSkillData =
+        skillData ||
+        storedQuickSkill ||
+        (shouldTreatAsDirectComposerSubmit(overridePrompt, overrideAttachments)
+          ? undefined
+          : skillData);
       const shouldUseBrowserAgentChat =
         chatEnabled &&
         !normalizedSkillData &&
@@ -2571,15 +2573,13 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
             ecommerceActions={ecommerceActions}
           />
         ) : showEmptyActiveConversationState ? (
-          <div className="flex min-h-[68px] items-end px-3 pb-1.5 pt-2">
-            <div className="mx-auto flex w-full max-w-[320px] flex-col items-center">
-              <div className="text-center text-[10px] font-medium text-slate-400">
-                直接开始，或先用一个起手任务带路。
-              </div>
-              <div className="mt-2 flex w-full flex-wrap justify-center gap-1.5">
-                {emptyConversationStarters.slice(0, 2).map((starter) => {
+          <div className="flex min-h-[78px] items-end px-3 pb-1.5 pt-2">
+            <div className="mx-auto flex w-full max-w-[352px] flex-col items-center">
+              <div className="flex w-full flex-wrap justify-center gap-1.5">
+                {emptyConversationStarters.map((starter) => {
                   const isActiveStarter =
                     activeEmptyConversationStarter?.id === starter.id;
+                  const StarterIcon = getEmptyConversationStarterIcon(starter);
                   return (
                     <button
                       key={starter.id}
@@ -2587,19 +2587,20 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                       onClick={() => {
                         void handleStartEmptyConversationPrompt(starter);
                       }}
-                      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[9.5px] font-medium transition ${
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium transition ${
                         isActiveStarter
                           ? "border-slate-900 bg-slate-900 text-white"
                           : "border-slate-200/90 bg-white/88 text-slate-500 hover:border-slate-300 hover:text-slate-800"
                       }`}
                     >
+                      <StarterIcon size={12} strokeWidth={2} />
                       {starter.title}
                     </button>
                   );
                 })}
               </div>
               {selectedSurfaceLabel ? (
-                <div className="mt-1.5 inline-flex max-w-full items-center rounded-full border border-slate-200/80 bg-white/80 px-2.5 py-1 text-[9px] font-medium text-slate-500">
+                <div className="mt-2 text-[9px] font-medium text-slate-400">
                   当前焦点：{selectedSurfaceLabel}
                 </div>
               ) : null}
@@ -2675,6 +2676,13 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           }}
           inputUi={inputUi}
           modelPreferences={modelPreferences}
+          skillBookContext={{
+            activeConversationTitle,
+            recentMessages: visibleMessages.slice(-12),
+            onCreateSkillFromConversation: () => {
+              setShowHistoryPopover(false);
+            },
+          }}
           browserAgent={{
             chatEnabled,
             setChatEnabled,

@@ -70,6 +70,7 @@ export type AgentMessageResearchPage = {
 export type AgentMessageResearchView = {
   status: "searching" | "completed" | "failed";
   statusLabel: string;
+  mode?: "web" | "images" | "web+images";
   query?: string;
   summary?: string;
   providerLabel?: string;
@@ -118,11 +119,11 @@ const LEGACY_MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/閹笛嗩攽婢惰精瑙:锛歖?\s*/g, "执行失败："],
   [
     /濞达絿濮峰▓鎴炵▔閹惧磭娼ｉ悹浣瑰礃椤撴悂宕濋埡鍌氼杹闁挎稑鑻惔婊勬媴閻樺啿顥濋柛鎺斿濞撳爼宕ラ崼銉㈠亾閸屾粍鐣卞☉鎾存尭椤?/g,
-    "你的专属设计助手，帮你找到最合适的专家",
+    "",
   ],
   [
     /娴ｇ姷娈戞稉鎾崇潣鐠佹崘顓搁崝鈺傚閿涘苯搴滄担鐘冲閸掔増娓堕崥鍫モ偓鍌滄畱娑撴挸顔?/g,
-    "你的专属设计助手，帮你找到最合适的专家",
+    "",
   ],
 ];
 
@@ -142,6 +143,46 @@ const truncateText = (value: unknown, maxChars: number): string => {
   return normalized.length > maxChars
     ? `${normalized.slice(0, Math.max(0, maxChars - 1))}…`
     : normalized;
+};
+
+const HUMAN_RESEARCH_PROVIDER_LABELS: Record<string, string> = {
+  tavily: "网页检索",
+  exa: "网页检索",
+  bing: "网页检索",
+  searxng: "网页检索",
+  custom: "联网来源",
+  none: "",
+  unknown: "",
+};
+
+const formatResearchProviderLabel = (
+  value: unknown,
+  mode?: "web" | "images" | "web+images",
+): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    if (mode === "images") return "图片检索";
+    if (mode === "web+images") return "网页与图片";
+    return "联网检索";
+  }
+
+  const parts = normalized
+    .split("/")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const webLabel = HUMAN_RESEARCH_PROVIDER_LABELS[parts[0] || ""] || "";
+  const imageLabel = HUMAN_RESEARCH_PROVIDER_LABELS[parts[1] || ""] || "";
+
+  if (mode === "images") return imageLabel || "图片检索";
+  if (mode === "web+images") {
+    if (webLabel && imageLabel && webLabel !== imageLabel) {
+      return `${webLabel} + ${imageLabel}`;
+    }
+    return webLabel || imageLabel || "网页与图片";
+  }
+
+  return webLabel || imageLabel || "联网检索";
 };
 
 const readHostFromUrl = (url: unknown): string => {
@@ -459,9 +500,10 @@ export const deriveAgentMessageResearchView = (
   return {
     status,
     statusLabel,
+    mode: research.mode,
     query: truncateText(research.query, 140) || undefined,
     summary: truncateText(research.summary, 220) || undefined,
-    providerLabel: truncateText(research.providerLabel, 80) || undefined,
+    providerLabel: formatResearchProviderLabel(research.providerLabel, research.mode),
     fallback: Boolean(research.fallback),
     stats,
     steps,
@@ -502,6 +544,152 @@ const trimWrappedQuotes = (value: string): string => {
     return normalized.slice(1, -1).trim();
   }
   return normalized;
+};
+
+const truncateLine = (value: string, maxChars: number): string => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return normalized.length > maxChars
+    ? `${normalized.slice(0, Math.max(0, maxChars - 1))}…`
+    : normalized;
+};
+
+const formatThinkingLabel = (value: string): string => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (normalized === "preGenerationMessage") return "执行意图";
+  if (normalized === "analysis") return "分析判断";
+  if (normalized === "message") return "回复组织";
+  if (normalized === "postGenerationSummary") return "结果收束";
+  if (normalized === "answerSegments") return "依据组织";
+  if (normalized === "suggestions") return "后续建议";
+  return normalized;
+};
+
+const THINKING_JSON_MARKERS = [
+  '{"analysis"',
+  '{"preGenerationMessage"',
+  '{"postGenerationSummary"',
+  '{"message"',
+  '{"skillCalls"',
+  '{"answerSegments"',
+  '{"suggestions"',
+];
+
+const findEmbeddedThinkingPayloadIndex = (value: string): number => {
+  const normalized = String(value || "");
+  const hitIndex = THINKING_JSON_MARKERS
+    .map((marker) => normalized.indexOf(marker))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  return typeof hitIndex === "number" ? hitIndex : -1;
+};
+
+const extractEmbeddedThinkingFragments = (value: string): string[] => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return [];
+
+  const markerIndex = findEmbeddedThinkingPayloadIndex(normalized);
+  if (markerIndex < 0) return [];
+
+  const leadingText = normalized.slice(0, markerIndex).trim();
+  const payloadText = normalized.slice(markerIndex).trim();
+  const payload = parseJsonLikeMessagePayload(payloadText);
+  const fragments: string[] = [];
+
+  if (leadingText) {
+    fragments.push(leadingText);
+  }
+
+  if (payload) {
+    [
+      payload.analysis,
+      payload.preGenerationMessage,
+      payload.message,
+      payload.postGenerationSummary,
+    ]
+      .map((item) => trimWrappedQuotes(String(item || "")).trim())
+      .filter(Boolean)
+      .forEach((item) => {
+        fragments.push(item);
+      });
+  }
+
+  return fragments;
+};
+
+const sanitizeThinkingText = (value: string): string => {
+  const normalized = normalizeLegacyAssistantMessageText(value)
+    .replace(/\r\n/g, "\n")
+    .trim();
+  if (!normalized) return "";
+
+  const lines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const sanitizedLines: string[] = [];
+  for (const line of lines) {
+    const embeddedFragments = extractEmbeddedThinkingFragments(line);
+    if (embeddedFragments.length > 0) {
+      embeddedFragments.forEach((fragment) => {
+        const cleanedFragment = truncateLine(fragment, 240);
+        if (cleanedFragment) {
+          sanitizedLines.push(cleanedFragment);
+        }
+      });
+      continue;
+    }
+
+    if (
+      /"skillCalls"\s*:|^\[\s*\{\s*"skillName"\s*:|^\{\s*"skillName"\s*:|^\}\s*,?$|^\]\s*,?$/.test(
+        line,
+      )
+    ) {
+      continue;
+    }
+    if (
+      /"citationOrdinals"\s*:|"params"\s*:|"mode"\s*:|"includePageExtracts"\s*:|"maxExtractPages"\s*:|"query"\s*:/.test(
+        line,
+      )
+    ) {
+      continue;
+    }
+
+    const fieldMatch = line.match(/^"?([A-Za-z][A-Za-z0-9_]*)"?\s*:\s*(.+)$/);
+    if (fieldMatch) {
+      const [, rawKey, rawValue] = fieldMatch;
+      const cleanedValue = truncateLine(
+        trimWrappedQuotes(
+          rawValue
+            .replace(/^[,{[]+\s*/, "")
+            .replace(/[}\],]+$/, "")
+            .trim(),
+        ),
+        240,
+      );
+      if (cleanedValue) {
+        sanitizedLines.push(`${formatThinkingLabel(rawKey)}：${cleanedValue}`);
+      }
+      continue;
+    }
+
+    const cleanedLine = truncateLine(
+      line
+        .replace(/^[,{[]+\s*/, "")
+        .replace(/[}\],]+$/, "")
+        .trim(),
+      240,
+    );
+    if (!cleanedLine) continue;
+    if (/^"?(analysis|message|preGenerationMessage|postGenerationSummary)"?$/.test(cleanedLine)) {
+      continue;
+    }
+    sanitizedLines.push(cleanedLine);
+  }
+
+  return Array.from(new Set(sanitizedLines)).join("\n");
 };
 
 const parseJsonLikeMessagePayload = (
@@ -591,25 +779,22 @@ export const deriveThinkingSummary = (
 ): string => {
   const reasoningPayload = parseJsonLikeMessagePayload(reasoningText);
   if (reasoningPayload) {
-    const steps = [
+    const sections = [
+      reasoningPayload.analysis,
       reasoningPayload.preGenerationMessage,
       reasoningPayload.message,
       reasoningPayload.postGenerationSummary,
     ]
-      .map((item) => String(item || "").trim())
+      .map((item) => sanitizeThinkingText(String(item || "")))
       .filter(Boolean);
 
-    if (steps.length > 0) {
-      return Array.from(new Set(steps)).join("\n");
+    if (sections.length > 0) {
+      return Array.from(new Set(sections)).join("\n");
     }
   }
 
-  const normalizedReasoning = normalizeLegacyAssistantMessageText(reasoningText).trim();
-  if (
-    normalizedReasoning &&
-    !JSON_LIKE_RESPONSE_RE.test(normalizedReasoning) &&
-    normalizedReasoning.length <= 280
-  ) {
+  const normalizedReasoning = sanitizeThinkingText(reasoningText);
+  if (normalizedReasoning) {
     return normalizedReasoning;
   }
 

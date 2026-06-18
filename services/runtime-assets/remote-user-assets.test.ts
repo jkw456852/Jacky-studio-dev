@@ -102,6 +102,8 @@ const createState = (
   workspacePreferences: {
     schemaVersion: 1,
     updatedAt: 1,
+    chatModelMode: "fast",
+    chatWebEnabled: false,
     selectedScriptModels: [],
     selectedImageModels: [],
     selectedVideoModels: [],

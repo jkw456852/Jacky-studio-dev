@@ -621,10 +621,21 @@ const normalizeSkillPreferenceSnapshot = (
     value.config && typeof value.config === "object"
       ? (value.config as Record<string, unknown>)
       : undefined;
+  const frontstageId = String(config?.frontstageSkillId || "").trim();
+  const frontstagePresentation: Record<string, { name: string; iconName: string }> = {
+    "autonomous-video-director": { name: "\u89c6\u9891\u521b\u4f5c", iconName: "Video" },
+    "autonomous-social-campaign": { name: "\u793e\u5a92\u5185\u5bb9", iconName: "Hash" },
+    "autonomous-brand-system": { name: "\u54c1\u724c\u89c6\u89c9", iconName: "Lightbulb" },
+    "ecom-oneclick-workflow": { name: "\u7535\u5546\u4e00\u952e\u5de5\u4f5c\u6d41", iconName: "Library" },
+    "clothing-studio-workflow": { name: "\u670d\u9970\u5de5\u4f5c\u6d41", iconName: "ImageIcon" },
+    "cn-detail-page": { name: "\u4e2d\u6587\u8be6\u60c5\u9875\u5957\u56fe", iconName: "Box" },
+    "jkai-oneclick": { name: "JKAI One-Click", iconName: "Zap" },
+  };
+  const presentation = frontstagePresentation[frontstageId];
   return {
     id,
-    name,
-    iconName,
+    name: presentation?.name || name,
+    iconName: presentation?.iconName || iconName,
     ...(config ? { config } : {}),
   };
 };
@@ -706,6 +717,10 @@ const normalizeWorkspacePreferences = (
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const updatedAt = Number(value.updatedAt || Date.now());
+  const chatModelMode =
+    value.chatModelMode === "thinking" || value.chatModelMode === "fast"
+      ? value.chatModelMode
+      : "fast";
   const selectedScriptModels = normalizeStringArray(
     value.selectedScriptModels,
     24,
@@ -724,6 +739,8 @@ const normalizeWorkspacePreferences = (
   return {
     schemaVersion: WORKSPACE_PREFERENCES_VERSION,
     updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+    chatModelMode,
+    chatWebEnabled: readBoolean(value.chatWebEnabled, false),
     selectedScriptModels:
       selectedScriptModels.length > 0
         ? selectedScriptModels
@@ -1341,6 +1358,8 @@ const parseLegacyQuickSkill = (
 const readLegacyWorkspacePreferences = (
   storage: Storage,
 ): Partial<StudioWorkspacePreferencesAsset> => ({
+  chatModelMode: "fast",
+  chatWebEnabled: false,
   selectedScriptModels: parseJsonStringArray(
     storage.getItem(LEGACY_SELECTED_SCRIPT_MODELS_KEY),
     [DEFAULT_SCRIPT_MODEL],
@@ -1449,6 +1468,18 @@ const mergeWorkspacePreferences = (
   normalizeWorkspacePreferences({
     ...fallback,
     ...base,
+    chatModelMode:
+      fallback.chatModelMode &&
+      fallback.chatModelMode !== DEFAULT_WORKSPACE_PREFERENCES.chatModelMode &&
+      base.chatModelMode === DEFAULT_WORKSPACE_PREFERENCES.chatModelMode
+        ? fallback.chatModelMode
+        : base.chatModelMode,
+    chatWebEnabled:
+      fallback.chatWebEnabled !== undefined &&
+      fallback.chatWebEnabled !== DEFAULT_WORKSPACE_PREFERENCES.chatWebEnabled &&
+      base.chatWebEnabled === DEFAULT_WORKSPACE_PREFERENCES.chatWebEnabled
+        ? fallback.chatWebEnabled
+        : base.chatWebEnabled,
     selectedScriptModels:
       fallback.selectedScriptModels &&
       !arraysEqual(
@@ -1787,6 +1818,14 @@ const mirrorWorkspacePreferencesToLegacyKeys = (
   safeLocalStorageSetItem(
     LEGACY_PREFERRED_VIDEO_PROVIDER_ID_KEY,
     workspacePreferences.preferredVideoProviderId || "",
+  );
+  safeLocalStorageSetItem(
+    "workspace_chat_model_mode",
+    workspacePreferences.chatModelMode,
+  );
+  safeLocalStorageSetItem(
+    "workspace_chat_web_enabled",
+    workspacePreferences.chatWebEnabled ? "true" : "false",
   );
   safeLocalStorageSetItem(
     LEGACY_PREFERRED_3D_MODEL_KEY,

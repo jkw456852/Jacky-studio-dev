@@ -291,14 +291,14 @@ export const AssistantSidebarHistoryPopover: React.FC<
           className={`overflow-hidden text-left ${
             inlinePanel
               ? "flex h-full flex-col bg-[#f8f9fc]"
-              : "absolute right-0 top-full z-[60] mt-2 w-[320px] max-w-[calc(100vw-1rem)] rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.985),rgba(247,249,252,0.96))] shadow-[0_26px_72px_-48px_rgba(15,23,42,0.34)] backdrop-blur-md"
+              : "absolute right-0 top-full z-[60] mt-2 w-[296px] max-w-[calc(100vw-1rem)] rounded-[20px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.988),rgba(248,249,252,0.97))] shadow-[0_20px_52px_-36px_rgba(15,23,42,0.24)] backdrop-blur-md"
           }`}
         >
           <div
             className={`${
               inlinePanel
                 ? "border-b border-slate-200/80 bg-[#f8f9fc] px-4 py-3.5"
-                : "border-b border-slate-200/80 px-4 py-3.5"
+                : "border-b border-slate-200/80 px-3 py-2.5"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -320,7 +320,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
                   </div>
                 )}
 
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                <div className="mt-2 hidden flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
                   <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)]">
                     <MessageSquare size={10} strokeWidth={2} />
                     <span>
@@ -353,7 +353,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
               </button>
             </div>
 
-            <div className="relative mt-2.5">
+            <div className="relative mt-2">
               <Search
                 size={13}
                 strokeWidth={1.8}
@@ -364,7 +364,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
                 value={historySearch}
                 onChange={(event) => setHistorySearch(event.target.value)}
                 placeholder="搜索标题或消息内容"
-                className="h-10 w-full rounded-2xl bg-white/88 pl-9 pr-10 text-[12px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]"
+                className="h-9 w-full rounded-full bg-white/88 pl-9 pr-10 text-[12px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:bg-white shadow-[inset_0_0_0_1px_rgba(226,232,240,0.95)]"
               />
               {hasSearch ? (
                 <button
@@ -378,11 +378,11 @@ export const AssistantSidebarHistoryPopover: React.FC<
               ) : null}
             </div>
 
-            <div className="mt-2.5 flex items-center gap-2">
+            <div className="mt-2 flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setShowArchived(false)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.25 text-[10px] font-semibold transition ${
                   !showArchived
                     ? "bg-slate-900 text-white"
                     : "bg-white/88 text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] hover:bg-white hover:text-slate-800"
@@ -397,7 +397,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
               <button
                 type="button"
                 onClick={() => setShowArchived(true)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.25 text-[10px] font-semibold transition ${
                   showArchived
                     ? "bg-slate-900 text-white"
                     : "bg-white/88 text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] hover:bg-white hover:text-slate-800"
@@ -414,7 +414,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
                 onClick={() =>
                   setShowNeedsAttentionOnly((current) => !current)
                 }
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.25 text-[10px] font-semibold transition ${
                   showNeedsAttentionOnly
                     ? "bg-rose-50 text-rose-700 shadow-[inset_0_0_0_1px_rgba(254,205,211,0.95)]"
                     : "bg-white/88 text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.92)] hover:bg-white hover:text-slate-800"
@@ -426,7 +426,7 @@ export const AssistantSidebarHistoryPopover: React.FC<
           </div>
 
           <div
-              className={`overflow-y-auto px-3 py-3 custom-scrollbar ${
+              className={`overflow-y-auto px-2.5 py-2.5 custom-scrollbar ${
                 inlinePanel ? "min-h-0 flex-1 bg-[#f8f9fc]" : "max-h-[304px]"
               }`}
           >
@@ -504,10 +504,10 @@ export const AssistantSidebarHistoryPopover: React.FC<
                             onClick={() => {
                               if (!isEditing) handleSelectConversation(conversation.id);
                             }}
-                            className={`group relative flex w-full items-start gap-2 rounded-[14px] px-2.5 py-2 text-left transition-all duration-200 outline-none ${
+                            className={`group relative flex w-full items-start gap-2 rounded-[13px] px-2.5 py-2 text-left transition-all duration-200 outline-none ${
                               isActive
-                                ? "bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] shadow-[0_18px_36px_-30px_rgba(15,23,42,0.18),inset_0_0_0_1px_rgba(214,228,255,0.96)]"
-                                : "bg-white/72 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.78)] hover:bg-white hover:shadow-[0_14px_24px_-28px_rgba(15,23,42,0.12),inset_0_0_0_1px_rgba(203,213,225,0.88)]"
+                                ? "bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] shadow-[0_14px_28px_-28px_rgba(15,23,42,0.16),inset_0_0_0_1px_rgba(214,228,255,0.96)]"
+                                : "bg-white/78 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.78)] hover:bg-white hover:shadow-[0_12px_22px_-28px_rgba(15,23,42,0.1),inset_0_0_0_1px_rgba(203,213,225,0.88)]"
                             }`}
                           >
                             {isActive ? (

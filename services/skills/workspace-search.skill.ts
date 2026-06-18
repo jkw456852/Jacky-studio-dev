@@ -2,6 +2,7 @@ import {
   extractWebPage,
   type ResearchSearchMode,
   runResearchSearch,
+  shouldForceDetailedExtract,
 } from '../research/search.service';
 
 export interface WorkspaceSearchSkillParams {
@@ -44,6 +45,9 @@ export interface WorkspaceSearchSkillResult {
     snippet?: string;
     displayUrl?: string;
     siteName?: string;
+    excerpt?: string;
+    cleanedTextExcerpt?: string;
+    length?: number;
   }>;
   imageResults: Array<{
     title: string;
@@ -70,8 +74,30 @@ const normalizeMode = (value: unknown): ResearchSearchMode => {
 
 const normalizeExtractLimit = (value: unknown): number => {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 2;
-  return Math.max(0, Math.min(3, Math.floor(numeric)));
+  if (!Number.isFinite(numeric)) return 4;
+  return Math.max(0, Math.min(4, Math.floor(numeric)));
+};
+
+const readDirectExtractFromResult = (item: {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  excerpt?: string;
+  cleanedTextExcerpt?: string;
+  length?: number;
+}): WorkspaceSearchExtract | null => {
+  const cleanedTextExcerpt = truncateText(item.cleanedTextExcerpt || '', 1200);
+  if (!cleanedTextExcerpt) return null;
+  return {
+    title: item.title || '',
+    url: item.url || '',
+    excerpt: truncateText(item.excerpt || item.snippet || '', 240),
+    cleanedTextExcerpt,
+    length:
+      typeof item.length === 'number' && Number.isFinite(item.length)
+        ? item.length
+        : cleanedTextExcerpt.length,
+  };
 };
 
 const buildSearchSummary = ({
@@ -123,12 +149,19 @@ export async function workspaceSearchSkill(
   const maxExtractPages = normalizeExtractLimit(params?.maxExtractPages);
 
   const searchResult = await runResearchSearch(query, mode);
+  const shouldPreferRealExtract = shouldForceDetailedExtract(
+    query,
+    searchResult?.provider?.web,
+  );
   const webResults = (searchResult.web || []).slice(0, 6).map((item) => ({
     title: item.title,
     url: item.url,
     snippet: truncateText(item.snippet || '', 240) || undefined,
     displayUrl: item.displayUrl,
     siteName: item.siteName,
+    excerpt: truncateText(item.excerpt || '', 240) || undefined,
+    cleanedTextExcerpt: truncateText(item.cleanedTextExcerpt || '', 1200) || undefined,
+    length: typeof item.length === 'number' ? item.length : undefined,
   }));
   const imageResults = (searchResult.images || []).slice(0, 6).map((item) => ({
     title: item.title,
@@ -139,10 +172,24 @@ export async function workspaceSearchSkill(
 
   let extractedPages: WorkspaceSearchExtract[] = [];
   if (includePageExtracts && mode !== 'images' && maxExtractPages > 0 && webResults.length > 0) {
-    extractedPages = await Promise.all(
-      webResults.slice(0, maxExtractPages).map(async (item) => {
+    const directExtractedPages = shouldPreferRealExtract
+      ? []
+      : webResults
+          .slice(0, maxExtractPages)
+          .map((item) => readDirectExtractFromResult(item))
+          .filter((item): item is WorkspaceSearchExtract => Boolean(item));
+    const fallbackTargets = shouldPreferRealExtract
+      ? webResults.slice(0, maxExtractPages)
+      : webResults
+          .slice(0, maxExtractPages)
+          .filter((item) => !String(item.cleanedTextExcerpt || '').trim());
+    const fallbackExtractedPages = await Promise.all(
+      fallbackTargets.map(async (item) => {
         try {
-          const page = await extractWebPage(item.url);
+          const page = await extractWebPage(item.url, {
+            query,
+            providerType: searchResult.provider?.web,
+          });
           return {
             title: page.title || item.title,
             url: page.url || item.url,
@@ -162,6 +209,7 @@ export async function workspaceSearchSkill(
         }
       }),
     );
+    extractedPages = [...directExtractedPages, ...fallbackExtractedPages];
   }
 
   const providerLabel = [searchResult.provider?.web, searchResult.provider?.images]

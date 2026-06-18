@@ -18,13 +18,21 @@ import {
   FileText,
   Trash2,
 } from "lucide-react";
-import type { ImageModel, Project, VideoModel } from "../types";
+import type { ChatMessage, ImageModel, Project, VideoModel } from "../types";
 import SystemAnnouncementModal from "../components/SystemAnnouncementModal";
 import {
   deleteProject,
   getProject,
   getProjectSummaries,
 } from "../services/storage";
+import {
+  getActiveQuickSkillPreference,
+  setActiveQuickSkillPreference,
+} from "../services/runtime-assets/preferences";
+import {
+  getFrontstageSkillLabelKind,
+  normalizeFrontstageSkillPresentation,
+} from "../services/runtime-assets/skill-identity";
 import { deleteTopicMemory } from "../services/topic-memory";
 import { getMemoryKey } from "../services/topicMemory/key";
 import Sidebar from "../components/Sidebar";
@@ -89,6 +97,16 @@ const Header: React.FC<HeaderProps> = ({
 );
 
 type HomeCreationMode = "agent" | "image" | "video";
+
+const HOME_MODE_OPTIONS: Array<{
+  id: HomeCreationMode;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  { id: "agent", label: "智能对话", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
+  { id: "image", label: "图片", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
+  { id: "video", label: "视频", icon: <Video size={14} strokeWidth={2.2} /> },
+];
 
 const MODE_OPTIONS: Array<{
   id: HomeCreationMode;
@@ -552,11 +570,15 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentPreviewUrlMapRef = useRef<Map<File, string>>(new Map());
   const modelPreferenceAnchorRef = useRef<HTMLButtonElement>(null);
 
   const [modelMode, setModelMode] = useState<"thinking" | "fast">("fast");
   const [creationMode, setCreationMode] = useState<HomeCreationMode>("agent");
+  const [activeQuickSkill, setActiveQuickSkill] = useState<ChatMessage["skillData"] | null>(
+    () => normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
+  );
 
   const [webEnabled, setWebEnabled] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -628,6 +650,19 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     setPreferredImageModelLabel(String(preferredImageModel || "Nano Banana Pro"));
   }, [preferredImageModel]);
 
+  useEffect(() => {
+    setActiveQuickSkill(
+      normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
+    );
+  }, []);
+
+  useEffect(() => {
+    const textarea = promptTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 72), 144)}px`;
+  }, [prompt, activeQuickSkill?.id, creationMode]);
+
   const handleDeleteProject = async (
     project: Project,
     e: React.MouseEvent<HTMLButtonElement>,
@@ -663,10 +698,37 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initialImageModel:
             creationMode === "image" ? preferredImageModelLabel : undefined,
           initialCreationMode: creationMode,
+          initialSkillData:
+            creationMode === "agent" ? activeQuickSkill || undefined : undefined,
         },
       });
     }
   };
+
+  const activeSkillMeta = useMemo(() => {
+    switch (getFrontstageSkillLabelKind(activeQuickSkill)) {
+      case "workflow":
+        return { label: "Workflow", badgeClass: "bg-blue-50 text-blue-700" };
+      case "my-skill":
+        return { label: "My Skill", badgeClass: "bg-violet-100/90 text-violet-700" };
+      case "skill":
+      default:
+        return { label: "Skill", badgeClass: "bg-emerald-50 text-emerald-700" };
+    }
+  }, [activeQuickSkill]);
+
+  const homePlaceholder = useMemo(() => {
+    if (creationMode === "agent") {
+      if (activeQuickSkill?.name) {
+        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
+      }
+      return "告诉助手要检查、修改或继续推进的下一步。";
+    }
+    if (creationMode === "image") {
+      return "描述画面、风格、构图和必须保留的关键细节。";
+    }
+    return "描述场景、镜头运动、节奏和时长要求。";
+  }, [activeQuickSkill?.name, creationMode]);
 
   const getAttachmentPreviewUrl = (file: File) => {
     const existing = attachmentPreviewUrlMapRef.current.get(file);
@@ -783,10 +845,10 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           className="w-full max-w-4xl relative mb-16"
         >
           <div
-            className={`bg-white rounded-[28px] border shadow-xl shadow-gray-100/50 hover:shadow-2xl hover:shadow-gray-200/50 transition-all duration-300 relative group focus-within:ring-2 focus-within:ring-black/5 focus-within:border-gray-300 overflow-hidden ${
+            className={`group relative flex flex-col overflow-visible rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(249,250,251,0.97))] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.16)] transition-all duration-200 focus-within:border-slate-300/80 focus-within:shadow-[0_22px_48px_-34px_rgba(15,23,42,0.2)] ${
               isDragOver
-                ? "border-blue-400 ring-2 ring-blue-100 bg-blue-50/30"
-                : "border-gray-200/50"
+                ? "border-blue-400 bg-blue-50/30 ring-2 ring-blue-100"
+                : ""
             }`}
             onDragOver={(event) => {
               event.preventDefault();
@@ -807,8 +869,8 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               }
             }}
           >
-            {isDragOver ? (
-              <div className="absolute inset-0 z-30 rounded-[28px] bg-blue-50/80 border-2 border-dashed border-blue-400 flex items-center justify-center pointer-events-none">
+              {isDragOver ? (
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[26px] border-2 border-dashed border-blue-400 bg-blue-50/80">
                 <div className="flex flex-col items-center gap-2">
                   <ImageIcon size={24} className="text-blue-500" />
                   <span className="text-sm font-medium text-blue-600">
@@ -818,11 +880,28 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               </div>
             ) : null}
             <div className="p-4 pt-3">
+              {creationMode === "agent" && activeQuickSkill?.name ? (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <div
+                    className="inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white/96 px-3 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+                    title={activeQuickSkill.name}
+                  >
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${activeSkillMeta.badgeClass}`}
+                    >
+                      {activeSkillMeta.label}
+                    </span>
+                    <span className="max-w-[280px] truncate">{activeQuickSkill.name}</span>
+                  </div>
+                </div>
+              ) : null}
               <textarea
+                ref={promptTextareaRef}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                rows={3}
                 placeholder="请输入你的设计需求"
-                className="w-full h-14 bg-transparent border-none outline-none text-lg placeholder:text-gray-300 resize-none font-medium text-gray-700"
+                className="w-full min-h-[72px] max-h-[144px] overflow-y-auto bg-transparent border-none outline-none resize-none text-[15px] leading-[26px] font-medium text-slate-700 placeholder:text-slate-300"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -928,7 +1007,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                 <div className="flex items-center gap-2">
                   <div className="hidden sm:flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50/70 p-0.5">
-                    {MODE_OPTIONS.map((mode) => (
+                    {HOME_MODE_OPTIONS.map((mode) => (
                       <button
                         key={mode.id}
                         type="button"
@@ -996,6 +1075,9 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     <ArrowUp size={18} strokeWidth={2.5} />
                   </button>
                 </div>
+              </div>
+              <div className="mt-3 px-1 text-[12px] text-slate-400">
+                发送后会新建项目，并在项目侧边栏里继续这次对话。
               </div>
             </div>
           </div>

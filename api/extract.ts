@@ -1,5 +1,11 @@
 type ExtractRequest = {
   url?: string;
+  query?: string;
+  provider?: {
+    providerType?: string;
+    apiKey?: string;
+    baseUrl?: string;
+  };
 };
 
 const REQUEST_TIMEOUT_MS = 12000;
@@ -40,6 +46,90 @@ function isPrivateHostname(hostname: string): boolean {
 function isSupportedContentType(value: string | null): boolean {
   const normalized = String(value || "").toLowerCase();
   return ALLOWED_CONTENT_TYPES.some((t) => normalized.includes(t));
+}
+
+function normalizeBaseUrl(rawUrl: string): string {
+  return String(rawUrl || "").trim().replace(/\/+$/, "");
+}
+
+async function fetchJsonWithTimeout(url: string, init?: RequestInit): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message =
+        String(payload?.detail || payload?.error || payload?.message || "").trim() ||
+        `http_${response.status}`;
+      throw new Error(message);
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function tryTavilyExtract(args: {
+  url: string;
+  query?: string;
+  apiKey: string;
+  baseUrl?: string;
+}): Promise<{
+  url: string;
+  title: string;
+  cleanedText: string;
+  excerpt: string;
+  length: number;
+} | null> {
+  const normalizedKey = String(args.apiKey || "").trim();
+  if (!normalizedKey) return null;
+
+  const rootUrl = normalizeBaseUrl(args.baseUrl || "") || "https://api.tavily.com";
+  const payload = await fetchJsonWithTimeout(
+    `${rootUrl}${rootUrl.endsWith("/extract") ? "" : "/extract"}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${normalizedKey}`,
+      },
+      body: JSON.stringify({
+        urls: [args.url],
+        extract_depth: "advanced",
+        format: "text",
+        include_images: false,
+        query: String(args.query || "").trim() || undefined,
+        chunks_per_source: 4,
+      }),
+    },
+  );
+
+  const first =
+    (Array.isArray(payload?.results) ? payload.results[0] : null) ||
+    (Array.isArray(payload?.data) ? payload.data[0] : null) ||
+    null;
+  if (!first || typeof first !== "object") return null;
+
+  const cleanedText = String(
+    first.raw_content ||
+      first.content ||
+      first.text ||
+      first.markdown ||
+      "",
+  ).trim();
+  if (!cleanedText) return null;
+
+  return {
+    url: String(first.url || args.url).trim() || args.url,
+    title: String(first.title || "").trim(),
+    cleanedText,
+    excerpt: cleanedText.slice(0, 1200),
+    length: cleanedText.length,
+  };
 }
 
 async function readTextWithLimit(response: Response, maxBytes: number): Promise<string> {
@@ -87,6 +177,10 @@ export default async function handler(req: any, res: any) {
       : req.body || {};
 
   const targetUrl = String(body.url || "").trim();
+  const query = String(body.query || "").trim();
+  const providerType = String(body.provider?.providerType || "").trim().toLowerCase();
+  const providerApiKey = String(body.provider?.apiKey || "").trim();
+  const providerBaseUrl = String(body.provider?.baseUrl || "").trim();
   if (!/^https?:\/\//i.test(targetUrl)) {
     return res.status(400).json({ error: "url must be a valid http(s) url" });
   }
@@ -101,6 +195,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    if (providerType === "tavily" && providerApiKey) {
+      const tavilyResult = await tryTavilyExtract({
+        url: targetUrl,
+        query,
+        apiKey: providerApiKey,
+        baseUrl: providerBaseUrl,
+      });
+      if (tavilyResult) {
+        return res.status(200).json(tavilyResult);
+      }
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 

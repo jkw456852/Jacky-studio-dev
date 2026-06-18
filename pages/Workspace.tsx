@@ -1554,18 +1554,6 @@ const Workspace: React.FC = () => {
   // We will ignore 'prompt' and 'attachments' state for the INPUT area.
   const modelMode = useAgentStore((s) => s.modelMode);
   const webEnabled = useAgentStore((s) => s.webEnabled);
-  const agentSelectionMode = useAgentStore((s) => s.agentSelectionMode);
-  const pinnedAgentId = useAgentStore((s) => s.pinnedAgentId);
-  const selectedRoleId = useAgentStore((s) => s.selectedRoleId);
-  const selectedRoleSource = useAgentStore((s) => s.selectedRoleSource);
-  const baseAgentId = useAgentStore((s) => s.baseAgentId);
-  const roleGovernanceMode = useAgentStore((s) => s.roleGovernanceMode);
-  const allowMainBrainRoleMutation = useAgentStore(
-    (s) => s.allowMainBrainRoleMutation,
-  );
-  const allowMainBrainRolePromotion = useAgentStore(
-    (s) => s.allowMainBrainRolePromotion,
-  );
   const imageModelEnabled = useAgentStore((s) => s.imageModelEnabled);
   const translatePromptToEnglish = useAgentStore(
     (s) => s.translatePromptToEnglish,
@@ -4352,14 +4340,6 @@ const Workspace: React.FC = () => {
     isTyping,
     webEnabled,
     modelMode,
-    agentSelectionMode,
-    pinnedAgentId,
-    selectedRoleId,
-    selectedRoleSource,
-    baseAgentId,
-    roleGovernanceMode,
-    allowMainBrainRoleMutation,
-    allowMainBrainRolePromotion,
     creationMode,
     researchMode,
     imageGenRatio,
@@ -4507,6 +4487,8 @@ const Workspace: React.FC = () => {
     currentInputBlocks: inputBlocks,
     creationMode,
     activeQuickSkill: getActiveQuickSkillPreference() || undefined,
+    modelMode,
+    webEnabled,
     setConversations,
   });
 

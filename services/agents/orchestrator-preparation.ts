@@ -30,6 +30,11 @@ import { validateAttachmentPassthrough } from './orchestrator-result-handlers.ts
 import { isUnifiedSidebarAgent, inferTaskModeFromRequest } from './orchestrator-routing.ts';
 import { buildExecutionTask } from './orchestrator-task-assembly.ts';
 
+const viteEnv =
+  ((import.meta as unknown as {
+    env?: Record<string, string | boolean | undefined>;
+  }).env || {});
+
 export interface PreparedOrchestratorContext {
   uploadedUrls: string[];
   updatedContext: ProjectContext;
@@ -219,9 +224,9 @@ export const prepareOrchestratorContext = async ({
     }
   }
 
-  const optimizerEnabled = import.meta.env.VITE_PROMPT_OPTIMIZER_ENABLED !== 'false';
+  const optimizerEnabled = viteEnv.VITE_PROMPT_OPTIMIZER_ENABLED !== 'false';
   const optimizerPipelineEnabled =
-    import.meta.env.VITE_PROMPT_OPTIMIZER_PIPELINE_ENABLED !== 'false';
+    viteEnv.VITE_PROMPT_OPTIMIZER_PIPELINE_ENABLED !== 'false';
   const isInternalCall = metadata?.internalCall === true;
 
   let messageForExecution = message;
@@ -265,19 +270,21 @@ export const prepareOrchestratorContext = async ({
     }
   }
 
-  const manualPinnedAgentCandidate =
-    metadata?.selectedRoleId && metadata?.baseAgentId
-      ? metadata.baseAgentId
-      : metadata?.pinnedAgentId;
+  if (!unifiedSidebarAgent) {
+    const manualPinnedAgentCandidate =
+      metadata?.selectedRoleId && metadata?.baseAgentId
+        ? metadata.baseAgentId
+        : metadata?.pinnedAgentId;
 
-  if (
-    metadata?.agentSelectionMode === 'manual' &&
-    manualPinnedAgentCandidate &&
-    ['coco', 'vireo', 'cameron', 'poster', 'package', 'motion', 'campaign', 'prompt-optimizer'].includes(
-      manualPinnedAgentCandidate,
-    )
-  ) {
-    pinnedAgent = manualPinnedAgentCandidate;
+    if (
+      metadata?.agentSelectionMode === 'manual' &&
+      manualPinnedAgentCandidate &&
+      ['coco', 'vireo', 'cameron', 'poster', 'package', 'motion', 'campaign', 'prompt-optimizer'].includes(
+        manualPinnedAgentCandidate,
+      )
+    ) {
+      pinnedAgent = manualPinnedAgentCandidate;
+    }
   }
 
   return {
