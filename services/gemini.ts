@@ -81,6 +81,40 @@ const isNetworkFetchError = (error: unknown): boolean => {
     return msg.includes('failed to fetch') || msg.includes('network') || msg.includes('cors') || msg.includes('load failed');
 };
 
+const createAbortError = (): DOMException =>
+    new DOMException('The operation was aborted.', 'AbortError');
+
+const throwIfAborted = (signal?: AbortSignal) => {
+    if (signal?.aborted) {
+        throw createAbortError();
+    }
+};
+
+const sleepWithAbort = (ms: number, signal?: AbortSignal): Promise<void> => {
+    if (!signal) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    if (signal.aborted) {
+        return Promise.reject(createAbortError());
+    }
+
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            signal.removeEventListener('abort', handleAbort);
+            resolve();
+        }, ms);
+
+        const handleAbort = () => {
+            clearTimeout(timeoutId);
+            signal.removeEventListener('abort', handleAbort);
+            reject(createAbortError());
+        };
+
+        signal.addEventListener('abort', handleAbort, { once: true });
+    });
+};
+
 export { getApiKey, getProviderConfig };
 
 export type BestModelSelection = {
@@ -256,6 +290,34 @@ type UnifiedJsonStreamCallbacks = {
     onReasoningDelta?: (delta: string) => void;
 };
 
+const emitGeminiChunkDeltas = (
+    chunk: GenerateContentResponse,
+    callbacks?: UnifiedJsonStreamCallbacks,
+) => {
+    if (!callbacks) return;
+
+    const candidates = Array.isArray((chunk as any)?.candidates)
+        ? ((chunk as any).candidates as Array<any>)
+        : [];
+
+    candidates.forEach((candidate) => {
+        const parts = Array.isArray(candidate?.content?.parts)
+            ? candidate.content.parts
+            : [];
+
+        parts.forEach((part: any) => {
+            const text = typeof part?.text === 'string' ? part.text : '';
+            if (!text) return;
+
+            if (part?.thought === true) {
+                callbacks.onReasoningDelta?.(text);
+            } else {
+                callbacks.onTextDelta?.(text);
+            }
+        });
+    });
+};
+
 const normalizeOpenAITextValue = (value: unknown): string => {
     if (typeof value === 'string') return value;
     if (Array.isArray(value)) {
@@ -411,6 +473,7 @@ const fetchOpenAIJsonWithFallback = async <T>(
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
         requestFingerprint?: string;
+        signal?: AbortSignal;
     },
 ): Promise<T> => {
     const cacheKey = getOpenAIAuthCacheEntryKey(baseUrl, path);
@@ -535,6 +598,7 @@ const fetchOpenAIJsonWithFallback = async <T>(
             if (requestTarget) {
                 return fetchWithResilience(browserProxyUrl, {
                     method: 'POST',
+                    signal: requestTuning?.signal,
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -551,6 +615,7 @@ const fetchOpenAIJsonWithFallback = async <T>(
             }
             return fetchWithResilience(url, {
                 method: 'POST',
+                signal: requestTuning?.signal,
                 headers,
                 body: JSON.stringify(body),
             }, {
@@ -596,6 +661,7 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
         requestFingerprint?: string;
+        signal?: AbortSignal;
     },
 ): Promise<T> => {
     const cacheKey = getOpenAIAuthCacheEntryKey(baseUrl, path);
@@ -626,6 +692,7 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
             try {
                 res = await fetchWithResilience(url, {
                     method: 'POST',
+                    signal: requestTuning?.signal,
                     headers,
                     body: JSON.stringify(body),
                 }, {
@@ -704,6 +771,7 @@ const fetchOpenAIFormWithFallback = async <T>(
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
         requestFingerprint?: string;
+        signal?: AbortSignal;
     },
 ): Promise<T> => {
     const cacheKey = getOpenAIAuthCacheEntryKey(baseUrl, path);
@@ -786,7 +854,7 @@ const fetchOpenAIFormWithFallback = async <T>(
                 return true;
             }
             const delay = 5000 + Math.random() * 5000;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await sleepWithAbort(delay, requestTuning?.signal);
             return true;
         },
         shouldContinueOnServerError: () => true,
@@ -797,6 +865,7 @@ const fetchOpenAIFormWithFallback = async <T>(
                 const serializedFormData = await serializeFormDataForProxy(buildFormData());
                 return fetchWithResilience('/api/openai-proxy', {
                     method: 'POST',
+                    signal: requestTuning?.signal,
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -818,6 +887,7 @@ const fetchOpenAIFormWithFallback = async <T>(
             }
             return fetchWithResilience(url, {
                 method: 'POST',
+                signal: requestTuning?.signal,
                 headers,
                 body: buildFormData(),
             }, {
@@ -857,6 +927,7 @@ const fetchOpenAIGetWithFallback = async <T>(
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
         requestFingerprint?: string;
+        signal?: AbortSignal;
     },
 ): Promise<T> => {
     const cacheKey = getOpenAIAuthCacheEntryKey(baseUrl, path);
@@ -892,6 +963,7 @@ const fetchOpenAIGetWithFallback = async <T>(
             if (typeof window !== 'undefined') {
                 return fetchWithResilience('/api/openai-proxy', {
                     method: 'POST',
+                    signal: requestTuning?.signal,
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -913,6 +985,7 @@ const fetchOpenAIGetWithFallback = async <T>(
             }
             return fetchWithResilience(url, {
                 method: 'GET',
+                signal: requestTuning?.signal,
                 headers,
             }, {
                 operation: `${contextTag}.openaiGet`,
@@ -1126,15 +1199,58 @@ export const generateJsonResponse = async (
     const isGoogleDirect = provider.id === 'gemini' || !baseUrl || baseUrl.includes('googleapis.com');
 
     if (isGoogleDirect) {
+        const config = {
+            temperature,
+            responseMimeType: responseFormat === 'text' ? 'text/plain' : 'application/json',
+            ...(responseSchema ? { responseSchema } : {}),
+            ...(tools && tools.length > 0 ? { tools: tools as any } : {}),
+            ...((onTextDelta || onReasoningDelta)
+                ? {
+                    thinkingConfig: {
+                        includeThoughts: true,
+                    },
+                }
+                : {}),
+        };
+
+        if (onTextDelta || onReasoningDelta) {
+            const stream = await getClient(providerId).models.generateContentStream({
+                model,
+                contents: { parts },
+                config,
+            });
+
+            let lastChunk: GenerateContentResponse | null = null;
+            for await (const chunk of stream) {
+                lastChunk = chunk;
+                emitGeminiChunkDeltas(chunk, {
+                    onTextDelta,
+                    onReasoningDelta,
+                });
+            }
+
+            const response = lastChunk || await getClient(providerId).models.generateContent({
+                model,
+                contents: { parts },
+                config,
+            });
+
+            return {
+                text: response.text || '{}',
+                candidates: response.candidates as any,
+                raw: response as any,
+                meta: {
+                    model,
+                    providerId: provider.id || providerId || null,
+                    baseUrl,
+                },
+            };
+        }
+
         const response = await getClient(providerId).models.generateContent({
             model,
             contents: { parts },
-            config: {
-                temperature,
-                responseMimeType: responseFormat === 'text' ? 'text/plain' : 'application/json',
-                ...(responseSchema ? { responseSchema } : {}),
-                ...(tools && tools.length > 0 ? { tools: tools as any } : {}),
-            },
+            config,
         });
 
         return {
@@ -1720,6 +1836,7 @@ const generateVideoOpenAICompatible = async (
     modelId: string,
     config: VideoGenerationConfig
 ): Promise<string | null> => {
+    throwIfAborted(config.signal);
     const size = config.aspectRatio === '9:16' ? '720x1280' : '1280x720';
     const requestBody: Record<string, any> = {
         model: modelId,
@@ -1744,6 +1861,7 @@ const generateVideoOpenAICompatible = async (
 
             const submitRes = await fetchWithResilience(submitUrl, {
                 method: 'POST',
+                signal: config.signal,
                 headers: submitHeaders,
                 body: JSON.stringify(requestBody),
             }, { operation: 'generateVideo.openaiSubmit', retries: 0 });
@@ -1776,13 +1894,15 @@ const generateVideoOpenAICompatible = async (
             ];
 
             for (let i = 0; i < 60; i++) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                throwIfAborted(config.signal);
+                await sleepWithAbort(5000, config.signal);
 
                 for (const pollPath of pollPaths) {
+                    throwIfAborted(config.signal);
                     try {
                         const pollUrl = buildOpenAIUrl(baseUrl, pollPath, authMode, apiKey);
                         const pollHeaders = buildOpenAIHeaders(authMode, apiKey);
-                        const pollRes = await fetchWithResilience(pollUrl, { headers: pollHeaders }, { operation: 'generateVideo.openaiPoll', retries: 1 });
+                        const pollRes = await fetchWithResilience(pollUrl, { headers: pollHeaders, signal: config.signal }, { operation: 'generateVideo.openaiPoll', retries: 1 });
                         if (!pollRes.ok) continue;
                         const pollData = await pollRes.json();
 
@@ -2313,6 +2433,7 @@ export const analyzeProductSwapScene = async (imageBase64: string): Promise<stri
 export interface ImageGenerationConfig {
     prompt: string;
     model: string;
+    signal?: AbortSignal;
     aspectRatio: string;
     imageSize?: '1K' | '2K' | '4K';
     exactSize?: string;
@@ -2351,6 +2472,7 @@ export interface ImageGenerationConfig {
 export interface ImageEditConfig {
     sourceImage: string;
     prompt: string;
+    signal?: AbortSignal;
     model?: string;
     aspectRatio?: string;
     imageSize?: '1K' | '2K' | '4K';
@@ -2506,10 +2628,12 @@ export const pollOpenAICompatibleImageResult = async (args: {
     taskId: string;
     contextTag: string;
     requestFingerprint?: string;
+    signal?: AbortSignal;
 }): Promise<string | null> => {
     return pollOpenAICompatibleImageResultViaTransport({
         taskId: args.taskId,
         contextTag: args.contextTag,
+        signal: args.signal,
         fetchJson: (path, contextTag) =>
             fetchOpenAIGetWithFallback<any>(
                 args.baseUrl,
@@ -2524,6 +2648,7 @@ export const pollOpenAICompatibleImageResult = async (args: {
                     timeoutMs: 120000,
                     idleTimeoutMs: 120000,
                     requestFingerprint: args.requestFingerprint,
+                    signal: args.signal,
                 },
             ),
     });
@@ -2648,6 +2773,7 @@ const serializeFormDataForProxy = async (
 const requestOpenAICompatibleImage = async (opts: {
     model: string;
     prompt: string;
+    signal?: AbortSignal;
     aspectRatio: string;
     imageSize?: '1K' | '2K' | '4K';
     exactSize?: string;
@@ -2770,6 +2896,7 @@ const requestOpenAICompatibleImage = async (opts: {
     const requestTuningWithFingerprint = {
         ...(requestTuning || {}),
         requestFingerprint: requestFingerprintMeta.fingerprint,
+        signal: opts.signal,
     };
     transportRequestSnapshot.requestFingerprint = requestFingerprintMeta.fingerprint;
     opts.onTransportPrepared?.(transportRequestSnapshot);
@@ -2889,6 +3016,7 @@ const requestOpenAICompatibleImage = async (opts: {
                         taskId: submission.taskId,
                         contextTag: opts.contextTag,
                         requestFingerprint: requestFingerprintMeta.fingerprint,
+                        signal: opts.signal,
                     });
                 }
                 return null;
@@ -2969,6 +3097,7 @@ const requestOpenAICompatibleImage = async (opts: {
                 taskId: parsed.submission.taskId,
                 contextTag: opts.contextTag,
                 requestFingerprint: requestFingerprintMeta.fingerprint,
+                signal: opts.signal,
             });
         }
         return null;
@@ -3008,6 +3137,7 @@ const requestOpenAICompatibleImage = async (opts: {
             taskId: parsed.submission.taskId,
             contextTag: opts.contextTag,
             requestFingerprint: requestFingerprintMeta.fingerprint,
+            signal: opts.signal,
         });
     }
 
@@ -3533,6 +3663,7 @@ export const generateImage = async (config: ImageGenerationConfig): Promise<stri
 export interface VideoGenerationConfig {
     prompt: string;
     model: string;
+    signal?: AbortSignal;
     providerId?: string | null;
     aspectRatio: string;
     startFrame?: string; // base64
@@ -3542,6 +3673,7 @@ export interface VideoGenerationConfig {
 
 export const generateVideo = async (config: VideoGenerationConfig): Promise<string | null> => {
     try {
+        throwIfAborted(config.signal);
         const win = window as any;
         if (win.aistudio) {
             const hasKey = await win.aistudio.hasSelectedApiKey();
@@ -3625,6 +3757,7 @@ export const generateVideo = async (config: VideoGenerationConfig): Promise<stri
                 console.log(`[generateVideo] POST ${directGoogleUrl.replace(apiKey, '***')}`);
                 const r = await fetchWithResilience(directGoogleUrl, {
                     method: 'POST',
+                    signal: config.signal,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 }, { operation: 'generateVideo.googleDirectSubmit', retries: 0 });
@@ -3652,7 +3785,7 @@ export const generateVideo = async (config: VideoGenerationConfig): Promise<stri
                     const headers = buildVideoHeaders(plan.authMode, apiKey);
                     console.log(`[generateVideo] POST [${plan.version}/${plan.authMode}] ${generateUrl.replace(apiKey, '***')}`);
 
-                    const r = await fetchWithResilience(generateUrl, { method: 'POST', headers, body: JSON.stringify(body) }, { operation: 'generateVideo.generateVideosSubmit', retries: 0 });
+                    const r = await fetchWithResilience(generateUrl, { method: 'POST', signal: config.signal, headers, body: JSON.stringify(body) }, { operation: 'generateVideo.generateVideosSubmit', retries: 0 });
                     if (r.ok) {
                         generateContext = plan;
                         return r.json();
@@ -3701,7 +3834,8 @@ export const generateVideo = async (config: VideoGenerationConfig): Promise<stri
         const MAX_POLLS = 60;
 
         while (pollCount < MAX_POLLS) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            throwIfAborted(config.signal);
+            await sleepWithAbort(5000, config.signal);
             pollCount++;
 
             const pollPlans: Array<{ version: VideoApiVersion; authMode: VideoAuthMode }> = isGoogleDirect
@@ -3719,9 +3853,10 @@ export const generateVideo = async (config: VideoGenerationConfig): Promise<stri
 
             try {
                 for (const plan of pollPlans) {
+                    throwIfAborted(config.signal);
                     const pollUrl = buildVideoPollUrl(baseUrl, plan.version, operationName, plan.authMode, apiKey);
                     const pollHeaders = buildVideoHeaders(plan.authMode, apiKey);
-                    const pollRes = await fetchWithResilience(pollUrl, { headers: pollHeaders }, { operation: 'generateVideo.generateVideosPoll', retries: 1 });
+                    const pollRes = await fetchWithResilience(pollUrl, { headers: pollHeaders, signal: config.signal }, { operation: 'generateVideo.generateVideosPoll', retries: 1 });
 
                     if (!pollRes.ok) {
                         const errBody = await pollRes.text().catch(() => '');

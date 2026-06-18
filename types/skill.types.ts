@@ -16,6 +16,7 @@ export type ImageReferenceRoleMode =
 export interface ImageGenSkillParams {
   prompt: string;
   model: ImageModel;
+  signal?: AbortSignal;
   providerId?: string | null;
   aspectRatio: string;
   imageSize?: '1K' | '2K' | '4K';
@@ -59,6 +60,7 @@ export interface ImageGenSkillParams {
 export interface VideoGenSkillParams {
   prompt: string;
   model: VideoModel;
+  signal?: AbortSignal;
   providerId?: string | null;
   aspectRatio: string;
   startFrame?: string;
@@ -77,6 +79,7 @@ export interface RegionAnalyzeSkillParams {
 
 export interface TouchEditSkillParams {
   imageData: string;
+  signal?: AbortSignal;
   regionX: number;
   regionY: number;
   regionWidth: number;

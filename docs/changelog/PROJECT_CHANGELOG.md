@@ -1,5 +1,40 @@
 # 更新记录
  
+## 2026-06-18
+
+### 1) 侧边栏与输入区前台化重做
+- 工作台底部输入区、模式切换、技能入口、联网开关、模型偏好和发送按钮重新收成一套更紧凑的前台聊天结构，减少“像设置面板”的感觉。
+- 历史记录、产出入口和会话操作改成更轻的小浮层 / 小菜单，补上置顶、重命名、归档、删除、空态和悬浮操作，不再动不动全屏覆盖。
+- 输入区继续补齐图文混排编辑、消息回填、附件预览、图片 tag 和多行输入的连续手感。
+
+### 2) 对话链路与消息卡片补强
+- 新增会话版本链路、分支信息、消息回填继续编辑、失败态恢复提示、点赞/点踩和停止生成后的执行记录展示。
+- Assistant 消息卡片收紧成更统一的前台样式，思考过程、执行记录和失败反馈不再混在一大块技术态信息里。
+- 新增 `pages/Workspace/conversationMeta.ts` 及测试，统一处理会话标题、预览、状态摘要、版本关系和历史分组逻辑。
+
+### 3) 联网研究体验与可验证性优化
+- 联网回复卡片补上研究状态、步骤、来源、摘录和来源展开结构，用户更容易确认本轮是否真的搜过、搜了哪些站点、拿到了哪些摘录。
+- 研究提取前新增 URL 过滤，跳过明显不适合抽正文的图片、PDF、压缩包和音视频资源，减少 `/api/extract` 无意义失败。
+- 研究错误映射、来源展示和消息侧呈现一起收口，联网回复不再那么像后台日志面板。
+
+### 4) 思考模式 / 联网检索 / 取消执行真正接入链路
+- `modelMode` 正式下沉到发送元数据并映射到 `workflowMode`，`thinking` / `fast` 不再只是前台假开关。
+- 联网检索关闭时，工作台预研究链路不再继续偷偷跑 web 研究；开启后也会更明确把研究上下文带进执行链路。
+- Gemini/OpenAI 兼容链路补上更完整的 `AbortSignal` 透传与轮询中断，停止生成、切换任务和长轮询中断后的状态更干净。
+
+### 5) 关键文件
+- `pages/Workspace/components/InputAreaBottomToolbar.tsx`
+- `pages/Workspace/components/AssistantSidebar.tsx`
+- `pages/Workspace/components/AssistantSidebarConversationActions.tsx`
+- `pages/Workspace/components/AssistantSidebarHistoryPopover.tsx`
+- `pages/Workspace/components/AgentMessage.tsx`
+- `pages/Workspace/components/AgentMessage.helpers.ts`
+- `pages/Workspace/controllers/useWorkspaceSend.ts`
+- `pages/Workspace/controllers/useWorkspaceSend.helpers.ts`
+- `pages/Workspace/conversationMeta.ts`
+- `services/gemini.ts`
+- `services/systemAnnouncements.ts`
+
 ## 2026-05-15
 
 ### 1) Workspace 安卓平板触控补齐

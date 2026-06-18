@@ -1,6 +1,13 @@
-import React, { memo } from "react";
-import { motion } from "framer-motion";
-import { Maximize2 } from "lucide-react";
+﻿import React, { memo } from "react";
+import {
+  Archive,
+  Compass,
+  GitBranch,
+  ImagePlus,
+  Loader2,
+  Square,
+  Video,
+} from "lucide-react";
 import { useAgentStore } from "../../../stores/agent.store";
 import type { BrowserAgentSessionRecord } from "../../../services/browser-agent";
 import { getBrowserAgentModelLabel } from "../../../services/provider-settings";
@@ -13,7 +20,12 @@ import { createImagePreviewDataUrl } from "../workspaceShared";
 import { useAssistantSidebarConversationUi } from "../controllers/useAssistantSidebarConversationUi";
 import { useAssistantSidebarBrowserAgentUi } from "../controllers/useAssistantSidebarBrowserAgentUi";
 import { useAssistantSidebarPanelUi } from "../controllers/useAssistantSidebarPanelUi";
-import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences";
+import {
+  getActiveQuickSkillPreference,
+  setActiveQuickSkillPreference,
+} from "../../../services/runtime-assets/preferences";
+import { createInputBlockId } from "../../../stores/agent.store";
+import { hasConversationDraft, isConversationArchived } from "../conversationMeta";
 import { AssistantSidebarHeader } from "./AssistantSidebarHeader";
 import { AssistantSidebarHistoryPanel } from "./AssistantSidebarHistoryPanel";
 import { AssistantSidebarPlanCard } from "./AssistantSidebarPlanCard";
@@ -28,7 +40,7 @@ import type {
 } from "./InputArea";
 
 import { ConversationSession, Marker, InputBlock } from "../../../types";
-import type { ChatMessage } from "../../../types";
+import type { ChatMessage, ChatSendOptions } from "../../../types";
 import type { WorkspaceInputFile } from "../../../types";
 import type {
   EcommerceImageAnalysis,
@@ -40,6 +52,48 @@ import type {
   Requirements,
   ModelGenOptions,
 } from "../../../types/workflow.types";
+
+type PendingConversationTransition = {
+  key: string;
+  label: string;
+  action: () => void;
+};
+
+type PendingConversationDeletion = {
+  conversationId: string;
+  label: string;
+  isActive: boolean;
+};
+
+type PendingDeletedConversation = {
+  conversation: ConversationSession;
+  label: string;
+  wasActive: boolean;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
+type PendingArchivedConversation = {
+  conversation: ConversationSession;
+  label: string;
+  wasActive: boolean;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
+type EmptyConversationStarter = {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  mode?: "agent" | "image" | "video";
+};
+
+const getCreationModeDisplayLabel = (
+  mode: EmptyConversationStarter["mode"] | undefined,
+) => {
+  if (mode === "image") return "图片";
+  if (mode === "video") return "视频";
+  return "对话";
+};
 
 const isTransientAttachmentPreviewUrl = (value: string | null | undefined) =>
   /^blob:/i.test(String(value || "").trim());
@@ -61,18 +115,81 @@ const readStringArrayValue = (value: unknown): string[] =>
     : [];
 
 const EXECUTION_INTENT_PATTERN =
-  /(生成|制作|创建|出图|重画|改图|优化|执行|运行|开始|继续|同步|插入|替换|apply|run|generate|create|make|edit|update|redesign|render)/i;
+  /(鐢熸垚|鍒朵綔|鍒涘缓|鍑哄浘|閲嶇敾|鏀瑰浘|浼樺寲|鎵ц|杩愯|寮€濮媩缁х画|鍚屾|鎻掑叆|鏇挎崲|apply|run|generate|create|make|edit|update|redesign|render)/i;
 const CHAT_QUERY_PATTERN =
-  /(是什么|干嘛|做什么|什么意思|怎么|为什么|能不能解释|解释一下|看看|帮我看|这块|这里|what|why|how|explain|tell me|look at)/i;
+  /(鏄粈涔坾骞插槢|鍋氫粈涔坾浠€涔堟剰鎬潀鎬庝箞|涓轰粈涔坾鑳戒笉鑳借В閲妡瑙ｉ噴涓€涓媩鐪嬬湅|甯垜鐪媩杩欏潡|杩欓噷|what|why|how|explain|tell me|look at)/i;
 const BROWSER_SURFACE_PATTERN =
-  /(网页|页面|画布|节点|当前节点|这个节点|这块|这里|按钮|弹窗|工具栏|侧边栏|预览图|图层|模块|控件|canvas|node|page|toolbar|sidebar|modal|panel|preview|element)/i;
+  /(缃戦〉|椤甸潰|鐢诲竷|鑺傜偣|褰撳墠鑺傜偣|杩欎釜鑺傜偣|杩欏潡|杩欓噷|鎸夐挳|寮圭獥|宸ュ叿鏍弢渚ц竟鏍弢棰勮鍥緗鍥惧眰|妯″潡|鎺т欢|canvas|node|page|toolbar|sidebar|modal|panel|preview|element)/i;
 const GENERAL_WORK_PATTERN =
-  /(插件|plugin|智能体|agent\s|agent模板|prompt|提示词|脚本|代码|文档|markdown|方案|策略|分析|总结|说明)/i;
+  /(鎻掍欢|plugin|鏅鸿兘浣搢agent\s|agent妯℃澘|prompt|鎻愮ず璇峾鑴氭湰|浠ｇ爜|鏂囨。|markdown|鏂规|绛栫暐|鍒嗘瀽|鎬荤粨|璇存槑)/i;
+
+const DIRECT_EXECUTION_KEYWORDS = [
+  "顺手",
+  "直接",
+  "马上",
+  "现在",
+  "帮我",
+  "替我",
+  "请你",
+  "去把",
+  "然后执行",
+  "并执行",
+];
 
 const shouldTreatAsDirectComposerSubmit = (
   overridePrompt?: string,
   overrideAttachments?: File[],
 ) => overridePrompt === undefined && overrideAttachments === undefined;
+
+const buildEmptyConversationStarters = (
+  selectedElementLabel: string | null | undefined,
+): EmptyConversationStarter[] => {
+  const selectedSurface = String(selectedElementLabel || "").trim();
+  return [
+    {
+      id: "audit-ui",
+      title: "审视这个界面",
+      description: selectedSurface
+        ? `检查 ${selectedSurface}，先找出最值得优先处理的界面问题。`
+        : "检查当前工作区界面，先找出最值得优先处理的问题。",
+      prompt: selectedSurface
+        ? `检查选中的“${selectedSurface}”。告诉我哪里还不完整、哪里容易让人困惑、哪里视觉上还不够稳，然后按优先级列出需要先改的点。`
+        : "检查当前工作区界面。告诉我哪里还不完整、哪里容易让人困惑、哪里视觉上还不够稳，然后按优先级列出需要先改的点。",
+      mode: "agent",
+    },
+    {
+      id: "plan-execution",
+      title: "规划下一步",
+      description: "把目标拆成明确步骤、风险点和最省力的高质量路径。",
+      prompt:
+        "帮我把这个工作区想法整理成可执行的构建计划。拆成里程碑，指出风险，并给出最快的高质量推进方式。",
+      mode: "agent",
+    },
+    {
+      id: "image-concept",
+      title: "视觉方向",
+      description: "生成更干净的画面方向、概念图或产品图提示词。",
+      prompt:
+        "为这个项目生成一版更完整的视觉方向。给我一个明确的图像概念，并说明构图、光线、材质和风格细节。",
+      mode: "image",
+    },
+    {
+      id: "motion-concept",
+      title: "运动分镜",
+      description: "生成更像产品内容的短动作思路或节奏提纲。",
+      prompt:
+        "为这个工作区生成一版简洁的高级感分镜。重点描述节奏、镜头运动和关键视觉节点。",
+      mode: "video",
+    },
+  ];
+};
+
+const getEmptyConversationStarterIcon = (starter: EmptyConversationStarter) => {
+  if (starter.mode === "image") return ImagePlus;
+  if (starter.mode === "video") return Video;
+  if (starter.id === "plan-execution") return GitBranch;
+  return Compass;
+};
 
 const shouldRouteSidebarMessageToBrowserAgent = ({
   text,
@@ -89,14 +206,16 @@ const shouldRouteSidebarMessageToBrowserAgent = ({
   const hasExecutionIntent = EXECUTION_INTENT_PATTERN.test(normalized);
   if (!hasExecutionIntent) return false;
 
+  const containsDirectExecutionKeyword = DIRECT_EXECUTION_KEYWORDS.some((keyword) =>
+    normalized.includes(keyword),
+  );
   const isPureChatQuery =
-    CHAT_QUERY_PATTERN.test(normalized) &&
-    !/(顺手|直接|马上|现在|帮我|替我|请你|去把|然后执行|并执行)/i.test(normalized);
+    CHAT_QUERY_PATTERN.test(normalized) && !containsDirectExecutionKeyword;
   if (isPureChatQuery) return false;
 
   const referencesCurrentSurface =
     BROWSER_SURFACE_PATTERN.test(normalized) ||
-    /(当前|这个|这里|选中|selected|当前选中)/i.test(normalized);
+    /(褰撳墠|杩欎釜|杩欓噷|閫変腑|selected|褰撳墠閫変腑)/i.test(normalized);
 
   if (referencesCurrentSurface) return true;
 
@@ -134,10 +253,10 @@ const collectStepInputSummary = (input: Record<string, unknown> | null) => {
   const timeoutMs =
     typeof input.timeoutMs === "number" ? String(input.timeoutMs) : null;
 
-  if (elementId) lines.push(`目标节点: ${elementId}`);
-  if (requestId) lines.push(`请求 ID: ${requestId}`);
-  if (controlId) lines.push(`控件: ${controlId}`);
-  if (timeoutMs) lines.push(`超时: ${timeoutMs}ms`);
+  if (elementId) lines.push(`鐩爣鑺傜偣: ${elementId}`);
+  if (requestId) lines.push(`璇锋眰 ID: ${requestId}`);
+  if (controlId) lines.push(`鎺т欢: ${controlId}`);
+  if (timeoutMs) lines.push(`瓒呮椂: ${timeoutMs}ms`);
 
   return lines.slice(0, 4);
 };
@@ -152,10 +271,10 @@ const collectStepInputSummarySafe = (input: Record<string, unknown> | null) => {
   const timeoutMs =
     typeof input.timeoutMs === "number" ? String(input.timeoutMs) : null;
 
-  if (elementId) lines.push(`目标节点: ${elementId}`);
-  if (requestId) lines.push(`请求 ID: ${requestId}`);
-  if (controlId) lines.push(`控件: ${controlId}`);
-  if (timeoutMs) lines.push(`超时: ${timeoutMs}ms`);
+  if (elementId) lines.push(`鐩爣鑺傜偣: ${elementId}`);
+  if (requestId) lines.push(`璇锋眰 ID: ${requestId}`);
+  if (controlId) lines.push(`鎺т欢: ${controlId}`);
+  if (timeoutMs) lines.push(`瓒呮椂: ${timeoutMs}ms`);
 
   return lines.slice(0, 4);
 };
@@ -212,6 +331,7 @@ type AssistantSidebarMessageActionsProps = {
     overrideAttachments?: File[],
     overrideWeb?: boolean,
     skillData?: ChatMessage["skillData"],
+    sendOptions?: ChatSendOptions,
   ) => Promise<void>;
   handleSmartGenerate: (prompt: string, proposalId?: string) => void;
 };
@@ -331,6 +451,14 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
   ecommerceActions,
 }) => {
   const lastBrowserAgentLivePayloadRef = React.useRef<Record<string, string>>({});
+  const pendingDeletedConversationRef =
+    React.useRef<PendingDeletedConversation | null>(null);
+  const pendingArchivedConversationRef =
+    React.useRef<PendingArchivedConversation | null>(null);
+  const finalizeDeletedConversationRef =
+    React.useRef<
+      ((conversationId: string) => void) | null
+    >(null);
   const {
     workspaceId,
     conversations,
@@ -373,13 +501,21 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     createTargetElement: browserAgent.createTargetElement,
   });
   const messages = useAgentStore((s) => s.messages);
+  const isTyping = useAgentStore((s) => s.isTyping);
   const visibleMessages = React.useMemo(
     () =>
       messages.filter((message) => !isEcommerceWorkflowChatMessage(message)),
     [messages],
   );
+  const activeConversation = React.useMemo(
+    () =>
+      conversations.find((conversation) => conversation.id === activeConversationId) ||
+      null,
+    [activeConversationId, conversations],
+  );
   const {
     addMessage,
+    cancelChatGeneration,
     updateMessage,
     setMessages,
     clearMessages,
@@ -388,8 +524,9 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     setActiveBlockId,
     clearPendingAttachments,
   } = useAgentStore((s) => s.actions);
+  const currentInputBlocks = useAgentStore((s) => s.composer.inputBlocks);
+  const currentTask = useAgentStore((s) => s.currentTask);
   const {
-    currentTask,
     currentTaskLabel,
     showHistoryPopover,
     historySearch,
@@ -398,11 +535,36 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     toggleHistoryPopover,
     closeHistoryPopover,
     toggleFileListModal,
-  } = useAssistantSidebarPanelUi();
+  } = useAssistantSidebarPanelUi({
+    activeConversation,
+    currentTaskConversationId:
+      String(currentTask?.input?.context?.conversationId || "").trim() || null,
+    currentTaskVisible:
+      String(currentTask?.input?.context?.conversationId || "").trim() ===
+        String(activeConversationId || "").trim() ||
+      (isTyping &&
+        !String(currentTask?.input?.context?.conversationId || "").trim()),
+    isTyping,
+    isBrowserConversationBusy: Boolean(
+      preparedPlan ||
+        isPlanning ||
+        isStarting ||
+        isContinuing ||
+        isRefreshing ||
+        sessionSummary.isRunning,
+    ),
+    browserStepTitle: sessionSummary.currentStepTitle,
+  });
   const {
     handleCreateConversation,
     handleSelectConversation,
     handleDeleteConversation,
+    finalizeDeletedConversation,
+    restoreConversationSnapshot,
+    handleRenameConversation,
+    handleToggleConversationPinned,
+    handleToggleConversationArchived,
+    handleBranchConversationFromMessage,
     activeConversationTitle,
   } = useAssistantSidebarConversationUi({
     workspaceId,
@@ -413,16 +575,51 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     messages,
     clearMessages,
     setMessages,
-    setPrompt: composer.setPrompt,
+    creationMode: composer.creationMode,
     setCreationMode: composer.setCreationMode,
+    currentInputBlocks,
     setInputBlocks,
     setActiveBlockId,
     clearPendingAttachments,
-    resetActiveQuickSkill: () => {
-      setActiveQuickSkillPreference(null);
+    getActiveQuickSkill: () => getActiveQuickSkillPreference() || undefined,
+    setActiveQuickSkill: (skill) => {
+      setActiveQuickSkillPreference(skill || null);
     },
     closeHistoryPopover,
   });
+  const [pendingConversationTransition, setPendingConversationTransition] =
+    React.useState<PendingConversationTransition | null>(null);
+  const [isStoppingForConversationTransition, setIsStoppingForConversationTransition] =
+    React.useState(false);
+  const [pendingConversationDeletion, setPendingConversationDeletion] =
+    React.useState<PendingConversationDeletion | null>(null);
+  const [pendingDeletedConversation, setPendingDeletedConversation] =
+    React.useState<PendingDeletedConversation | null>(null);
+  const [pendingArchivedConversation, setPendingArchivedConversation] =
+    React.useState<PendingArchivedConversation | null>(null);
+  const [pendingRestoreComposerState, setPendingRestoreComposerState] =
+    React.useState<{
+      conversationId: string;
+      prompt: string;
+      blockId: string;
+    } | null>(null);
+
+  const clearPendingDeletedConversation = React.useCallback(() => {
+    setPendingDeletedConversation((previous) => {
+      if (previous?.timeoutId) {
+        clearTimeout(previous.timeoutId);
+      }
+      return null;
+    });
+  }, []);
+  const clearPendingArchivedConversation = React.useCallback(() => {
+    setPendingArchivedConversation((previous) => {
+      if (previous?.timeoutId) {
+        clearTimeout(previous.timeoutId);
+      }
+      return null;
+    });
+  }, []);
 
   const browserAgentModelLabel =
     sessionSummary.plannerLabel || getBrowserAgentModelLabel();
@@ -469,7 +666,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
               url,
               label:
                 String(message.attachmentMetadata?.[index]?.markerName || "").trim() ||
-                `参考内容${index + 1}`,
+                `鍙傝€冨唴瀹?{index + 1}`,
               markerInfo: message.attachmentMetadata?.[index]?.markerInfo,
             }))
           : [];
@@ -503,7 +700,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       for (const part of sourceParts) {
         if (part.type === "text") {
           if (!String(part.text || "").length) continue;
-          const blockId = `text-${Date.now()}-${nextBlocks.length}`;
+          const blockId = createInputBlockId("text");
           nextBlocks.push({
             id: blockId,
             type: "text",
@@ -531,12 +728,12 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           ) as WorkspaceInputFile;
           file._chipPreviewUrl = part.url;
           if (part.markerInfo) {
-            file.markerName = String(part.label || "").trim() || "区域";
+            file.markerName = String(part.label || "").trim() || "鍖哄煙";
             file.markerInfo = part.markerInfo;
           }
 
           nextBlocks.push({
-            id: `file-${Date.now()}-${nextBlocks.length}`,
+            id: createInputBlockId("file"),
             type: "file",
             file,
           });
@@ -546,7 +743,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       }
 
       if (nextBlocks.length === 0) {
-        const textId = `text-${Date.now()}`;
+        const textId = createInputBlockId("text");
         nextBlocks.push({
           id: textId,
           type: "text",
@@ -554,7 +751,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         });
         nextActiveBlockId = textId;
       } else if (nextBlocks[nextBlocks.length - 1]?.type !== "text") {
-        const trailingTextId = `text-${Date.now()}-${nextBlocks.length}`;
+        const trailingTextId = createInputBlockId("text");
         nextBlocks.push({
           id: trailingTextId,
           type: "text",
@@ -568,9 +765,89 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       if (nextActiveBlockId) {
         setActiveBlockId(nextActiveBlockId);
       }
+      console.log("[assistant-sidebar] restoreMessageToComposer", {
+        messageId: message.id,
+        role: message.role,
+        blockCount: nextBlocks.length,
+        textPreview: nextBlocks
+          .filter((block) => block.type === "text")
+          .map((block) => String(block.text || ""))
+          .join(" ")
+          .slice(0, 160),
+      });
       setIsTyping(false);
     },
     [clearPendingAttachments, setActiveBlockId, setInputBlocks, setIsTyping],
+  );
+  const buildResendPayloadFromMessage = React.useCallback(
+    async (message: ChatMessage) => {
+      const inlineParts = Array.isArray(message.inlineParts)
+        ? message.inlineParts
+        : [];
+      const attachmentParts =
+        inlineParts.length > 0
+          ? inlineParts.filter(
+              (
+                part,
+              ): part is Extract<
+                NonNullable<ChatMessage["inlineParts"]>[number],
+                { type: "attachment" }
+              > => part.type === "attachment",
+            )
+          : (Array.isArray(message.attachments)
+              ? message.attachments.map((url, index) => ({
+                  type: "attachment" as const,
+                  url,
+                  label:
+                    String(message.attachmentMetadata?.[index]?.markerName || "").trim() ||
+                    `Reference ${index + 1}`,
+                  markerInfo: message.attachmentMetadata?.[index]?.markerInfo,
+                }))
+              : []);
+
+      const restoredFiles: WorkspaceInputFile[] = [];
+      for (const part of attachmentParts) {
+        try {
+          const response = await fetch(part.url);
+          if (!response.ok) {
+            throw new Error(`Failed to restore attachment: ${response.status}`);
+          }
+          const blob = await response.blob();
+          if (!blob.size) continue;
+
+          const safeBase =
+            (String(part.label || "").trim() || "reference")
+              .replace(/[\\/:*?"<>|]+/g, "-")
+              .slice(0, 48) || "reference";
+          const extension = blob.type.includes("jpeg") || blob.type.includes("jpg")
+            ? ".jpg"
+            : blob.type.includes("webp")
+              ? ".webp"
+              : blob.type.includes("gif")
+                ? ".gif"
+                : ".png";
+          const file = new File([blob], `${safeBase}${extension}`, {
+            type: blob.type || "image/png",
+            lastModified: Date.now(),
+          }) as WorkspaceInputFile;
+          file._chipPreviewUrl = part.url;
+          if (part.markerInfo) {
+            file.markerName = String(part.label || "").trim() || "鍖哄煙";
+            file.markerInfo = part.markerInfo;
+          }
+          restoredFiles.push(file);
+        } catch (error) {
+          console.warn("[assistant-sidebar] rebuild resend attachment failed", error);
+        }
+      }
+
+      return {
+        text: String(message.text || ""),
+        attachments: restoredFiles,
+        skillData: message.skillData,
+      };
+    },
+    [],
   );
   const readLatestObservationFromSession = React.useCallback(
     (session: typeof currentSession) => {
@@ -658,10 +935,10 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         const variantSummary = isRecord(payload?.variantSummary)
           ? payload.variantSummary
           : null;
-        if (traceStatus) pushLine(`Trace 状态: ${traceStatus}`);
-        if (traceModel) pushLine(`生图模型: ${traceModel}`);
+        if (traceStatus) pushLine(`Trace 鐘舵€? ${traceStatus}`);
+        if (traceModel) pushLine(`鐢熷浘妯″瀷: ${traceModel}`);
         if (previewImageCount !== null) {
-          pushLine(`节点预览数: ${previewImageCount}`);
+          pushLine(`鑺傜偣棰勮鏁? ${previewImageCount}`);
         }
         if (
           variantSummary &&
@@ -669,7 +946,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           typeof variantSummary.succeeded === "number"
         ) {
           pushLine(
-            `变体结果: ${variantSummary.succeeded}/${variantSummary.total} 成功`,
+            `鍙樹綋缁撴灉: ${variantSummary.succeeded}/${variantSummary.total} 鎴愬姛`,
           );
         }
       } else if (actionLabel === "workspace.await_generation_completion") {
@@ -684,18 +961,18 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         const variantSummary = isRecord(payload?.variantSummary)
           ? payload.variantSummary
           : null;
-        if (status) pushLine(`生成状态: ${status}`);
-        if (elapsedMs !== null) pushLine(`耗时: ${elapsedMs}ms`);
+        if (status) pushLine(`鐢熸垚鐘舵€? ${status}`);
+        if (elapsedMs !== null) pushLine(`鑰楁椂: ${elapsedMs}ms`);
         if (
           variantSummary &&
           typeof variantSummary.total === "number" &&
           typeof variantSummary.succeeded === "number"
         ) {
           pushLine(
-            `变体结果: ${variantSummary.succeeded}/${variantSummary.total} 成功`,
+            `鍙樹綋缁撴灉: ${variantSummary.succeeded}/${variantSummary.total} 鎴愬姛`,
           );
         }
-        if (lastError) pushLine(`错误: ${lastError}`);
+        if (lastError) pushLine(`閿欒: ${lastError}`);
       } else if (actionLabel === "workspace.read_element_controls") {
         const controls = Array.isArray(report?.controls)
           ? (report.controls as Array<Record<string, unknown>>)
@@ -714,7 +991,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           .forEach((control) => {
             pushLine(
               `${String(
-                control?.title || control?.id || "控件",
+                control?.title || control?.id || "鎺т欢",
               )}: ${String(control?.currentValue ?? "")}`,
             );
           });
@@ -730,7 +1007,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         );
         if (typeof report?.isGenerating === "boolean") {
           pushLine(
-            `是否正在生成: ${
+            `鏄惁姝ｅ湪鐢熸垚: ${
               report.isGenerating ? "是" : "否"
             }`,
           );
@@ -745,8 +1022,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         }
         const requestId = readStringValue(resultRecord?.requestId);
         const traceStatus = readStringValue(resultRecord?.traceStatus);
-        if (requestId) pushLine(`请求 ID: ${requestId}`);
-        if (traceStatus) pushLine(`Trace 状态: ${traceStatus}`);
+        if (requestId) pushLine(`璇锋眰 ID: ${requestId}`);
+        if (traceStatus) pushLine(`Trace 鐘舵€? ${traceStatus}`);
       } else if (readStringValue(toolResult?.summary)) {
         pushLine(readStringValue(toolResult?.summary));
       } else if (step.status === "completed") {
@@ -832,10 +1109,10 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         const variantSummary = isRecord(payload?.variantSummary)
           ? payload.variantSummary
           : null;
-        if (traceStatus) pushLine(`Trace 状态: ${traceStatus}`);
-        if (traceModel) pushLine(`生图模型: ${traceModel}`);
+        if (traceStatus) pushLine(`Trace 鐘舵€? ${traceStatus}`);
+        if (traceModel) pushLine(`鐢熷浘妯″瀷: ${traceModel}`);
         if (previewImageCount !== null) {
-          pushLine(`节点预览数: ${previewImageCount}`);
+          pushLine(`鑺傜偣棰勮鏁? ${previewImageCount}`);
         }
         if (
           variantSummary &&
@@ -843,7 +1120,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           typeof variantSummary.succeeded === "number"
         ) {
           pushLine(
-            `变体结果: ${variantSummary.succeeded}/${variantSummary.total} 成功`,
+            `鍙樹綋缁撴灉: ${variantSummary.succeeded}/${variantSummary.total} 鎴愬姛`,
           );
         }
       } else if (actionLabel === "workspace.await_generation_completion") {
@@ -857,18 +1134,18 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         const variantSummary = isRecord(payload?.variantSummary)
           ? payload.variantSummary
           : null;
-        if (status) pushLine(`生成状态: ${status}`);
-        if (elapsedMs !== null) pushLine(`耗时: ${elapsedMs}ms`);
+        if (status) pushLine(`鐢熸垚鐘舵€? ${status}`);
+        if (elapsedMs !== null) pushLine(`鑰楁椂: ${elapsedMs}ms`);
         if (
           variantSummary &&
           typeof variantSummary.total === "number" &&
           typeof variantSummary.succeeded === "number"
         ) {
           pushLine(
-            `变体结果: ${variantSummary.succeeded}/${variantSummary.total} 成功`,
+            `鍙樹綋缁撴灉: ${variantSummary.succeeded}/${variantSummary.total} 鎴愬姛`,
           );
         }
-        if (lastError) pushLine(`错误: ${lastError}`);
+        if (lastError) pushLine(`閿欒: ${lastError}`);
       } else if (actionLabel === "workspace.read_element_controls") {
         const controls = Array.isArray(report?.controls)
           ? (report.controls as Array<Record<string, unknown>>)
@@ -888,7 +1165,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           .slice(0, 4)
           .forEach((control) => {
             pushLine(
-              `${String(control?.title || control?.id || "控件")}: ${String(
+              `${String(control?.title || control?.id || "鎺т欢")}: ${String(
                 control?.currentValue ?? "",
               )}`,
             );
@@ -916,15 +1193,15 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         }
         const requestId = readStringValue(resultRecord?.requestId);
         const traceStatus = readStringValue(resultRecord?.traceStatus);
-        if (requestId) pushLine(`请求 ID: ${requestId}`);
-        if (traceStatus) pushLine(`Trace 状态: ${traceStatus}`);
+        if (requestId) pushLine(`璇锋眰 ID: ${requestId}`);
+        if (traceStatus) pushLine(`Trace 鐘舵€? ${traceStatus}`);
       } else if (actionLabel === "workspace.diagnose_generation_trace") {
         pushLine(
           readStringValue(toolResult?.summary) || "已完成一轮运行时诊断。",
         );
         readStringArrayValue(toolResult?.issues)
           .slice(0, 3)
-          .forEach((issue) => pushLine(`诊断问题: ${issue}`));
+          .forEach((issue) => pushLine(`璇婃柇闂: ${issue}`));
       } else if (actionLabel === "browser.invoke_host_action") {
         const nestedActionId = readStringValue(toolResult?.actionId);
         if (nestedActionId === "workspace.repair_generation_state") {
@@ -943,7 +1220,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                 ? `已补写字段: ${repairedFields.join("、")}`
                 : "已执行节点修复检查。",
           );
-          notes.slice(0, 3).forEach((note) => pushLine(`修复说明: ${note}`));
+          notes.slice(0, 3).forEach((note) => pushLine(`淇璇存槑: ${note}`));
         } else if (readStringValue(toolResult?.summary)) {
           pushLine(readStringValue(toolResult?.summary));
         }
@@ -986,8 +1263,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                   url: asset.previewUrl,
                   title:
                     actionLabel === "workspace.await_generation_completion"
-                      ? "本步生成结果"
-                      : "当前节点预览",
+                      ? "鏈鐢熸垚缁撴灉"
+                      : "褰撳墠鑺傜偣棰勮",
                   subtitle: asset.label,
                 },
               ]
@@ -1087,20 +1364,20 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
                 ? "\u8fd9\u4e00\u8f6e\u5148\u505c\u5728\u8fd9\u91cc\u3002"
                 : currentStep?.title || "\u6211\u5148\u68c0\u67e5\u5f53\u524d\u8282\u70b9\u548c\u53ef\u7528\u5de5\u5177\u3002";
       const descriptionLines = [
-        finalSummary && finalSummary !== text ? `总结: ${finalSummary}` : null,
-        diagnosisSummary ? `诊断: ${diagnosisSummary}` : null,
-        repairSummary ? `修复: ${repairSummary}` : null,
-        diagnosisIssues[0] ? `问题: ${diagnosisIssues[0]}` : null,
-        latestObservation?.summary ? `观察: ${latestObservation.summary}` : null,
+        finalSummary && finalSummary !== text ? `鎬荤粨: ${finalSummary}` : null,
+        diagnosisSummary ? `璇婃柇: ${diagnosisSummary}` : null,
+        repairSummary ? `淇: ${repairSummary}` : null,
+        diagnosisIssues[0] ? `闂: ${diagnosisIssues[0]}` : null,
+        latestObservation?.summary ? `瑙傚療: ${latestObservation.summary}` : null,
         latestObservation?.nextAction?.id
-          ? `下一步: ${latestObservation.nextAction.id}${
+          ? `涓嬩竴姝? ${latestObservation.nextAction.id}${
               latestObservation.nextAction.reason
                 ? ` (${latestObservation.nextAction.reason})`
                 : ""
             }`
           : null,
         latestObservation?.suggestions?.[0]
-          ? `提示: ${latestObservation.suggestions[0]}`
+          ? `鎻愮ず: ${latestObservation.suggestions[0]}`
           : null,
         rationaleSummary ? `\u601d\u8def: ${rationaleSummary}` : null,
         totalSteps > 0
@@ -1123,7 +1400,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           presentation: {
             kind: "execution_record" as const,
             statusLabel: getBrowserSessionStatusLabel(status),
-            detailTitle: "查看执行记录",
+            detailTitle: "鏌ョ湅鎵ц璁板綍",
           },
           browserSession: buildBrowserAgentSessionView(session || null),
         },
@@ -1145,7 +1422,11 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       overrideAttachments?: File[],
       overrideWeb?: boolean,
       skillData?: ChatMessage["skillData"],
+      sendOptions?: ChatSendOptions,
     ) => {
+      if (activeConversation?.archivedAt) {
+        return;
+      }
       const currentBlocks = useAgentStore.getState().composer.inputBlocks;
       const currentBlockText = currentBlocks
         .filter((block) => block.type === "text")
@@ -1178,7 +1459,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
               };
       const autonomousChatSkill: ChatMessage["skillData"] = {
         id: "autonomous-main-brain",
-        name: "自主 Agent 路由",
+        name: "鑷富 Agent 璺敱",
         iconName: "Sparkles",
         config: {
           allowAutonomousRouting: true,
@@ -1206,6 +1487,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           overrideAttachments,
           overrideWeb,
           normalizedSkillData || autonomousChatSkill,
+          sendOptions,
         );
       }
 
@@ -1247,7 +1529,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           role: "model",
           text:
             plan.done || plan.steps.length === 0
-              ? "我先把这次思考过程整理了一下。按现在的信息，暂时不需要继续执行。"
+              ? "我先把这次思考过程整理好了。按现在的信息，暂时不需要继续执行。"
               : "我先把这次思考过程和执行路径整理好了。你确认后，我再开始。",
           agentData: {
             model: browserAgentModelLabel,
@@ -1264,7 +1546,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
               detailTitle: "查看思考过程",
               detailNotice:
                 plan.done || plan.steps.length === 0
-                  ? "这里展示的是当前真实思考过程；按现在的信息，这轮暂时不需要继续执行。"
+                  ? "这里展示的是当前真实思考过程；按现在的信息，这一轮暂时不需要继续执行。"
                   : "这里展示的是当前真实思考过程与执行路径，确认后我再继续。",
             },
           },
@@ -1276,8 +1558,8 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           role: "model",
           text:
             error instanceof Error
-              ? `这一步没能开始：${error.message}`
-              : `这一步没能开始：${String(error || "未知错误")}`,
+              ? `杩欎竴姝ユ病鑳藉紑濮嬶細${error.message}`
+              : `杩欎竴姝ユ病鑳藉紑濮嬶細${String(error || "鏈煡閿欒")}`,
           timestamp: Date.now(),
           error: true,
         });
@@ -1287,6 +1569,7 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     },
     [
       addMessage,
+      activeConversation?.archivedAt,
       browserAgent.selectedElementId,
       browserAgentModelLabel,
       handleSend,
@@ -1298,6 +1581,717 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
       handleStartGoalSession,
       setInputBlocks,
       setIsTyping,
+    ],
+  );
+  const handleResendUserMessage = React.useCallback(
+    async (message: ChatMessage) => {
+      const resendPayload = await buildResendPayloadFromMessage(message);
+      const versionRootMessageId =
+        String(message.lineage?.versionRootMessageId || "").trim() || message.id;
+      await handleSidebarSend(
+        resendPayload.text,
+        resendPayload.attachments,
+        undefined,
+        resendPayload.skillData,
+        {
+          lineage: {
+            source: "resend",
+            versionRootMessageId,
+            previousVersionMessageId: message.id,
+            triggerMessageId: message.id,
+          },
+        },
+      );
+    },
+    [buildResendPayloadFromMessage, handleSidebarSend],
+  );
+  const handleEditAndResendMessage = React.useCallback(
+    async (message: ChatMessage, nextText: string) => {
+      const resendPayload = await buildResendPayloadFromMessage(message);
+      const versionRootMessageId =
+        String(message.lineage?.versionRootMessageId || "").trim() || message.id;
+      await handleSidebarSend(
+        nextText,
+        resendPayload.attachments,
+        undefined,
+        resendPayload.skillData,
+        {
+          lineage: {
+            source: "edit_resend",
+            versionRootMessageId,
+            previousVersionMessageId: message.id,
+            triggerMessageId: message.id,
+          },
+        },
+      );
+    },
+    [buildResendPayloadFromMessage, handleSidebarSend],
+  );
+  const handleAssistantMessageFeedback = React.useCallback(
+    (
+      message: ChatMessage,
+      feedback: ChatMessage["feedback"],
+    ) => {
+      const feedbackUpdatedAt = Date.now();
+      updateMessage(message.id, {
+        feedback,
+        feedbackUpdatedAt,
+      });
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          conversation.id !== activeConversationId
+            ? conversation
+            : {
+                ...conversation,
+                updatedAt: feedbackUpdatedAt,
+                messages: (conversation.messages || []).map((item) =>
+                  item.id === message.id
+                    ? {
+                        ...item,
+                        feedback,
+                        feedbackUpdatedAt,
+                      }
+                    : item,
+                ),
+              },
+        ),
+      );
+    },
+    [activeConversationId, setConversations, updateMessage],
+  );
+  const handleRetryAssistantResponse = React.useCallback(
+    async (message: ChatMessage) => {
+      const relatedUserMessageId = String(message.responseToMessageId || "").trim();
+      const relatedUserMessage =
+        (relatedUserMessageId
+          ? visibleMessages.find(
+              (item) => item.role === "user" && item.id === relatedUserMessageId,
+            )
+          : null) ||
+        (() => {
+          const assistantIndex = visibleMessages.findIndex(
+            (item) => item.id === message.id,
+          );
+          if (assistantIndex <= 0) return null;
+          for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+            if (visibleMessages[index]?.role === "user") {
+              return visibleMessages[index];
+            }
+          }
+          return null;
+        })();
+      if (!relatedUserMessage) return;
+
+      const resendPayload = await buildResendPayloadFromMessage(relatedUserMessage);
+      const versionRootMessageId =
+        String(relatedUserMessage.lineage?.versionRootMessageId || "").trim() ||
+        relatedUserMessage.id;
+      await handleSidebarSend(
+        resendPayload.text,
+        resendPayload.attachments,
+        undefined,
+        resendPayload.skillData,
+        {
+          lineage: {
+            source: "assistant_retry",
+            versionRootMessageId,
+            previousVersionMessageId: relatedUserMessage.id,
+            previousAssistantMessageId: message.id,
+            triggerMessageId: message.id,
+          },
+        },
+      );
+    },
+    [buildResendPayloadFromMessage, handleSidebarSend, visibleMessages],
+  );
+  const currentTaskConversationId = String(
+    currentTask?.input?.context?.conversationId || "",
+  ).trim();
+  const isActiveConversationTask =
+    currentTaskConversationId === String(activeConversationId || "").trim();
+  const isTypingWithoutBoundTask = isTyping && !currentTaskConversationId;
+  const activeConversationTaskVisible =
+    isActiveConversationTask || isTypingWithoutBoundTask;
+  const isWorkspaceConversationBusy =
+    activeConversationTaskVisible &&
+    (isTyping ||
+      currentTask?.status === "analyzing" ||
+      currentTask?.status === "executing");
+  const isBrowserConversationBusy = Boolean(
+    preparedPlan ||
+      isPlanning ||
+      isStarting ||
+      isContinuing ||
+      isRefreshing ||
+      sessionSummary.isRunning,
+  );
+  const isConversationTransitionBlocked =
+    isWorkspaceConversationBusy || isBrowserConversationBusy;
+  const activeConversationRunning = isConversationTransitionBlocked;
+  const activeConversationHasDraft = Boolean(
+    activeConversation && hasConversationDraft(activeConversation),
+  );
+  const activeConversationArchived = Boolean(
+    activeConversation && isConversationArchived(activeConversation),
+  );
+  const showEmptyActiveConversationState = Boolean(
+    activeConversation &&
+      !activeConversationArchived &&
+      !activeConversation?.parentConversationId &&
+      visibleMessages.length === 0 &&
+      !activeConversationTaskVisible &&
+      !preparedPlan,
+  );
+  const activeConversationMatchesPendingArchive = Boolean(
+    activeConversation &&
+      pendingArchivedConversation &&
+      activeConversation.id === pendingArchivedConversation.conversation.id,
+  );
+  const showEmptyArchivedConversationState = Boolean(
+    activeConversationArchived &&
+      !activeConversation?.parentConversationId &&
+      visibleMessages.length === 0 &&
+      !activeConversationTaskVisible &&
+      !preparedPlan,
+  );
+  const emptyConversationStarters = React.useMemo(
+    () => buildEmptyConversationStarters(browserAgent.selectedElementLabel),
+    [browserAgent.selectedElementLabel],
+  );
+  const currentComposerDraftText = React.useMemo(
+    () =>
+      currentInputBlocks
+        .map((block) => (block.type === "text" ? String(block.text || "") : ""))
+        .join("")
+        .trim(),
+    [currentInputBlocks],
+  );
+  const currentComposerHasDraft = React.useMemo(
+    () =>
+      currentComposerDraftText.length > 0 ||
+      currentInputBlocks.some((block) => block.type === "file" && block.file),
+    [currentComposerDraftText, currentInputBlocks],
+  );
+  const shouldSuppressDraftBanner = Boolean(
+    currentComposerHasDraft && showEmptyActiveConversationState,
+  );
+  const activeEmptyConversationStarterId = React.useMemo(() => {
+    if (!currentComposerDraftText) return null;
+
+    const matchedByPrompt = emptyConversationStarters.find(
+      (starter) => starter.prompt.trim() === currentComposerDraftText,
+    );
+    if (matchedByPrompt) return matchedByPrompt.id;
+
+    const matchedByModeAndPrompt = emptyConversationStarters.find(
+      (starter) =>
+        starter.mode === composer.creationMode &&
+        starter.prompt.trim() === currentComposerDraftText,
+    );
+    return matchedByModeAndPrompt?.id || null;
+  }, [composer.creationMode, currentComposerDraftText, emptyConversationStarters]);
+  const activeEmptyConversationStarter = React.useMemo(
+    () =>
+      activeEmptyConversationStarterId
+        ? emptyConversationStarters.find(
+            (starter) => starter.id === activeEmptyConversationStarterId,
+          ) || null
+        : null,
+    [activeEmptyConversationStarterId, emptyConversationStarters],
+  );
+  const effectiveComposerMode = activeEmptyConversationStarter?.mode || composer.creationMode;
+  const selectedSurfaceLabel = React.useMemo(
+    () => String(browserAgent.selectedElementLabel || "").trim(),
+    [browserAgent.selectedElementLabel],
+  );
+  const queueConversationTransition = React.useCallback(
+    (label: string, action: () => void) => {
+      closeHistoryPopover();
+      setIsStoppingForConversationTransition(false);
+      setPendingConversationTransition({
+        key: `conversation-transition-${Date.now()}`,
+        label,
+        action,
+      });
+    },
+    [closeHistoryPopover],
+  );
+  const runConversationTransition = React.useCallback(
+    (label: string, action: () => void) => {
+      if (isConversationTransitionBlocked) {
+        queueConversationTransition(label, action);
+        return;
+      }
+      action();
+    },
+    [isConversationTransitionBlocked, queueConversationTransition],
+  );
+  const handleCreateConversationGuarded = React.useCallback(() => {
+    runConversationTransition("新建对话", handleCreateConversation);
+  }, [handleCreateConversation, runConversationTransition]);
+  const handleSelectConversationGuarded = React.useCallback(
+    (
+      conversationId: string,
+      options?: {
+        restoreComposer?: boolean;
+      },
+    ) => {
+      const targetConversation = conversations.find(
+        (conversation) => conversation.id === conversationId,
+      );
+      const conversationLabel =
+        String(targetConversation?.title || "").trim() || "这个对话";
+      runConversationTransition(
+        `对话“${conversationLabel}”`,
+        () => handleSelectConversation(conversationId, options),
+      );
+    },
+    [conversations, handleSelectConversation, runConversationTransition],
+  );
+  const handleDeleteConversationGuarded = React.useCallback(
+    (conversationId: string) => {
+      const targetConversation = conversations.find(
+        (conversation) => conversation.id === conversationId,
+      );
+      const conversationLabel =
+        String(targetConversation?.title || "").trim() || "这个对话";
+      closeHistoryPopover();
+      setPendingConversationDeletion({
+        conversationId,
+        label: conversationLabel,
+        isActive: conversationId === activeConversationId,
+      });
+    },
+    [
+      activeConversationId,
+      closeHistoryPopover,
+      conversations,
+    ],
+  );
+  const clearPendingConversationDeletion = React.useCallback(() => {
+    setPendingConversationDeletion(null);
+  }, []);
+  const handleConfirmConversationDeletion = React.useCallback(() => {
+    if (!pendingConversationDeletion) return;
+
+    const { conversationId, isActive } = pendingConversationDeletion;
+    clearPendingConversationDeletion();
+
+    const finalizeDeletion = (resolvedConversationId: string) => {
+      finalizeDeletedConversation(resolvedConversationId);
+      setPendingDeletedConversation((previous) =>
+        previous?.conversation.id === resolvedConversationId ? null : previous,
+      );
+    };
+    const commitDeletion = () => {
+      const deletionResult = handleDeleteConversation(conversationId, {
+        deferMemoryCleanup: true,
+      });
+      if (!deletionResult) return;
+
+      clearPendingDeletedConversation();
+
+      const timeoutId = setTimeout(() => {
+        finalizeDeletion(deletionResult.deletedConversation.id);
+      }, 6000);
+
+      setPendingDeletedConversation({
+        conversation: deletionResult.deletedConversation,
+        label:
+          String(deletionResult.deletedConversation.title || "").trim() || "这个对话",
+        wasActive: deletionResult.wasActive,
+        timeoutId,
+      });
+    };
+
+    if (!isActive) {
+      commitDeletion();
+      return;
+    }
+
+    runConversationTransition("删除当前对话", commitDeletion);
+  }, [
+    clearPendingDeletedConversation,
+    clearPendingConversationDeletion,
+    finalizeDeletedConversation,
+    handleDeleteConversation,
+    pendingConversationDeletion,
+    runConversationTransition,
+  ]);
+  const handleUndoConversationDeletion = React.useCallback(() => {
+    if (!pendingDeletedConversation) return;
+
+    restoreConversationSnapshot(pendingDeletedConversation.conversation, {
+      activate: pendingDeletedConversation.wasActive,
+    });
+    clearPendingDeletedConversation();
+  }, [
+    clearPendingDeletedConversation,
+    pendingDeletedConversation,
+    restoreConversationSnapshot,
+  ]);
+  const handleUndoConversationArchive = React.useCallback(() => {
+    if (!pendingArchivedConversation) return;
+
+    restoreConversationSnapshot(
+      {
+        ...pendingArchivedConversation.conversation,
+        archivedAt: undefined,
+      },
+      {
+        activate: pendingArchivedConversation.wasActive,
+      },
+    );
+    clearPendingArchivedConversation();
+  }, [
+    clearPendingArchivedConversation,
+    pendingArchivedConversation,
+    restoreConversationSnapshot,
+  ]);
+  const handleClearDraftComposer = React.useCallback(() => {
+    if (activeConversationArchived) return;
+    const textId = createInputBlockId("text");
+    composer.setCreationMode("agent");
+    composer.setPrompt("");
+    setInputBlocks([{ id: textId, type: "text", text: "" }]);
+    setActiveBlockId(textId);
+    clearPendingAttachments();
+    setActiveQuickSkillPreference(null);
+  }, [
+    activeConversationArchived,
+    clearPendingAttachments,
+    composer,
+    setActiveBlockId,
+    setInputBlocks,
+  ]);
+  const handleContinueConversationFromHistory = React.useCallback(
+    (conversationId: string) => {
+      handleSelectConversationGuarded(conversationId);
+    },
+    [handleSelectConversationGuarded],
+  );
+  const handleRestoreConversationInputFromHistory = React.useCallback(
+    async (conversationId: string, messageToRestore?: ChatMessage | null) => {
+      console.log("[assistant-sidebar] restore-input:invoke", {
+        conversationId,
+        hasMessageToRestore: Boolean(messageToRestore),
+      });
+      const conversation = conversations.find(
+        (item) => item.id === conversationId,
+      );
+      if (!conversation) return;
+
+      const sourceMessages = Array.isArray(conversation.messages)
+        ? conversation.messages
+        : [];
+      const relatedUserMessage =
+        messageToRestore ||
+        (() => {
+          for (let index = sourceMessages.length - 1; index >= 0; index -= 1) {
+            if (sourceMessages[index]?.role === "user") {
+              return sourceMessages[index];
+            }
+          }
+          return null;
+        })();
+
+      if (!relatedUserMessage) {
+        handleSelectConversationGuarded(conversationId);
+        return;
+      }
+
+      if (activeConversationId !== conversationId) {
+        handleSelectConversationGuarded(conversationId, {
+          restoreComposer: false,
+        });
+      } else {
+        closeHistoryPopover();
+      }
+
+      const normalizedPrompt = String(relatedUserMessage.text || "").trim();
+      const nextBlockId = createInputBlockId("text");
+      setPendingRestoreComposerState({
+        conversationId,
+        prompt: normalizedPrompt,
+        blockId: nextBlockId,
+      });
+      (window as typeof window & {
+        __assistantRestoreDebug?: Record<string, unknown>;
+      }).__assistantRestoreDebug = {
+        stage: "queued",
+        conversationId,
+        activeConversationId,
+        targetConversationId: conversation.id,
+        promptLength: normalizedPrompt.length,
+        promptPreview: normalizedPrompt.slice(0, 160),
+      };
+      console.log("[assistant-sidebar] restore-input:queued", {
+        conversationId,
+        activeConversationId,
+        targetConversationId: conversation.id,
+        promptLength: normalizedPrompt.length,
+        promptPreview: normalizedPrompt.slice(0, 160),
+      });
+    },
+    [
+      activeConversationId,
+      closeHistoryPopover,
+      conversations,
+      handleSelectConversationGuarded,
+    ],
+  );
+  React.useEffect(() => {
+    pendingDeletedConversationRef.current = pendingDeletedConversation;
+  }, [pendingDeletedConversation]);
+  React.useEffect(() => {
+    pendingArchivedConversationRef.current = pendingArchivedConversation;
+  }, [pendingArchivedConversation]);
+  React.useEffect(() => {
+    finalizeDeletedConversationRef.current = finalizeDeletedConversation;
+  }, [finalizeDeletedConversation]);
+  React.useEffect(() => {
+    if (!pendingRestoreComposerState) return;
+    if (activeConversationId !== pendingRestoreComposerState.conversationId) return;
+
+    composer.setCreationMode("agent");
+    composer.setPrompt(pendingRestoreComposerState.prompt);
+    clearPendingAttachments();
+    setInputBlocks([
+      {
+        id: pendingRestoreComposerState.blockId,
+        type: "text",
+        text: pendingRestoreComposerState.prompt,
+      },
+    ]);
+    setActiveBlockId(pendingRestoreComposerState.blockId);
+    (window as typeof window & {
+      __assistantRestoreDebug?: Record<string, unknown>;
+    }).__assistantRestoreDebug = {
+      stage: "applied",
+      conversationId: pendingRestoreComposerState.conversationId,
+      activeConversationId,
+      promptLength: pendingRestoreComposerState.prompt.length,
+      promptPreview: pendingRestoreComposerState.prompt.slice(0, 160),
+    };
+    console.log("[assistant-sidebar] restore-input:applied", {
+      conversationId: pendingRestoreComposerState.conversationId,
+      activeConversationId,
+      promptLength: pendingRestoreComposerState.prompt.length,
+      promptPreview: pendingRestoreComposerState.prompt.slice(0, 160),
+    });
+    setPendingRestoreComposerState(null);
+  }, [
+    activeConversationId,
+    clearPendingAttachments,
+    composer,
+    pendingRestoreComposerState,
+    setActiveBlockId,
+    setInputBlocks,
+  ]);
+  React.useEffect(() => {
+    return () => {
+      const pendingDeletion = pendingDeletedConversationRef.current;
+      if (pendingDeletion?.timeoutId) {
+        clearTimeout(pendingDeletion.timeoutId);
+        finalizeDeletedConversationRef.current?.(pendingDeletion.conversation.id);
+      }
+      const pendingArchive = pendingArchivedConversationRef.current;
+      if (pendingArchive?.timeoutId) {
+        clearTimeout(pendingArchive.timeoutId);
+      }
+    };
+  }, []);
+  const handleToggleConversationArchivedGuarded = React.useCallback(
+    (conversationId: string) => {
+      const targetConversation = conversations.find(
+        (conversation) => conversation.id === conversationId,
+      );
+      const willArchiveActiveConversation =
+        conversationId === activeConversationId && !targetConversation?.archivedAt;
+      const willRestoreConversation = Boolean(targetConversation?.archivedAt);
+
+      if (!willArchiveActiveConversation) {
+        if (willRestoreConversation) {
+          setPendingArchivedConversation((previous) => {
+            if (previous?.conversation.id === conversationId) {
+              if (previous.timeoutId) {
+                clearTimeout(previous.timeoutId);
+              }
+              return null;
+            }
+            return previous;
+          });
+        }
+        const archiveResult = handleToggleConversationArchived(conversationId);
+        if (archiveResult?.archived) {
+          clearPendingArchivedConversation();
+          const timeoutId = setTimeout(() => {
+            setPendingArchivedConversation((previous) =>
+              previous?.conversation.id === archiveResult.conversationBeforeChange.id
+                ? null
+                : previous,
+            );
+          }, 6000);
+          setPendingArchivedConversation({
+            conversation: archiveResult.conversationBeforeChange,
+            label:
+              String(archiveResult.conversationBeforeChange.title || "").trim() ||
+              "这个对话",
+            wasActive: archiveResult.wasActive,
+            timeoutId,
+          });
+        }
+        return;
+      }
+
+      runConversationTransition("归档当前对话", () => {
+        const archiveResult = handleToggleConversationArchived(conversationId);
+        if (archiveResult?.archived) {
+          clearPendingArchivedConversation();
+          const timeoutId = setTimeout(() => {
+            setPendingArchivedConversation((previous) =>
+              previous?.conversation.id === archiveResult.conversationBeforeChange.id
+                ? null
+                : previous,
+            );
+          }, 6000);
+          setPendingArchivedConversation({
+            conversation: archiveResult.conversationBeforeChange,
+            label:
+              String(archiveResult.conversationBeforeChange.title || "").trim() ||
+              "这个对话",
+            wasActive: archiveResult.wasActive,
+            timeoutId,
+          });
+        }
+      });
+    },
+    [
+      activeConversationId,
+      clearPendingArchivedConversation,
+      conversations,
+      handleToggleConversationArchived,
+      runConversationTransition,
+    ],
+  );
+  const handleBranchConversationGuarded = React.useCallback(
+    (message: ChatMessage) => {
+      runConversationTransition("分支对话", () =>
+        handleBranchConversationFromMessage(message),
+      );
+    },
+    [handleBranchConversationFromMessage, runConversationTransition],
+  );
+  const clearPendingConversationTransition = React.useCallback(() => {
+    setPendingConversationTransition(null);
+    setIsStoppingForConversationTransition(false);
+  }, []);
+  const handleConfirmPendingConversationTransition = React.useCallback(async () => {
+    if (!pendingConversationTransition) return;
+
+    if (!isConversationTransitionBlocked) {
+      const nextAction = pendingConversationTransition.action;
+      clearPendingConversationTransition();
+      nextAction();
+      return;
+    }
+
+    setIsStoppingForConversationTransition(true);
+
+    try {
+      if (isBrowserConversationBusy) {
+        await handleCancelSession();
+      }
+      if (isWorkspaceConversationBusy) {
+        cancelChatGeneration();
+      }
+    } catch (error) {
+      console.warn(
+        "[assistant-sidebar] failed to stop current run before switching chats",
+        error,
+      );
+      setIsStoppingForConversationTransition(false);
+    }
+  }, [
+    cancelChatGeneration,
+    clearPendingConversationTransition,
+    handleCancelSession,
+    isBrowserConversationBusy,
+    isConversationTransitionBlocked,
+    isWorkspaceConversationBusy,
+    pendingConversationTransition,
+  ]);
+  React.useEffect(() => {
+    if (!pendingConversationTransition || !isStoppingForConversationTransition) {
+      return;
+    }
+    if (isConversationTransitionBlocked) {
+      return;
+    }
+
+    const nextAction = pendingConversationTransition.action;
+    clearPendingConversationTransition();
+    nextAction();
+  }, [
+    clearPendingConversationTransition,
+    isConversationTransitionBlocked,
+    isStoppingForConversationTransition,
+    pendingConversationTransition,
+  ]);
+  const handleOpenParentConversation = React.useCallback(() => {
+    const parentConversationId = String(
+      activeConversation?.parentConversationId || "",
+    ).trim();
+    if (!parentConversationId) return;
+    const parentConversationLabel =
+      String(activeConversation?.parentConversationTitle || "").trim() ||
+      "上级对话";
+    runConversationTransition(
+      `上级对话“${parentConversationLabel}”`,
+      () => handleSelectConversation(parentConversationId),
+    );
+  }, [
+    activeConversation?.parentConversationId,
+    activeConversation?.parentConversationTitle,
+    handleSelectConversation,
+    runConversationTransition,
+  ]);
+  const primeComposerWithPrompt = React.useCallback(
+    (prompt: string, mode: "agent" | "image" | "video" = "agent") => {
+      const normalizedPrompt = String(prompt || "").trim();
+      const nextBlockId = createInputBlockId("text");
+      composer.setCreationMode(mode);
+      composer.setPrompt(normalizedPrompt);
+      setInputBlocks([
+        {
+          id: nextBlockId,
+          type: "text",
+          text: normalizedPrompt,
+        },
+      ]);
+      setActiveBlockId(nextBlockId);
+    },
+    [composer, setActiveBlockId, setInputBlocks],
+  );
+  const handleStartEmptyConversationPrompt = React.useCallback(
+    async (starter: EmptyConversationStarter) => {
+      if (activeConversationArchived) return;
+      const nextMode = starter.mode || "agent";
+      if (activeConversationHasDraft) {
+        primeComposerWithPrompt(starter.prompt, nextMode);
+        return;
+      }
+      if (nextMode === "agent") {
+        await handleSidebarSend(starter.prompt);
+        return;
+      }
+      primeComposerWithPrompt(starter.prompt, nextMode);
+    },
+    [
+      activeConversationArchived,
+      activeConversationHasDraft,
+      handleSidebarSend,
+      primeComposerWithPrompt,
     ],
   );
 
@@ -1345,17 +2339,297 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
   ]);
 
   const messageThreadNode = (
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 no-scrollbar relative">
-      <div className="space-y-4">
-        {visibleMessages.length > 0 ? (
+    <div
+      className="relative flex-1 min-h-0 overflow-y-auto bg-[linear-gradient(180deg,#fbfcfe_0%,#f6f8fb_100%)] px-4 pb-3 pt-2.5 no-scrollbar transition-all duration-200"
+    >
+      <div className="space-y-3">
+        {pendingConversationTransition ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <span>正在保护当前运行</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-amber-900">
+                    当前对话还在运行
+                  </div>
+                  <div className="mt-1 text-[12px] leading-5 text-amber-800">
+                    切换到“{pendingConversationTransition.label}”前，需要先停止当前任务，避免后续消息写入错误的对话。
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearPendingConversationTransition}
+                    disabled={isStoppingForConversationTransition}
+                    className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-medium text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    留在这里
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleConfirmPendingConversationTransition()
+                    }
+                    disabled={isStoppingForConversationTransition}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-500 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isStoppingForConversationTransition ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>正在停止</span>
+                      </>
+                    ) : isConversationTransitionBlocked ? (
+                      <>
+                        <Square size={12} />
+                        <span>停止并切换</span>
+                      </>
+                    ) : (
+                      <span>立即切换</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {pendingConversationDeletion ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-rose-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                    <span>确认删除</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-rose-900">
+                    删除“{pendingConversationDeletion.label}”？
+                  </div>
+                  <div className="mt-1 text-[12px] leading-5 text-rose-800">
+                    {pendingConversationDeletion.isActive
+                      ? "我们会先安全切换到其它对话，再把当前对话从历史中移除。"
+                      : "这个对话会从工作区历史记录中移除。"}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearPendingConversationDeletion}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmConversationDeletion}
+                    className="rounded-full border border-rose-300 bg-rose-500 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-rose-600"
+                  >
+                    删除对话
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {pendingDeletedConversation ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                    <span>对话已删除</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-slate-900">
+                    “{pendingDeletedConversation.label}”已从历史中移除
+                  </div>
+                  <div className="mt-1 text-[12px] leading-5 text-slate-600">
+                    {pendingDeletedConversation.wasActive
+                      ? "已切换到其它对话。撤销后会恢复刚删除的对话。"
+                      : "撤销后会把这个对话恢复到历史列表。"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUndoConversationDeletion}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  撤销
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {pendingArchivedConversation && !activeConversationMatchesPendingArchive ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/95 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-blue-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                    <span>对话已归档</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-blue-900">
+                    “{pendingArchivedConversation.label}”已移到归档对话
+                  </div>
+                  <div className="mt-1 text-[12px] leading-5 text-blue-800">
+                    {pendingArchivedConversation.wasActive
+                      ? "已切换到其它活跃对话。撤销后会恢复并重新打开它。"
+                      : "撤销后会把这个对话恢复到活跃历史列表。"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUndoConversationArchive}
+                  className="shrink-0 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                >
+                  撤销
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {activeConversationArchived && !showEmptyArchivedConversationState ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/95 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                    <Archive size={11} strokeWidth={2} />
+                    <span>归档对话</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-slate-900">
+                    你正在查看已归档的对话
+                  </div>
+                  <div className="mt-1 text-[12px] leading-5 text-slate-600">
+                    恢复后它会回到活跃列表，你可以继续从这里跟进。
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleToggleConversationArchivedGuarded(activeConversation.id)
+                  }
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                >
+                  恢复对话
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {activeConversation?.parentConversationId ? (
+          <div className="px-1">
+            <div className="rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                    <GitBranch size={11} strokeWidth={2} />
+                    <span>分支对话</span>
+                  </div>
+                  <div className="mt-2 text-[13px] font-medium text-slate-800">
+                    当前对话来自
+                    <span className="mx-1 text-slate-900">
+                      {activeConversation.parentConversationTitle || "上一个对话"}
+                    </span>
+                    的分支
+                  </div>
+                  {activeConversation.branchPointLabel ? (
+                    <div className="mt-1 text-[12px] leading-5 text-slate-500">
+                      分支起点：{activeConversation.branchPointLabel}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenParentConversation}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                >
+                  回到源对话
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {visibleMessages.length > 0 || activeConversationTaskVisible ? (
           <MessageList
             onSend={handleSidebarSend}
             onSmartGenerate={handleSmartGenerate}
             onPreview={setPreviewUrl}
+            onFeedback={handleAssistantMessageFeedback}
+            onBranchConversation={handleBranchConversationGuarded}
             onReuseToComposer={restoreMessageToComposer}
+            onResendMessage={handleResendUserMessage}
+            onEditAndResendMessage={handleEditAndResendMessage}
+            onRetryAssistantResponse={handleRetryAssistantResponse}
+            isTyping={isTyping}
+            currentTask={currentTask}
+            showCurrentTaskProgress={activeConversationTaskVisible}
             clothingActions={clothingActions}
             ecommerceActions={ecommerceActions}
           />
+        ) : showEmptyActiveConversationState ? (
+          <div className="flex min-h-[68px] items-end px-3 pb-1.5 pt-2">
+            <div className="mx-auto flex w-full max-w-[320px] flex-col items-center">
+              <div className="text-center text-[10px] font-medium text-slate-400">
+                直接开始，或先用一个起手任务带路。
+              </div>
+              <div className="mt-2 flex w-full flex-wrap justify-center gap-1.5">
+                {emptyConversationStarters.slice(0, 2).map((starter) => {
+                  const isActiveStarter =
+                    activeEmptyConversationStarter?.id === starter.id;
+                  return (
+                    <button
+                      key={starter.id}
+                      type="button"
+                      onClick={() => {
+                        void handleStartEmptyConversationPrompt(starter);
+                      }}
+                      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[9.5px] font-medium transition ${
+                        isActiveStarter
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200/90 bg-white/88 text-slate-500 hover:border-slate-300 hover:text-slate-800"
+                      }`}
+                    >
+                      {starter.title}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedSurfaceLabel ? (
+                <div className="mt-1.5 inline-flex max-w-full items-center rounded-full border border-slate-200/80 bg-white/80 px-2.5 py-1 text-[9px] font-medium text-slate-500">
+                  当前焦点：{selectedSurfaceLabel}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : showEmptyArchivedConversationState ? (
+            <div className="flex min-h-[340px] items-center px-1 py-4">
+            <div className="mx-auto flex max-w-[360px] flex-col items-center rounded-[28px] border border-dashed border-slate-200 bg-white/82 px-8 py-10 text-center shadow-[0_18px_48px_-36px_rgba(15,23,42,0.45)]">
+              <div className="flex h-14 w-14 items-center justify-center rounded-[20px] bg-slate-900 text-white shadow-sm">
+                <Archive size={22} strokeWidth={1.9} />
+              </div>
+              <div className="mt-5 text-[15px] font-semibold text-slate-900">
+                归档对话
+              </div>
+              <div className="mt-2 text-[12px] leading-6 text-slate-500">
+                这个对话已作为参考保留。需要继续跟进、追加消息或放回活跃列表时，可以随时恢复。
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  activeConversation
+                    ? handleToggleConversationArchivedGuarded(activeConversation.id)
+                    : undefined
+                }
+                className="mt-6 inline-flex h-10 items-center justify-center rounded-full border border-slate-200 bg-white px-5 text-[12px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                恢复对话
+              </button>
+            </div>
+          </div>
         ) : null}
         {preparedPlan ? (
           <AssistantSidebarPlanCard
@@ -1383,10 +2657,17 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
     <>
       <AssistantSidebarStatusBanner
         label={currentTaskLabel}
-        statusKey={currentTask?.status}
+        statusKey={
+          isBrowserConversationBusy
+            ? "executing"
+            : activeConversationTaskVisible
+              ? currentTask?.status
+              : undefined
+        }
+        hideWhenEmpty={shouldSuppressDraftBanner}
       />
 
-      <div className="shrink-0 flex-shrink-0 border-t border-gray-100 bg-[#f8f9fc]">
+      <div className="shrink-0 flex-shrink-0 bg-[linear-gradient(180deg,rgba(246,248,251,0)_0%,rgba(246,248,251,0.72)_12%,rgba(248,249,252,0.98)_30%,rgba(248,249,252,1)_100%)] pt-1">
         <InputArea
           composer={{
             ...composer,
@@ -1418,35 +2699,27 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
           }}
           markers={markers}
           onSaveMarkerLabel={onSaveMarkerLabel}
+          archivedView={{
+            isArchived: activeConversationArchived,
+            onRestore: () => {
+              if (!activeConversation) return;
+              handleToggleConversationArchivedGuarded(activeConversation.id);
+            },
+          }}
         />
       </div>
     </>
   );
 
   return (
-    <motion.div
-      initial={{ x: 400, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 400, opacity: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className={`absolute right-0 top-0 z-50 flex h-full min-h-0 flex-col overflow-hidden bg-[#f8f9fc] ${
+    <div
+      data-assistant-sidebar-root
+      className={`absolute right-0 top-0 z-50 flex h-full min-h-0 flex-col overflow-hidden bg-[linear-gradient(180deg,#f9fafc_0%,#f3f5f8_100%)] ${
         isFullscreen
           ? "inset-0 w-full border-l-0 shadow-none"
-          : "w-[480px] border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.03)]"
+          : "w-[480px] border-l border-slate-200/90 shadow-[-18px_0_42px_-32px_rgba(15,23,42,0.18)]"
       }`}
     >
-      {!isFullscreen ? (
-        <button
-          type="button"
-          onClick={onToggleFullscreen}
-          className="absolute left-0 top-1/2 z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
-          title="全屏聊天"
-          aria-label="全屏聊天"
-        >
-          <Maximize2 size={16} strokeWidth={1.8} />
-        </button>
-      ) : null}
-
       <AssistantSidebarHeader
         title={activeConversationTitle}
         historyOpen={showHistoryPopover}
@@ -1454,13 +2727,30 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
         setHistorySearch={setHistorySearch}
         conversations={conversations}
         activeConversationId={activeConversationId}
+        activeConversationRunning={activeConversationRunning}
+        activeConversationHasDraft={activeConversationHasDraft}
         filesOpen={showFileListModal}
         messages={messages}
         onPreview={setPreviewUrl}
         onToggleHistory={toggleHistoryPopover}
-        onCreateConversation={handleCreateConversation}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
+        onCreateConversation={handleCreateConversationGuarded}
+        onSelectConversation={handleSelectConversationGuarded}
+        onDeleteConversation={handleDeleteConversationGuarded}
+        onRenameConversation={handleRenameConversation}
+        onToggleConversationPinned={handleToggleConversationPinned}
+        onToggleConversationArchived={handleToggleConversationArchivedGuarded}
+        onContinueConversation={handleContinueConversationFromHistory}
+        onRestoreConversationInput={handleRestoreConversationInputFromHistory}
+        branchInfo={
+          activeConversation?.parentConversationId
+            ? {
+                parentTitle:
+                  activeConversation.parentConversationTitle || "上一个对话",
+                branchPointLabel: activeConversation.branchPointLabel,
+                onOpenParent: handleOpenParentConversation,
+              }
+            : null
+        }
         onToggleFiles={toggleFileListModal}
         onClose={() => {
           setIsFullscreen(false);
@@ -1478,22 +2768,31 @@ export const AssistantSidebar: React.FC<AssistantSidebarProps> = memo(({
               setHistorySearch={setHistorySearch}
               conversations={conversations}
               activeConversationId={activeConversationId}
-              onCreateConversation={handleCreateConversation}
-              onSelectConversation={handleSelectConversation}
-              onDeleteConversation={handleDeleteConversation}
+              activeConversationRunning={activeConversationRunning}
+              onCreateConversation={handleCreateConversationGuarded}
+              onSelectConversation={handleSelectConversationGuarded}
+              onDeleteConversation={handleDeleteConversationGuarded}
+              onRenameConversation={handleRenameConversation}
+              onToggleConversationPinned={handleToggleConversationPinned}
+              onToggleConversationArchived={
+                handleToggleConversationArchivedGuarded
+              }
             />
           </div>
-          <div className="flex min-w-0 flex-1 flex-col bg-[#f8f9fc]">
+          <div className="flex min-w-0 flex-1 flex-col bg-[linear-gradient(180deg,#fafbfd_0%,#f4f6fa_100%)]">
             {messageThreadNode}
             {composerNode}
           </div>
         </div>
       ) : (
-        <>
-          {messageThreadNode}
-          {composerNode}
-        </>
+        <div className="relative flex min-h-0 flex-1 flex-col bg-[linear-gradient(180deg,#fafbfd_0%,#f4f6fa_100%)] transition-all duration-200">
+          <>
+            {messageThreadNode}
+            {composerNode}
+          </>
+        </div>
       )}
-    </motion.div>
+    </div>
   );
 });
+

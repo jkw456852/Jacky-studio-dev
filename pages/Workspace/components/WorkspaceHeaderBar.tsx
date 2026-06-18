@@ -47,6 +47,11 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
 }) => {
   const currentModeMeta = NODE_INTERACTION_MODE_META[nodeInteractionMode];
   const CurrentModeIcon = currentModeMeta.icon;
+  const normalizedProjectTitle = String(projectTitle || "").trim();
+  const displayProjectTitle =
+    !normalizedProjectTitle || normalizedProjectTitle.toLowerCase() === "untitled"
+      ? "未命名项目"
+      : normalizedProjectTitle;
 
   return (
     <div
@@ -65,8 +70,9 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
         <div className="flex items-center gap-2 rounded-full bg-white/50 px-2.5 py-1 backdrop-blur-sm transition hover:bg-white/65">
           <input
             className="font-medium text-sm text-gray-900 bg-transparent border-none focus:outline-none w-20 focus:w-40 transition-all"
-            value={projectTitle}
+            value={displayProjectTitle}
             onChange={(event) => setProjectTitle(event.target.value)}
+            aria-label="项目标题"
           />
           <ChevronDown size={12} className="text-gray-400" />
         </div>

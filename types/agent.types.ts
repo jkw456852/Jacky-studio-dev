@@ -251,6 +251,7 @@ export interface AgentTaskMetadata {
   memoryCaptureSummary?: string;
   knowledgeCaptureItems?: string[];
   multimodalContext?: AgentMultimodalContext;
+  signal?: AbortSignal;
 }
 
 export interface AgentRoutingDecision {
@@ -286,6 +287,8 @@ export interface AgentTask {
   progressStep?: number;     // 当前步骤 (1-based)
   totalSteps?: number;       // 总步骤数
   progressLog?: string[];    // 所有历史步骤消息（用于展开显示思考过程）
+  streamingText?: string;
+  reasoningText?: string;
   input: {
     message: string;
     attachments?: File[];

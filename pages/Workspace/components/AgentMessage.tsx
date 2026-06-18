@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+﻿import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown,
@@ -16,8 +16,11 @@ import {
   Globe,
   FileText,
   ExternalLink,
+  GitBranch,
 } from 'lucide-react';
 import { ChatMessage } from '../../../types';
+import { getAgentInfo } from '../../../services/agents';
+import type { AgentType } from '../../../types/agent.types';
 import { AgentBrowserSessionCard } from './AgentBrowserSessionCard';
 import { MarkdownRenderer } from './MarkdownRenderer';
 const ClothingStudioCards = lazy(async () => {
@@ -42,11 +45,18 @@ import {
   deriveAgentMessageContent,
   deriveAgentMessageExecutionMode,
   deriveAgentMessageImageCards,
+  deriveLiveUserFacingText,
   deriveAgentMessageOneClickView,
   deriveAgentMessagePlanningBlock,
   deriveAgentMessagePresentation,
   deriveAgentMessageResearchView,
+  deriveThinkingSummary,
+  deriveUserFacingAssistantText,
 } from './AgentMessage.helpers';
+import {
+  getMessageVersionLabel,
+  getMessageVersionSourceLabel,
+} from '../conversationMeta';
 
 export type AgentMessageClothingActionsProps = {
   onClothingSubmitRequirements?: (data: Requirements) => void;
@@ -125,22 +135,61 @@ export type AgentMessageEcommerceActionsProps = {
   ) => void;
 };
 
+const formatAgentIdentityLabel = (value: string | null | undefined) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '助手';
+  if (
+    normalized === 'coco' ||
+    normalized === 'vireo' ||
+    normalized === 'cameron' ||
+    normalized === 'poster' ||
+    normalized === 'package' ||
+    normalized === 'motion' ||
+    normalized === 'campaign' ||
+    normalized === 'prompt-optimizer'
+  ) {
+    try {
+      const agentName = getAgentInfo(normalized as AgentType).name || '';
+      if (!agentName || agentName.toLowerCase() === 'coco') {
+        return normalized === 'prompt-optimizer' ? '提示词优化' : '助手';
+      }
+      return agentName;
+    } catch {
+      return normalized === 'prompt-optimizer' ? '提示词优化' : '助手';
+    }
+  }
+  return value || '助手';
+};
+
 interface AgentMessageProps {
   message: ChatMessage;
+  versionSiblings?: ChatMessage[];
+  activeVersionIndex?: number;
   onPreview: (url: string) => void;
   onAction?: (action: string) => void;
   onSmartGenerate?: (prompt: string, proposalId?: string) => void;
   onReuseToComposer?: (message: ChatMessage) => void | Promise<void>;
+  onRetryResponse?: (message: ChatMessage) => void | Promise<void>;
+  onFeedback?: (
+    message: ChatMessage,
+    feedback: ChatMessage["feedback"],
+  ) => void | Promise<void>;
+  onBranchConversation?: (message: ChatMessage) => void | Promise<void>;
   clothingActions?: AgentMessageClothingActionsProps;
   ecommerceActions?: AgentMessageEcommerceActionsProps;
 }
 
 export const AgentMessage: React.FC<AgentMessageProps> = ({
   message,
+  versionSiblings = [],
+  activeVersionIndex = -1,
   onPreview,
   onAction,
   onSmartGenerate,
   onReuseToComposer,
+  onRetryResponse,
+  onFeedback,
+  onBranchConversation,
   clothingActions,
   ecommerceActions,
 }) => {
@@ -186,13 +235,68 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
     useState(false);
   const [isResearchExtractsExpanded, setIsResearchExtractsExpanded] =
     useState(false);
+  const [activeResearchCitationId, setActiveResearchCitationId] =
+    useState<string | null>(null);
+  const researchFloatingAreaRef = useRef<HTMLDivElement | null>(null);
   const [copied, setCopied] = useState(false);
+  const currentFeedback = message.feedback || null;
+  const previousVersion =
+    activeVersionIndex > 0 ? versionSiblings[activeVersionIndex - 1] : null;
+  const nextVersion =
+    activeVersionIndex >= 0 && activeVersionIndex < versionSiblings.length - 1
+      ? versionSiblings[activeVersionIndex + 1]
+      : null;
+  const versionLabel = getMessageVersionLabel(message);
+  const versionSourceLabel = getMessageVersionSourceLabel(message.lineage);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const scrollToVersion = (targetMessageId: string | null | undefined) => {
+    const normalizedMessageId = String(targetMessageId || '').trim();
+    if (!normalizedMessageId) return;
+    document
+      .getElementById(`chat-message-${normalizedMessageId}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const handleFeedback = (
+    nextFeedback: NonNullable<ChatMessage["feedback"]>,
+  ) => {
+    void onFeedback?.(
+      message,
+      currentFeedback === nextFeedback ? null : nextFeedback,
+    );
+  };
+
+  useEffect(() => {
+    if (!isResearchSourcesExpanded && !isResearchExtractsExpanded) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (researchFloatingAreaRef.current?.contains(target)) return;
+      setIsResearchSourcesExpanded(false);
+      setIsResearchExtractsExpanded(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsResearchSourcesExpanded(false);
+      setIsResearchExtractsExpanded(false);
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isResearchExtractsExpanded, isResearchSourcesExpanded]);
 
   const { cleanText, proposals } = useMemo(
     () => deriveAgentMessageContent(message),
@@ -226,6 +330,38 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
     () => deriveAgentMessageResearchView(message),
     [message],
   );
+  const activeResearchCitation = useMemo(() => {
+    if (!researchView?.citations.length || !activeResearchCitationId) return null;
+    return (
+      researchView.citations.find((item) => item.id === activeResearchCitationId) || null
+    );
+  }, [activeResearchCitationId, researchView]);
+  const researchOutcomeSummary = useMemo(() => {
+    if (!researchView) return '';
+    const stats = researchView.stats.map((item) => `${item.value} 个${item.label}`);
+    if (researchView.status === 'failed') {
+      return '本轮研究未成功完成，以下仅保留已拿到的线索。';
+    }
+    if (researchView.status === 'searching') {
+      return '正在收集网页与正文证据，完成后会自动整理成结论。';
+    }
+    if (stats.length === 0) {
+      return '已完成联网检索，并整理出可引用的结论。';
+    }
+    return `本轮已完成联网检索，命中 ${stats.join('、')}。`;
+  }, [researchView]);
+  const researchSupportCitations = useMemo(
+    () => researchView?.citations.slice(0, 4) || [],
+    [researchView],
+  );
+  const researchMetaLabel = useMemo(() => {
+    if (!researchView) return '';
+    const parts = [
+      researchView.providerLabel,
+      researchView.query ? `查询：${researchView.query}` : '',
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }, [researchView]);
   const presentationView = useMemo(
     () => deriveAgentMessagePresentation(agentData),
     [agentData],
@@ -241,9 +377,54 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
   const isEcommerceWorkflowUi = workflowType.startsWith('ecomOneClick.');
   const analysisPanelTitle = presentationView?.detailTitle || '查看思考过程';
   const presentationStatusLabel = presentationView?.statusLabel || null;
+  const executionTrace = agentData?.executionTrace;
+  const liveStreamingText = String(executionTrace?.streamingText || '').trim();
+  const liveProgressMessage = String(executionTrace?.progressMessage || '').trim();
+  const liveReasoningText = String(executionTrace?.reasoningText || "").trim();
+  const liveUserFacingText = deriveLiveUserFacingText(
+    liveStreamingText,
+    liveReasoningText,
+    liveProgressMessage,
+  );
+  const liveThinkingSummary = deriveThinkingSummary(
+    liveReasoningText,
+    liveProgressMessage,
+  );
+  const isLiveStreamingReply =
+    (executionTrace?.status === "analyzing" ||
+      executionTrace?.status === "executing") &&
+    !isWorkflowUi &&
+    (Boolean(liveReasoningText) ||
+      Boolean(liveStreamingText) ||
+      Boolean(liveProgressMessage));
+  const liveStatusLabel =
+    executionTrace?.status === 'executing' ? '正在回复' : '正在思考';
+  const liveStepLabel =
+    typeof executionTrace?.progressStep === 'number' &&
+    typeof executionTrace?.totalSteps === 'number' &&
+    executionTrace.totalSteps > 0
+      ? `${executionTrace.progressStep}/${executionTrace.totalSteps}`
+      : null;
+  const isFailedReply = Boolean(
+    message.error ||
+      executionTrace?.status === 'failed' ||
+      presentationStatusLabel === '失败',
+  );
   const analysisContent =
     agentData?.analysis ||
     (presentationView?.kind === 'execution_plan' ? agentData?.description || '' : '');
+  const safeAssistantBodyText = deriveUserFacingAssistantText(
+    sanitizedVisibleText,
+    agentData,
+  );
+  const assistantBodyParagraphs = useMemo(
+    () =>
+      safeAssistantBodyText
+        .split(/\n{2,}/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    [safeAssistantBodyText],
+  );
   const executionModeBadgeLabel =
     presentationView?.modeLabel ||
     (executionMode === 'true_edit'
@@ -253,273 +434,398 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         : executionMode === 'generate'
           ? '生成'
           : null);
+  const modelLabel = formatAgentIdentityLabel(agentData?.model || 'AI');
+  const failureReason = sanitizedVisibleText || '这次回复没有成功完成。';
+  const failureRecoveryHint = onRetryResponse
+    ? '可以先重试；如果同样失败，回填后补充更明确的要求再继续。'
+    : '建议回填到输入框，补充更明确的要求后继续。';
 
   return (
     <div className="group inline-block max-w-full align-top">
-      <div className="overflow-hidden rounded-[24px] rounded-tl-md border border-sky-100 bg-[#eef6ff] px-3 py-3 shadow-sm">
-        <div className="mb-1.5 flex justify-start px-1">
-          <span className="text-[10px] font-medium text-gray-400">
-            {new Date(message.timestamp).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </span>
+      <div
+        className={`overflow-hidden rounded-[22px] rounded-tl-md px-2.5 py-2.5 shadow-sm ${
+          isFailedReply
+            ? 'border border-rose-200/80 bg-[linear-gradient(180deg,rgba(255,249,249,0.98)_0%,rgba(255,255,255,0.98)_100%)] shadow-[0_18px_44px_-34px_rgba(190,24,93,0.24)]'
+            : 'border border-sky-100 bg-[#eef6ff]'
+        }`}
+      >
+        <div className="mb-1 flex justify-start px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-400">
+              {new Date(message.timestamp).toLocaleDateString('zh-CN', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </span>
+            {versionLabel ? (
+              <span className="rounded-full border border-slate-200/70 bg-white/75 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                {versionLabel}
+              </span>
+            ) : null}
+            {versionSourceLabel ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                {versionSourceLabel}
+              </span>
+            ) : null}
+            {versionSiblings.length > 1 ? (
+              <div className="inline-flex items-center gap-1 rounded-full border border-slate-200/70 bg-white/75 px-1 py-0.5 text-[10px] text-slate-500">
+                <button
+                  type="button"
+                  onClick={() => scrollToVersion(previousVersion?.id)}
+                  disabled={!previousVersion}
+                  className="rounded-full px-1.5 py-0.5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  上一版
+                </button>
+                <span className="px-0.5 text-slate-400">
+                  {activeVersionIndex + 1}/{versionSiblings.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => scrollToVersion(nextVersion?.id)}
+                  disabled={!nextVersion}
+                  className="rounded-full px-1.5 py-0.5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  下一版
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex max-w-full flex-col gap-2">
+        <div className="flex max-w-full flex-col gap-1.5">
+          {isFailedReply ? (
+            <div className="px-1">
+              <div className="rounded-[18px] border border-rose-200/85 bg-white/96 px-3 py-2.5 shadow-[0_16px_36px_-30px_rgba(190,24,93,0.26)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-rose-100 bg-rose-50/90 px-2.5 py-1 text-[10px] font-semibold text-rose-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      回复失败
+                    </div>
+                    <div className="mt-1.5 text-[12.5px] font-medium leading-[1.75] text-slate-900">
+                      {failureReason}
+                    </div>
+                    <div className="mt-1.5 text-[11px] leading-5 text-slate-500">
+                      {failureRecoveryHint}
+                    </div>
+                  </div>
+                  <div className="rounded-full border border-rose-100 bg-rose-50/80 p-2 text-rose-400">
+                    <Loader2 size={14} strokeWidth={2} />
+                  </div>
+                </div>
+                {(onRetryResponse || onReuseToComposer) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    {onRetryResponse ? (
+                      <button
+                        type="button"
+                        onClick={() => void onRetryResponse(message)}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-rose-200 bg-rose-600 px-3.5 text-[11px] font-semibold text-white transition hover:border-rose-300 hover:bg-rose-700"
+                      >
+                        立即重试
+                      </button>
+                    ) : null}
+                    {onReuseToComposer ? (
+                      <button
+                        type="button"
+                        onClick={() => void onReuseToComposer(message)}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3.5 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                      >
+                        回填后继续
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mb-0.5 flex flex-wrap gap-1.5 px-0.5">
               {message.attachments.map((att, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-gray-500 shadow-sm"
+                  className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/82 px-2.5 py-1 text-[10px] font-medium whitespace-nowrap text-slate-500 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.16)]"
                 >
                   <ImageIcon size={10} className="text-gray-400" />
-                  <span>Image_{i + 1}</span>
+                  <span>{`参考图 ${i + 1}`}</span>
                 </div>
               ))}
             </div>
           )}
 
         {researchView && (
-          <div className="px-1">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-sm">
-              <div className="border-b border-slate-100 px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
+          <div className="px-1" data-testid="agent-research-message">
+            <div
+              data-testid="agent-research-shell"
+              className="overflow-visible rounded-[18px] border border-sky-100/60 bg-[linear-gradient(180deg,rgba(249,252,255,0.97),rgba(255,255,255,0.94))] shadow-[0_14px_30px_-28px_rgba(59,130,246,0.22)] backdrop-blur-sm"
+            >
+              <div className="px-3 py-2.5" data-testid="agent-research-summary">
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 shrink-0 rounded-full border border-white/90 bg-white/92 p-1.5 text-sky-500 shadow-[0_10px_24px_-24px_rgba(14,165,233,0.42)]">
+                    <Search size={12} />
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                           researchView.status === 'failed'
-                            ? 'bg-rose-100 text-rose-700'
+                            ? 'border-rose-100 bg-rose-50 text-rose-700'
                             : researchView.status === 'searching'
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-emerald-100 text-emerald-700'
+                              ? 'border-amber-100 bg-amber-50 text-amber-700'
+                              : 'border-emerald-100 bg-emerald-50 text-emerald-700'
                         }`}
                       >
                         {researchView.statusLabel}
                       </span>
-                      {researchView.providerLabel && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
-                          <Globe size={10} />
-                          {researchView.providerLabel}
-                        </span>
-                      )}
                       {researchView.fallback && (
-                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-                          fallback
+                        <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+                          备用结果
                         </span>
                       )}
                     </div>
-                    {researchView.query && (
-                      <div className="mt-2 text-[12px] font-medium text-slate-800">
-                        {researchView.query}
+                    <div className="mt-1.5 text-[12.5px] font-semibold leading-5 text-slate-800">
+                      {researchOutcomeSummary}
+                    </div>
+                    {researchMetaLabel ? (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10px] leading-4 text-slate-500">
+                        {researchView.providerLabel ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/70 bg-white/88 px-2 py-0.5 text-[10px] text-slate-600">
+                            <Globe size={10} />
+                            {researchView.providerLabel}
+                          </span>
+                        ) : null}
+                        {researchView.query ? (
+                          <span className="truncate text-slate-500">
+                            {researchView.query}
+                          </span>
+                        ) : null}
                       </div>
-                    )}
+                    ) : null}
                     {researchView.summary && (
-                      <div className="mt-1 text-[11px] leading-5 text-slate-500">
+                      <div className="mt-1.5 text-[11px] leading-5 text-slate-500">
                         {researchView.summary}
                       </div>
                     )}
                   </div>
-                  <div className="shrink-0 rounded-xl bg-slate-100 p-2 text-slate-500">
-                    <Search size={14} />
-                  </div>
                 </div>
 
-                {researchView.stats.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {researchView.stats.map((stat) => (
-                      <div
-                        key={`${stat.label}-${stat.value}`}
-                        className="min-w-[64px] rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2"
-                      >
-                        <div className="text-[10px] text-slate-500">{stat.label}</div>
-                        <div className="mt-0.5 text-[13px] font-semibold text-slate-800">
-                          {stat.value}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="px-3 py-3">
-                <div className="flex flex-wrap gap-2">
-                  {researchView.steps.map((step) => (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="agent-research-stats">
+                  {researchView.stats.map((stat) => (
                     <div
-                      key={step.key}
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-medium ${
-                        step.status === 'done'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : step.status === 'current'
-                            ? 'bg-blue-50 text-blue-700'
-                            : step.status === 'error'
-                              ? 'bg-rose-50 text-rose-700'
-                              : 'bg-slate-100 text-slate-500'
-                      }`}
+                      key={`${stat.label}-${stat.value}`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-white/85 bg-white/92 px-2 py-0.5 text-[10px] text-slate-600"
                     >
-                      {step.label}
+                      <span className="text-slate-400">{stat.label}</span>
+                      <span className="font-semibold text-slate-800">{stat.value}</span>
                     </div>
                   ))}
                 </div>
+              </div>
 
-                {researchView.citations.length > 0 && (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[12px] font-semibold text-slate-700">
-                        引用来源
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setIsResearchSourcesExpanded((value) => !value)
-                        }
-                        className="text-[11px] font-medium text-slate-500 transition hover:text-slate-800"
-                      >
-                        {isResearchSourcesExpanded ? '收起来源' : '展开来源'}
-                      </button>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {researchView.citations.slice(0, 4).map((citation, index) => (
-                        <a
-                          key={citation.id}
-                          href={citation.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+              {(researchView.citations.length > 0 ||
+                researchView.extractedPages.length > 0 ||
+                researchView.suggestedQueries.length > 0) && (
+                <div
+                  className="border-t border-sky-100/60 bg-white/72 px-3 py-2"
+                  data-testid="agent-research-evidence"
+                >
+                  <div
+                    ref={researchFloatingAreaRef}
+                    className="relative"
+                    data-testid="agent-research-floating-area"
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {researchView.citations.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsResearchSourcesExpanded((value) => !value);
+                            setIsResearchExtractsExpanded(false);
+                          }}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
+                            isResearchSourcesExpanded
+                              ? 'border-sky-200 bg-sky-50/90 text-sky-700'
+                              : 'border-slate-200/70 bg-white/88 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-800'
+                          }`}
                         >
-                          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
-                            {index + 1}
+                          引用来源
+                          <span className="text-slate-400">
+                            {researchView.citations.length}
                           </span>
-                          <span className="max-w-[160px] truncate">{citation.host}</span>
-                        </a>
-                      ))}
-                      {researchView.citations.length > 4 && (
-                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-500">
-                          +{researchView.citations.length - 4}
-                        </span>
+                        </button>
+                      )}
+                      {researchView.extractedPages.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsResearchExtractsExpanded((value) => !value);
+                            setIsResearchSourcesExpanded(false);
+                          }}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
+                            isResearchExtractsExpanded
+                              ? 'border-sky-200 bg-sky-50/90 text-sky-700'
+                              : 'border-slate-200/60 bg-slate-50/70 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700'
+                          }`}
+                        >
+                          <FileText size={11} />
+                          网页摘录
+                        </button>
                       )}
                     </div>
 
                     <AnimatePresence initial={false}>
-                      {isResearchSourcesExpanded && (
+                      {isResearchSourcesExpanded && researchView.citations.length > 0 && (
                         <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.18, ease: 'easeOut' }}
-                          className="overflow-hidden"
+                          className="absolute left-0 top-full z-10 mt-1.5 w-[min(100%,280px)]"
                         >
-                          <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
-                            {researchView.citations.map((citation, index) => (
-                              <a
-                                key={citation.id}
-                                href={citation.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition hover:border-slate-300"
+                          <div
+                            className="rounded-[12px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.18)] backdrop-blur-md"
+                            data-testid="agent-research-source-list"
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
+                                <div className="text-[10px] font-semibold text-slate-700">
+                                  来源
+                                </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsResearchSourcesExpanded(false)}
+                                className="text-[9.5px] text-slate-400 transition hover:text-slate-700"
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
-                                        {index + 1}
-                                      </span>
-                                      <div className="truncate text-[12px] font-medium text-slate-800">
+                                关闭
+                              </button>
+                            </div>
+                            <div className="space-y-1">
+                              {researchView.citations.slice(0, 5).map((citation, index) => (
+                                <a
+                                  key={citation.id}
+                                  href={citation.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onMouseEnter={() => setActiveResearchCitationId(citation.id)}
+                                  className={`block rounded-[10px] border px-2 py-1 transition ${
+                                    activeResearchCitation?.id === citation.id
+                                      ? 'border-sky-200 bg-sky-50/60'
+                                      : 'border-slate-200/80 bg-white hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
+                                      {index + 1}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-[10px] font-medium text-slate-800">
                                         {citation.title}
                                       </div>
-                                    </div>
-                                    <div className="mt-1 truncate text-[10px] text-slate-500">
-                                      {citation.siteName || citation.host}
-                                    </div>
-                                    {(citation.excerpt || citation.snippet) && (
-                                      <div className="mt-1 text-[11px] leading-5 text-slate-500">
-                                        {citation.excerpt || citation.snippet}
+                                      <div className="truncate text-[9.5px] text-slate-500">
+                                        {citation.siteName || citation.host}
                                       </div>
-                                    )}
+                                    </div>
                                   </div>
-                                  <ExternalLink
-                                    size={12}
-                                    className="mt-0.5 shrink-0 text-slate-400"
-                                  />
-                                </div>
-                              </a>
-                            ))}
+                                </a>
+                              ))}
+                            </div>
                           </div>
                         </motion.div>
                       )}
-                    </AnimatePresence>
-                  </div>
-                )}
 
-                {researchView.extractedPages.length > 0 && (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700">
-                        <FileText size={12} />
-                        网页摘录
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setIsResearchExtractsExpanded((value) => !value)
-                        }
-                        className="text-[11px] font-medium text-slate-500 transition hover:text-slate-800"
-                      >
-                        {isResearchExtractsExpanded ? '收起摘录' : '展开摘录'}
-                      </button>
-                    </div>
-
-                    <AnimatePresence initial={false}>
-                      {isResearchExtractsExpanded && (
+                      {isResearchExtractsExpanded && researchView.extractedPages.length > 0 && (
                         <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
                           transition={{ duration: 0.18, ease: 'easeOut' }}
-                          className="overflow-hidden"
+                          className="absolute left-0 top-full z-10 mt-1.5 w-[min(100%,280px)]"
                         >
-                          <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
-                            {researchView.extractedPages.map((page, index) => (
-                              <div
-                                key={page.id}
-                                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                          <div
+                            className="rounded-[12px] border border-slate-200/65 bg-white/96 p-1.5 shadow-[0_18px_32px_-24px_rgba(15,23,42,0.18)] backdrop-blur-md"
+                            data-testid="agent-research-extracts"
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
+                                <div className="text-[10px] font-semibold text-slate-700">
+                                  摘录
+                                </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsResearchExtractsExpanded(false)}
+                                className="text-[9.5px] text-slate-400 transition hover:text-slate-700"
                               >
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1 text-[10px] font-semibold text-slate-700">
-                                    {index + 1}
-                                  </span>
-                                  <div className="truncate text-[12px] font-medium text-slate-800">
-                                    {page.title}
+                                关闭
+                              </button>
+                            </div>
+                            <div className="space-y-1">
+                              {researchView.extractedPages.slice(0, 4).map((page, index) => (
+                                <div
+                                  key={page.id}
+                                  className="rounded-[10px] border border-slate-200/80 bg-white px-2 py-1"
+                                >
+                                  <div className="truncate text-[10px] font-medium text-slate-800">
+                                    {index + 1}. {page.title}
+                                  </div>
+                                  <div className="mt-1 line-clamp-1 text-[9.5px] leading-4 text-slate-500">
+                                    {page.cleanedTextExcerpt || page.excerpt || '暂无正文摘录'}
                                   </div>
                                 </div>
-                                <div className="mt-1 break-all text-[10px] text-slate-400">
-                                  {page.url}
-                                </div>
-                                <div className="mt-1 text-[11px] leading-5 text-slate-500 whitespace-pre-wrap">
-                                  {page.cleanedTextExcerpt || page.excerpt || '暂无正文摘录'}
-                                </div>
-                                {page.error && (
-                                  <div className="mt-1 text-[10px] text-rose-600">
-                                    {page.error}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
+
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {isLiveStreamingReply ? (
+          <div className="px-1">
+            <div className="overflow-hidden rounded-2xl border border-sky-100/60 bg-white/70">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                <div className="inline-flex items-center gap-2 text-[11px] font-medium text-sky-700">
+                  <Loader2 size={12} className="animate-spin" strokeWidth={2.2} />
+                  <span>{liveStatusLabel}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                  {liveStepLabel ? (
+                    <span className="rounded-full border border-sky-100 bg-white/80 px-2 py-0.5 font-medium text-sky-700">
+                      {liveStepLabel}
+                    </span>
+                  ) : null}
+                  {liveProgressMessage ? (
+                    <span className="max-w-[220px] truncate">{liveProgressMessage}</span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="border-t border-sky-100/50 px-3 py-3">
+                {liveUserFacingText ? (
+                  <div className="agent-msg-text break-words">
+                    <MarkdownRenderer text={liveUserFacingText} className="text-[13px]" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400 [animation-delay:120ms]" />
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-300 [animation-delay:240ms]" />
+                    </span>
+                    <span>{liveProgressMessage || '正在思考...'}</span>
                   </div>
                 )}
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {sanitizedVisibleText && oneClickView.sections.length === 0 && (
+        {safeAssistantBodyText &&
+          !isLiveStreamingReply &&
+          oneClickView.sections.length === 0 &&
+          !isFailedReply && (
           <div
             className={`agent-msg-text break-words px-1 ${
               message.error
@@ -527,13 +833,98 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 : ''
             }`}
           >
-            <MarkdownRenderer text={sanitizedVisibleText} className="text-[13px]" />
+            {researchSupportCitations.length > 0 ? (
+              <div className="space-y-2.5">
+                {assistantBodyParagraphs.map((paragraph, paragraphIndex) => {
+                  const isLastParagraph =
+                    paragraphIndex === assistantBodyParagraphs.length - 1;
+                  return (
+                  <div
+                    key={`assistant-paragraph-${paragraphIndex}`}
+                    className="rounded-[14px] bg-white/46 px-2.5 py-2"
+                  >
+                    <MarkdownRenderer text={paragraph} className="text-[12.5px]" />
+                    {isLastParagraph ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {researchSupportCitations.map((citation, citationIndex) => (
+                          <button
+                            key={`paragraph-${paragraphIndex}-${citation.id}`}
+                            type="button"
+                            onClick={() => {
+                              setActiveResearchCitationId(citation.id);
+                              setIsResearchSourcesExpanded(true);
+                            }}
+                            className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[10px] font-semibold transition ${
+                              activeResearchCitation?.id === citation.id
+                                ? 'border-sky-200 bg-sky-50 text-sky-700'
+                                : 'border-slate-200/80 bg-white/85 text-slate-500 hover:border-slate-300 hover:text-slate-800'
+                            }`}
+                            title={citation.host}
+                          >
+                            {citationIndex + 1}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <MarkdownRenderer text={safeAssistantBodyText} className="text-[12.5px]" />
+            )}
           </div>
         )}
 
-        {planningBlock && !analysisContent && oneClickView.sections.length === 0 && (
+        {liveThinkingSummary && isLiveStreamingReply && !analysisContent ? (
           <div className="px-1">
-            <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/76">
+            <div className="overflow-hidden rounded-[18px] border border-slate-200/75 bg-white/82 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.16)] backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={() => setIsPlanningExpanded((value) => !value)}
+                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-white/90"
+              >
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-slate-600">
+                    查看思考过程
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+                    {liveThinkingSummary}
+                  </div>
+                </div>
+                <div className="mt-0.5 shrink-0 text-slate-400">
+                  {isPlanningExpanded ? (
+                    <ChevronUp size={14} />
+                  ) : (
+                    <ChevronDown size={14} />
+                  )}
+                </div>
+              </button>
+              <AnimatePresence initial={false}>
+                {isPlanningExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="border-t border-slate-200/70"
+                  >
+                    <div className="px-3 py-3 whitespace-pre-wrap text-[12px] leading-6 text-slate-600">
+                      {liveThinkingSummary}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        ) : null}
+
+        {planningBlock &&
+          !isLiveStreamingReply &&
+          !analysisContent &&
+          oneClickView.sections.length === 0 && (
+          <div className="px-1">
+            <div className="overflow-hidden rounded-[18px] border border-slate-200/75 bg-white/82 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.16)] backdrop-blur-sm">
               <button
                 type="button"
                 onClick={() => setIsPlanningExpanded((value) => !value)}
@@ -695,7 +1086,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         {oneClickView.sections.length > 0 && (
           <div className="mt-1 space-y-1.5 px-1">
             {oneClickView.intro && (
-              <div className="rounded-lg border border-gray-200 bg-white/70 px-2.5 py-2">
+              <div className="rounded-[16px] border border-slate-200/75 bg-white/82 px-3 py-2.5 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.14)] backdrop-blur-sm">
                 <MarkdownRenderer
                   text={oneClickView.intro}
                   className="text-[12px]"
@@ -705,13 +1096,13 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
             {oneClickView.sections.map((section, idx) => (
               <details
                 key={`${section.title}-${idx}`}
-                className="rounded-lg border border-gray-200 bg-white/90"
+                className="rounded-[16px] border border-slate-200/75 bg-white/86 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.14)] backdrop-blur-sm"
                 open={idx < 2}
               >
-                <summary className="cursor-pointer select-none px-2.5 py-2 text-[12px] font-semibold text-gray-800">
+                <summary className="cursor-pointer select-none px-3 py-2.5 text-[12px] font-semibold text-slate-800">
                   {section.title}
                 </summary>
-                <div className="border-t border-gray-100 px-2.5 py-2">
+                <div className="border-t border-slate-200/70 px-3 py-2.5">
                   <MarkdownRenderer text={section.body} className="text-[12px]" />
                 </div>
               </details>
@@ -719,11 +1110,11 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         )}
 
-        {analysisContent ? (
+        {!isLiveStreamingReply && analysisContent ? (
           <div className="px-1">
             <button
               onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
-              className="group/btn inline-flex items-center gap-1.5 rounded-full border border-slate-200/70 bg-white/70 px-2.5 py-1 text-[11px] transition-all hover:border-slate-300 hover:bg-white"
+              className="group/btn inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/82 px-2.5 py-1 text-[11px] transition-all hover:border-slate-300 hover:bg-white"
             >
               <Search
                 size={11}
@@ -747,7 +1138,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-2 rounded-2xl border border-slate-200/70 bg-white/76 px-3 py-3 text-[12px] leading-6 text-slate-600 whitespace-pre-wrap">
+                  <div className="mt-2 rounded-[18px] border border-slate-200/75 bg-white/82 px-3 py-3 whitespace-pre-wrap text-[12px] leading-6 text-slate-600 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.16)] backdrop-blur-sm">
                     {analysisContent}
                   </div>
                 </motion.div>
@@ -756,7 +1147,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         ) : null}
 
-        {proposals.length > 0 && (
+        {!isLiveStreamingReply && proposals.length > 0 && (
           <div className="mb-1 flex flex-col gap-1.5">
             {proposals.map((prop, idx) => (
               <motion.div
@@ -764,78 +1155,86 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
-                className="group/card overflow-hidden rounded-lg border border-gray-100 bg-white/95 p-2.5 shadow-sm backdrop-blur-md transition-all hover:shadow-md"
+                className="group/card overflow-hidden rounded-[18px] border border-slate-200/75 bg-white/86 p-3 shadow-[0_14px_30px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm transition-all hover:border-slate-300 hover:shadow-[0_18px_36px_-28px_rgba(15,23,42,0.2)]"
               >
                 {(prop.previewUrl || prop.concept_image) && (
-                  <div className="group/preview relative mb-2 aspect-video overflow-hidden rounded-md border border-gray-100 bg-gray-50">
+                  <div className="group/preview relative mb-2.5 aspect-video overflow-hidden rounded-[14px] border border-slate-200/75 bg-slate-50/70">
                     <img
                       src={prop.previewUrl || prop.concept_image}
-                      alt="Preview"
+                      alt="方案预览"
                       className="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-105"
                     />
                     <div className="absolute inset-0 bg-black/5 transition-colors group-hover/card:bg-transparent" />
                   </div>
                 )}
 
-                <div className="mb-1 flex items-center justify-between">
-                  <h4 className="flex items-center gap-1 text-[12px] font-bold text-gray-900">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <h4 className="flex items-center gap-1.5 text-[12px] font-bold text-slate-900">
                     <Sparkles size={11} className="text-blue-500" />
                     {prop.title || `方案 ${idx + 1}`}
                   </h4>
-                  <span className="rounded border border-blue-100/50 bg-blue-50/50 px-1 py-0.5 text-[8px] font-bold tracking-tighter text-blue-600 uppercase">
-                    PROPOSAL
+                  <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[8px] font-bold tracking-[0.08em] text-blue-600">
+                    方案提案
                   </span>
                 </div>
 
-                <p className="mb-2.5 text-[11px] leading-[1.3] font-normal text-gray-500">
+                <p className="mb-3 text-[11px] leading-[1.55] font-normal text-slate-500">
                   {prop.description}
                 </p>
 
-                <button
-                  onClick={() => {
-                    const promptFromSkillCall = prop.skillCalls?.find(
-                      (skillCall) => skillCall?.skillName === 'generateImage',
-                    )?.params?.prompt;
-                    const prompt =
-                      prop.prompt ||
-                      (typeof prop.skillCalls?.[0]?.params?.prompt === 'string'
-                        ? prop.skillCalls[0]?.params?.prompt
-                        : '') ||
-                      (typeof promptFromSkillCall === 'string'
-                        ? promptFromSkillCall
-                        : '') ||
-                      '';
-                    if (prompt) {
-                      onSmartGenerate?.(prompt, prop.id);
-                    }
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md bg-gray-900 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all hover:bg-black active:scale-[0.98]"
-                >
-                  <Wand2 size={11} strokeWidth={2.5} />
-                  立即生成
-                </button>
+                {(() => {
+                  const promptFromSkillCall = prop.skillCalls?.find(
+                    (skillCall) => skillCall?.skillName === 'generateImage',
+                  )?.params?.prompt;
+                  const prompt =
+                    prop.prompt ||
+                    (typeof prop.skillCalls?.[0]?.params?.prompt === 'string'
+                      ? prop.skillCalls[0]?.params?.prompt
+                      : '') ||
+                    (typeof promptFromSkillCall === 'string'
+                      ? promptFromSkillCall
+                      : '') ||
+                    '';
+                  const canGenerate = Boolean(onSmartGenerate && prompt);
+
+                  return canGenerate ? (
+                    <button
+                      onClick={() => onSmartGenerate?.(prompt, prop.id)}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-full bg-slate-900 py-2 text-[11px] font-semibold text-white shadow-[0_12px_24px_-18px_rgba(15,23,42,0.32)] transition-all hover:bg-black active:scale-[0.98]"
+                    >
+                      <Wand2 size={11} strokeWidth={2.5} />
+                      立即生成
+                    </button>
+                  ) : (
+                    <div className="flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-slate-200 bg-slate-50/80 py-2 text-[11px] font-semibold text-slate-400">
+                      <Wand2 size={11} strokeWidth={2.5} />
+                      无可执行生成动作
+                    </div>
+                  );
+                })()}
               </motion.div>
             ))}
           </div>
         )}
 
-        {(agentData?.model || proposals.length > 0 || presentationStatusLabel) ? (
-          <div className="flex items-center justify-start gap-1 px-1 opacity-70">
+        {!isLiveStreamingReply &&
+        (agentData?.model || proposals.length > 0 || presentationStatusLabel) ? (
+          <div className="flex items-center justify-start gap-1 px-1 opacity-75">
             {presentationStatusLabel ? (
-              <span className="rounded-full border border-slate-200/70 bg-white/75 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+              <span className="rounded-full border border-slate-200/70 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-slate-500">
                 {presentationStatusLabel}
               </span>
             ) : null}
             {(agentData?.model || proposals.length > 0) ? (
               <div className="flex items-center gap-1 text-slate-400">
                 <Eye size={11} strokeWidth={2.2} />
-                <span className="text-[10px] font-medium tracking-tight text-slate-400 uppercase">
-                  {agentData?.model || 'Nano Banana Pro'}
+                <span className="text-[10px] font-medium tracking-tight text-slate-400">
+                  {modelLabel}
                 </span>
               </div>
             ) : null}
             {executionModeBadgeLabel ? (
-              <span className="rounded-full border border-slate-200/70 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+              <span className="rounded-full border border-slate-200/70 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-slate-400">
                 {executionModeBadgeLabel}
               </span>
             ) : null}
@@ -848,7 +1247,7 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
               <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-gray-100/70">
                 <img
                   src={imageCards[0].url}
-                  alt="Generated"
+                  alt={imageCards[0].title || '生成结果预览'}
                   className="h-auto max-h-[300px] w-full max-w-full cursor-zoom-in object-contain transition hover:opacity-95"
                   onClick={() => onPreview(imageCards[0].url)}
                 />
@@ -904,14 +1303,15 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
         </div>
       </div>
 
-      <div className="mt-2 px-3">
+      {!isLiveStreamingReply ? (
+        <div className="mt-1 px-1.5">
         {agentData?.suggestions && agentData.suggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex max-w-[332px] flex-wrap gap-1.5">
             {agentData.suggestions.map((suggestion, idx) => (
               <button
                 key={idx}
                 onClick={() => onAction?.(suggestion)}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-medium text-gray-600 transition-all hover:border-gray-400 hover:text-gray-900 hover:shadow-sm"
+                className="inline-flex h-[30px] cursor-pointer items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0 text-[10px] font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
               >
                 <Wand2 size={10} strokeWidth={2} />
                 {suggestion}
@@ -920,24 +1320,75 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
           </div>
         ) : null}
 
-        <div className="mt-2 flex items-center gap-0.5 px-1 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100">
-          <button className="p-1 transition-colors hover:text-gray-500">
-            <ThumbsUp size={12} />
-          </button>
-          <button className="p-1 transition-colors hover:text-gray-500">
-            <ThumbsDown size={12} />
-          </button>
+        <div className="mt-1.5 inline-flex w-fit max-w-[292px] flex-wrap items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-[5px] py-[3px] text-slate-500 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.14)]">
+          {onFeedback ? (
+            <>
+              <button
+                type="button"
+                onClick={() => handleFeedback("up")}
+                aria-pressed={currentFeedback === "up"}
+                title={currentFeedback === "up" ? "取消赞同" : "赞同这条回复"}
+                className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                  currentFeedback === "up"
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "hover:bg-slate-50 hover:text-slate-700"
+                }`}
+              >
+                <ThumbsUp size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFeedback("down")}
+                aria-pressed={currentFeedback === "down"}
+                title={
+                  currentFeedback === "down" ? "取消点踩" : "这条回复还不够好"
+                }
+                className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                  currentFeedback === "down"
+                    ? "bg-rose-50 text-rose-600"
+                    : "hover:bg-slate-50 hover:text-slate-700"
+                }`}
+              >
+                <ThumbsDown size={12} />
+              </button>
+            </>
+          ) : null}
+          {onRetryResponse ? (
+            <button
+              type="button"
+              onClick={() => void onRetryResponse(message)}
+              className="inline-flex h-6 items-center rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              title="重新生成这条回复"
+            >
+              重试
+            </button>
+          ) : null}
+          {onReuseToComposer ? (
+            <button
+              type="button"
+              onClick={() => void onReuseToComposer(message)}
+              className="inline-flex h-6 items-center rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              title="回填到输入框继续编辑"
+            >
+              回填
+            </button>
+          ) : null}
+          {onBranchConversation ? (
+            <button
+              type="button"
+              onClick={() => void onBranchConversation(message)}
+              className="inline-flex h-6 items-center gap-1 rounded-full px-2 text-[9.5px] font-medium transition-colors hover:bg-slate-50 hover:text-slate-700"
+              title="从这条回复分支为新对话"
+            >
+              <GitBranch size={10} />
+              分支
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={() => void onReuseToComposer?.(message)}
-            className="rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-gray-100 hover:text-gray-600"
-            title="回填到输入框继续编辑"
-          >
-            回填
-          </button>
-          <button
             onClick={handleCopy}
-            className="relative p-1 transition-colors hover:text-gray-500"
+            className="relative inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-slate-50 hover:text-slate-700"
+            title={copied ? "已复制" : "复制回复"}
           >
             {copied ? (
               <Check size={12} className="text-green-500" />
@@ -946,7 +1397,10 @@ export const AgentMessage: React.FC<AgentMessageProps> = ({
             )}
           </button>
         </div>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 };
+
+

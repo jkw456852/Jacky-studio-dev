@@ -272,6 +272,18 @@ export interface ConversationSession {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  autoTitle?: boolean;
+  pinned?: boolean;
+  archivedAt?: number;
+  draft?: {
+    inputBlocks?: InputBlock[];
+    creationMode?: "agent" | "image" | "video";
+    quickSkill?: ChatMessage["skillData"];
+  };
+  parentConversationId?: string;
+  parentConversationTitle?: string;
+  branchedFromMessageId?: string;
+  branchPointLabel?: string;
 }
 
 export interface Project {
@@ -284,6 +296,30 @@ export interface Project {
   conversations?: ConversationSession[];
 }
 
+export type ChatMessageVersionSource =
+  | 'send'
+  | 'resend'
+  | 'edit_resend'
+  | 'assistant_retry';
+
+export interface ChatMessageLineage {
+  versionRootMessageId: string;
+  previousVersionMessageId?: string;
+  versionNumber: number;
+  source: ChatMessageVersionSource;
+  triggerMessageId?: string;
+}
+
+export interface ChatSendOptions {
+  lineage?: {
+    source?: ChatMessageVersionSource;
+    versionRootMessageId?: string;
+    previousVersionMessageId?: string;
+    previousAssistantMessageId?: string;
+    triggerMessageId?: string;
+  };
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
@@ -291,6 +327,10 @@ export interface ChatMessage {
   kind?: 'text' | 'workflow_ui';
   workflowUi?: WorkflowUiMessage;
   timestamp: number;
+  responseToMessageId?: string;
+  lineage?: ChatMessageLineage;
+  feedback?: 'up' | 'down' | null;
+  feedbackUpdatedAt?: number;
   attachments?: string[]; // Array of base64 images
   attachmentMetadata?: any[]; // Metadata for attachments (e.g. marker info)
   inlineParts?: Array<
@@ -348,6 +388,19 @@ export interface ChatMessage {
       modeLabel?: string;
       detailTitle?: string;
       detailNotice?: string;
+    };
+    executionTrace?: {
+      status?: 'analyzing' | 'executing' | 'completed' | 'failed';
+      progressMessage?: string;
+      progressStep?: number;
+      totalSteps?: number;
+      progressLog?: string[];
+      streamingText?: string;
+      reasoningText?: string;
+      stopReason?: string;
+      stopReasonLabel?: string;
+      errorCode?: string;
+      errorMessage?: string;
     };
     research?: {
       status: 'searching' | 'completed' | 'failed';
@@ -471,6 +524,14 @@ export type WorkspaceInputFile = File & {
   _canvasH?: number;
   _chipPreviewUrl?: string;
   _attachmentId?: string;
+  _pendingPreviewRect?: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  _pendingAnchorBlockId?: string;
+  _pendingAnchorIndex?: number;
 };
 
 export interface InputBlock {

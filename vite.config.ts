@@ -405,8 +405,15 @@ function apiExtractPlugin(): Plugin {
           }).finally(() => clearTimeout(t));
 
           if (!response.ok) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: `fetch_failed_${response.status}` }));
+            const upstreamStatus = response.status >= 400 ? response.status : 502;
+            res.writeHead(upstreamStatus, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: `fetch_failed_${response.status}`,
+                status: response.status,
+                url: targetUrl,
+              }),
+            );
             return;
           }
           const ct = response.headers.get("content-type") || "";

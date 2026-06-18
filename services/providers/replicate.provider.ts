@@ -13,11 +13,47 @@ const ASPECT_RATIO_MAP: Record<string, { width: number; height: number }> = {
   '3:4': { width: 864, height: 1152 },
 };
 
-async function pollPrediction(id: string, apiKey: string): Promise<any> {
+const createAbortError = (): DOMException =>
+  new DOMException('The operation was aborted.', 'AbortError');
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+};
+
+const sleepWithAbort = (ms: number, signal?: AbortSignal): Promise<void> => {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(createAbortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', handleAbort);
+      resolve();
+    }, ms);
+
+    const handleAbort = () => {
+      clearTimeout(timeoutId);
+      signal.removeEventListener('abort', handleAbort);
+      reject(createAbortError());
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+  });
+};
+
+async function pollPrediction(id: string, apiKey: string, signal?: AbortSignal): Promise<any> {
   const maxAttempts = 60;
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(r => setTimeout(r, 2000));
+    throwIfAborted(signal);
+    await sleepWithAbort(2000, signal);
     const res = await fetchWithResilience(`https://api.replicate.com/v1/predictions/${id}`, {
+      signal,
       headers: { 'Authorization': `Bearer ${apiKey}` },
     }, { operation: 'replicate.pollPrediction', retries: 1 });
     const data = await res.json();
@@ -29,8 +65,9 @@ async function pollPrediction(id: string, apiKey: string): Promise<any> {
   throw new Error('Prediction timed out');
 }
 
-async function imageUrlToBase64(url: string): Promise<string> {
-  const res = await fetchWithResilience(url, {}, { operation: 'replicate.imageUrlToBase64', retries: 1 });
+async function imageUrlToBase64(url: string, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
+  const res = await fetchWithResilience(url, { signal }, { operation: 'replicate.imageUrlToBase64', retries: 1 });
   const blob = await res.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -96,6 +133,7 @@ export const replicateImageProvider: ImageProvider = {
 
     const res = await fetchWithResilience('https://api.replicate.com/v1/predictions', {
       method: 'POST',
+      signal: request.signal,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -109,11 +147,11 @@ export const replicateImageProvider: ImageProvider = {
     }
 
     const prediction = await res.json();
-    const result = await pollPrediction(prediction.id, apiKey);
+    const result = await pollPrediction(prediction.id, apiKey, request.signal);
 
     const outputUrl = Array.isArray(result.output) ? result.output[0] : result.output;
     if (!outputUrl) return null;
 
-    return imageUrlToBase64(outputUrl);
+    return imageUrlToBase64(outputUrl, request.signal);
   }
 };

@@ -21,9 +21,22 @@ export const InputAreaPendingAttachments: React.FC<
       {pendingAttachments.map((pending) => (
         <div
           key={pending.id}
-          className="inline-flex items-center gap-1 rounded-full pl-[2px] pr-1 select-none relative h-6 cursor-default transition-all border border-dashed border-blue-300 bg-blue-50/50 shrink-0 opacity-60 hover:opacity-100 group/pending"
+          className="group/pending relative inline-flex h-8 shrink-0 cursor-default select-none items-center gap-1 rounded-full border border-dashed border-blue-300 bg-blue-50/50 pl-[3px] pr-2 opacity-60 transition-all hover:opacity-100"
+          style={
+            pending.file._pendingPreviewRect
+              ? {
+                  position: 'absolute',
+                  left: pending.file._pendingPreviewRect.left,
+                  top:
+                    pending.file._pendingPreviewRect.top +
+                    Math.max(pending.file._pendingPreviewRect.height, 22) +
+                    6,
+                  zIndex: 4,
+                }
+              : undefined
+          }
         >
-          <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 border border-blue-200 shadow-sm">
+          <div className="h-6 w-6 flex-shrink-0 overflow-hidden rounded-full border border-blue-200 shadow-sm">
             {pending.file._canvasAutoInsert ? (
               <div className="w-full h-full flex items-center justify-center bg-blue-100 text-blue-600">
                 <ImageIcon size={10} />
@@ -37,7 +50,7 @@ export const InputAreaPendingAttachments: React.FC<
               <FileText size={10} className="text-blue-500" />
             )}
           </div>
-          <span className="text-[11px] text-blue-700 font-bold max-w-[100px] truncate ml-0.5">
+          <span className="ml-0.5 max-w-[108px] truncate text-[12px] font-semibold text-blue-700">
             待确认
           </span>
           <button
@@ -45,7 +58,7 @@ export const InputAreaPendingAttachments: React.FC<
               event.stopPropagation();
               onRemovePendingAttachment(pending.id);
             }}
-            className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-blue-400 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover/pending:opacity-100"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-blue-400 opacity-0 transition group-hover/pending:opacity-100 hover:bg-red-50 hover:text-red-500"
           >
             <X size={10} />
           </button>

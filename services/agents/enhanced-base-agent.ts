@@ -559,7 +559,7 @@ export abstract class EnhancedBaseAgent {
         status: "failed",
         output: {
           ...buildAgentTaskOutput({
-            message: `鎵ц澶辫触: ${appError.message}`,
+            message: `执行失败：${appError.message}`,
             runtime: { mode: "skill-execution" },
           }),
           error: appError,
@@ -1368,6 +1368,8 @@ export abstract class EnhancedBaseAgent {
       const response = await withTimeout(
         retryMainBrainOperation({
           operation: async () => {
+            let streamedText = "";
+            let streamedReasoning = "";
             console.log(
               `[analyzeAndPlan] [${selectedMode}] ???????????: ${bestModel.modelId} @ ${bestModel.providerId || 'default'}`,
             );
@@ -1378,7 +1380,29 @@ export abstract class EnhancedBaseAgent {
               temperature: forceImageToolCall && !allowAutonomousRouting ? 0.2 : 0.7,
               ...(forcedSchema ? { responseSchema: forcedSchema } : {}),
               ...(toolConfig?.tools ? { tools: toolConfig.tools } : {}),
-              operation: `${this.agentInfo.id}.analyzeAndPlan`
+              operation: `${this.agentInfo.id}.analyzeAndPlan`,
+              onTextDelta: (delta) => {
+                streamedText += String(delta || "");
+                const currentTask = useAgentStore.getState().currentTask;
+                if (!currentTask) return;
+                useAgentStore.getState().actions.setCurrentTask({
+                  ...currentTask,
+                  streamingText: streamedText,
+                  reasoningText: streamedReasoning,
+                  progressMessage:
+                    streamedText.trim() || currentTask.progressMessage || "正在生成回复...",
+                });
+              },
+              onReasoningDelta: (delta) => {
+                streamedReasoning += String(delta || "");
+                const currentTask = useAgentStore.getState().currentTask;
+                if (!currentTask) return;
+                useAgentStore.getState().actions.setCurrentTask({
+                  ...currentTask,
+                  streamingText: streamedText,
+                  reasoningText: streamedReasoning,
+                });
+              },
             });
           },
           label: `${this.agentInfo.id}.analyzeAndPlan`,
@@ -1504,7 +1528,10 @@ export abstract class EnhancedBaseAgent {
 
     return executeSkillWithTimeout({
       skillName: call.skillName,
-      params: call.params,
+      params: {
+        ...(call.params || {}),
+        signal: task.input.metadata?.signal,
+      },
       timeoutMs: resolveSkillTimeoutMs(call.skillName),
       executeSkillFn: executeSkill,
     });

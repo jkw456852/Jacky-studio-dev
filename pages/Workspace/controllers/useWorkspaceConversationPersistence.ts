@@ -1,16 +1,24 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import type { ChatMessage, ConversationSession } from "../../../types";
+import type { ChatMessage, ConversationSession, InputBlock } from "../../../types";
 
 import {
   trimConversationMessages,
   trimConversationsForPersist,
-} from './workspacePersistence';
+} from "./workspacePersistence";
+import {
+  DEFAULT_CONVERSATION_TITLE,
+  deriveConversationTitle,
+  deriveDraftPreview,
+} from "../conversationMeta";
 
 type UseWorkspaceConversationPersistenceArgs = {
   messages: ChatMessage[];
   workspaceId: string | undefined;
   activeConversationId: string;
   projectTitle: string;
+  currentInputBlocks: InputBlock[];
+  creationMode: "agent" | "image" | "video";
+  activeQuickSkill?: ChatMessage["skillData"];
   setConversations: Dispatch<SetStateAction<ConversationSession[]>>;
 };
 
@@ -19,13 +27,34 @@ export const useWorkspaceConversationPersistence = ({
   workspaceId,
   activeConversationId,
   projectTitle,
+  currentInputBlocks,
+  creationMode,
+  activeQuickSkill,
   setConversations,
 }: UseWorkspaceConversationPersistenceArgs) => {
+  const derivePersistedConversationTitle = (
+    nextMessages: ChatMessage[],
+    nextProjectTitle: string,
+    nextDraft:
+      | {
+          inputBlocks: InputBlock[];
+          creationMode: "agent" | "image" | "video";
+          quickSkill?: ChatMessage["skillData"];
+        }
+      | undefined,
+  ) => {
+    const draftTitle = deriveDraftPreview(nextDraft);
+    if (draftTitle) return draftTitle;
+
+    const title = deriveConversationTitle(nextMessages, nextProjectTitle);
+    return title === "未命名项目" ? DEFAULT_CONVERSATION_TITLE : title;
+  };
+
   useEffect(() => {
-    if (messages.length === 0 || !workspaceId) return;
+    if (!workspaceId) return;
 
     setConversations((previous) => {
-      const conversationId = activeConversationId;
+      const conversationId = String(activeConversationId || "").trim();
       if (!conversationId) return previous;
 
       const updated = [...previous];
@@ -33,34 +62,72 @@ export const useWorkspaceConversationPersistence = ({
         (conversation) => conversation.id === conversationId,
       );
       const trimmedMessages = trimConversationMessages(messages);
+      const draftInputBlocks = Array.isArray(currentInputBlocks)
+        ? currentInputBlocks.map((block) => ({ ...block }))
+        : [];
+      const hasDraft =
+        draftInputBlocks.length > 0 &&
+        draftInputBlocks.some((block) =>
+          block.type === "text"
+            ? Boolean(String(block.text || "").trim())
+            : Boolean(block.file),
+        );
+      const nextDraft = hasDraft
+        ? {
+            inputBlocks: draftInputBlocks,
+            creationMode,
+            quickSkill: activeQuickSkill,
+          }
+        : undefined;
 
       if (existingIndex === -1) {
-        const firstUserMessage = messages.find((message) => message.role === "user");
-        let title = "新对话";
-        if (firstUserMessage) {
-          title =
-            firstUserMessage.text.slice(0, 15) +
-            (firstUserMessage.text.length > 15 ? "..." : "");
-        } else if (projectTitle !== "未命名") {
-          title = projectTitle;
-        }
-
         updated.push({
           id: conversationId,
-          title,
+          title: derivePersistedConversationTitle(
+            messages,
+            projectTitle,
+            nextDraft,
+          ),
           messages: trimmedMessages,
           createdAt: Date.now(),
           updatedAt: Date.now(),
+          autoTitle: true,
+          draft: nextDraft,
         });
       } else {
+        const existingConversation = updated[existingIndex];
+        const shouldRefreshTitle =
+          existingConversation.autoTitle !== false ||
+          !String(existingConversation.title || "").trim();
+
         updated[existingIndex] = {
-          ...updated[existingIndex],
+          ...existingConversation,
+          ...(shouldRefreshTitle
+            ? {
+                title: derivePersistedConversationTitle(
+                  messages,
+                  projectTitle,
+                  nextDraft,
+                ),
+                autoTitle: true,
+              }
+            : {}),
           messages: trimmedMessages,
+          draft: nextDraft,
           updatedAt: Date.now(),
         };
       }
 
       return trimConversationsForPersist(updated);
     });
-  }, [messages, workspaceId, activeConversationId, projectTitle, setConversations]);
+  }, [
+    messages,
+    workspaceId,
+    activeConversationId,
+    projectTitle,
+    currentInputBlocks,
+    creationMode,
+    activeQuickSkill,
+    setConversations,
+  ]);
 };

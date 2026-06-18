@@ -77,7 +77,7 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
   const currentTask = useAgentStore(s => s.currentTask);
   const isAgentMode = useAgentStore(s => s.isAgentMode);
   const currentAutoRoleSession = useAgentStore(s => s.currentAutoRoleSession);
-  const { setCurrentTask, setCurrentAutoRoleSession } = useAgentStore(s => s.actions);
+  const { setCurrentTask, setCurrentAutoRoleSession, setChatAbortController } = useAgentStore(s => s.actions);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
@@ -178,6 +178,8 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
 
     isProcessingRef.current = true;
     setIsProcessing(true);
+    const chatAbortController = new AbortController();
+    setChatAbortController(chatAbortController);
 
     let executingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -206,7 +208,10 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       } = await prepareOrchestratorContext({
         message,
         attachments,
-        metadata,
+        metadata: {
+          ...(metadata || {}),
+          signal: chatAbortController.signal,
+        },
         userMessageId,
         projectContext,
         freshDesignSession,
@@ -268,7 +273,10 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       );
       const decision = await resolveRoutingDecision({
         message: messageForExecution,
-        metadata,
+        metadata: {
+          ...(metadata || {}),
+          signal: chatAbortController.signal,
+        },
         attachments,
         updatedContext,
         pinnedAgent,
@@ -330,7 +338,10 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         message,
         messageForExecution,
         attachments,
-        metadata,
+        metadata: {
+          ...(metadata || {}),
+          signal: chatAbortController.signal,
+        },
         uploadedUrls,
         updatedContext,
         projectActions,
@@ -404,6 +415,38 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       setCurrentTask(result);
       return result;
     } catch (error) {
+      if (chatAbortController.signal.aborted) {
+        const currentTaskSnapshot = useAgentStore.getState().currentTask;
+        const cancelledTask: AgentTask = {
+          ...(currentTaskSnapshot || {
+            id: `cancelled-${Date.now()}`,
+            agentId: 'coco',
+            input: {
+              message,
+              attachments,
+              context: projectContext,
+              metadata,
+            },
+            createdAt: Date.now(),
+          }),
+          status: 'completed',
+          output: {
+            message: 'Generation stopped.',
+            runtime: {
+              mode: 'skill-execution',
+              stopReason: 'wait-for-input',
+              stopReasonLabel: 'need-user-input',
+            },
+            error: {
+              message: 'Generation cancelled by user.',
+              code: 'USER_CANCELLED',
+            },
+          },
+          updatedAt: Date.now(),
+        };
+        setCurrentTask(cancelledTask);
+        return cancelledTask;
+      }
       console.error('Agent Pipeline Failure', { stage: 'processMessage', error });
       console.error('[useAgentOrchestrator] Error:', error);
       const errorTask = buildProcessMessageErrorTask(
@@ -414,12 +457,19 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       setCurrentTask(errorTask);
       return errorTask;
     } finally {
+      const wasCancelled = chatAbortController.signal.aborted;
       if (executingTimer) {
         clearTimeout(executingTimer);
       }
       setIsUploadingAttachments(false);
       isProcessingRef.current = false;
       setIsProcessing(false);
+      setChatAbortController(null);
+
+      if (wasCancelled) {
+        messageQueue.current.length = 0;
+        return;
+      }
 
       const next = dequeueNextOrchestratorMessage(messageQueue.current);
       if (next) {
@@ -508,4 +558,3 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
     resetAgent,
   };
 }
-

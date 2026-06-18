@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ClipboardEvent } from 'react';
 import type { InputBlock } from '../../../types';
+import { createInputBlockId } from '../../../stores/agent.store';
 
 type UseInputAreaFileHandlingArgs = {
   creationMode: 'agent' | 'image' | 'video';
@@ -165,7 +166,7 @@ export const useInputAreaFileHandling = ({
   };
 
   const clearAllInputBlocks = () => {
-    const textId = `text-${Date.now()}`;
+    const textId = createInputBlockId('text');
     setInputBlocks([{ id: textId, type: 'text', text: '' }]);
     setActiveBlockId(textId);
     setSelectedChipId(null);

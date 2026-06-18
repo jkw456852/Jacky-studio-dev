@@ -3,13 +3,14 @@ import type { AgentTask, AgentTaskMetadata, AgentType } from "../../../types/age
 import { getAgentInfo } from "../../../services/agents";
 import type {
   CanvasElement,
+  ChatSendOptions,
   ChatMessage,
   GeneratedAsset,
   InputBlock,
   WorkspaceMarkerInfo,
   WorkspaceInputFile,
 } from "../../../types";
-import { useAgentStore } from "../../../stores/agent.store";
+import { createInputBlockId, useAgentStore } from "../../../stores/agent.store";
 import { buildUserChatMessagePayloadFromInputBlocks } from "../chatMessageContent";
 import type { SearchResponse } from "../../../services/research/search.service";
 import {
@@ -40,6 +41,7 @@ type WorkspaceSendOptions = {
   isUploadingAttachments: boolean;
   isTyping: boolean;
   webEnabled: boolean;
+  modelMode: "thinking" | "fast";
   agentSelectionMode: "auto" | "manual";
   pinnedAgentId: AgentType;
   selectedRoleId: string | null;
@@ -83,6 +85,7 @@ type WorkspaceSendOptions = {
 type BuildRequestMetadataParams = {
   topicId: string;
   isWeb: boolean;
+  modelMode: "thinking" | "fast";
   agentSelectionMode: "auto" | "manual";
   pinnedAgentId: AgentType;
   selectedRoleId: string | null;
@@ -225,7 +228,11 @@ const hydrateCanvasAttachmentFile = async (
   elementsSnapshot: CanvasElement[],
   getElementSourceUrl: (el: CanvasElement) => string | undefined,
 ): Promise<WorkspaceInputFile | null> => {
-  if (!(file._canvasElId || file._canvasAutoInsert)) {
+  const previewCandidate = String(file._chipPreviewUrl || "").trim();
+  const canHydrateFromCanvas = Boolean(file._canvasElId || file._canvasAutoInsert);
+  const canHydrateFromPreview = Boolean(previewCandidate);
+
+  if (!canHydrateFromCanvas && !canHydrateFromPreview) {
     return file;
   }
 
@@ -239,7 +246,7 @@ const hydrateCanvasAttachmentFile = async (
       : undefined;
 
   const sourceCandidates = [
-    String(file._chipPreviewUrl || "").trim(),
+    previewCandidate,
     String(
       matchedElement
         ? getElementSourceUrl(matchedElement) || matchedElement.url || ""
@@ -265,6 +272,7 @@ const hydrateCanvasAttachmentFile = async (
 const buildRequestMetadata = ({
   topicId,
   isWeb,
+  modelMode,
   agentSelectionMode,
   pinnedAgentId,
   selectedRoleId,
@@ -315,6 +323,7 @@ const buildRequestMetadata = ({
     allowMainBrainRoleMutation,
     allowMainBrainRolePromotion,
     creationMode: effectiveCreationMode,
+    workflowMode: modelMode === "fast" ? "fast" : "designer",
     preferredAspectRatio:
       effectiveCreationMode === "video" ? videoGenRatio : imageGenRatio,
     preferredImageModel:
@@ -378,6 +387,7 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
     isUploadingAttachments,
     isTyping,
     webEnabled,
+    modelMode,
     agentSelectionMode,
     pinnedAgentId,
     selectedRoleId,
@@ -417,6 +427,7 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
       overrideAttachments?: File[],
       overrideWeb?: boolean,
       skillData?: ChatMessage["skillData"],
+      sendOptions?: ChatSendOptions,
     ) => {
       if (isUploadingAttachments) {
         addMessage({
@@ -505,7 +516,7 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
         // 如果有 overridePrompt 文本，添加为 text block
         if (overridePrompt !== undefined && overridePrompt.trim()) {
           effectiveBlocks.push({
-            id: `override-text-${Date.now()}`,
+            id: createInputBlockId("override-text"),
             type: 'text' as const,
             text: overridePrompt.trim(),
           });
@@ -530,8 +541,34 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           pendingFiles: effectivePendingFiles,
         });
 
+      const userMessageId = Date.now().toString();
+      const normalizedLineageSource = sendOptions?.lineage?.source || "send";
+      const normalizedVersionRootMessageId =
+        String(sendOptions?.lineage?.versionRootMessageId || "").trim() ||
+        userMessageId;
+      const normalizedPreviousVersionMessageId =
+        String(sendOptions?.lineage?.previousVersionMessageId || "").trim() ||
+        undefined;
+      const normalizedTriggerMessageId =
+        String(sendOptions?.lineage?.triggerMessageId || "").trim() || undefined;
+      const normalizedPreviousAssistantMessageId =
+        String(sendOptions?.lineage?.previousAssistantMessageId || "").trim() ||
+        undefined;
+      const nextVersionNumber =
+        normalizedVersionRootMessageId === userMessageId
+          ? 1
+          : 1 +
+            useAgentStore
+              .getState()
+              .messages.filter(
+                (message) =>
+                  message.role === "user" &&
+                  message.lineage?.versionRootMessageId ===
+                    normalizedVersionRootMessageId,
+              ).length;
+
       const userMsg: ChatMessage = {
-        id: Date.now().toString(),
+        id: userMessageId,
         role: "user",
         text,
         attachments: userMessagePayload.attachments,
@@ -539,6 +576,13 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
         inlineParts: userMessagePayload.inlineParts,
         timestamp: Date.now(),
         skillData,
+        lineage: {
+          versionRootMessageId: normalizedVersionRootMessageId,
+          previousVersionMessageId: normalizedPreviousVersionMessageId,
+          versionNumber: nextVersionNumber,
+          source: normalizedLineageSource,
+          triggerMessageId: normalizedTriggerMessageId,
+        },
       };
       addMessage(userMsg);
 
@@ -560,11 +604,12 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           researchWebPages,
           researchStatus,
           researchErrorMessage,
-        } = await gatherWorkspaceResearchContext(text, researchMode);
+        } = await gatherWorkspaceResearchContext(text, researchMode, isWeb);
 
         const requestMetadata = buildRequestMetadata({
           topicId: effectiveTopicId,
           isWeb,
+          modelMode,
           agentSelectionMode,
           pinnedAgentId,
           selectedRoleId,
@@ -627,6 +672,8 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
         );
 
         if (result && result.output) {
+          const wasUserCancelled =
+            result.output.error?.code === "USER_CANCELLED";
           const agentInfo = getAgentInfo(result.agentId);
           const derivedImageUrls = collectDerivedImageUrlsFromTask(result);
           const derivedVideoUrls = (result.output.assets || [])
@@ -643,6 +690,15 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
             role: "model",
             text: result.output.message || "Task completed.",
             timestamp: Date.now(),
+            responseToMessageId: userMsg.id,
+            lineage: {
+              versionRootMessageId: normalizedVersionRootMessageId,
+              previousVersionMessageId: normalizedPreviousAssistantMessageId,
+              versionNumber: nextVersionNumber,
+              source: normalizedLineageSource,
+              triggerMessageId:
+                normalizedPreviousAssistantMessageId || normalizedTriggerMessageId,
+            },
             error: result.status === "failed",
             agentData: {
               model: result.agentId,
@@ -657,6 +713,33 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
               preGenerationMessage: result.output.preGenerationMessage,
               postGenerationSummary: result.output.postGenerationSummary,
               suggestions: result.output.adjustments || [],
+              presentation: wasUserCancelled
+                ? {
+                    kind: "execution_record",
+                    statusLabel: "已停止",
+                    detailTitle: "查看执行记录",
+                    detailNotice: "这次生成由你主动停止，已保留上下文与执行记录。",
+                  }
+                : undefined,
+              executionTrace: {
+                status:
+                  result.status === "analyzing" ||
+                  result.status === "executing" ||
+                  result.status === "completed" ||
+                  result.status === "failed"
+                    ? result.status
+                    : "completed",
+                progressMessage: result.progressMessage,
+                progressStep: result.progressStep,
+                totalSteps: result.totalSteps,
+                progressLog: result.progressLog,
+                streamingText: result.streamingText,
+                reasoningText: result.reasoningText,
+                stopReason: result.output.runtime?.stopReason,
+                stopReasonLabel: result.output.runtime?.stopReasonLabel,
+                errorCode: result.output.error?.code,
+                errorMessage: result.output.error?.message,
+              },
               research: buildAgentResearchPayload({
                 researchPayload,
                 researchReferenceImageUrls,
@@ -666,7 +749,7 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
           };
           addMessage(agentMsg);
 
-          if (result.status === "completed") {
+          if (result.status === "completed" && !wasUserCancelled) {
             const memoryCapture = captureMainBrainMemoryFromExchange({
               topicId: effectiveTopicId,
               userMessage: text,
@@ -692,6 +775,15 @@ export function useWorkspaceSend(options: WorkspaceSendOptions) {
             ? "Image processing failed. Please check the upload and try again."
             : "Something went wrong while handling the request. Please try again.",
           timestamp: Date.now(),
+          responseToMessageId: userMsg.id,
+          lineage: {
+            versionRootMessageId: normalizedVersionRootMessageId,
+            previousVersionMessageId: normalizedPreviousAssistantMessageId,
+            versionNumber: nextVersionNumber,
+            source: normalizedLineageSource,
+            triggerMessageId:
+              normalizedPreviousAssistantMessageId || normalizedTriggerMessageId,
+          },
           error: true,
         });
       } finally {

@@ -21,6 +21,7 @@ export async function imageGenSkill(params: ImageGenSkillParams): Promise<string
   return generateImageWithProvider(
     {
       prompt: enhancedPrompt,
+      signal: params.signal,
       providerId: params.providerId,
       aspectRatio: params.aspectRatio,
       imageSize: params.imageSize || '2K',

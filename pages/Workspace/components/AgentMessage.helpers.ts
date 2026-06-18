@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../../../types";
+﻿import type { ChatMessage } from "../../../types";
 
 type AgentData = NonNullable<ChatMessage["agentData"]>;
 type WorkflowSkillCall = NonNullable<AgentData["skillCalls"]>[number];
@@ -113,6 +113,27 @@ const normalizeEscapedNewlines = (value: string): string =>
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n");
 
+const LEGACY_MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/闁圭瑳鍡╂斀濠㈡儼绮剧憴顩?閿涙瓥?/g, "执行失败："],
+  [/閹笛嗩攽婢惰精瑙:锛歖?\s*/g, "执行失败："],
+  [
+    /濞达絿濮峰▓鎴炵▔閹惧磭娼ｉ悹浣瑰礃椤撴悂宕濋埡鍌氼杹闁挎稑鑻惔婊勬媴閻樺啿顥濋柛鎺斿濞撳爼宕ラ崼銉㈠亾閸屾粍鐣卞☉鎾存尭椤?/g,
+    "你的专属设计助手，帮你找到最合适的专家",
+  ],
+  [
+    /娴ｇ姷娈戞稉鎾崇潣鐠佹崘顓搁崝鈺傚閿涘苯搴滄担鐘冲閸掔増娓堕崥鍫モ偓鍌滄畱娑撴挸顔?/g,
+    "你的专属设计助手，帮你找到最合适的专家",
+  ],
+];
+
+export const normalizeLegacyAssistantMessageText = (value: string): string => {
+  let normalized = normalizeEscapedNewlines(value || "");
+  LEGACY_MOJIBAKE_REPLACEMENTS.forEach(([pattern, replacement]) => {
+    normalized = normalized.replace(pattern, replacement);
+  });
+  return normalized;
+};
+
 const VISUAL_ORCHESTRATION_MARKER = "[Visual Orchestration Plan]";
 
 const truncateText = (value: unknown, maxChars: number): string => {
@@ -199,7 +220,7 @@ export const deriveAgentMessageContent = (
 ): { cleanText: string; proposals: AgentMessageProposal[] } => {
   if (message.agentData?.proposals && message.agentData.proposals.length > 0) {
     return {
-      cleanText: message.text,
+      cleanText: normalizeLegacyAssistantMessageText(message.text),
       proposals: message.agentData.proposals.map((proposal) => ({
         id: proposal.id,
         title: proposal.title,
@@ -242,7 +263,7 @@ export const deriveAgentMessageContent = (
   }
 
   return {
-    cleanText: normalizeEscapedNewlines(
+    cleanText: normalizeLegacyAssistantMessageText(
       message.text.replace(proposalRegex, "").trim(),
     ),
     proposals: foundProposals,
@@ -263,7 +284,7 @@ export const deriveAgentMessageImageCards = (
     const matched = successfulImageCalls[index];
     return {
       url,
-      title: matched?.description || matched?.title || `Image ${index + 1}`,
+      title: matched?.description || matched?.title || `鍥剧墖 ${index + 1}`,
     };
   });
 };
@@ -403,7 +424,7 @@ export const deriveAgentMessageResearchView = (
     {
       key: "query",
       label: "构造查询",
-      status: status === "failed" ? "done" : "done",
+      status: "done",
     },
     {
       key: "search",
@@ -430,7 +451,8 @@ export const deriveAgentMessageResearchView = (
     {
       key: "answer",
       label: "整理回答",
-      status: status === "searching" ? "idle" : status === "failed" ? "idle" : "done",
+      status:
+        status === "searching" ? "idle" : status === "failed" ? "idle" : "done",
     },
   ];
 
@@ -467,3 +489,130 @@ export const deriveProposalPrompt = (
     (typeof promptFromSkillCall === "string" ? promptFromSkillCall : "")
   );
 };
+
+const JSON_LIKE_RESPONSE_RE =
+  /^\s*[\[{][\s\S]*"(analysis|skillCalls|preGenerationMessage|postGenerationSummary|message|suggestions)"[\s\S]*[\]}]\s*$/i;
+
+const trimWrappedQuotes = (value: string): string => {
+  const normalized = String(value || "").trim();
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    return normalized.slice(1, -1).trim();
+  }
+  return normalized;
+};
+
+const parseJsonLikeMessagePayload = (
+  value: string,
+): {
+  message: string;
+  analysis: string;
+  preGenerationMessage: string;
+  postGenerationSummary: string;
+  suggestions: string[];
+} | null => {
+  const normalized = normalizeEscapedNewlines(value).trim();
+  if (!normalized || !JSON_LIKE_RESPONSE_RE.test(normalized)) return null;
+
+  try {
+    const parsed = JSON.parse(normalized) as Record<string, unknown>;
+    const suggestions = Array.isArray(parsed?.suggestions)
+      ? parsed.suggestions
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .slice(0, 6)
+      : [];
+
+    return {
+      message: trimWrappedQuotes(String(parsed?.message || "")),
+      analysis: trimWrappedQuotes(String(parsed?.analysis || "")),
+      preGenerationMessage: trimWrappedQuotes(
+        String(parsed?.preGenerationMessage || ""),
+      ),
+      postGenerationSummary: trimWrappedQuotes(
+        String(parsed?.postGenerationSummary || ""),
+      ),
+      suggestions,
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const deriveUserFacingAssistantText = (
+  rawText: string,
+  agentData?: ChatMessage["agentData"],
+): string => {
+  const normalizedText = normalizeLegacyAssistantMessageText(rawText || "").trim();
+  const parsed = parseJsonLikeMessagePayload(normalizedText);
+  if (parsed) {
+    return (
+      parsed.message ||
+      parsed.postGenerationSummary ||
+      trimWrappedQuotes(String(agentData?.postGenerationSummary || "")) ||
+      parsed.preGenerationMessage ||
+      trimWrappedQuotes(String(agentData?.preGenerationMessage || "")) ||
+      ""
+    );
+  }
+
+  return normalizedText;
+};
+
+export const deriveLiveUserFacingText = (
+  streamingText: string,
+  reasoningText: string,
+  progressMessage?: string,
+): string => {
+  const directText = deriveUserFacingAssistantText(streamingText);
+  if (directText) return directText;
+
+  const reasoningPayload = parseJsonLikeMessagePayload(reasoningText);
+  if (reasoningPayload) {
+    return (
+      reasoningPayload.message ||
+      reasoningPayload.postGenerationSummary ||
+      reasoningPayload.preGenerationMessage ||
+      ""
+    );
+  }
+
+  const normalizedProgress = String(progressMessage || "").trim();
+  if (normalizedProgress) return normalizedProgress;
+
+  return "";
+};
+
+export const deriveThinkingSummary = (
+  reasoningText: string,
+  progressMessage?: string,
+): string => {
+  const reasoningPayload = parseJsonLikeMessagePayload(reasoningText);
+  if (reasoningPayload) {
+    const steps = [
+      reasoningPayload.preGenerationMessage,
+      reasoningPayload.message,
+      reasoningPayload.postGenerationSummary,
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    if (steps.length > 0) {
+      return Array.from(new Set(steps)).join("\n");
+    }
+  }
+
+  const normalizedReasoning = normalizeLegacyAssistantMessageText(reasoningText).trim();
+  if (
+    normalizedReasoning &&
+    !JSON_LIKE_RESPONSE_RE.test(normalizedReasoning) &&
+    normalizedReasoning.length <= 280
+  ) {
+    return normalizedReasoning;
+  }
+
+  return String(progressMessage || "").trim();
+};
+

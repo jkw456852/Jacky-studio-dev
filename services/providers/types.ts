@@ -14,6 +14,7 @@ export interface ImageTextPolicy {
 
 export interface ImageGenerationRequest {
   prompt: string;
+  signal?: AbortSignal;
   providerId?: string | null;
   aspectRatio: string;
   imageSize?: '1K' | '2K' | '4K';
@@ -48,6 +49,7 @@ export interface ImageGenerationRequest {
 
 export interface VideoGenerationRequest {
   prompt: string;
+  signal?: AbortSignal;
   providerId?: string | null;
   aspectRatio: string;
   startFrame?: string; // base64

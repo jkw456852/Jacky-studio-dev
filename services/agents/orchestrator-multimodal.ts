@@ -4,6 +4,7 @@ import type {
 } from '../../types/agent.types.ts';
 import { summarizeReferenceSet } from '../topic-memory.ts';
 import { getMemoryKey } from '../topicMemory/key.ts';
+import { getStudioUserAssetApi } from '../runtime-assets/api.ts';
 
 export type OptimizerStatus = 'ok' | 'timeout' | 'fail' | 'skipped';
 
@@ -190,30 +191,49 @@ export const buildExecutionTaskMetadata = ({
   optimizerStatus,
   uploadedUrls,
   resolved,
-}: BuildExecutionTaskMetadataOptions): OrchestratorExecutionMetadata => ({
-  ...(metadata || {}),
-  imageHostProvider: hostProvider,
-  topicId,
-  roleStrategy,
-  roleStrategyReason,
-  roleDraft,
-  rolePromptLabel,
-  rolePromptAddon,
-  topicPinnedContext,
-  taskMode: inferredTaskMode,
-  originalMessage,
-  optimizedMessage,
-  optimizerUsed,
-  optimizerStatus,
-  allReferenceImageUrls: [...uploadedUrls],
-  injectedReferenceImageUrls: [],
-  multimodalContext: {
-    ...(metadata?.multimodalContext || {
-      referenceImageUrls: [],
-    }),
-    referenceImageUrls: resolved.effectiveReferenceUrls,
-    hasReferences: resolved.effectiveReferenceUrls.length > 0,
-    referenceSummary: resolved.referenceSummary,
-    isolateVisualQa: resolved.isolateVisualQa,
-  },
-});
+}: BuildExecutionTaskMetadataOptions): OrchestratorExecutionMetadata => {
+  const selectedRoleId = String(metadata?.selectedRoleId || '').trim();
+  const selectedRole = selectedRoleId
+    ? getStudioUserAssetApi().getRoleById(selectedRoleId)
+    : null;
+  const selectedRoleAddon = String(
+    selectedRole?.promptLayers?.durableRoleAddon || '',
+  ).trim();
+  const mergedRolePromptAddon = [selectedRoleAddon, String(rolePromptAddon || '').trim()]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+  const mergedRolePromptLabel = String(rolePromptLabel || '').trim()
+    ? rolePromptLabel
+    : selectedRoleId
+      ? `selected:${selectedRoleId}`
+      : undefined;
+
+  return {
+    ...(metadata || {}),
+    imageHostProvider: hostProvider,
+    topicId,
+    roleStrategy,
+    roleStrategyReason,
+    roleDraft,
+    rolePromptLabel: mergedRolePromptLabel,
+    rolePromptAddon: mergedRolePromptAddon || undefined,
+    topicPinnedContext,
+    taskMode: inferredTaskMode,
+    originalMessage,
+    optimizedMessage,
+    optimizerUsed,
+    optimizerStatus,
+    allReferenceImageUrls: [...uploadedUrls],
+    injectedReferenceImageUrls: [],
+    multimodalContext: {
+      ...(metadata?.multimodalContext || {
+        referenceImageUrls: [],
+      }),
+      referenceImageUrls: resolved.effectiveReferenceUrls,
+      hasReferences: resolved.effectiveReferenceUrls.length > 0,
+      referenceSummary: resolved.referenceSummary,
+      isolateVisualQa: resolved.isolateVisualQa,
+    },
+  };
+};

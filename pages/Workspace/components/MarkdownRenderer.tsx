@@ -115,10 +115,10 @@ const renderTextBlock = (text: string): React.ReactNode[] => {
       const textVal = heading[2].trim();
       const className =
         level === 1
-          ? 'text-[18px] font-bold text-gray-900 mt-2 mb-2'
+          ? 'mb-1.5 mt-2 text-[17px] font-bold text-gray-900'
           : level === 2
-            ? 'text-[15px] font-semibold text-gray-900 mt-2 mb-1.5'
-            : 'text-[13px] font-semibold text-gray-800 mt-1.5 mb-1';
+            ? 'mb-1 mt-2 text-[14px] font-semibold text-gray-900'
+            : 'mb-1 mt-1.5 text-[12.5px] font-semibold text-gray-800';
       blocks.push(
         <div key={`h-${i}`} className={className}>
           {renderInline(textVal, `h-${i}`)}
@@ -135,7 +135,7 @@ const renderTextBlock = (text: string): React.ReactNode[] => {
         i += 1;
       }
       blocks.push(
-        <ul key={`ul-${i}`} className="mb-2 list-disc pl-5 text-[13px] text-gray-800 space-y-1">
+        <ul key={`ul-${i}`} className="mb-1.5 list-disc space-y-0.5 pl-4.5 text-[12.5px] text-gray-800">
           {items.map((item, idx) => (
             <li key={`uli-${idx}`}>{renderInline(item, `uli-${i}-${idx}`)}</li>
           ))}
@@ -151,7 +151,7 @@ const renderTextBlock = (text: string): React.ReactNode[] => {
         i += 1;
       }
       blocks.push(
-        <ol key={`ol-${i}`} className="mb-2 list-decimal pl-5 text-[13px] text-gray-800 space-y-1">
+        <ol key={`ol-${i}`} className="mb-1.5 list-decimal space-y-0.5 pl-4.5 text-[12.5px] text-gray-800">
           {items.map((item, idx) => (
             <li key={`oli-${idx}`}>{renderInline(item, `oli-${i}-${idx}`)}</li>
           ))}
@@ -167,7 +167,7 @@ const renderTextBlock = (text: string): React.ReactNode[] => {
     }
 
     blocks.push(
-      <p key={`p-${i}`} className="mb-2 text-[13px] leading-[1.65] text-gray-800 whitespace-pre-wrap">
+      <p key={`p-${i}`} className="mb-1.5 whitespace-pre-wrap text-[12.5px] leading-[1.72] text-gray-800">
         {renderInline(paragraph.join(' '), `p-${i}`)}
       </p>
     );
@@ -185,11 +185,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ text, classN
       {segments.map((segment, idx) => {
         if (segment.type === 'code') {
           return (
-            <div key={`code-${idx}`} className="mb-3 overflow-hidden rounded-lg border border-gray-200 bg-gray-950">
+            <div key={`code-${idx}`} className="mb-2.5 overflow-hidden rounded-lg border border-gray-200 bg-gray-950">
               <div className="flex items-center justify-between border-b border-gray-800 px-3 py-1.5 text-[10px] text-gray-300">
                 <span>{segment.lang || 'code'}</span>
               </div>
-              <pre className="max-h-72 overflow-auto px-3 py-2 text-[12px] leading-relaxed text-gray-100">
+              <pre className="max-h-72 overflow-auto px-3 py-2 text-[11.5px] leading-relaxed text-gray-100">
                 <code>{segment.value}</code>
               </pre>
             </div>

@@ -6,11 +6,14 @@
 } from "react";
 import { createChatSession, getBestModelSelection } from "../../../services/gemini";
 import { formatDate, getProject, saveProject } from "../../../services/storage";
-import { useAgentStore } from "../../../stores/agent.store";
+import { createInputBlockId, useAgentStore } from "../../../stores/agent.store";
+import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences";
 import type {
   CanvasElement,
+  ChatSendOptions,
   ChatMessage,
   ConversationSession,
+  InputBlock,
   Marker,
   WorkspaceInputFile,
 } from "../../../types";
@@ -20,6 +23,10 @@ import {
   trimConversationsForPersist,
   type HistoryState,
 } from './workspacePersistence';
+import {
+  isConversationArchived,
+  sortConversationsForSidebar,
+} from "../conversationMeta";
 import {
   listTopicAssetsByTopicId,
   resolveStoredTopicAssetUrl,
@@ -89,6 +96,7 @@ type UseWorkspaceProjectLoaderArgs = {
     overrideAttachments?: File[],
     overrideWeb?: boolean,
     skillData?: ConversationSession["messages"][number]["skillData"],
+    sendOptions?: ChatSendOptions,
   ) => Promise<void>;
   setElements: Dispatch<SetStateAction<CanvasElement[]>>;
 };
@@ -482,6 +490,14 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
   return {
     ...message,
     text: trimLoadText(message.text, SAFE_LOAD_TEXT_LIMIT),
+    feedback:
+      message.feedback === "up" || message.feedback === "down"
+        ? message.feedback
+        : undefined,
+    feedbackUpdatedAt:
+      typeof message.feedbackUpdatedAt === "number"
+        ? message.feedbackUpdatedAt
+        : undefined,
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
     attachmentMetadata:
       attachmentMetadata && attachmentMetadata.length > 0
@@ -496,6 +512,12 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
           videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
           assets: assets.length > 0 ? assets : undefined,
+          proposals: Array.isArray(message.agentData.proposals)
+            ? message.agentData.proposals.slice(0, 8)
+            : undefined,
+          skillCalls: Array.isArray(message.agentData.skillCalls)
+            ? message.agentData.skillCalls.slice(0, 12)
+            : undefined,
           analysis: trimLoadText(message.agentData.analysis, 800) || undefined,
           preGenerationMessage:
             trimLoadText(message.agentData.preGenerationMessage, 600) || undefined,
@@ -508,21 +530,243 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
                 .map((item) => trimLoadText(item, 80))
             : [],
           isGenerating: false,
+          presentation:
+            message.agentData.presentation &&
+            typeof message.agentData.presentation === "object"
+              ? {
+                  ...message.agentData.presentation,
+                  detailNotice: trimLoadText(
+                    message.agentData.presentation.detailNotice,
+                    240,
+                  ),
+                }
+              : undefined,
+          executionTrace:
+            message.agentData.executionTrace &&
+            typeof message.agentData.executionTrace === "object"
+              ? {
+                  ...message.agentData.executionTrace,
+                  progressMessage: trimLoadText(
+                    message.agentData.executionTrace.progressMessage,
+                    200,
+                  ),
+                  progressLog: Array.isArray(
+                    message.agentData.executionTrace.progressLog,
+                  )
+                    ? message.agentData.executionTrace.progressLog
+                        .filter((item): item is string => typeof item === "string")
+                        .slice(-24)
+                        .map((item) => trimLoadText(item, 240))
+                    : undefined,
+                  errorMessage: trimLoadText(
+                    message.agentData.executionTrace.errorMessage,
+                    240,
+                  ),
+                }
+              : undefined,
+          research:
+            message.agentData.research &&
+            typeof message.agentData.research === "object"
+              ? {
+                  ...message.agentData.research,
+                  query: trimLoadText(message.agentData.research.query, 160),
+                  summary: trimLoadText(
+                    message.agentData.research.summary,
+                    220,
+                  ),
+                }
+              : undefined,
+          browserSession:
+            message.agentData.browserSession &&
+            typeof message.agentData.browserSession === "object"
+              ? {
+                  ...message.agentData.browserSession,
+                  summary: trimLoadText(
+                    message.agentData.browserSession.summary,
+                    220,
+                  ),
+                  steps: Array.isArray(message.agentData.browserSession.steps)
+                    ? message.agentData.browserSession.steps.slice(0, 24)
+                    : undefined,
+                }
+              : undefined,
         }
       : undefined,
+  };
+};
+
+const sanitizeLoadedDraftInputBlocks = (
+  blocks: unknown,
+): InputBlock[] | undefined => {
+  if (!Array.isArray(blocks)) {
+    return undefined;
+  }
+
+  const nextBlocks = blocks
+    .slice(0, 24)
+    .map((block, index) => {
+      if (!block || typeof block !== "object") {
+        return null;
+      }
+
+      const rawBlock = block as InputBlock;
+      const normalizedId =
+        trimLoadText(rawBlock.id, 120) || `loaded-draft-${Date.now()}-${index}`;
+
+      if (rawBlock.type === "text") {
+        return {
+          id: normalizedId,
+          type: "text" as const,
+          text: trimLoadText(rawBlock.text, SAFE_LOAD_TEXT_LIMIT),
+        };
+      }
+
+      if (rawBlock.type !== "file" || !rawBlock.file) {
+        return null;
+      }
+
+      const rawFile = rawBlock.file as WorkspaceInputFile;
+      const previewUrl = sanitizePersistableAttachmentPreviewUrl(
+        rawFile._chipPreviewUrl,
+      );
+      const canvasElId = trimLoadText(rawFile._canvasElId, 120) || undefined;
+      const hasRecoverableSource =
+        Boolean(previewUrl) || Boolean(canvasElId) || rawFile._canvasAutoInsert === true;
+
+      if (!hasRecoverableSource) {
+        return null;
+      }
+
+      const nextFile = new File([], trimLoadText(rawFile.name, 160) || "attachment.png", {
+        type: rawFile.type || "image/png",
+        lastModified:
+          typeof rawFile.lastModified === "number" ? rawFile.lastModified : Date.now(),
+      }) as WorkspaceInputFile;
+      nextFile.markerId = trimLoadText(rawFile.markerId, 120) || undefined;
+      nextFile.markerName = trimLoadText(rawFile.markerName, 160) || undefined;
+      nextFile.markerInfo = rawFile.markerInfo
+        ? {
+            ...rawFile.markerInfo,
+            fullImageUrl: getRenderableImageAssetUrl(rawFile.markerInfo.fullImageUrl),
+          }
+        : undefined;
+      nextFile.lastAiAnalysis =
+        trimLoadText(rawFile.lastAiAnalysis, 800) || undefined;
+      nextFile._canvasAutoInsert = rawFile._canvasAutoInsert === true;
+      nextFile._canvasElId = canvasElId;
+      nextFile._canvasWidth =
+        typeof rawFile._canvasWidth === "number" ? rawFile._canvasWidth : undefined;
+      nextFile._canvasHeight =
+        typeof rawFile._canvasHeight === "number" ? rawFile._canvasHeight : undefined;
+      nextFile._canvasW =
+        typeof rawFile._canvasW === "number" ? rawFile._canvasW : undefined;
+      nextFile._canvasH =
+        typeof rawFile._canvasH === "number" ? rawFile._canvasH : undefined;
+      nextFile._chipPreviewUrl = previewUrl;
+      nextFile._attachmentId =
+        trimLoadText(rawFile._attachmentId, 120) || undefined;
+
+      return {
+        id: normalizedId,
+        type: "file" as const,
+        file: nextFile,
+      };
+    })
+    .filter(Boolean) as InputBlock[];
+
+  return nextBlocks.length > 0 ? nextBlocks : undefined;
+};
+
+const sanitizeLoadedConversationDraft = (
+  draft: ConversationSession["draft"] | undefined,
+): ConversationSession["draft"] | undefined => {
+  if (!draft || typeof draft !== "object") {
+    return undefined;
+  }
+
+  const inputBlocks = sanitizeLoadedDraftInputBlocks(draft.inputBlocks);
+  const creationMode =
+    draft.creationMode === "image" ||
+    draft.creationMode === "video" ||
+    draft.creationMode === "agent"
+      ? draft.creationMode
+      : undefined;
+  const quickSkill =
+    draft.quickSkill &&
+    typeof draft.quickSkill === "object" &&
+    trimLoadText(draft.quickSkill.id, 120) &&
+    trimLoadText(draft.quickSkill.name, 120) &&
+    trimLoadText(draft.quickSkill.iconName, 120)
+      ? {
+          id: trimLoadText(draft.quickSkill.id, 120),
+          pluginId: trimLoadText(draft.quickSkill.pluginId, 120) || undefined,
+          name: trimLoadText(draft.quickSkill.name, 120),
+          iconName: trimLoadText(draft.quickSkill.iconName, 120),
+          config:
+            draft.quickSkill.config && typeof draft.quickSkill.config === "object"
+              ? draft.quickSkill.config
+              : undefined,
+        }
+      : undefined;
+
+  if (!inputBlocks && !creationMode && !quickSkill) {
+    return undefined;
+  }
+
+  return {
+    inputBlocks,
+    creationMode,
+    quickSkill,
   };
 };
 
 const clearLoadedMessageGeneratingState = (
   message: ChatMessage,
 ): ChatMessage =>
-  message.agentData?.isGenerating
+  message.agentData?.isGenerating ||
+  message.agentData?.executionTrace?.status === "analyzing" ||
+  message.agentData?.executionTrace?.status === "executing"
     ? {
         ...message,
         agentData: {
           ...message.agentData,
           isGenerating: false,
+          presentation:
+            message.agentData?.executionTrace?.errorCode === "USER_CANCELLED"
+              ? message.agentData.presentation
+              : {
+                  kind:
+                    message.agentData?.presentation?.kind || "execution_record",
+                  statusLabel: "已中断",
+                  detailTitle:
+                    message.agentData?.presentation?.detailTitle ||
+                    "查看执行记录",
+                  detailNotice:
+                    "此记录来自页面刷新前的进行中任务，已保留历史上下文与执行步骤。",
+                },
+          executionTrace: {
+            ...message.agentData?.executionTrace,
+            status:
+              message.agentData?.executionTrace?.errorCode === "USER_CANCELLED"
+                ? "completed"
+                : "failed",
+            progressMessage: undefined,
+            stopReason:
+              message.agentData?.executionTrace?.stopReason || "stalled",
+            stopReasonLabel:
+              message.agentData?.executionTrace?.stopReasonLabel ||
+              "stalled",
+            errorCode:
+              message.agentData?.executionTrace?.errorCode ||
+              "LOAD_INTERRUPTED",
+            errorMessage:
+              message.agentData?.executionTrace?.errorMessage ||
+              LOAD_INTERRUPTED_GENERATION_ERROR,
+          },
         },
+        error: message.agentData?.executionTrace?.errorCode === "USER_CANCELLED"
+          ? false
+          : message.error,
       }
     : message;
 
@@ -692,15 +936,23 @@ const buildLoadedConversations = (
     return { conversations: [], activeConversationId: null };
   }
 
-  const orderedConversations = [...trimmedConversations].sort(
-    (left, right) => (right.updatedAt || 0) - (left.updatedAt || 0),
+  const orderedConversations = sortConversationsForSidebar(
+    trimmedConversations.filter((conversation) => !isConversationArchived(conversation)),
   );
-  const activeConversationId = orderedConversations[0]?.id || null;
+  const fallbackArchivedConversations = sortConversationsForSidebar(
+    trimmedConversations.filter((conversation) => isConversationArchived(conversation)),
+  );
+  const selectableConversations =
+    orderedConversations.length > 0
+      ? orderedConversations
+      : fallbackArchivedConversations;
+  const activeConversationId = selectableConversations[0]?.id || null;
 
   if (!safeMode) {
     return {
       conversations: trimmedConversations.map((conversation) => ({
         ...conversation,
+        draft: sanitizeLoadedConversationDraft(conversation.draft),
         messages: (conversation.messages || []).map(
           clearLoadedMessageGeneratingState,
         ),
@@ -709,10 +961,11 @@ const buildLoadedConversations = (
     };
   }
 
-  const safeConversations = orderedConversations
+  const safeConversations = selectableConversations
     .slice(0, SAFE_LOAD_CONVERSATION_LIMIT)
     .map((conversation) => ({
       ...conversation,
+      draft: sanitizeLoadedConversationDraft(conversation.draft),
       messages: (conversation.messages || [])
         .slice(-SAFE_LOAD_ACTIVE_MESSAGE_LIMIT)
         .map(sanitizeLoadedMessage),
@@ -942,7 +1195,7 @@ export const useWorkspaceProjectLoader = ({
         setElementsSynced([]);
         setMarkersSynced([]);
         setConversations([]);
-        setProjectTitle("Untitled");
+        setProjectTitle("未命名项目");
         setHistory([{ elements: [], markers: [] }]);
         setHistoryStep(0);
         setSelectedElementId(null);
@@ -982,7 +1235,14 @@ export const useWorkspaceProjectLoader = ({
             if (runtimeElements.length > 0) {
               setElementsSynced(runtimeElements);
             }
-            if (project.title) setProjectTitle(project.title);
+            const normalizedProjectTitle = String(project.title || "").trim();
+            if (normalizedProjectTitle) {
+              setProjectTitle(
+                normalizedProjectTitle.toLowerCase() === "untitled"
+                  ? "未命名项目"
+                  : normalizedProjectTitle,
+              );
+            }
             if (project.conversations && project.conversations.length > 0) {
               const loadedConversationState = buildLoadedConversations(
                 project.conversations,
@@ -998,9 +1258,21 @@ export const useWorkspaceProjectLoader = ({
                 useAgentStore
                   .getState()
                   .actions.setMessages(activeConversation.messages || []);
+                setInputBlocks(
+                  activeConversation.draft?.inputBlocks?.length
+                    ? activeConversation.draft.inputBlocks
+                    : [{ id: "init", type: "text", text: "" }],
+                );
+                setCreationMode?.(activeConversation.draft?.creationMode || "agent");
+                setActiveQuickSkillPreference(
+                  activeConversation.draft?.quickSkill || null,
+                );
               }
             } else {
               setActiveConversationId(createConversationId());
+              setInputBlocks([{ id: "init", type: "text", text: "" }]);
+              setCreationMode?.("agent");
+              setActiveQuickSkillPreference(null);
             }
             setHistory([
               {
@@ -1020,7 +1292,7 @@ export const useWorkspaceProjectLoader = ({
             setPan({ x: 0, y: 0 });
             await saveProject({
               id,
-              title: "Untitled",
+              title: "未命名项目",
               updatedAt: formatDate(Date.now()),
               elements: [],
               markers: [],
@@ -1061,12 +1333,12 @@ export const useWorkspaceProjectLoader = ({
         if (locationState.initialAttachments) {
           locationState.initialAttachments.forEach((file, index) => {
             blocks.push({
-              id: `file-${Date.now()}-${index}`,
+              id: createInputBlockId("file"),
               type: "file",
               file,
             });
             blocks.push({
-              id: `text-${Date.now()}-${index}`,
+              id: createInputBlockId("text"),
               type: "text",
               text: "",
             });
@@ -1078,7 +1350,7 @@ export const useWorkspaceProjectLoader = ({
             blocks[blocks.length - 1].text = locationState.initialPrompt;
           } else {
             blocks.push({
-              id: `text-${Date.now()}`,
+              id: createInputBlockId("text"),
               type: "text",
               text: locationState.initialPrompt,
             });

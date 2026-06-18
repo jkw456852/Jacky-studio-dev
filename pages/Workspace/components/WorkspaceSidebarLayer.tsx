@@ -1,5 +1,4 @@
 import React, { lazy, memo, Suspense } from "react";
-import { AnimatePresence } from "framer-motion";
 import type { AssistantSidebarProps } from "./AssistantSidebar";
 import { WorkspaceLeftPanel } from "./WorkspaceLeftPanel";
 
@@ -28,9 +27,7 @@ export const WorkspaceSidebarLayer: React.FC<WorkspaceSidebarLayerProps> = memo(
     <>
       {!isAssistantFullscreen ? <WorkspaceLeftPanel {...leftPanel} /> : null}
       <Suspense fallback={null}>
-        <AnimatePresence>
-          {shouldShowAssistant ? <AssistantSidebar {...assistant} /> : null}
-        </AnimatePresence>
+        {shouldShowAssistant ? <AssistantSidebar {...assistant} /> : null}
       </Suspense>
     </>
   );

@@ -204,6 +204,7 @@ import {
 import {
   splitEcommerceImageAnalysisTextFieldList,
 } from "../utils/ecommerce-image-analysis";
+import { getActiveQuickSkillPreference } from "../services/runtime-assets/preferences";
 import { buildEcommerceTextLayerPlan } from "../utils/ecommerce-text-layer-plan";
 import type { DesignTaskMode } from "../types/common";
 import type {
@@ -1348,7 +1349,7 @@ const Workspace: React.FC = () => {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const textEditDraftRef = useRef<Record<string, string>>({});
   const pendingSelectAllTextIdRef = useRef<string | null>(null);
-  const [projectTitle, setProjectTitle] = useState("Untitled");
+  const [projectTitle, setProjectTitle] = useState("未命名项目");
   const [nodeInteractionMode, setNodeInteractionMode] =
     useState<WorkspaceNodeInteractionMode>("branch");
   const nodeInteractionModeRef = useRef(nodeInteractionMode);
@@ -1543,6 +1544,7 @@ const Workspace: React.FC = () => {
   const inputBlocks = composerState.inputBlocks;
   const activeBlockId = composerState.activeBlockId;
   const selectionIndex = composerState.selectionIndex;
+  const selectionRect = composerState.selectionRect;
   const [selectedChipId, setSelectedChipId] = useState<string | null>(null); // For arrow key chip selection
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [hoveredChipId, setHoveredChipId] = useState<string | null>(null); // For hover preview
@@ -2770,6 +2772,10 @@ const Workspace: React.FC = () => {
         file._canvasWidth = targetEl.width;
         file._canvasHeight = targetEl.height;
         file._attachmentId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        file._pendingPreviewRect = selectionRect || undefined;
+        file._pendingAnchorBlockId = activeBlockId || undefined;
+        file._pendingAnchorIndex =
+          typeof selectionIndex === "number" ? selectionIndex : undefined;
 
         nextPendingAttachments.push({
           id: file._attachmentId!,
@@ -2801,6 +2807,9 @@ const Workspace: React.FC = () => {
     setPendingAttachments,
     selectionAttachmentSyncTimerRef,
     nodeInteractionMode,
+    activeBlockId,
+    selectionIndex,
+    selectionRect,
   ]);
 
   useEffect(() => {
@@ -4342,6 +4351,7 @@ const Workspace: React.FC = () => {
     isUploadingAttachments,
     isTyping,
     webEnabled,
+    modelMode,
     agentSelectionMode,
     pinnedAgentId,
     selectedRoleId,
@@ -4494,6 +4504,9 @@ const Workspace: React.FC = () => {
     workspaceId: id,
     activeConversationId,
     projectTitle,
+    currentInputBlocks: inputBlocks,
+    creationMode,
+    activeQuickSkill: getActiveQuickSkillPreference() || undefined,
     setConversations,
   });
 

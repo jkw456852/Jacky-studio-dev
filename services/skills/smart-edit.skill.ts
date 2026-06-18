@@ -52,6 +52,7 @@ export interface SmartEditParams {
   editType?: SmartEditType;
   maskImage?: string;
   aspectRatio?: string;
+  signal?: AbortSignal;
   parameters?: Record<string, any>;
 }
 
@@ -421,6 +422,7 @@ export async function smartEditSkill(params: SmartEditParams): Promise<string | 
       const editConfig = {
         sourceImage: params.sourceUrl || '',
         maskImage: params.maskImage,
+        signal: params.signal,
         prompt: `${params.parameters?.preservePrompt || 'Preserve identity, layout, lighting, materials, and all untouched areas.'} ${finalPrompt}`.trim(),
         model: effectiveEditModel,
         aspectRatio: resolvedAspectRatio,
@@ -455,6 +457,7 @@ export async function smartEditSkill(params: SmartEditParams): Promise<string | 
       result = await generateImageWithProvider(
         {
           prompt: finalPrompt,
+          signal: params.signal,
           providerId: resolvedProviderId,
           aspectRatio: resolvedAspectRatio,
           exactSize: resolvedExactSize,

@@ -34,6 +34,7 @@ export const geminiImageProvider: ImageProvider = {
   async generateImage(request: ImageGenerationRequest, model: string): Promise<string | null> {
     return generateImage({
       prompt: request.prompt,
+      signal: request.signal,
       model: model as any,
       providerId: request.providerId,
       aspectRatio: request.aspectRatio,
@@ -75,6 +76,7 @@ export const geminiVideoProvider: VideoProvider = {
   async generateVideo(request: VideoGenerationRequest, model: string): Promise<string | null> {
     return generateVideo({
       prompt: request.prompt,
+      signal: request.signal,
       model: model as any,
       providerId: request.providerId,
       aspectRatio: request.aspectRatio,

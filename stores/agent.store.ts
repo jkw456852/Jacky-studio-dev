@@ -21,10 +21,23 @@ import {
 type VideoGenDuration = NonNullable<CanvasElement['genDuration']>;
 type VideoGenQuality = NonNullable<CanvasElement['genQuality']>;
 
+let inputBlockIdCounter = 0;
+
+export const createInputBlockId = (prefix: string = 'text'): string => {
+  inputBlockIdCounter += 1;
+  return `${prefix}-${Date.now()}-${inputBlockIdCounter.toString(36)}`;
+};
+
 export interface AgentComposerState {
   inputBlocks: InputBlock[];
   activeBlockId: string;
   selectionIndex: number | null;
+  selectionRect: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null;
   pendingAttachments: AttachmentItem[];
   confirmedAttachments: AttachmentItem[];
 }
@@ -97,10 +110,10 @@ const appendFileBlockToInput = (
   file: WorkspaceInputFile,
 ) => {
   if (state.inputBlocks.length === 0) {
-    state.inputBlocks.push({ id: `text-${Date.now()}`, type: 'text', text: '' });
+    state.inputBlocks.push({ id: createInputBlockId('text'), type: 'text', text: '' });
   }
 
-  const fileBlock: InputBlock = { id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'file', file };
+  const fileBlock: InputBlock = { id: createInputBlockId('file'), type: 'file', file };
   const lastIndex = state.inputBlocks.length - 1;
   const lastBlock = state.inputBlocks[lastIndex];
 
@@ -108,7 +121,7 @@ const appendFileBlockToInput = (
     const lastText = lastBlock.text || '';
 
     if (lastText.length > 0) {
-      const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+      const textBlock: InputBlock = { id: createInputBlockId('text'), type: 'text', text: '' };
       state.inputBlocks.push(fileBlock, textBlock);
       state.activeBlockId = textBlock.id;
       state.selectionIndex = 0;
@@ -119,7 +132,7 @@ const appendFileBlockToInput = (
     state.activeBlockId = lastBlock.id;
     state.selectionIndex = 0;
   } else {
-    const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+    const textBlock: InputBlock = { id: createInputBlockId('text'), type: 'text', text: '' };
     state.inputBlocks.push(fileBlock, textBlock);
     state.activeBlockId = textBlock.id;
     state.selectionIndex = 0;
@@ -137,8 +150,8 @@ const insertFileBlockAtSelection = (
   );
 
   if (activeIndex === -1) {
-    const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
-    const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+    const fileBlock: InputBlock = { id: createInputBlockId('file'), type: 'file', file };
+    const textBlock: InputBlock = { id: createInputBlockId('text'), type: 'text', text: '' };
     state.inputBlocks.push(fileBlock, textBlock);
     state.activeBlockId = textBlock.id;
     state.selectionIndex = 0;
@@ -152,11 +165,11 @@ const insertFileBlockAtSelection = (
     const idx = state.selectionIndex !== null ? state.selectionIndex : text.length;
     const preText = text.slice(0, idx);
     const postText = text.slice(idx);
-    const newTextBlockId = `text-${Date.now() + 1}`;
+    const newTextBlockId = createInputBlockId('text');
 
     const newBlocks: InputBlock[] = [
       { ...activeBlock, text: preText },
-      { id: `file-${Date.now()}`, type: 'file', file },
+      { id: createInputBlockId('file'), type: 'file', file },
       { id: newTextBlockId, type: 'text', text: postText },
     ];
 
@@ -166,8 +179,8 @@ const insertFileBlockAtSelection = (
     return;
   }
 
-  const fileBlock: InputBlock = { id: `file-${Date.now()}`, type: 'file', file };
-  const textBlock: InputBlock = { id: `text-${Date.now() + 1}`, type: 'text', text: '' };
+  const fileBlock: InputBlock = { id: createInputBlockId('file'), type: 'file', file };
+  const textBlock: InputBlock = { id: createInputBlockId('text'), type: 'text', text: '' };
   state.inputBlocks.push(fileBlock, textBlock);
   state.activeBlockId = textBlock.id;
   state.selectionIndex = 0;
@@ -175,13 +188,14 @@ const insertFileBlockAtSelection = (
 
 // ─── Pure helper: normalize input blocks ───
 export function normalizeInputBlocks(blocks: InputBlock[]): InputBlock[] {
-  if (blocks.length === 0) return [{ id: `text-${Date.now()}`, type: 'text', text: '' }];
+  if (blocks.length === 0) return [{ id: createInputBlockId('text'), type: 'text', text: '' }];
   const result: InputBlock[] = [];
+  const seenIds = new Set<string>();
   for (const block of blocks) {
     const last = result[result.length - 1];
 
     if (block.type === 'file' && last?.type === 'file') {
-      result.push({ id: `text-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'text', text: '' });
+      result.push({ id: createInputBlockId('text'), type: 'text', text: '' });
     }
 
     if (block.type === 'text') {
@@ -191,10 +205,16 @@ export function normalizeInputBlocks(blocks: InputBlock[]): InputBlock[] {
         continue;
       }
     }
-    result.push({ ...block });
+    const candidateId = String(block.id || '').trim();
+    const nextBlockId =
+      candidateId && !seenIds.has(candidateId)
+        ? candidateId
+        : createInputBlockId(block.type === 'file' ? 'file' : 'text');
+    seenIds.add(nextBlockId);
+    result.push({ ...block, id: nextBlockId });
   }
   if (result[result.length - 1]?.type === 'file') {
-    result.push({ id: `text-${Date.now()}`, type: 'text', text: '' });
+    result.push({ id: createInputBlockId('text'), type: 'text', text: '' });
   }
   return result;
 }
@@ -212,6 +232,7 @@ interface AgentState {
 
   // 聊天状态
   isTyping: boolean;
+  chatAbortController: AbortController | null;
 
   // 模型配置
   modelMode: 'thinking' | 'fast';
@@ -270,6 +291,7 @@ interface AgentState {
     updateInputBlock: (id: string, updates: Partial<InputBlock>) => void;
     setActiveBlockId: (id: string) => void;
     setSelectionIndex: (index: number | null) => void;
+    setSelectionRect: (rect: AgentComposerState['selectionRect']) => void;
     insertInputFile: (file: File) => void;
     appendInputFile: (file: File) => void;
     setPendingAttachments: (attachments: AttachmentItem[]) => void;
@@ -279,6 +301,8 @@ interface AgentState {
     clearPendingAttachments: () => void;
 
     setIsTyping: (typing: boolean) => void;
+    setChatAbortController: (controller: AbortController | null) => void;
+    cancelChatGeneration: () => void;
 
     setModelMode: (mode: 'thinking' | 'fast') => void;
     setWebEnabled: (enabled: boolean) => void;
@@ -340,11 +364,13 @@ const initialState: Omit<AgentState, 'actions'> = {
     inputBlocks: [{ id: 'init', type: 'text' as const, text: '' }],
     activeBlockId: 'init',
     selectionIndex: null,
+    selectionRect: null,
     pendingAttachments: [] as AttachmentItem[],
     confirmedAttachments: [] as AttachmentItem[],
   },
 
   isTyping: false,
+  chatAbortController: null,
 
   modelMode: 'fast' as const,
   webEnabled: false,
@@ -413,7 +439,19 @@ export const useAgentStore = create<AgentState>()(
           if (state.currentTask?.id !== task.id) {
             log = newMsg ? [newMsg] : [];
           }
-          state.currentTask = { ...task, progressLog: log };
+          state.currentTask = {
+            ...state.currentTask,
+            ...task,
+            progressLog: log,
+            streamingText:
+              typeof task.streamingText === "string"
+                ? task.streamingText
+                : state.currentTask?.streamingText || "",
+            reasoningText:
+              typeof task.reasoningText === "string"
+                ? task.reasoningText
+                : state.currentTask?.reasoningText || "",
+          };
         }),
 
         addMessage: (message) => set((state) => {
@@ -503,7 +541,7 @@ export const useAgentStore = create<AgentState>()(
           } else {
             state.composer.inputBlocks.splice(idx, 1);
             if (state.composer.inputBlocks.length === 0) {
-              state.composer.inputBlocks.push({ id: `text-${Date.now()}`, type: 'text', text: '' });
+              state.composer.inputBlocks.push({ id: createInputBlockId('text'), type: 'text', text: '' });
             }
           }
 
@@ -523,6 +561,9 @@ export const useAgentStore = create<AgentState>()(
         }),
         setSelectionIndex: (index) => set((state) => {
           state.composer.selectionIndex = index;
+        }),
+        setSelectionRect: (rect) => set((state) => {
+          state.composer.selectionRect = rect;
         }),
 
         insertInputFile: (file) => set((state) => {
@@ -567,6 +608,15 @@ export const useAgentStore = create<AgentState>()(
         }),
 
         setIsTyping: (typing) => set({ isTyping: typing }),
+        setChatAbortController: (controller) => set({ chatAbortController: controller }),
+        cancelChatGeneration: () => set((state) => {
+          const controller = state.chatAbortController;
+          if (controller && !controller.signal.aborted) {
+            controller.abort();
+          }
+          state.chatAbortController = null;
+          state.isTyping = false;
+        }),
 
         setModelMode: (mode) => set({ modelMode: mode }),
         setWebEnabled: (enabled) => set({ webEnabled: enabled }),

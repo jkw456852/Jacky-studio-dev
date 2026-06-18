@@ -1,6 +1,6 @@
-import React from 'react';
-import { useAgentStore } from '../../../stores/agent.store';
-import type { ChatMessage, InputBlock, Marker } from '../../../types';
+﻿import React from 'react';
+import type { ChatMessage, ChatSendOptions, InputBlock, Marker } from '../../../types';
+import { createInputBlockId } from '../../../stores/agent.store';
 import { InputAreaFileBlock } from './InputAreaFileBlock';
 import { InputAreaPendingAttachments } from './InputAreaPendingAttachments';
 
@@ -44,6 +44,7 @@ const setCECursorPos = (el: HTMLElement, pos: number) => {
 type InputAreaEditorProps = {
   creationMode: 'agent' | 'image' | 'video';
   agentPlaceholder?: string;
+  archivedReadOnly?: boolean;
   inputBlocks: InputBlock[];
   markers: Marker[];
   pendingAttachments: Array<{ id: string; file: File }>;
@@ -66,14 +67,24 @@ type InputAreaEditorProps = {
   updateInputBlock: (id: string, updates: Partial<InputBlock>) => void;
   setActiveBlockId: (id: string) => void;
   setSelectionIndex: (index: number | null) => void;
+  setSelectionRect: (
+    rect: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+    } | null,
+  ) => void;
   setInputBlocks: (blocks: InputBlock[]) => void;
   handleSend: (
     overridePrompt?: string,
     overrideAttachments?: File[],
     overrideWeb?: boolean,
     skillData?: ChatMessage['skillData'],
+    sendOptions?: ChatSendOptions,
   ) => Promise<void>;
   sendSkill?: ChatMessage['skillData'];
+  onClearSendSkill?: () => void;
   removeInputBlock: (id: string) => void;
   removePendingAttachment: (id: string) => void;
   setEditingMarkerId: (id: string | null) => void;
@@ -83,6 +94,7 @@ type InputAreaEditorProps = {
 export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   creationMode,
   agentPlaceholder,
+  archivedReadOnly = false,
   inputBlocks,
   markers,
   pendingAttachments,
@@ -102,16 +114,92 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   updateInputBlock,
   setActiveBlockId,
   setSelectionIndex,
+  setSelectionRect,
   setInputBlocks,
   handleSend,
   sendSkill,
+  onClearSendSkill,
   removeInputBlock,
   removePendingAttachment,
   setEditingMarkerId,
   setEditingMarkerLabel,
 }) => {
+  const hasTypedText = inputBlocks.some(
+    (block) => block.type === 'text' && (block.text || '').trim().length > 0,
+  );
+  const hasAttachedFiles = inputBlocks.some((block) => block.type === 'file' && block.file);
+  const showComposerHint =
+    !archivedReadOnly && !hasTypedText && !hasAttachedFiles && pendingAttachments.length === 0;
+
+  const composerPlaceholder =
+    creationMode === 'agent'
+      ? sendSkill?.id === 'ecom-oneclick-workflow'
+        ? '先说商品、目标和约束，我会按电商工作流继续补问并推进。'
+        : sendSkill?.id === 'clothing-studio-workflow'
+          ? '先说服饰图、风格目标和限制条件，我会按服饰工作流继续推进。'
+          : sendSkill?.id === 'cn-detail-page'
+            ? '先说商品、卖点和详情页目标，我会按中文详情页流程继续拆解。'
+            : sendSkill?.id === 'jkai-oneclick'
+              ? '先说你要的结果和参考方向，我会按 One Click 流程继续推进。'
+              : sendSkill?.id === 'autonomous-main-brain'
+                ? '描述目标、上下文和限制条件，我会自动选择合适流程推进。'
+                : agentPlaceholder || '告诉助手要检查、修改或继续推进的下一步。'
+      : creationMode === 'image'
+        ? '描述画面、风格、构图和必须保留的关键细节。'
+        : '描述场景、镜头运动、节奏和时长要求。';
+  const skillHintVisible = creationMode === 'agent' && Boolean(sendSkill?.name);
+  const inputFlowRef = React.useRef<HTMLDivElement | null>(null);
+  const baseComposerHeight = showComposerHint ? 96 : 84;
+  const maxComposerHeight = baseComposerHeight * 2;
+
+  const captureSelectionAnchorRect = (el: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!el.contains(range.startContainer)) return null;
+    const nextRange = range.cloneRange();
+    const rects = nextRange.getClientRects();
+    const rect =
+      rects.length > 0
+        ? rects[0]
+        : nextRange.getBoundingClientRect?.() || null;
+    if (!rect || (!rect.width && !rect.height)) return null;
+    const flowRect = inputFlowRef.current?.getBoundingClientRect();
+    if (!flowRect) return null;
+    return {
+      left: rect.left - flowRect.left,
+      top: rect.top - flowRect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  };
+
+  const syncComposerHeight = React.useCallback(() => {
+    const el = inputFlowRef.current;
+    if (!el) return;
+
+    el.style.height = 'auto';
+    const nextHeight = Math.max(
+      baseComposerHeight,
+      Math.min(el.scrollHeight, maxComposerHeight),
+    );
+    el.style.height = `${nextHeight}px`;
+  }, [baseComposerHeight, maxComposerHeight]);
+
+  React.useLayoutEffect(() => {
+    syncComposerHeight();
+  }, [
+    syncComposerHeight,
+    creationMode,
+    inputBlocks.length,
+    pendingAttachments.length,
+    sendSkill?.id,
+    sendSkill?.name,
+    showComposerHint,
+  ]);
+
   const moveCaretToLeftOfFirstChip = () => {
-    const textId = `text-${Date.now()}`;
+    const textId = createInputBlockId('text');
     setInputBlocks([{ id: textId, type: 'text', text: '' }, ...inputBlocks]);
     setActiveBlockId(textId);
     setSelectedChipId(null);
@@ -127,6 +215,7 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   const syncSelectionToStore = (el: HTMLElement, blockId: string) => {
     setActiveBlockId(blockId);
     setSelectionIndex(getCECursorPos(el));
+    setSelectionRect(captureSelectionAnchorRect(el));
   };
 
   const scheduleSelectionSync = (el: HTMLElement | null, blockId: string) => {
@@ -139,8 +228,14 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
 
   return (
     <div
-      className="px-3 pt-1.5 pb-1.5 cursor-text transition-all"
+      className={`px-4 pb-1.5 pt-3 transition-all ${
+        archivedReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-text'
+      }`}
       onKeyDownCapture={(event) => {
+        if (archivedReadOnly) {
+          event.preventDefault();
+          return;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
           event.preventDefault();
           const selection = window.getSelection();
@@ -156,38 +251,81 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
         }
       }}
       onMouseDown={(event) => {
+        if (archivedReadOnly) {
+          event.preventDefault();
+          return;
+        }
         if (isAllInputSelected) setIsAllInputSelected(false);
         commitPendingAttachments();
         const target = event.target as HTMLElement;
-        if (target.closest('[id^="file-chip-"]') || target.closest('[id^="marker-chip-"]')) return;
+        if (target.closest('[id^="file-chip-"]') || target.closest('[id^="marker-chip-"]')) {
+          return;
+        }
         selectLatestCanvasChip();
       }}
       onClick={(event) => {
+        if (archivedReadOnly) {
+          event.preventDefault();
+          return;
+        }
         if (isAllInputSelected) setIsAllInputSelected(false);
         const target = event.target as HTMLElement;
         if (target.closest('[id^="input-block-"]')) return;
-        if (target.closest('[id^="file-chip-"]') || target.closest('[id^="marker-chip-"]')) return;
+        if (target.closest('[id^="file-chip-"]') || target.closest('[id^="marker-chip-"]')) {
+          return;
+        }
 
         const clickedContainer = target === event.currentTarget;
         const clickedFlowBackground = target.classList.contains('input-flow-container');
         if (!clickedContainer && !clickedFlowBackground) return;
 
         const lastText = inputBlocks.filter((block) => block.type === 'text').pop();
-        const targetId = lastText?.id || inputBlocks[inputBlocks.length - 1].id;
+        const targetId = lastText?.id || inputBlocks[inputBlocks.length - 1]?.id;
+        if (!targetId) return;
         const el = document.getElementById(`input-block-${targetId}`);
         el?.focus();
       }}
     >
       <div
-        className="input-flow-container flex flex-wrap items-start content-start gap-[2px] pt-2 min-h-[80px] max-h-[200px] overflow-y-auto pr-1"
+        ref={inputFlowRef}
+        className={`input-flow-container custom-scrollbar relative flex w-full flex-wrap items-start content-start gap-1 overflow-y-auto px-2 pb-3.5 pr-2 pt-1.5 transition-[height] duration-150 ${
+          showComposerHint ? 'min-h-[96px]' : 'min-h-[84px]'
+        }`}
         style={{
-          minHeight: '80px',
-          maxHeight: '200px',
+          minHeight: `${baseComposerHeight}px`,
+          maxHeight: `${maxComposerHeight}px`,
           overflowY: 'auto',
           wordBreak: 'break-word',
-          lineHeight: '22px',
+          lineHeight: '26px',
         }}
       >
+        {skillHintVisible ? (
+          <div
+            data-active-skill-hint={sendSkill?.id || 'active-skill'}
+            className="mb-1.5 inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-50/92 pl-[3px] pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="inline-flex h-6 items-center rounded-full bg-white px-2.5 text-[10px] font-semibold tracking-[0.08em] text-slate-400">
+                工作流
+              </span>
+              <div className="truncate text-[12px] font-semibold text-slate-700">
+                {sendSkill?.name}
+              </div>
+            </div>
+            <button
+              type="button"
+              data-clear-active-skill
+              onClick={(event) => {
+                event.stopPropagation();
+                onClearSendSkill?.();
+              }}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-[11px] font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"
+              aria-label="清除当前技能"
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
         {inputBlocks.map((block) => {
           if (block.type === 'file' && block.file) {
             return (
@@ -228,32 +366,31 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
           const hasText = (block.text || '').trim().length > 0;
           const placeholder =
             isLastTextBlock && textBlocks.length <= 1 && pendingAttachments.length === 0
-              ? creationMode === 'agent'
-                ? agentPlaceholder || '请输入你的目标或想法'
-                : '今天我们要创作什么'
+              ? composerPlaceholder
               : '';
 
           return (
             <span
               key={block.id}
               id={`input-block-${block.id}`}
-              contentEditable
+              contentEditable={!archivedReadOnly}
               suppressContentEditableWarning
-              className={`ce-placeholder border-none outline-none text-sm ${
+              className={`ce-placeholder border-none outline-none text-[15px] ${
                 isAllInputSelected && hasText
-                  ? 'bg-blue-100 text-blue-900 rounded px-0.5'
-                  : 'bg-transparent text-gray-800'
+                  ? 'rounded px-0.5 bg-blue-100 text-blue-900'
+                  : 'bg-transparent text-slate-600'
               }`}
               data-placeholder={placeholder}
               style={{
                 display: 'inline-block',
                 verticalAlign: 'top',
-                lineHeight: '22px',
+                lineHeight: '26px',
                 whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                caretColor: '#111827',
-                minWidth: '4px',
-                margin: '0 2px',
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                caretColor: '#0f172a',
+                minWidth: '8px',
+                margin: '1px 2px',
                 flex: isLastTextBlock
                   ? pendingAttachments.length > 0
                     ? '0 1 auto'
@@ -261,7 +398,11 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
                   : '0 1 auto',
               }}
               ref={(el) => {
-                if (el && document.activeElement !== el && el.textContent !== (block.text || '')) {
+                if (
+                  el &&
+                  document.activeElement !== el &&
+                  el.textContent !== (block.text || '')
+                ) {
                   el.textContent = block.text || '';
                 }
               }}
@@ -270,10 +411,12 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
                 updateInputBlock(block.id, { text: event.currentTarget.textContent || '' });
                 if (selectedChipId) setSelectedChipId(null);
                 scheduleSelectionSync(event.currentTarget, block.id);
+                requestAnimationFrame(syncComposerHeight);
               }}
               onPaste={(event) => {
                 handleEditorPaste(event, block.id);
                 scheduleSelectionSync(event.currentTarget, block.id);
+                requestAnimationFrame(syncComposerHeight);
               }}
               onFocus={(event) => {
                 commitPendingAttachments();
@@ -292,6 +435,10 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
               }}
               onBlur={() => setIsInputFocused(false)}
               onKeyDown={(event) => {
+                if (archivedReadOnly) {
+                  event.preventDefault();
+                  return;
+                }
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   handleSend(undefined, undefined, undefined, sendSkill);
@@ -300,7 +447,16 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
 
                 if (
                   selectedChipId &&
-                  !['ArrowLeft', 'ArrowRight', 'Backspace', 'Delete', 'Shift', 'Control', 'Alt', 'Meta'].includes(event.key)
+                  ![
+                    'ArrowLeft',
+                    'ArrowRight',
+                    'Backspace',
+                    'Delete',
+                    'Shift',
+                    'Control',
+                    'Alt',
+                    'Meta',
+                  ].includes(event.key)
                 ) {
                   setSelectedChipId(null);
                 }

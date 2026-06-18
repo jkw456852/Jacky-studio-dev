@@ -156,6 +156,7 @@ export async function generateImageWithProvider(
     const { generateImage } = await import('../gemini');
     return generateImage({
       prompt: request.prompt,
+      signal: request.signal,
       model: resolvedModel,
       providerId,
       aspectRatio: request.aspectRatio,

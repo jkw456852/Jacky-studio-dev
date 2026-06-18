@@ -29,6 +29,26 @@ export type WorkspaceSendResearchContextResult = {
   researchErrorMessage?: string;
 };
 
+const isExtractableResearchUrl = (url: string): boolean => {
+  const normalized = String(url || "").trim();
+  if (!/^https?:\/\//i.test(normalized)) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    const pathname = parsed.pathname.toLowerCase();
+    if (
+      /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico|pdf|zip|rar|7z|mp4|mp3|mov|avi)(?:$|\?)/i.test(
+        pathname,
+      )
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const executeWorkspaceResearchContext = async (
   text: string,
   researchMode: Exclude<WorkspaceSendResearchMode, "off">,
@@ -61,7 +81,9 @@ const executeWorkspaceResearchContext = async (
       .filter((url) => /^https?:\/\//i.test(url));
   }
 
-  const webCandidates = (researchPayload.web || []).slice(0, 8);
+  const webCandidates = (researchPayload.web || [])
+    .filter((item) => isExtractableResearchUrl(item.url))
+    .slice(0, 8);
   const extractedWebs = await Promise.allSettled(
     webCandidates.map(async (item) => {
       const extracted = await extractWebPage(item.url);
@@ -73,6 +95,15 @@ const executeWorkspaceResearchContext = async (
       };
     }),
   );
+  const extractFailureCount = extractedWebs.filter(
+    (item) => item.status === "rejected",
+  ).length;
+  if (extractFailureCount > 0) {
+    console.warn("[Workspace] research extract partially fell back to snippets", {
+      attempted: extractedWebs.length,
+      failed: extractFailureCount,
+    });
+  }
 
   researchWebPages = extractedWebs
     .map((item, index) => {
@@ -253,8 +284,12 @@ export const shouldRunWorkspaceResearch = (
 export const gatherWorkspaceResearchContext = async (
   text: string,
   researchMode: WorkspaceSendResearchMode,
+  enableWebResearch: boolean = true,
 ): Promise<WorkspaceSendResearchContextResult> => {
-  if (!shouldRunWorkspaceResearch(text, researchMode)) {
+  const effectiveResearchMode =
+    !enableWebResearch && researchMode === "web+images" ? "off" : researchMode;
+
+  if (!shouldRunWorkspaceResearch(text, effectiveResearchMode)) {
     return {
       researchPayload: null,
       researchReferenceImageUrls: [],
@@ -266,7 +301,7 @@ export const gatherWorkspaceResearchContext = async (
   try {
     return await executeWorkspaceResearchContext(
       text,
-      researchMode === "images" ? "images" : "web+images",
+      effectiveResearchMode === "images" ? "images" : "web+images",
     );
   } catch (researchError) {
     console.warn(

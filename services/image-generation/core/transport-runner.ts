@@ -9,6 +9,41 @@ export type OpenAITransportRequestTuning = {
   baseDelayMs?: number
   maxDelayMs?: number
   requestFingerprint?: string
+  signal?: AbortSignal
+}
+
+const createAbortError = (): DOMException =>
+  new DOMException('The operation was aborted.', 'AbortError')
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw createAbortError()
+  }
+}
+
+const delayWithAbort = (ms: number, signal?: AbortSignal): Promise<void> => {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(createAbortError())
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', handleAbort)
+      resolve()
+    }, ms)
+
+    const handleAbort = () => {
+      clearTimeout(timeoutId)
+      signal.removeEventListener('abort', handleAbort)
+      reject(createAbortError())
+    }
+
+    signal.addEventListener('abort', handleAbort, { once: true })
+  })
 }
 
 export const runOpenAITransportWithFallback = async <T>(args: {
@@ -75,6 +110,7 @@ export const runOpenAITransportWithFallback = async <T>(args: {
   for (const authMode of args.authPlans) {
     let keyIndex = 0
     while (keyIndex < args.apiKeys.length) {
+      throwIfAborted(args.requestTuning?.signal)
       const apiKey = args.apiKeys[keyIndex]
       const requestStartedAt = Date.now()
       args.onBeforeRequest?.({
@@ -156,6 +192,8 @@ export const runOpenAITransportWithFallback = async <T>(args: {
         if (shouldContinue !== false) {
           if (keyIndex < args.apiKeys.length - 1) {
             keyIndex += 1
+          } else {
+            break
           }
           continue
         }
@@ -172,6 +210,8 @@ export const runOpenAITransportWithFallback = async <T>(args: {
         if (shouldContinue !== false) {
           if (keyIndex < args.apiKeys.length - 1) {
             keyIndex += 1
+          } else {
+            break
           }
           continue
         }
@@ -194,6 +234,7 @@ export const pollOpenAICompatibleImageResult = async (args: {
   fetchJson: (path: string, contextTag: string) => Promise<any>
   intervalMs?: number
   maxAttempts?: number
+  signal?: AbortSignal
 }): Promise<string | null> => {
   const pollPaths = [
     `/v1/images/${args.taskId}`,
@@ -207,9 +248,11 @@ export const pollOpenAICompatibleImageResult = async (args: {
   let lastError: any = null
 
   for (let index = 0; index < maxAttempts; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    throwIfAborted(args.signal)
+    await delayWithAbort(intervalMs, args.signal)
 
     for (const pollPath of pollPaths) {
+      throwIfAborted(args.signal)
       try {
         const payload = await args.fetchJson(pollPath, `${args.contextTag}.poll`)
         const parsed = parseOpenAIImageResponse(payload)

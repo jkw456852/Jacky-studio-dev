@@ -44,7 +44,7 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
         id={`marker-chip-${block.id}`}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className={`inline-flex items-center gap-0 rounded-full pl-[2px] pr-1 cursor-default relative group select-none h-6 transition-all border ${
+        className={`relative inline-flex h-8 cursor-default select-none items-center gap-1 rounded-full border pl-[3px] pr-2 transition-all ${
           isAllInputSelected || isSelected
             ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-400'
             : 'bg-gray-50/50 border-gray-100 hover:bg-gray-100'
@@ -60,15 +60,15 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
         onMouseEnter={() => onHoverChip(block.id)}
         onMouseLeave={() => onHoverChip(null)}
       >
-        <div className="flex items-center -space-x-1.5 flex-shrink-0">
-          <div className="w-5 h-5 rounded-full overflow-hidden border border-gray-100 flex-shrink-0 shadow-sm">
+        <div className="flex flex-shrink-0 items-center -space-x-1.5">
+          <div className="h-6 w-6 flex-shrink-0 overflow-hidden rounded-full border border-gray-100 shadow-sm">
             <img src={getObjectUrl(file)} className="w-full h-full object-cover" />
           </div>
-          <div className="w-3.5 h-3.5 bg-[#3B82F6] rounded-full flex items-center justify-center text-white text-[8px] font-black shadow-sm flex-shrink-0 border border-white z-10">
+          <div className="z-10 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border border-white bg-[#3B82F6] text-[9px] font-black text-white shadow-sm">
             {markers.findIndex((marker) => marker.id === markerId) + 1 || '?'}
           </div>
         </div>
-        <span className="text-[11px] text-gray-700 font-bold max-w-[80px] truncate ml-1">
+        <span className="ml-0.5 max-w-[96px] truncate text-[12px] font-semibold text-gray-700">
           {file.markerName || '区域'}
         </span>
         <button
@@ -76,7 +76,7 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
             event.stopPropagation();
             onRemove(block.id);
           }}
-          className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100"
+          className="flex h-5 w-5 items-center justify-center rounded-full text-gray-400 opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
         >
           <X size={10} />
         </button>
@@ -187,7 +187,7 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
     <div
       key={block.id}
       id={`file-chip-${block.id}`}
-      className={`inline-flex items-center gap-1 rounded-full pl-[2px] pr-1.5 select-none relative group h-6 cursor-default transition-all border shrink-0 ${
+      className={`relative inline-flex h-8 shrink-0 cursor-default select-none items-center gap-1 rounded-full border pl-[3px] pr-2 transition-all ${
         isAllInputSelected || isSelected
           ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-400'
           : isInputFocused
@@ -201,14 +201,14 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
       onMouseEnter={() => onHoverChip(block.id)}
       onMouseLeave={() => onHoverChip(null)}
     >
-      <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 border border-gray-100 shadow-sm">
+      <div className="h-6 w-6 flex-shrink-0 overflow-hidden rounded-full border border-gray-100 shadow-sm">
         {file.type.startsWith('image/') ? (
           <img src={chipPreviewUrl} className="w-full h-full object-cover" />
         ) : (
           <FileText size={10} className="text-gray-500" />
         )}
       </div>
-      <span className="text-[11px] text-gray-700 font-bold max-w-[100px] truncate ml-0.5">
+      <span className="ml-0.5 max-w-[108px] truncate text-[12px] font-semibold text-gray-700">
         {chipLabel}
       </span>
       <button
@@ -216,7 +216,7 @@ export const InputAreaFileBlock: React.FC<InputAreaFileBlockProps> = ({
           event.stopPropagation();
           onRemove(block.id);
         }}
-        className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 ml-0.5"
+        className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full text-gray-400 opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
       >
         <X size={10} />
       </button>
