@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createLocalStudioUserAssetApi } from "./local-user-assets.ts";
+import {
+  readPendingStudioUserAssetDeletes,
+} from "./delete-sync.ts";
 
 const createStorageMock = (): Storage => {
   const map = new Map<string, string>();
@@ -303,6 +306,105 @@ test("local asset api preserves legacy style-library keys so delete survives rel
     const reloadedApi = createLocalStudioUserAssetApi();
     assert.equal(reloadedApi.listStyleLibraries().length, 0);
     assert.equal(reloadedApi.listStyleLibraryCandidates().length, 0);
+  });
+});
+
+test("local asset api records and clears pending deletes for user asset removals", () => {
+  const storage = createStorageMock();
+  withMockWindow(storage, () => {
+    const api = createLocalStudioUserAssetApi();
+
+    api.saveStyleLibrary({
+      id: "style-a",
+      title: "Style A",
+      summary: "Style A summary",
+      referenceInterpretation: "Style A reference",
+      planningDirectives: ["Plan A"],
+      promptDirectives: ["Prompt A"],
+      createdBy: "user",
+      updatedAt: Date.now(),
+    }, {
+      preferredId: "style-a",
+    });
+    api.removeStyleLibrary("style-a");
+
+    api.setSkillPreferences({
+      activeQuickSkill: {
+        id: "skill-a",
+        name: "Skill A",
+        iconName: "Sparkles",
+      },
+      recentSkillIds: ["skill-a"],
+      pinnedSkillIds: ["skill-a"],
+      customSkillConfigs: {
+        "skill-a": {
+          name: "Skill A",
+          isCustomSkill: true,
+        },
+      },
+    });
+    api.setSkillPreferences({
+      activeQuickSkill: null,
+      recentSkillIds: [],
+      pinnedSkillIds: [],
+      customSkillConfigs: {},
+    });
+
+    api.setPluginPreferences({
+      records: {
+        "plugin-a": {
+          pluginId: "plugin-a",
+          enabled: true,
+          pinned: false,
+          updatedAt: Date.now(),
+        },
+      },
+    });
+    api.setPluginPreferences({
+      records: {},
+    });
+
+    const pendingDeletes = readPendingStudioUserAssetDeletes();
+    assert.equal(
+      pendingDeletes.some(
+        (entry) => entry.kind === "style-library" && entry.targetId === "style-a",
+      ),
+      true,
+    );
+    assert.equal(
+      pendingDeletes.some(
+        (entry) =>
+          entry.kind === "skill-custom-config" && entry.targetId === "skill-a",
+      ),
+      true,
+    );
+    assert.equal(
+      pendingDeletes.some(
+        (entry) =>
+          entry.kind === "plugin-preference-record" &&
+          entry.targetId === "plugin-a",
+      ),
+      true,
+    );
+
+    api.saveStyleLibrary({
+      id: "style-a",
+      title: "Style A Restored",
+      summary: "Style A restored summary",
+      referenceInterpretation: "Style A restored reference",
+      planningDirectives: ["Plan restored"],
+      promptDirectives: ["Prompt restored"],
+      createdBy: "user",
+      updatedAt: Date.now(),
+    }, {
+      preferredId: "style-a",
+    });
+    assert.equal(
+      readPendingStudioUserAssetDeletes().some(
+        (entry) => entry.kind === "style-library" && entry.targetId === "style-a",
+      ),
+      false,
+    );
   });
 });
 

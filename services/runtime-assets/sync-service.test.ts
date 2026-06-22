@@ -4,6 +4,30 @@ import type { StudioUserAssetApi } from "./api.ts";
 import { syncStudioUserAssets } from "./sync-service.ts";
 import type { StudioUserAssetState } from "./user-asset-types.ts";
 
+const createStorageMock = (): Storage => {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear() {
+      map.clear();
+    },
+    getItem(key: string) {
+      return map.has(key) ? map.get(key)! : null;
+    },
+    key(index: number) {
+      return Array.from(map.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      map.delete(key);
+    },
+    setItem(key: string, value: string) {
+      map.set(key, String(value));
+    },
+  };
+};
+
 const createState = (
   patch: Partial<StudioUserAssetState> = {},
 ): StudioUserAssetState => ({
@@ -693,4 +717,90 @@ test("syncStudioUserAssets writes back merged durable role assets to both layers
   assert.equal(remote.getSnapshot().roles["role-shared"]?.title, "Remote Role");
   assert.equal(Boolean(local.getSnapshot().temporaryRoleDrafts["temp-remote"]), true);
   assert.equal(Boolean(remote.getSnapshot().temporaryRoleDrafts["temp-local"]), true);
+});
+
+test("syncStudioUserAssets applies pending deletes before write-back", () => {
+  const storage = createStorageMock();
+  const originalWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    value: { localStorage: storage },
+    configurable: true,
+  });
+
+  try {
+    storage.setItem(
+      "studio_user_asset_pending_deletes_v1",
+      JSON.stringify([
+        {
+          kind: "style-library",
+          targetId: "style-remote",
+          deletedAt: Date.now(),
+        },
+        {
+          kind: "skill-custom-config",
+          targetId: "skill-remote",
+          deletedAt: Date.now(),
+        },
+      ]),
+    );
+
+    const local = createMemoryApi(createState({}));
+    const remote = createMemoryApi(
+      createState({
+        styleLibraries: {
+          "style-remote": {
+            id: "style-remote",
+            slug: "style-remote",
+            title: "Remote Style",
+            summary: "",
+            referenceInterpretation: "",
+            planningDirectives: [],
+            promptDirectives: [],
+            createdBy: "user",
+            updatedAt: 2,
+            schemaVersion: 1,
+          },
+        },
+        skillPreferences: {
+          schemaVersion: 1,
+          updatedAt: 2,
+          activeQuickSkill: {
+            id: "skill-remote",
+            name: "Remote Skill",
+            iconName: "Sparkles",
+          },
+          recentSkillIds: ["skill-remote"],
+          pinnedSkillIds: ["skill-remote"],
+          customSkillConfigs: {
+            "skill-remote": {
+              name: "Remote Skill",
+              isCustomSkill: true,
+            },
+          },
+        },
+      }),
+    );
+
+    const result = syncStudioUserAssets({
+      apis: { local, remote },
+    });
+
+    assert.equal(Boolean(result.merged.styleLibraries["style-remote"]), false);
+    assert.equal(
+      Boolean(result.merged.skillPreferences.customSkillConfigs["skill-remote"]),
+      false,
+    );
+    assert.equal(result.merged.skillPreferences.activeQuickSkill, null);
+    assert.equal(Boolean(remote.getSnapshot().styleLibraries["style-remote"]), false);
+  } finally {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, "window", {
+        value: originalWindow,
+        configurable: true,
+      });
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (globalThis as any).window;
+    }
+  }
 });

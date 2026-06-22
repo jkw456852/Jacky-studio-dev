@@ -32,6 +32,7 @@ import {
   buildProposalExecutionErrorTask,
   finalizeExecutionSuccess,
 } from '../services/agents/orchestrator-result-handlers';
+import { evaluateSkillClarifyGate } from '../services/agents/skill-clarify-gate';
 import {
   dequeueNextOrchestratorMessage,
   enqueueOrchestratorMessage,
@@ -266,26 +267,47 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
       }
 
       console.log('[useAgentOrchestrator] Routing to agent...');
+      const skillClarifyDecision = evaluateSkillClarifyGate({
+        message: messageForExecution,
+        attachments,
+        metadata,
+      });
       const shouldPreferAutonomousChatFallback = shouldPreferAutonomousChatFallbackModule(
         messageForExecution,
         metadata,
         attachments,
       );
-      const decision = await resolveRoutingDecision({
-        message: messageForExecution,
-        metadata: {
-          ...(metadata || {}),
-          signal: chatAbortController.signal,
-        },
-        attachments,
-        updatedContext,
-        pinnedAgent,
-        isUnifiedSidebarAgent,
-        shouldPreferAutonomousChatFallback,
-        optimizerUsed,
-        optimizedMessageForTrace,
-        withTimeout,
-      });
+      const decision = skillClarifyDecision.shouldClarify
+        ? {
+            action: 'clarify' as const,
+            targetAgent: 'coco' as const,
+            taskType: 'skill-clarify-gate',
+            taskMode: 'clarify',
+            complexity: 'simple' as const,
+            handoffMessage: skillClarifyDecision.message,
+            confidence: 0.98,
+            roleStrategy: 'reuse' as const,
+            roleStrategyReason:
+              'Selected skill requires key inputs before safe execution.',
+            message: skillClarifyDecision.message,
+            questions: skillClarifyDecision.questions,
+            suggestions: skillClarifyDecision.suggestions,
+          }
+        : await resolveRoutingDecision({
+            message: messageForExecution,
+            metadata: {
+              ...(metadata || {}),
+              signal: chatAbortController.signal,
+            },
+            attachments,
+            updatedContext,
+            pinnedAgent,
+            isUnifiedSidebarAgent,
+            shouldPreferAutonomousChatFallback,
+            optimizerUsed,
+            optimizedMessageForTrace,
+            withTimeout,
+          });
 
       const executionAgentId = decision.targetAgent || 'coco';
       console.log('[useAgentOrchestrator] Routed to:', executionAgentId);
@@ -308,7 +330,10 @@ export function useAgentOrchestrator(options: UseAgentOrchestratorOptions) {
         messageForExecution,
       );
 
-      if (shouldUseImmediateResponseShortcut(decision, metadata)) {
+      if (
+        skillClarifyDecision.shouldClarify ||
+        shouldUseImmediateResponseShortcut(decision, metadata)
+      ) {
         const responseTask = buildImmediateResponseTask({
           decision,
           messageForExecution,

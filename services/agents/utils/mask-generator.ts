@@ -46,4 +46,3 @@ export async function createMaskDataUrl(info: MarkerInfo): Promise<string> {
 
   return canvas.toDataURL('image/png');
 }
-

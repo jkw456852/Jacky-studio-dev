@@ -134,3 +134,135 @@ test('buildAnalyzePlanPrompt injects reusable custom skill context for custom sk
   assert.equal(result.fullPrompt.includes('reusable instruction:'), true);
   assert.equal(result.fullPrompt.includes('questioning style, sequencing, output structure'), true);
 });
+
+test('buildAnalyzePlanPrompt includes autonomous routing bias for custom skills with frontstage execution hints', () => {
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['generateImage', 'generateCopy'],
+    message: '继续用这个 skill 帮我做新一版品牌 KV',
+    context: {
+      projectId: 'project-custom-skill-routing',
+      projectTitle: 'Custom Skill Routing Test',
+      conversationId: 'conversation-custom-skill-routing',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    metadata: {
+      allowAutonomousRouting: true,
+      skillData: {
+        id: 'custom-skill-brand-001',
+        name: '品牌视觉 Skill',
+        config: {
+          isCustomSkill: true,
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          routeIntent: 'branding',
+          routeLabel: 'Branding',
+          routeSummary:
+            'Bias toward visual systems, key visuals, and identity-aware execution.',
+          followUpMode: 'auto-clarify',
+          clarifyChecklist: ['品牌调性', '受众定位', '视觉参考'],
+          preferredSkills: ['generateImage', 'generateCopy', 'workspaceSearch'],
+          suggestedTaskMode: 'generate',
+          summary: '先整理品牌语气与视觉系统，再推进 KV 与延展素材。',
+          instruction: '优先补齐品牌调性、受众和核心卖点，再产出 KV 执行方案。',
+        },
+      },
+    },
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('[Autonomous Skill Bias]'), true);
+  assert.equal(result.fullPrompt.includes('selected frontstage skill: Branding'), true);
+  assert.equal(result.fullPrompt.includes('route intent: branding'), true);
+  assert.equal(result.fullPrompt.includes('follow-up mode: auto-clarify'), true);
+  assert.equal(result.fullPrompt.includes('clarify checklist: 品牌调性, 受众定位, 视觉参考'), true);
+  assert.equal(
+    result.fullPrompt.includes(
+      'preferred executable skills for this skill: generateImage, generateCopy, workspaceSearch',
+    ),
+    true,
+  );
+});
+
+test('buildAnalyzePlanPrompt includes structured reusable seed fields for custom skills', () => {
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['generateImage'],
+    message: '继续按这个 skill 推进一版新方案',
+    context: {
+      projectId: 'project-custom-skill-seed',
+      projectTitle: 'Custom Skill Seed Test',
+      conversationId: 'conversation-custom-skill-seed',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    metadata: {
+      allowAutonomousRouting: true,
+      skillData: {
+        id: 'custom-skill-seed-001',
+        name: 'Structured Skill',
+        config: {
+          isCustomSkill: true,
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          summary: '先补齐关键信息，再按既定步骤推进。',
+          instruction: '先澄清缺失输入，再输出执行方案。',
+          reusableQuestions: ['目标人群是谁？', '核心卖点是什么？'],
+          executionOutline: ['先补齐卖点和人群', '再输出方案与任务'],
+          outputBlueprint: ['先给分析', '再给执行建议'],
+        },
+      },
+    },
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('reusable question patterns:'), true);
+  assert.equal(result.fullPrompt.includes('execution outline:'), true);
+  assert.equal(result.fullPrompt.includes('output blueprint:'), true);
+});
+
+test('buildAnalyzePlanPrompt includes marker anchor details for marked image edit attachments', () => {
+  const markerFile = {
+    name: 'marker-annotated-1.png',
+    type: 'image/png',
+    markerName: 'Selection',
+    markerInfo: {
+      fullImageUrl: 'https://example.com/original.png',
+      normalizedX: 0.48,
+      normalizedY: 0.51,
+      width: 300,
+      height: 300,
+    },
+  } as any as File;
+
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['smartEdit'],
+    message: '帮我修改这张图，在狗鼻子位置加一只蝴蝶',
+    context: {
+      projectId: 'project-marker-prompt',
+      projectTitle: 'Marker Prompt Test',
+      conversationId: 'conversation-marker-prompt',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    attachments: [markerFile],
+    uploadedAttachments: ['https://example.com/annotated.png'],
+    metadata: {},
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('[Smart Edit Rules]'), true);
+  assert.equal(result.fullPrompt.includes('exact user-selected edit anchor'), true);
+  assert.equal(result.fullPrompt.includes('48% from the left'), true);
+  assert.equal(result.fullPrompt.includes('51% from the top'), true);
+  assert.equal(result.fullPrompt.includes('https://example.com/original.png'), true);
+  assert.equal(result.fullPrompt.includes('https://example.com/annotated.png'), true);
+});

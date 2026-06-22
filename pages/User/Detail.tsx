@@ -230,13 +230,13 @@ const UserDetailPage: React.FC = () => {
       });
 
       setSyncMessage(
-        `同步完成：已合并本地与账号资产，远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`,
+        `同步完成：普通账号资产已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`,
       );
     } catch (syncError) {
       console.error('Failed to sync account assets', syncError);
       if (assetResult) {
         setSyncMessage(
-          `普通账号资产已同步：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项。`,
+          `普通账号资产已同步：已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项。`,
         );
       }
       setError(syncError instanceof Error ? syncError.message : '账号资产同步失败，请稍后重试');
@@ -265,11 +265,11 @@ const UserDetailPage: React.FC = () => {
           const secretsResult = await syncAccountSecretsWithAccount({
             accessToken,
           });
-          autoSyncMessage = `退出前已自动同步账号资产：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`;
+          autoSyncMessage = `退出前已自动同步账号资产：普通账号资产已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项；${describeSensitiveConfigSyncMode(secretsResult.mode)}。`;
         } catch (syncError) {
           console.error('Failed to auto sync account assets before sign out', syncError);
           if (assetResult) {
-            autoSyncMessage = `退出前已同步普通账号资产：远端审计记录 ${assetResult.remoteAuditCount} 条，合并决策 ${assetResult.decisions.length} 项。`;
+            autoSyncMessage = `退出前已同步普通账号资产：已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项。`;
             autoSyncError = syncError instanceof Error
               ? `敏感配置同步失败：${syncError.message}`
               : '敏感配置同步失败，请稍后重试';

@@ -58,6 +58,45 @@ const buildInlinePartsDescription = (
     : '';
 };
 
+const formatMarkerCoord = (value: unknown): string | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return `${Math.round(value * 100)}%`;
+};
+
+const buildAttachmentDescription = (
+  file: File,
+  index: number,
+  uploadedAttachments?: string[],
+): string => {
+  const info = (file as any).markerInfo;
+  const markerName = (file as any).markerName;
+  const uploadedUrl =
+    uploadedAttachments && uploadedAttachments[index]
+      ? `\n  - public preview: ${uploadedAttachments[index]}`
+      : '';
+
+  if (info) {
+    const ratio = info.width && info.height
+      ? (info.width / info.height).toFixed(2)
+      : 'unknown';
+    const xPct = formatMarkerCoord(info.normalizedX);
+    const yPct = formatMarkerCoord(info.normalizedY);
+    const anchorLine =
+      xPct && yPct
+        ? `\n  - marker anchor: near ${xPct} from the left and ${yPct} from the top of the original image`
+        : '';
+    const originalLine = info.fullImageUrl
+      ? `\n  - original image url: ${info.fullImageUrl}`
+      : '';
+
+    return `- 附件 ${index + 1}: [画布标记附件]${markerName ? ` (${markerName})` : ''}，局部选区尺寸 ${info.width}x${info.height}，比例 ${ratio}。引用标记为 "ATTACHMENT_${index}"。这是带可见标记点的定位附件，编辑时应把该标记视为用户指定的精确落点，不要自行改到别处。${anchorLine}${originalLine}${uploadedUrl}`;
+  }
+
+  return `- 附件 ${index + 1}: ${file.name}${markerName ? ` (${markerName})` : ''}，类型 ${file.type}。引用标记为 "ATTACHMENT_${index}"。${uploadedUrl}`;
+};
+
 export interface AnalyzePlanPromptInput {
   agentId: string;
   systemPrompt: string;
@@ -105,6 +144,24 @@ const buildCustomSkillContextSection = (metadata?: Record<string, any>): string 
     config.sourceConversationTitle || '',
     120,
   );
+  const reusableQuestions = Array.isArray(config.reusableQuestions)
+    ? config.reusableQuestions
+        .map((item: unknown) => truncateText(item, 120))
+        .filter(Boolean)
+        .slice(0, 5)
+    : [];
+  const executionOutline = Array.isArray(config.executionOutline)
+    ? config.executionOutline
+        .map((item: unknown) => truncateText(item, 120))
+        .filter(Boolean)
+        .slice(0, 6)
+    : [];
+  const outputBlueprint = Array.isArray(config.outputBlueprint)
+    ? config.outputBlueprint
+        .map((item: unknown) => truncateText(item, 120))
+        .filter(Boolean)
+        .slice(0, 5)
+    : [];
 
   return `
 [Custom Skill Context]
@@ -113,6 +170,9 @@ const buildCustomSkillContextSection = (metadata?: Record<string, any>): string 
 - reusable instruction: ${skillInstruction || 'Follow the proven workflow from the original conversation and adapt it to the new request.'}
 - example prompt: ${examplePrompt || 'none'}
 - source conversation: ${sourceConversationTitle || 'none'}
+- reusable question patterns: ${reusableQuestions.join(' | ') || 'none'}
+- execution outline: ${executionOutline.join(' | ') || 'none'}
+- output blueprint: ${outputBlueprint.join(' | ') || 'none'}
 - Treat this custom skill as a reusable workflow shell distilled from a successful prior conversation.
 - Reuse its questioning style, sequencing, output structure, and quality bar before falling back to generic habits.
 - Keep the workflow flexible: adapt to the new request, ask for any missing inputs, and do not overfit to the original example literally.
@@ -134,14 +194,28 @@ const buildAutonomousSkillBiasSection = (metadata?: Record<string, any>): string
   const routeLabel = truncateText(config.routeLabel || skillData?.name || '', 80);
   const routeIntent = truncateText(config.routeIntent || '', 40);
   const routeSummary = truncateText(config.routeSummary || '', 320);
+  const followUpMode = truncateText(config.followUpMode || '', 40);
   const preferredSkills = Array.isArray(config.preferredSkills)
     ? config.preferredSkills
         .map((item: unknown) => String(item || '').trim())
         .filter(Boolean)
         .slice(0, 6)
     : [];
+  const clarifyChecklist = Array.isArray(config.clarifyChecklist)
+    ? config.clarifyChecklist
+        .map((item: unknown) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 6)
+    : [];
 
-  if (!routeLabel && !routeIntent && !routeSummary && preferredSkills.length === 0) {
+  if (
+    !routeLabel &&
+    !routeIntent &&
+    !routeSummary &&
+    !followUpMode &&
+    preferredSkills.length === 0 &&
+    clarifyChecklist.length === 0
+  ) {
     return '';
   }
 
@@ -150,10 +224,15 @@ const buildAutonomousSkillBiasSection = (metadata?: Record<string, any>): string
 - selected frontstage skill: ${routeLabel || 'none'}
 - route intent: ${routeIntent || 'none'}
 - route summary: ${routeSummary || 'none'}
+- follow-up mode: ${followUpMode || 'none'}
 - preferred executable skills for this skill: ${preferredSkills.join(', ') || 'none'}
+- clarify checklist: ${clarifyChecklist.join(', ') || 'none'}
 - Treat this as a frontstage execution preference, not a hard lock.
 - Keep the user's latest request first, but when multiple valid paths exist, bias your planning, questioning, and tool choice toward this selected skill's intent.
 - If the selected skill suggests video, social, commerce, or branding focus, reflect that in the analysis and chosen tool path before falling back to generic autonomous routing.
+- If follow-up mode is "auto-clarify", prefer asking concise missing-input questions before execution whenever key inputs are absent.
+- If follow-up mode is "direct-run", avoid unnecessary clarification and move into execution unless the request is genuinely blocked.
+- Use the clarify checklist as the first source of missing inputs to check before asking generic questions.
 `;
 };
 
@@ -195,6 +274,8 @@ export const buildAnalyzePlanPrompt = ({
   - replace: replace one object with another
   - upscale: improve resolution
 - When editing attachments, sourceUrl should use "ATTACHMENT_X".
+- If an attachment includes marker metadata or is described as a marked canvas attachment, treat that marker as the exact user-selected edit anchor.
+- When a visible marker anchor exists, keep the requested addition or edit attached to that marked spot instead of relocating it elsewhere in the frame.
 `
     : '';
 
@@ -504,6 +585,12 @@ ${(attachedResearch.citations || [])
     })
     .join('\n');
 
+  const detailedAttachmentSection = (attachments || [])
+    .map((file, index) =>
+      buildAttachmentDescription(file, index, uploadedAttachments),
+    )
+    .join('\n');
+
   const capabilitySummary = buildMainBrainCapabilityPromptSummary({
     preferredSkills: effectivePreferredSkills,
     includeInternalModules: allowAutonomousRouting,
@@ -549,7 +636,7 @@ ${(attachedResearch.citations || [])
 - existing asset count: ${context.existingAssets.length}
 
 [Attachments]
-${attachmentSection || '- none'}
+${detailedAttachmentSection || attachmentSection || '- none'}
 
 [Conversation Context]
 ${compactConversationHistory || '无'}

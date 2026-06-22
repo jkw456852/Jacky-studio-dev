@@ -85,6 +85,28 @@ export const setSkillCustomConfigPreference = (
   });
 };
 
+export const removeCustomSkillPreference = (skillId: string): void => {
+  const normalizedId = String(skillId || "").trim();
+  if (!normalizedId) return;
+  const api = getStudioUserAssetApi();
+  const current = api.getSkillPreferences();
+  const nextCustomSkillConfigs = { ...(current.customSkillConfigs || {}) };
+  delete nextCustomSkillConfigs[normalizedId];
+  api.setSkillPreferences({
+    activeQuickSkill:
+      current.activeQuickSkill?.id === normalizedId
+        ? null
+        : current.activeQuickSkill,
+    recentSkillIds: (current.recentSkillIds || []).filter(
+      (item) => item !== normalizedId,
+    ),
+    pinnedSkillIds: (current.pinnedSkillIds || []).filter(
+      (item) => item !== normalizedId,
+    ),
+    customSkillConfigs: nextCustomSkillConfigs,
+  });
+};
+
 export const upsertCustomSkillPreference = (skill: {
   id: string;
   name: string;
@@ -155,6 +177,18 @@ export const setPluginPreferenceRecord = (args: {
         ...(args.config ? { config: args.config } : {}),
       },
     },
+  });
+};
+
+export const removePluginPreferenceRecord = (pluginId: string): void => {
+  const normalizedId = String(pluginId || "").trim();
+  if (!normalizedId) return;
+  const api = getStudioUserAssetApi();
+  const current = api.getPluginPreferences();
+  const nextRecords = { ...(current.records || {}) };
+  delete nextRecords[normalizedId];
+  api.setPluginPreferences({
+    records: nextRecords,
   });
 };
 

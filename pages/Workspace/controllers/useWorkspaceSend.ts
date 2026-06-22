@@ -428,6 +428,18 @@ const buildRequestMetadata = ({
     skillData?.config && typeof skillData.config === "object"
       ? (skillData.config as Record<string, unknown>)
       : undefined;
+  const skillFollowUpMode =
+    skillConfig?.followUpMode === "auto-clarify"
+      ? "auto-clarify"
+      : skillConfig?.followUpMode === "direct-run"
+        ? "direct-run"
+        : undefined;
+  const skillClarifyChecklist = Array.isArray(skillConfig?.clarifyChecklist)
+    ? skillConfig?.clarifyChecklist
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 6)
+    : undefined;
   const effectiveCreationMode = allowAutonomousRouting ? "agent" : creationMode;
   const suggestedTaskMode = String(skillConfig?.suggestedTaskMode || "").trim().toLowerCase();
   const effectiveTaskMode =
@@ -465,6 +477,10 @@ const buildRequestMetadata = ({
       requiredCopy: (requiredChineseCopy || "").trim(),
     },
     skillData,
+    ...(skillFollowUpMode ? { skillFollowUpMode } : {}),
+    ...(skillClarifyChecklist && skillClarifyChecklist.length > 0
+      ? { skillClarifyChecklist }
+      : {}),
     allowAutonomousRouting,
     multimodalContext: {
       referenceImageUrls: Array.from(

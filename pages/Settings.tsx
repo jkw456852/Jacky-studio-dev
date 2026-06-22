@@ -329,7 +329,7 @@ const SettingsPage: React.FC = () => {
                 accessToken,
             });
             setAccountSecretsStatus('success');
-            setAccountSecretsMessage(`已保存系统设置，并同步 ${remoteSnapshot.providers.length} 个供应商配置、图床与三方密钥到账号。`);
+            setAccountSecretsMessage(`已保存系统设置，并按本地当前状态同步 ${remoteSnapshot.providers.length} 个供应商配置、图床与三方密钥到账号。`);
             return remoteSnapshot;
         } catch (error) {
             const message = error instanceof Error ? error.message : '敏感配置同步失败，请稍后重试';
@@ -394,8 +394,30 @@ const SettingsPage: React.FC = () => {
 
     const deleteProvider = (id: string) => {
         if (!window.confirm('确定要删除这个供应商吗？')) return;
-        setProviders((prev) => prev.filter((p) => p.id !== id));
-        if (activeProviderId === id) setActiveProviderId('');
+        setProviders((prev) => {
+            const nextProviders = prev.filter((p) => p.id !== id);
+            const fallbackProviderId = nextProviders.find((provider) => provider.id === 'yunwu')?.id
+                || nextProviders[0]?.id
+                || '';
+
+            if (activeProviderId === id) {
+                setActiveProviderId(fallbackProviderId);
+            }
+
+            if (manualProviderId === id) {
+                setManualProviderId(fallbackProviderId);
+            }
+
+            const removeMappedEntriesForProvider = (entries: string[], category: MappingCategory) => (
+                entries.filter((entry) => parseMappedModelStorageEntry(category, entry).providerId !== id)
+            );
+
+            setSelectedScriptModels((prevEntries) => removeMappedEntriesForProvider(prevEntries, 'script'));
+            setSelectedImageModels((prevEntries) => normalizeImageSelection(removeMappedEntriesForProvider(prevEntries, 'image')));
+            setSelectedVideoModels((prevEntries) => removeMappedEntriesForProvider(prevEntries, 'video'));
+
+            return nextProviders;
+        });
     };
 
     const activeSearchProvider = searchProviders.find((provider) => provider.id === selectedSearchProviderId)
@@ -850,6 +872,16 @@ const SettingsPage: React.FC = () => {
                                                 >
                                                     <Sliders size={18} />
                                                 </button>
+                                                {p.isCustom && (
+                                                    <button
+                                                        onClick={() => deleteProvider(p.id)}
+                                                        className="w-11 h-11 rounded-xl flex items-center justify-center hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all"
+                                                        title="删除节点"
+                                                        aria-label="删除节点"
+                                                    >
+                                                        <X size={18} />
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => setActiveProviderId(p.id)}
                                                     className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all ${activeProviderId === p.id ? 'bg-black text-white' : 'bg-gray-50 text-gray-500 hover:text-black hover:bg-gray-100'}`}
@@ -1962,5 +1994,3 @@ const SettingsPage: React.FC = () => {
 };
 
 export default SettingsPage;
-
-

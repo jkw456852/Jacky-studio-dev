@@ -9,6 +9,96 @@ export interface ResolvedEnvironmentReferences {
   autoInjectedAttachmentToken?: string;
 }
 
+type MarkerAttachmentFile = File & {
+  markerInfo?: {
+    fullImageUrl?: string;
+    normalizedX?: number;
+    normalizedY?: number;
+    imageWidth?: number;
+    imageHeight?: number;
+    width?: number;
+    height?: number;
+  };
+  markerName?: string;
+  lastAiAnalysis?: string;
+};
+
+const dedupeStrings = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach((value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  });
+  return result;
+};
+
+const syncReferenceAliases = (
+  call: any,
+  references: string[],
+  options?: { overwriteAliases?: boolean },
+): void => {
+  const overwriteAliases = options?.overwriteAliases === true;
+  call.params.referenceImages = references;
+
+  if (references.length === 0) {
+    delete call.params.referenceImage;
+    delete call.params.reference_image_url;
+    delete call.params.init_image;
+    return;
+  }
+
+  const firstRef = references[0];
+  if (overwriteAliases || !call.params.referenceImage) {
+    call.params.referenceImage = firstRef;
+  }
+  if (overwriteAliases || !call.params.reference_image_url) {
+    call.params.reference_image_url = firstRef;
+  }
+  if (overwriteAliases || !call.params.init_image) {
+    call.params.init_image = firstRef;
+  }
+};
+
+const appendHintToSmartEditPrompt = (call: any, hintBlock: string): void => {
+  let appended = false;
+
+  if (typeof call.params.prompt === 'string' && call.params.prompt.trim()) {
+    call.params.prompt = `${call.params.prompt}${hintBlock}`;
+    appended = true;
+  }
+
+  if (typeof call.params.instruction === 'string' && call.params.instruction.trim()) {
+    call.params.instruction = `${call.params.instruction}${hintBlock}`;
+    appended = true;
+  }
+
+  if (!call.params.parameters) {
+    call.params.parameters = {};
+  }
+
+  if (
+    typeof call.params.parameters.prompt === 'string' &&
+    call.params.parameters.prompt.trim()
+  ) {
+    call.params.parameters.prompt = `${call.params.parameters.prompt}${hintBlock}`;
+    appended = true;
+  }
+
+  if (!appended) {
+    call.params.instruction = hintBlock.trim();
+  }
+};
+
+const isMarkerAttachment = (file: unknown): file is MarkerAttachmentFile => {
+  const info = (file as MarkerAttachmentFile | null | undefined)?.markerInfo;
+  return Boolean(info && typeof info.fullImageUrl === 'string' && info.fullImageUrl.trim());
+};
+
 export const buildImageAttachmentTokens = (
   attachments?: Array<{ type?: string }>,
 ): string[] =>
@@ -104,12 +194,7 @@ export const applyResolvedReferenceAliases = (
     return;
   }
 
-  call.params.referenceImages = references;
-
-  const firstRef = references[0];
-  if (!call.params.referenceImage) call.params.referenceImage = firstRef;
-  if (!call.params.reference_image_url) call.params.reference_image_url = firstRef;
-  if (!call.params.init_image) call.params.init_image = firstRef;
+  syncReferenceAliases(call, references);
 };
 
 export interface EnvironmentReferenceProtocolDependencies {
@@ -165,7 +250,7 @@ export const applyEnvironmentReferenceProtocol = async ({
 
   const { limitedCandidates, sourceCount, truncated } =
     collectReferenceCandidatesFn(call.params, task.input, maxReferenceImages);
-  const references: string[] = [];
+  let references: string[] = [];
 
   for (const item of limitedCandidates) {
     const resolved = await resolveAttachmentTokenFn(task, item);
@@ -173,6 +258,8 @@ export const applyEnvironmentReferenceProtocol = async ({
       references.push(resolved);
     }
   }
+
+  references = dedupeStrings(references);
 
   if (references.length > 0) {
     applyResolvedReferenceAliases(call, references);
@@ -209,58 +296,94 @@ export const applyEnvironmentReferenceProtocol = async ({
     }
   }
 
-  // smartEdit + marker 场景：sourceUrl 用原图，坐标和语义标签注入 prompt
   if (call.skillName === 'smartEdit' && Array.isArray(task.input.attachments)) {
-    const markerFiles = task.input.attachments.filter((f) => {
-      const info = (f as any)?.markerInfo;
-      return info && info.fullImageUrl;
-    }) as any[];
-    console.log('[marker-protocol] attachments count:', task.input.attachments.length, 'markers:', markerFiles.length);
-    if (markerFiles.length > 0) {
-      const primary = markerFiles[0];
-      call.params.sourceUrl = primary.markerInfo.fullImageUrl;
-      const info = primary.markerInfo;
-      if (info.imageWidth && info.imageHeight) {
-        const r = info.imageWidth / info.imageHeight;
-        if (r > 1.5) call.params.aspectRatio = '16:9';
-        else if (r < 0.7) call.params.aspectRatio = '9:16';
-        else if (r > 1.2) call.params.aspectRatio = '4:3';
-        else if (r < 0.85) call.params.aspectRatio = '3:4';
+    const markerEntries = task.input.attachments
+      .map((file, index) => ({ file: file as MarkerAttachmentFile, index }))
+      .filter((entry) => isMarkerAttachment(entry.file));
+
+    console.log(
+      '[marker-protocol] attachments count:',
+      task.input.attachments.length,
+      'markers:',
+      markerEntries.length,
+    );
+
+    if (markerEntries.length > 0) {
+      const primary = markerEntries[0].file;
+      const primaryInfo = primary.markerInfo!;
+      call.params.sourceUrl = primaryInfo.fullImageUrl!;
+
+      if (primaryInfo.imageWidth && primaryInfo.imageHeight) {
+        const ratio = primaryInfo.imageWidth / primaryInfo.imageHeight;
+        if (ratio > 1.5) call.params.aspectRatio = '16:9';
+        else if (ratio < 0.7) call.params.aspectRatio = '9:16';
+        else if (ratio > 1.2) call.params.aspectRatio = '4:3';
+        else if (ratio < 0.85) call.params.aspectRatio = '3:4';
         else call.params.aspectRatio = '1:1';
       }
-      // 把 marker 坐标 + 语义标签注入 prompt，让多模态模型自己识别该改哪里
-      const markerHints = markerFiles
-        .map((f, idx) => {
-          const m = f.markerInfo;
-          const label = f.lastAiAnalysis || f.markerName || `区域${idx + 1}`;
-          const nx = typeof m.normalizedX === 'number' ? m.normalizedX : null;
-          const ny = typeof m.normalizedY === 'number' ? m.normalizedY : null;
+
+      const markerReferenceImages = dedupeStrings(
+        (
+          await Promise.all(
+            markerEntries.map(({ index }) =>
+              resolveAttachmentTokenFn(task, `ATTACHMENT_${index}`),
+            ),
+          )
+        ).filter(
+          (value): value is string =>
+            typeof value === 'string' && value.trim().length > 0,
+        ),
+      );
+
+      const currentReferenceImages = Array.isArray(call.params.referenceImages)
+        ? call.params.referenceImages.filter(
+            (value: unknown): value is string =>
+              typeof value === 'string' && value.trim().length > 0,
+          )
+        : [];
+      const nonMarkerReferenceImages = currentReferenceImages.filter(
+        (value) => !markerReferenceImages.includes(value),
+      );
+      const mergedReferenceImages = dedupeStrings([
+        ...markerReferenceImages,
+        ...nonMarkerReferenceImages,
+      ]);
+
+      references = mergedReferenceImages;
+      syncReferenceAliases(call, mergedReferenceImages, { overwriteAliases: true });
+
+      const markerHints = markerEntries
+        .map(({ file }, idx) => {
+          const info = file.markerInfo!;
+          const label = file.lastAiAnalysis || file.markerName || `Selection ${idx + 1}`;
+          const nx = typeof info.normalizedX === 'number' ? info.normalizedX : null;
+          const ny = typeof info.normalizedY === 'number' ? info.normalizedY : null;
           if (nx !== null && ny !== null) {
             const xPct = Math.round(nx * 100);
             const yPct = Math.round(ny * 100);
-            return `- 标记 #${idx + 1}「${label}」位于原图横向 ${xPct}%、纵向 ${yPct}% 附近`;
+            return `- Marker #${idx + 1} "${label}" is near ${xPct}% from the left and ${yPct}% from the top of the original image.`;
           }
-          return `- 标记 #${idx + 1}「${label}」`;
+          return `- Marker #${idx + 1} "${label}" identifies the target edit area.`;
         })
         .join('\n');
-      if (markerHints) {
-        const hintBlock = `\n\n[用户标记位置参考]\n${markerHints}\n请严格依据上述坐标识别用户想修改的局部区域（即使你看到的图片上没有可见标记点），其余部分必须保持原图不变。`;
-        // smartEdit 可能用 prompt / instruction / parameters.prompt 三种字段之一，全部注入
-        if (typeof call.params.prompt === 'string' && call.params.prompt.trim()) {
-          call.params.prompt = `${call.params.prompt}${hintBlock}`;
-        }
-        if (typeof call.params.instruction === 'string' && call.params.instruction.trim()) {
-          call.params.instruction = `${call.params.instruction}${hintBlock}`;
-        }
-        if (call.params.parameters && typeof call.params.parameters.prompt === 'string' && call.params.parameters.prompt.trim()) {
-          call.params.parameters.prompt = `${call.params.parameters.prompt}${hintBlock}`;
-        }
+
+      const hintBlock = `\n\n[Marker Reference Rule]
+- One injected reference image is the same source image with a visible marker overlay.
+- Treat that visible marker as the exact user-selected edit anchor.
+- Keep the requested addition or change attached to that marked spot instead of relocating it elsewhere in the frame.
+
+[User Marker Coordinates]
+${markerHints}
+Use the visible marker overlay together with these coordinates to localize the edit. Outside the marked target area, the original image should stay unchanged.`;
+
+      appendHintToSmartEditPrompt(call, hintBlock);
+
+      if (!call.params.parameters) {
+        call.params.parameters = {};
       }
-      // 同时给 smartEdit 一个原图比例的 imageSize 提示
-      if (!call.params.parameters) call.params.parameters = {};
       if (!call.params.parameters.preservePrompt) {
         call.params.parameters.preservePrompt =
-          'Preserve the original image content, subject, layout, lighting, and all areas outside the marked region. Only modify the specifically marked area.';
+          'Preserve the original image content, subject, layout, lighting, and all areas outside the marker-selected target area. Only modify the specifically marked area.';
       }
     }
   }

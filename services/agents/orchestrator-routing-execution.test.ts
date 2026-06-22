@@ -6,6 +6,7 @@ import {
 } from './orchestrator-routing-execution.ts';
 import { buildUnifiedSidebarRoutingDecision } from './orchestrator-routing.ts';
 import { shouldUseImmediateResponseShortcut } from './orchestrator-task-assembly.ts';
+import { evaluateSkillClarifyGate } from './skill-clarify-gate.ts';
 
 test('maybeResolvePipeline executes detected pipeline through injected dependencies', async () => {
   const stepUpdates: any[] = [];
@@ -179,5 +180,29 @@ test('shouldUseImmediateResponseShortcut is disabled for autonomous routing requ
     ),
     false,
   );
+});
+
+test('evaluateSkillClarifyGate can short-circuit autonomous skill execution into clarify mode', () => {
+  const result = evaluateSkillClarifyGate({
+    message: '帮我继续做品牌 KV',
+    attachments: [],
+    metadata: {
+      allowAutonomousRouting: true,
+      skillFollowUpMode: 'auto-clarify',
+      skillClarifyChecklist: ['品牌调性', '受众定位', '视觉参考'],
+      skillData: {
+        id: 'brand-skill',
+        config: {
+          followUpMode: 'auto-clarify',
+          clarifyChecklist: ['品牌调性', '受众定位', '视觉参考'],
+        },
+      },
+    } as any,
+  });
+
+  assert.equal(result.shouldClarify, true);
+  if (!result.shouldClarify) return;
+  assert.equal(result.questions.length > 0, true);
+  assert.equal(result.suggestions.includes('补充品牌调性'), true);
 });
 

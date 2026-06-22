@@ -25,6 +25,7 @@ import { buildRuntimeRolePrompt } from "./runtime-role";
 import { runMainBrainRuntime } from "./main-brain-runtime";
 import { buildMainBrainTaskProgressUpdate } from "./main-brain-progress-state";
 import { buildAnalyzePlanPrompt } from "./analyze-plan-prompt";
+import { normalizePlannedMarkerSmartEditCalls } from "./planned-marker-smart-edit-normalizer.ts";
 import { resolveMainBrainOutput } from "./main-brain-output";
 import { prepareSkillExecutionCall } from "./skill-execution-preprocessor";
 import { normalizeAgentJsonResponse } from "./agent-response-normalizer";
@@ -1428,6 +1429,11 @@ export abstract class EnhancedBaseAgent {
       console.log(`[${this.agentInfo.id}] [analyzeAndPlan] ??????`);
 
       const parsedPlan = normalizeAgentJsonResponse(response.text || '{}');
+      normalizePlannedMarkerSmartEditCalls({
+        parsedPlan,
+        attachments,
+        uploadedAttachments,
+      });
 
       if (forceImageToolCall && !allowAutonomousRouting) {
         ensureForcedImagePlan({

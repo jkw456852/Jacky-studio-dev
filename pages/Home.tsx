@@ -27,7 +27,6 @@ import {
 } from "../services/storage";
 import {
   getActiveQuickSkillPreference,
-  setActiveQuickSkillPreference,
 } from "../services/runtime-assets/preferences";
 import {
   getFrontstageSkillLabelKind,
@@ -97,6 +96,25 @@ const Header: React.FC<HeaderProps> = ({
 );
 
 type HomeCreationMode = "agent" | "image" | "video";
+
+const CLEAN_HOME_MODE_OPTIONS: Array<{
+  id: HomeCreationMode;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  { id: "agent", label: "\u667a\u80fd\u5bf9\u8bdd", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
+  { id: "image", label: "\u56fe\u7247", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
+  { id: "video", label: "\u89c6\u9891", icon: <Video size={14} strokeWidth={2.2} /> },
+];
+
+const HOME_ICON_BUTTON_CLASS =
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200";
+const HOME_SECONDARY_BUTTON_CLASS =
+  "bg-white text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)] hover:bg-slate-50 hover:text-slate-700";
+const HOME_MODE_PILL_CLASS =
+  "inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900";
+const HOME_FLOATING_PANEL_CLASS =
+  "overflow-hidden rounded-[20px] border border-slate-200/85 bg-white/97 shadow-[0_18px_44px_-28px_rgba(15,23,42,0.22)] backdrop-blur-md";
 
 const HOME_MODE_OPTIONS: Array<{
   id: HomeCreationMode;
@@ -573,6 +591,8 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentPreviewUrlMapRef = useRef<Map<File, string>>(new Map());
   const modelPreferenceAnchorRef = useRef<HTMLButtonElement>(null);
+  const modeMenuRef = useRef<HTMLDivElement>(null);
+  const modeMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const [modelMode, setModelMode] = useState<"thinking" | "fast">("fast");
   const [creationMode, setCreationMode] = useState<HomeCreationMode>("agent");
@@ -586,6 +606,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const [preferredImageModelLabel, setPreferredImageModelLabel] =
     useState("Nano Banana Pro");
+  const [showModeMenu, setShowModeMenu] = useState(false);
 
   const {
     modelPreferences: {
@@ -649,6 +670,31 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   useEffect(() => {
     setPreferredImageModelLabel(String(preferredImageModel || "Nano Banana Pro"));
   }, [preferredImageModel]);
+
+  useEffect(() => {
+    if (!showModeMenu) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (modeMenuRef.current?.contains(target)) return;
+      if (modeMenuTriggerRef.current?.contains(target)) return;
+      setShowModeMenu(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowModeMenu(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showModeMenu]);
 
   useEffect(() => {
     setActiveQuickSkill(
@@ -729,6 +775,45 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     }
     return "描述场景、镜头运动、节奏和时长要求。";
   }, [activeQuickSkill?.name, creationMode]);
+
+  const dashboardPlaceholder = useMemo(() => {
+    if (creationMode === "agent") {
+      if (activeQuickSkill?.name) {
+        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
+      }
+      return "告诉助手要检查、修改或继续推进的下一步。";
+    }
+    if (creationMode === "image") {
+      return "描述画面、风格、构图和必须保留的关键细节。";
+    }
+    return "描述场景、镜头运动、节奏和时长要求。";
+  }, [activeQuickSkill?.name, creationMode]);
+
+  const resolvedDashboardPlaceholder = useMemo(() => {
+    if (creationMode === "agent") {
+      if (activeQuickSkill?.name) {
+        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
+      }
+      return "告诉助手要检查、修改或继续推进的下一步。";
+    }
+    if (creationMode === "image") {
+      return "描述画面、风格、构图和必须保留的关键细节。";
+    }
+    return "描述场景、镜头运动、节奏和时长要求。";
+  }, [activeQuickSkill?.name, creationMode]);
+
+  const assistantModeLabel =
+    creationMode === "agent"
+      ? "智能对话"
+      : creationMode === "image"
+        ? "图片任务"
+        : "视频任务";
+
+  const modeOptions = [
+    { id: "agent" as const, label: "智能对话", icon: <Lightbulb size={14} strokeWidth={2} /> },
+    { id: "image" as const, label: "图片任务", icon: <ImageIcon size={14} strokeWidth={2} /> },
+    { id: "video" as const, label: "视频任务", icon: <Video size={14} strokeWidth={2} /> },
+  ];
 
   const getAttachmentPreviewUrl = (file: File) => {
     const existing = attachmentPreviewUrlMapRef.current.get(file);
@@ -900,7 +985,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={3}
-                placeholder="请输入你的设计需求"
+                placeholder={resolvedDashboardPlaceholder}
                 className="w-full min-h-[72px] max-h-[144px] overflow-y-auto bg-transparent border-none outline-none resize-none text-[15px] leading-[26px] font-medium text-slate-700 placeholder:text-slate-300"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -943,21 +1028,21 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               )}
 
               {creationMode !== "agent" ? (
-                <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50/80 px-3 py-3">
+                <div className="mb-4 rounded-[18px] border border-slate-200/90 bg-slate-50/86 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
                         {creationMode === "image" ? (
-                          <ImageIcon size={16} className="text-gray-500" />
+                          <ImageIcon size={16} className="text-slate-500" />
                         ) : (
-                          <Video size={16} className="text-gray-500" />
+                          <Video size={16} className="text-slate-500" />
                         )}
                         <span>{creationMode === "image" ? "图片任务" : "视频任务"}</span>
                       </div>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-500">
+                      <p className="mt-1 text-[12px] leading-5 text-slate-500">
                         {creationMode === "image"
-                          ? `当前会以图片任务方式启动工作台，后续默认沿用 ${preferredImageModelLabel}。`
-                          : `当前会以视频任务方式启动工作台，后续默认沿用 ${String(preferredVideoModel || "视频模型") }。`}
+                          ? `会以图片任务进入新项目，默认沿用 ${preferredImageModelLabel}。`
+                          : `会以视频任务进入新项目，默认沿用 ${String(preferredVideoModel || "视频模型")}。`}
                       </p>
                     </div>
                     <button
@@ -966,33 +1051,23 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         setModelPreferenceTab(creationMode === "image" ? "image" : "video");
                         setShowModelPreference(true);
                       }}
-                      className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+                      className="inline-flex h-8 shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
                     >
-                      调整设置
+                      模型
                     </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-500">
-                    <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">
-                      模式：{creationMode === "image" ? "图片" : "视频"}
-                    </span>
-                    <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1">
-                      {creationMode === "image"
-                        ? `默认模型：${preferredImageModelLabel}`
-                        : `默认模型：${String(preferredVideoModel || "未设置")}`}
-                    </span>
                   </div>
                 </div>
               ) : null}
 
-              <div className="flex justify-between items-center mt-2">
-                <div className="flex items-center gap-3">
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
                   <div className="relative">
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-9 h-9 rounded-full border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition"
+                      className={`${HOME_ICON_BUTTON_CLASS} ${HOME_SECONDARY_BUTTON_CLASS}`}
                       title="Upload files (Max 10)"
                     >
-                      <Paperclip size={18} />
+                      <Paperclip size={15} strokeWidth={1.9} />
                     </button>
                     <input
                       type="file"
@@ -1005,74 +1080,120 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="hidden sm:flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50/70 p-0.5">
-                    {HOME_MODE_OPTIONS.map((mode) => (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setCreationMode(mode.id)}
-                        className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium transition ${
-                          creationMode === mode.id
-                            ? "bg-white text-black shadow-sm ring-1 ring-black/5"
-                            : "text-gray-400 hover:text-gray-700"
-                        }`}
-                        title={`切换到${mode.label}模式`}
+                <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
+                  <div className="relative">
+                    <button
+                      ref={modeMenuTriggerRef}
+                      type="button"
+                      onClick={() => setShowModeMenu((value) => !value)}
+                      className={HOME_MODE_PILL_CLASS}
+                      title={`当前模式：${assistantModeLabel}`}
+                      aria-label={`当前模式：${assistantModeLabel}`}
+                    >
+                      <span>{assistantModeLabel}</span>
+                      <ChevronDown size={14} strokeWidth={2} />
+                    </button>
+                    {showModeMenu ? (
+                      <div
+                        ref={modeMenuRef}
+                        className={`absolute bottom-full right-0 z-[120] mb-3 w-[244px] ${HOME_FLOATING_PANEL_CLASS} p-1.5`}
                       >
-                        {mode.icon}
-                        <span>{mode.label}</span>
-                      </button>
-                    ))}
+                        <div className="space-y-1">
+                          {modeOptions.map((mode) => (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => {
+                                setCreationMode(mode.id);
+                                setShowModeMenu(false);
+                              }}
+                              className={`flex w-full items-center gap-2.5 rounded-[14px] px-2.5 py-2 text-left transition ${
+                                creationMode === mode.id
+                                  ? "bg-slate-900 text-white"
+                                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                              }`}
+                            >
+                              <span className="shrink-0">{mode.icon}</span>
+                              <span className="min-w-0 flex-1 text-[12px] font-semibold">
+                                {mode.label}
+                              </span>
+                              {creationMode === mode.id ? (
+                                <Check size={14} strokeWidth={2.2} className="shrink-0" />
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-1 border-t border-slate-200/70 px-1 pt-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setModelMode((value) =>
+                                value === "thinking" ? "fast" : "thinking",
+                              )
+                            }
+                            className={`mb-1 flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
+                              modelMode === "thinking"
+                                ? "bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.95)]"
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              {modelMode === "thinking" ? (
+                                <Lightbulb size={13} strokeWidth={1.9} />
+                              ) : (
+                                <Zap size={13} strokeWidth={1.9} />
+                              )}
+                              <span>思考模式</span>
+                            </span>
+                            <span className="text-[10px] font-semibold">
+                              {modelMode === "thinking" ? "深思" : "快速"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWebEnabled((value) => !value)}
+                            className={`flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
+                              webEnabled
+                                ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(191,219,254,0.95)]"
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <Globe size={13} strokeWidth={1.9} />
+                              <span>联网检索</span>
+                            </span>
+                            <span className="text-[10px] font-semibold">
+                              {webEnabled ? "开" : "关"}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-
-                  <div className="h-9 rounded-full border border-gray-200 bg-gray-50/50 flex items-center p-0.5 gap-1">
-                    <button
-                      onClick={() => setModelMode("thinking")}
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${modelMode === "thinking" ? "bg-white shadow-sm text-black ring-1 ring-black/5" : "text-gray-400 hover:text-gray-600"}`}
-                      title="Thinking Mode (Pro)"
-                    >
-                      <Lightbulb size={14} strokeWidth={2.5} />
-                    </button>
-                    <button
-                      onClick={() => setModelMode("fast")}
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${modelMode === "fast" ? "bg-white shadow-sm text-black ring-1 ring-black/5" : "text-gray-400 hover:text-gray-600"}`}
-                      title="Fast Mode (Flash)"
-                    >
-                      <Zap size={14} strokeWidth={2.5} />
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => setWebEnabled(!webEnabled)}
-                    className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${webEnabled ? "bg-black text-white border-black" : "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50"}`}
-                    title="Networking Mode (Web Search)"
-                  >
-                    <Globe size={18} strokeWidth={1.5} />
-                  </button>
 
                   <button
                     ref={modelPreferenceAnchorRef}
                     onClick={() => setShowModelPreference(!showModelPreference)}
-                    className={`w-9 h-9 rounded-full border flex items-center justify-center transition ${
+                    className={`${HOME_ICON_BUTTON_CLASS} ${
                       showModelPreference
-                        ? "bg-blue-50 border-blue-200 text-blue-500"
-                        : "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+                        ? "bg-slate-900 text-white"
+                        : HOME_SECONDARY_BUTTON_CLASS
                     }`}
                     title="模型偏好"
                   >
-                    <Box size={18} strokeWidth={2} />
+                    <Box size={16} strokeWidth={1.9} />
                   </button>
 
                   <button
                     onClick={handleSearch}
                     disabled={!prompt.trim() && attachments.length === 0}
-                    className={`w-9 h-9 rounded-full flex items-center justify-center transition shadow-sm ${
+                    className={`${HOME_ICON_BUTTON_CLASS} ${
                       prompt.trim() || attachments.length > 0
-                        ? "bg-gray-400 text-white hover:bg-black transform hover:scale-105"
-                        : "bg-gray-200 text-white cursor-not-allowed"
+                        ? "bg-slate-900 text-white hover:bg-slate-800"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
                     }`}
                   >
-                    <ArrowUp size={18} strokeWidth={2.5} />
+                    <ArrowUp size={16} strokeWidth={2.4} />
                   </button>
                 </div>
               </div>

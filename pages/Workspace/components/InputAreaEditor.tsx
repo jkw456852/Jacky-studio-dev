@@ -185,22 +185,23 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
   const selectedSkillMeta = React.useMemo(() => {
     switch (getFrontstageSkillLabelKind(displaySendSkill)) {
       case 'workflow':
-        return { label: 'Workflow', detail: '', tone: 'blue' as const };
+        return {
+          label: 'Workflow',
+          tone: 'blue' as const,
+        };
       case 'my-skill':
         return {
           label: 'My Skill',
-          detail: activeSkillState.customSummary || '',
           tone: 'violet' as const,
         };
       case 'skill':
       default:
         return {
           label: 'Skill',
-          detail: '',
           tone: isUnifiedSidebarAgentSkill(displaySendSkill) ? 'emerald' as const : 'amber' as const,
         };
     }
-  }, [activeSkillState.customSummary, displaySendSkill]);
+  }, [displaySendSkill]);
   const inputFlowRef = React.useRef<HTMLDivElement | null>(null);
   const baseComposerHeight = showComposerHint ? 96 : 84;
   const maxComposerHeight = baseComposerHeight * 2;
@@ -381,13 +382,6 @@ export const InputAreaEditor: React.FC<InputAreaEditorProps> = ({
                 <div className="truncate text-[12px] font-semibold text-slate-700">
                   {displaySendSkill?.name}
                 </div>
-                {selectedSkillMeta.detail ? (
-                  <div className={`truncate text-[9px] leading-3 ${
-                    activeSkillState.usesCustomBehavior ? 'text-violet-500/80' : 'text-slate-400'
-                  }`}>
-                    {selectedSkillMeta.detail}
-                  </div>
-                ) : null}
               </div>
             </div>
             {activeSkillState.usesCustomBehavior && onEditSendSkill ? (

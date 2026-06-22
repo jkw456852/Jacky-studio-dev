@@ -2,6 +2,11 @@ import type { StudioUserAssetApi } from "./api.ts";
 import type { StudioUserAssetState } from "./user-asset-types.ts";
 import type { StudioAssetSyncPolicy } from "./sync-policy.ts";
 import {
+  applyPendingDeletesToStudioUserAssetState,
+  clearPendingStudioUserAssetDeletes,
+  readPendingStudioUserAssetDeletes,
+} from "./delete-sync.ts";
+import {
   mergeStudioUserAssetStates,
   type StudioAssetMergeDecision,
 } from "./sync-merge.ts";
@@ -40,10 +45,18 @@ export const syncStudioUserAssets = (args: {
     remote: remoteBefore,
     policy: args.policy,
   });
+  const pendingDeletes = readPendingStudioUserAssetDeletes();
+  const mergedSnapshot =
+    pendingDeletes.length > 0
+      ? applyPendingDeletesToStudioUserAssetState(
+          mergeResult.merged,
+          pendingDeletes,
+        )
+      : mergeResult.merged;
   const writeBack = args.writeBack || "both";
 
   if (writeBack === "local" || writeBack === "both") {
-    args.apis.local.replaceSnapshot(mergeResult.merged, {
+    args.apis.local.replaceSnapshot(mergedSnapshot, {
       audit: {
         action: "update",
         targetKind: "workspace-preference",
@@ -53,7 +66,7 @@ export const syncStudioUserAssets = (args: {
   }
 
   if (writeBack === "remote" || writeBack === "both") {
-    args.apis.remote.replaceSnapshot(mergeResult.merged, {
+    args.apis.remote.replaceSnapshot(mergedSnapshot, {
       audit: {
         action: "update",
         targetKind: "workspace-preference",
@@ -65,7 +78,7 @@ export const syncStudioUserAssets = (args: {
   return {
     localBefore,
     remoteBefore,
-    merged: mergeResult.merged,
+    merged: mergedSnapshot,
     decisions: mergeResult.decisions,
   };
 };
@@ -84,10 +97,18 @@ export const syncStudioUserAssetsWithRemoteEndpoint = async (args: {
     remote: remoteBefore,
     policy: args.policy,
   });
+  const pendingDeletes = readPendingStudioUserAssetDeletes();
+  const mergedSnapshot =
+    pendingDeletes.length > 0
+      ? applyPendingDeletesToStudioUserAssetState(
+          mergeResult.merged,
+          pendingDeletes,
+        )
+      : mergeResult.merged;
   const writeBack = args.writeBack || "both";
 
   if (writeBack === "local" || writeBack === "both") {
-    args.localApi.replaceSnapshot(mergeResult.merged, {
+    args.localApi.replaceSnapshot(mergedSnapshot, {
       audit: {
         action: "update",
         targetKind: "workspace-preference",
@@ -100,7 +121,7 @@ export const syncStudioUserAssetsWithRemoteEndpoint = async (args: {
   if (writeBack === "remote" || writeBack === "both") {
     const pushed = await pushRemoteStudioUserAssetSnapshot({
       options: args.remote,
-      snapshot: mergeResult.merged,
+      snapshot: mergedSnapshot,
       audit: {
         action: "update",
         targetKind: "workspace-preference",
@@ -108,12 +129,15 @@ export const syncStudioUserAssetsWithRemoteEndpoint = async (args: {
       },
     });
     remoteAuditCount = pushed.auditEntries.length;
+    if (pendingDeletes.length > 0) {
+      clearPendingStudioUserAssetDeletes();
+    }
   }
 
   return {
     localBefore,
     remoteBefore,
-    merged: mergeResult.merged,
+    merged: mergedSnapshot,
     decisions: mergeResult.decisions,
     remoteAuditCount,
   };

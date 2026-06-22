@@ -218,6 +218,18 @@ type CustomSkillConfig = Record<string, unknown> & {
   summary?: string;
   description?: string;
   activationHint?: string;
+  requiresAttachments?: boolean;
+  frontstageSkillId?: string;
+  routeIntent?: string;
+  routeLabel?: string;
+  routeSummary?: string;
+  preferredSkills?: string[];
+  suggestedTaskMode?: string;
+  followUpMode?: 'auto-clarify' | 'direct-run';
+  clarifyChecklist?: string[];
+  reusableQuestions?: string[];
+  executionOutline?: string[];
+  outputBlueprint?: string[];
   instruction?: string;
   customInstruction?: string;
   examplePrompt?: string;
@@ -227,6 +239,20 @@ type CustomSkillConfig = Record<string, unknown> & {
   createdAt?: number;
   updatedAt?: number;
   lastUsedAt?: number;
+};
+
+type SkillRouteIntentOption = 'general' | 'video' | 'social' | 'branding' | 'commerce';
+
+type SkillRoutePreset = {
+  id: SkillRouteIntentOption;
+  label: string;
+  routeLabel: string;
+  routeSummary: string;
+  preferredSkills: string[];
+  suggestedTaskMode: string;
+  defaultFollowUpMode: 'auto-clarify' | 'direct-run';
+  clarifyChecklist: string[];
+  frontstageSkillId?: string;
 };
 
 const formatRelativeSkillTime = (timestamp?: number): string => {
@@ -246,6 +272,72 @@ const QUICK_SKILL_EXECUTION_LABELS: Record<
   agent: 'Skill',
   workflow: 'Workflow',
   skill: 'Skill',
+};
+
+const SKILL_ROUTE_PRESETS: Record<SkillRouteIntentOption, SkillRoutePreset> = {
+  general: {
+    id: 'general',
+    label: '通用推进',
+    routeLabel: 'Custom Skill',
+    routeSummary:
+      'Reuse the proven workflow from the source conversation and adapt it to the new request.',
+    preferredSkills: ['generateImage', 'generateCopy'],
+    suggestedTaskMode: 'generate',
+    defaultFollowUpMode: 'direct-run',
+    clarifyChecklist: ['目标结果', '关键限制', '输出格式'],
+  },
+  video: {
+    id: 'video',
+    label: '视频优先',
+    frontstageSkillId: 'autonomous-video-director',
+    routeLabel: 'Video',
+    routeSummary:
+      'Bias toward storyboard, motion, clip sequencing, and video-first asset decisions.',
+    preferredSkills: ['generateVideo', 'generateImage', 'smartEdit'],
+    suggestedTaskMode: 'generate',
+    defaultFollowUpMode: 'auto-clarify',
+    clarifyChecklist: ['视频用途', '时长节奏', '镜头/风格参考'],
+  },
+  social: {
+    id: 'social',
+    label: '社媒传播',
+    frontstageSkillId: 'autonomous-social-campaign',
+    routeLabel: 'Social Media',
+    routeSummary:
+      'Bias toward social campaigns, cover art, poster variants, and multi-asset content flows.',
+    preferredSkills: ['generateImage', 'generateCopy', 'generateVideo'],
+    suggestedTaskMode: 'generate',
+    defaultFollowUpMode: 'auto-clarify',
+    clarifyChecklist: ['发布渠道', '受众/卖点', '素材规格与数量'],
+  },
+  branding: {
+    id: 'branding',
+    label: '品牌视觉',
+    frontstageSkillId: 'autonomous-brand-system',
+    routeLabel: 'Branding',
+    routeSummary:
+      'Bias toward brand direction, visual systems, key visuals, and identity-aware execution.',
+    preferredSkills: ['generateImage', 'generateCopy', 'workspaceSearch'],
+    suggestedTaskMode: 'generate',
+    defaultFollowUpMode: 'auto-clarify',
+    clarifyChecklist: ['品牌调性', '受众定位', '视觉参考与应用场景'],
+  },
+  commerce: {
+    id: 'commerce',
+    label: '电商执行',
+    routeLabel: 'E-Commerce',
+    routeSummary:
+      'Bias toward product assets, detail-page structure, conversion modules, and commerce-ready outputs.',
+    preferredSkills: ['workspaceSearch', 'generateImage', 'smartEdit', 'generateCopy'],
+    suggestedTaskMode: 'generate',
+    defaultFollowUpMode: 'auto-clarify',
+    clarifyChecklist: ['商品与卖点', '目标平台', '商品图/参考素材'],
+  },
+};
+
+const resolveSkillRoutePreset = (value: unknown): SkillRoutePreset => {
+  const key = String(value || '').trim().toLowerCase() as SkillRouteIntentOption;
+  return SKILL_ROUTE_PRESETS[key] || SKILL_ROUTE_PRESETS.general;
 };
 
 const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
@@ -272,6 +364,8 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
         routeSummary: 'Prioritize storyboard, motion, video generation, and clip sequencing when the request allows it.',
         preferredSkills: ['generateVideo', 'generateImage', 'smartEdit'],
         suggestedTaskMode: 'generate',
+        followUpMode: 'auto-clarify',
+        clarifyChecklist: SKILL_ROUTE_PRESETS.video.clarifyChecklist,
       },
     },
   },
@@ -298,6 +392,8 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
         routeSummary: 'Bias toward campaign, poster, copy, and multi-asset social content workflows.',
         preferredSkills: ['generateImage', 'generateCopy', 'generateVideo'],
         suggestedTaskMode: 'generate',
+        followUpMode: 'auto-clarify',
+        clarifyChecklist: SKILL_ROUTE_PRESETS.social.clarifyChecklist,
       },
     },
   },
@@ -319,6 +415,8 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
       config: {
         allowAutonomousRouting: true,
         mode: 'workflow',
+        followUpMode: 'auto-clarify',
+        clarifyChecklist: SKILL_ROUTE_PRESETS.commerce.clarifyChecklist,
       },
     },
   },
@@ -345,6 +443,8 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
         routeSummary: 'Bias toward visual systems, brand direction, key visuals, and identity-aware execution.',
         preferredSkills: ['generateImage', 'generateCopy', 'workspaceSearch'],
         suggestedTaskMode: 'generate',
+        followUpMode: 'auto-clarify',
+        clarifyChecklist: SKILL_ROUTE_PRESETS.branding.clarifyChecklist,
       },
     },
   },
@@ -366,6 +466,8 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
       config: {
         allowAutonomousRouting: true,
         mode: 'workflow',
+        followUpMode: 'auto-clarify',
+        clarifyChecklist: ['服饰图/模特图', '风格目标', '需要保留或规避的限制'],
       },
     },
   },
@@ -384,6 +486,10 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
       id: 'cn-detail-page',
       name: '中文详情页套图',
       iconName: 'Box',
+      config: {
+        followUpMode: 'direct-run',
+        clarifyChecklist: ['商品图', '卖点', '详情页页数/规格'],
+      },
     },
   },
   {
@@ -399,6 +505,10 @@ const QUICK_SKILL_PRESETS: QuickSkillPreset[] = [
       id: 'jkai-oneclick',
       name: 'JKAI One-Click',
       iconName: 'Zap',
+      config: {
+        followUpMode: 'direct-run',
+        clarifyChecklist: ['目标结果', '参考方向', '是否有素材'],
+      },
     },
   },
 ];
@@ -427,6 +537,133 @@ const getSkillCategoryTab = (skill: QuickSkillPreset): SkillCategoryTab => {
     return 'branding';
   }
   return 'video';
+};
+
+const inferSkillSeedRouting = (
+  conversationTitle: string,
+  summary: string,
+  lastUserPrompt: string,
+): Pick<
+  CustomSkillConfig,
+  | 'frontstageSkillId'
+  | 'routeIntent'
+  | 'routeLabel'
+  | 'routeSummary'
+  | 'preferredSkills'
+  | 'suggestedTaskMode'
+> => {
+  const combined = `${conversationTitle}\n${summary}\n${lastUserPrompt}`.toLowerCase();
+  const toRoutingConfig = (preset: SkillRoutePreset) => ({
+    frontstageSkillId: preset.frontstageSkillId,
+    routeIntent: preset.id,
+    routeLabel: preset.routeLabel,
+    routeSummary: preset.routeSummary,
+    preferredSkills: preset.preferredSkills,
+    suggestedTaskMode: preset.suggestedTaskMode,
+    followUpMode: preset.defaultFollowUpMode,
+    clarifyChecklist: preset.clarifyChecklist,
+  });
+
+  if (/(video|镜头|分镜|动画|动效|短视频|脚本)/i.test(combined)) {
+    return toRoutingConfig(SKILL_ROUTE_PRESETS.video);
+  }
+
+  if (/(品牌|brand|kv|campaign|视觉系统|vi|logo|调性)/i.test(combined)) {
+    return toRoutingConfig(SKILL_ROUTE_PRESETS.branding);
+  }
+
+  if (/(社媒|小红书|封面|海报|social|campaign|帖子|种草)/i.test(combined)) {
+    return toRoutingConfig(SKILL_ROUTE_PRESETS.social);
+  }
+
+  if (/(电商|详情页|商品图|主图|sku|卖点|转化|淘宝|天猫|京东|亚马逊)/i.test(combined)) {
+    return toRoutingConfig(SKILL_ROUTE_PRESETS.commerce);
+  }
+
+  return toRoutingConfig(SKILL_ROUTE_PRESETS.general);
+};
+
+const CLARIFY_SIGNAL_RE =
+  /(请提供|补充|确认|方便说下|还需要|先告诉我|上传|给我看看|\?|？|which|what|need|missing|clarify)/i;
+
+const inferSkillSeedFollowUpMode = (
+  recentMessages: ChatMessage[],
+  routePreset: SkillRoutePreset,
+): 'auto-clarify' | 'direct-run' => {
+  const recentModelTurns = recentMessages
+    .filter((message) => message.role === 'model')
+    .slice(-2);
+
+  if (recentModelTurns.some((message) => CLARIFY_SIGNAL_RE.test(String(message.text || '')))) {
+    return 'auto-clarify';
+  }
+
+  return routePreset.defaultFollowUpMode;
+};
+
+const extractReusableQuestions = (messages: ChatMessage[]): string[] => {
+  const assistantTexts = messages
+    .filter((message) => message.role === 'model')
+    .map((message) => String(message.text || '').trim())
+    .filter(Boolean)
+    .slice(-4);
+
+  const matches = assistantTexts.flatMap((text) => {
+    const candidates = text.match(/[^。！？\n]*[？?]/g) || [];
+    return candidates
+      .map((item) => item.replace(/\s+/g, ' ').trim())
+      .filter((item) => item.length >= 4 && item.length <= 60);
+  });
+
+  return Array.from(new Set(matches)).slice(0, 5);
+};
+
+const extractExecutionOutline = (message?: ChatMessage | null): string[] => {
+  const text = String(message?.text || '').trim();
+  if (!text) return [];
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s>*-]+/, '').trim())
+    .filter(Boolean);
+
+  const stepLike = lines.filter((line) =>
+    /^(\d+[\.\)、]|第.+步|先|再|然后|最后)/.test(line),
+  );
+  if (stepLike.length > 0) {
+    return Array.from(new Set(stepLike.map((line) => line.slice(0, 80)))).slice(0, 6);
+  }
+
+  return lines.slice(0, 4).map((line) => line.slice(0, 80));
+};
+
+const inferOutputBlueprint = (
+  routePreset: SkillRoutePreset,
+  lastModelMessage?: ChatMessage | null,
+): string[] => {
+  const text = String(lastModelMessage?.text || '').toLowerCase();
+  const blueprint: string[] = [];
+
+  if (routePreset.id === 'video') {
+    blueprint.push('先给脚本/镜头拆解', '再给视频执行方案');
+  } else if (routePreset.id === 'branding') {
+    blueprint.push('先整理品牌方向', '再输出视觉系统/KV建议');
+  } else if (routePreset.id === 'social') {
+    blueprint.push('先明确传播角度', '再拆分封面/海报/文案资产');
+  } else if (routePreset.id === 'commerce') {
+    blueprint.push('先补齐商品卖点', '再输出转化导向物料方案');
+  } else {
+    blueprint.push('先澄清目标', '再给执行方案');
+  }
+
+  if (/(清单|checklist|步骤|step)/i.test(text)) {
+    blueprint.push('适合按步骤清单式输出');
+  }
+  if (/(表格|table|模块|section)/i.test(text)) {
+    blueprint.push('适合模块化结构输出');
+  }
+
+  return Array.from(new Set(blueprint)).slice(0, 4);
 };
 
 export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
@@ -626,6 +863,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   const [customSkillDraftName, setCustomSkillDraftName] = React.useState('');
   const [customSkillDraftSummary, setCustomSkillDraftSummary] = React.useState('');
   const [customSkillDraftInstruction, setCustomSkillDraftInstruction] = React.useState('');
+  const [customSkillDraftRouteIntent, setCustomSkillDraftRouteIntent] =
+    React.useState<SkillRouteIntentOption>('general');
+  const [customSkillDraftFollowUpMode, setCustomSkillDraftFollowUpMode] =
+    React.useState<'auto-clarify' | 'direct-run'>('direct-run');
   const videoStartFrame = useAgentStore((state) => state.generation.videoStartFrame);
   const videoEndFrame = useAgentStore((state) => state.generation.videoEndFrame);
   const videoMultiRefs = useAgentStore((state) => state.generation.videoMultiRefs);
@@ -693,7 +934,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
           activationHint: String(
             config?.activationHint || '复用这次对话里沉淀下来的执行方式。',
           ).trim(),
-          followUpMode: 'direct-run',
+          followUpMode:
+            config?.followUpMode === 'auto-clarify'
+              ? 'auto-clarify'
+              : resolveSkillRoutePreset(config?.routeIntent).defaultFollowUpMode,
           icon: Sparkles,
           skillData: {
             id: skillId,
@@ -743,6 +987,18 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 120) || '基于当前对话总结出的可复用 Skill。';
+    const sourceConversationTitle = skillBookContext?.activeConversationTitle || null;
+    const sourceUserPrompt = String(lastUserMessage?.text || '').trim();
+    const inferredRouting = inferSkillSeedRouting(
+      String(sourceConversationTitle || ''),
+      summary,
+      sourceUserPrompt,
+    );
+    const routePreset = resolveSkillRoutePreset(inferredRouting.routeIntent);
+    const inferredFollowUpMode = inferSkillSeedFollowUpMode(recentMessages, routePreset);
+    const reusableQuestions = extractReusableQuestions(recentMessages);
+    const executionOutline = extractExecutionOutline(lastModelMessage);
+    const outputBlueprint = inferOutputBlueprint(routePreset, lastModelMessage);
     upsertCustomSkillPreference({
       id: skillId,
       name: `${baseName} Skill`,
@@ -751,15 +1007,21 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       config: {
         summary,
         activationHint: '基于此对话创建的 Skill Seed，可继续补充配置。',
+        ...inferredRouting,
+        followUpMode: inferredFollowUpMode,
+        clarifyChecklist: routePreset.clarifyChecklist,
+        reusableQuestions,
+        executionOutline,
+        outputBlueprint,
         instruction:
           String(lastModelMessage?.text || lastUserMessage?.text || '')
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 360) ||
           '先复用这次对话里验证过的思路，再根据新的输入补齐缺失信息并继续执行。',
-        examplePrompt: String(lastUserMessage?.text || '').trim().slice(0, 200),
-        sourceConversationTitle: skillBookContext?.activeConversationTitle || null,
-        sourceUserPrompt: String(lastUserMessage?.text || '').trim(),
+        examplePrompt: sourceUserPrompt.slice(0, 200),
+        sourceConversationTitle,
+        sourceUserPrompt,
         allowAutonomousRouting: true,
         mode: 'unified-sidebar-agent',
       },
@@ -768,20 +1030,26 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       id: skillId,
       name: `${baseName} Skill`,
       iconName: 'Sparkles',
-      config: {
-        isCustomSkill: true,
-        allowAutonomousRouting: true,
-        mode: 'unified-sidebar-agent',
-        summary,
-        instruction:
-          String(lastModelMessage?.text || lastUserMessage?.text || '')
+        config: {
+          isCustomSkill: true,
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          ...inferredRouting,
+          followUpMode: inferredFollowUpMode,
+          clarifyChecklist: routePreset.clarifyChecklist,
+          reusableQuestions,
+          executionOutline,
+          outputBlueprint,
+          summary,
+          instruction:
+            String(lastModelMessage?.text || lastUserMessage?.text || '')
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 360) ||
           '先复用这次对话里验证过的思路，再根据新的输入补齐缺失信息并继续执行。',
-        examplePrompt: String(lastUserMessage?.text || '').trim().slice(0, 200),
-        sourceConversationTitle: skillBookContext?.activeConversationTitle || null,
-        sourceUserPrompt: String(lastUserMessage?.text || '').trim(),
+        examplePrompt: sourceUserPrompt.slice(0, 200),
+        sourceConversationTitle,
+        sourceUserPrompt,
       },
     } satisfies NonNullable<ChatMessage['skillData']>;
     setSendSkill?.(createdSkill);
@@ -794,6 +1062,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     const config = skillPreferences.customSkillConfigs?.[skillId];
     if (!config || typeof config !== 'object') return;
     const typedConfig = config as CustomSkillConfig;
+    const routePreset = resolveSkillRoutePreset(typedConfig.routeIntent);
     setEditingCustomSkillId(skillId);
     setCustomSkillDraftName(String(typedConfig.name || '').trim());
     setCustomSkillDraftSummary(
@@ -802,6 +1071,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     setCustomSkillDraftInstruction(
       String(typedConfig.instruction || typedConfig.customInstruction || '').trim(),
     );
+    setCustomSkillDraftRouteIntent(routePreset.id);
+    setCustomSkillDraftFollowUpMode(
+      typedConfig.followUpMode === 'auto-clarify' ? 'auto-clarify' : 'direct-run',
+    );
   }, [skillPreferences.customSkillConfigs]);
 
   const closeCustomSkillEditor = React.useCallback(() => {
@@ -809,10 +1082,13 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
     setCustomSkillDraftName('');
     setCustomSkillDraftSummary('');
     setCustomSkillDraftInstruction('');
+    setCustomSkillDraftRouteIntent('general');
+    setCustomSkillDraftFollowUpMode('direct-run');
   }, []);
 
   const handleSaveCustomSkill = React.useCallback(() => {
     if (!editingCustomSkillId || !editingCustomSkillConfig) return;
+    const routePreset = resolveSkillRoutePreset(customSkillDraftRouteIntent);
     const nextName = customSkillDraftName.trim() || String(editingCustomSkillConfig.name || 'Custom Skill').trim();
     const nextSummary =
       customSkillDraftSummary.trim() ||
@@ -826,6 +1102,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       iconName: String(editingCustomSkillConfig.iconName || 'Sparkles'),
       config: {
         ...editingCustomSkillConfig,
+        frontstageSkillId: routePreset.frontstageSkillId,
+        routeIntent: routePreset.id,
+        routeLabel: routePreset.routeLabel,
+        routeSummary: routePreset.routeSummary,
+        preferredSkills: routePreset.preferredSkills,
+        suggestedTaskMode: routePreset.suggestedTaskMode,
+        followUpMode: customSkillDraftFollowUpMode,
+        clarifyChecklist: routePreset.clarifyChecklist,
         summary: nextSummary,
         description: nextSummary,
         instruction: nextInstruction,
@@ -840,6 +1124,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
         config: {
           ...editingCustomSkillConfig,
           isCustomSkill: true,
+          frontstageSkillId: routePreset.frontstageSkillId,
+          routeIntent: routePreset.id,
+          routeLabel: routePreset.routeLabel,
+          routeSummary: routePreset.routeSummary,
+          preferredSkills: routePreset.preferredSkills,
+          suggestedTaskMode: routePreset.suggestedTaskMode,
+          followUpMode: customSkillDraftFollowUpMode,
+          clarifyChecklist: routePreset.clarifyChecklist,
           summary: nextSummary,
           description: nextSummary,
           instruction: nextInstruction,
@@ -854,8 +1146,10 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
   }, [
     activeQuickSkillId,
     closeCustomSkillEditor,
+    customSkillDraftFollowUpMode,
     customSkillDraftInstruction,
     customSkillDraftName,
+    customSkillDraftRouteIntent,
     customSkillDraftSummary,
     editingCustomSkillConfig,
     editingCustomSkillId,
@@ -929,7 +1223,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
       const metaTokens = renderSkillBookMeta(skill);
       const description = renderSkillBookDescription(skill);
       const secondaryMeta = renderSkillBookSecondaryMeta(skill);
-        return (
+      return (
         <button
           key={skill.id}
           type="button"
@@ -942,14 +1236,14 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
             setShowSkillBook(false);
           }}
           title={skill.activationHint}
-          className={`group flex w-full items-start gap-3 rounded-[16px] px-2.5 py-2.5 text-left transition ${
+          className={`group flex w-full items-start gap-3 rounded-[18px] border px-3 py-3 text-left transition ${
             isActive
-              ? 'bg-slate-50/92 text-slate-900'
-              : 'bg-transparent hover:bg-slate-50/78'
+              ? 'border-slate-300/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] text-slate-900 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)]'
+              : 'border-transparent bg-white/70 hover:border-slate-200/90 hover:bg-slate-50/82'
           }`}
         >
           <div
-            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/70 ${
+            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 ${
               isActive
                 ? 'bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(226,232,240,0.96))] text-slate-700 shadow-[0_10px_22px_-18px_rgba(15,23,42,0.28)]'
                 : 'bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] text-slate-500'
@@ -963,9 +1257,16 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 {skill.name}
               </div>
               {isCustomSkill ? (
-                <button
-                  type="button"
+                <span
+                  role="button"
+                  tabIndex={0}
                   onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openCustomSkillEditor(skill.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
                     event.stopPropagation();
                     openCustomSkillEditor(skill.id);
@@ -975,16 +1276,16 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   aria-label="编辑 Skill"
                 >
                   编辑
-                </button>
+                </span>
               ) : null}
             </div>
-            <div className={`mt-0.5 line-clamp-2 text-[12px] leading-5 ${
+            <div className={`mt-1 line-clamp-2 text-[12px] leading-5 ${
               isCustomSkill ? 'text-violet-600/70' : 'text-slate-500'
             }`}>
               {description}
             </div>
             {isCustomSkill && secondaryMeta ? (
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
                 {secondaryMeta.sourceConversation ? (
                   <span className="truncate">
                     来源：{secondaryMeta.sourceConversation}
@@ -998,7 +1299,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-1.25 flex min-w-0 flex-wrap items-center gap-1.5">
+            <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
               {metaTokens.map((token) => (
                 <span
                   key={`${skill.id}-${token}`}
@@ -1948,9 +2249,6 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                   onClick={() => {
                     syncSkillBookPosition();
                     setShowSkillBook(!showSkillBook);
-                    if (showSkillBook) {
-                      setShowExtendedExecutionModes(false);
-                    }
                     setShowModelPreference(false);
                   }}
                   className={`${unifiedIconButtonClass} ${
@@ -1978,10 +2276,13 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         bottom: Math.max(12, window.innerHeight - skillBookAnchorRect.top + 12),
                       }}
                     >
-                      <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+                      <div className="flex items-center justify-between border-b border-slate-200/70 px-4 pb-2.5 pt-3.5">
                         <div className="min-w-0">
                           <div className="text-[17px] font-semibold leading-none tracking-[-0.02em] text-slate-900">
                             Skill
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            选择一套前台执行方式，而不是普通聊天模式。
                           </div>
                         </div>
                         {activeQuickSkillId ? (
@@ -2000,7 +2301,7 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                         ) : null}
                       </div>
 
-                      <div className="px-4 pb-1.5">
+                      <div className="px-4 pb-2 pt-2.5">
                         <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
                           {SKILL_CATEGORY_TABS.map((tab) => {
                             const isActive = skillCategoryTab === tab.id;
@@ -2023,19 +2324,19 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                       </div>
 
                       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-                        <div className="space-y-1 overflow-y-auto">
+                        <div className="space-y-2 overflow-y-auto">
                           {shouldShowCreateSkillRow ? (
                             <button
                               type="button"
                               onClick={handleCreateSkillFromConversation}
                               disabled={modelMode !== 'thinking'}
-                              className={`group flex w-full items-start gap-3 rounded-[16px] px-2.5 py-2.5 text-left transition ${
+                              className={`group flex w-full items-start gap-3 rounded-[18px] border px-3 py-3 text-left transition ${
                                 modelMode === 'thinking'
-                                  ? 'hover:bg-slate-50/78'
-                                  : 'cursor-not-allowed opacity-55'
+                                  ? 'border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] hover:border-slate-300/80 hover:bg-slate-50/88'
+                                  : 'cursor-not-allowed border-slate-200/70 bg-slate-50/80 opacity-60'
                               }`}
                             >
-                              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/70 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] text-slate-500">
+                              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.98),rgba(241,245,249,0.94))] text-slate-500">
                                 <Sparkles size={15} strokeWidth={1.9} />
                               </div>
                               <div className="min-w-0 flex-1 pt-0.5">
@@ -2117,6 +2418,70 @@ export const InputAreaBottomToolbar: React.FC<InputAreaBottomToolbarProps> = (
                               placeholder="概括这个 Skill 的适用场景与产出方式"
                             />
                           </label>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="block">
+                              <div className="mb-1.5 text-[11px] font-medium text-slate-500">
+                                执行方向
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {(
+                                  ['general', 'video', 'social', 'branding', 'commerce'] as SkillRouteIntentOption[]
+                                ).map((option) => {
+                                  const preset = SKILL_ROUTE_PRESETS[option];
+                                  const isActive = customSkillDraftRouteIntent === option;
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => setCustomSkillDraftRouteIntent(option)}
+                                      className={`rounded-[12px] border px-2 py-2 text-left text-[11px] font-medium transition ${
+                                        isActive
+                                          ? 'border-slate-900 bg-slate-900 text-white'
+                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                                      }`}
+                                    >
+                                      {preset.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </label>
+                            <label className="block">
+                              <div className="mb-1.5 text-[11px] font-medium text-slate-500">
+                                跟进方式
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {([
+                                  ['direct-run', '直接执行'],
+                                  ['auto-clarify', '先补问'],
+                                ] as const).map(([value, label]) => {
+                                  const isActive = customSkillDraftFollowUpMode === value;
+                                  return (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => setCustomSkillDraftFollowUpMode(value)}
+                                      className={`rounded-[12px] border px-2 py-2 text-left text-[11px] font-medium transition ${
+                                        isActive
+                                          ? 'border-slate-900 bg-slate-900 text-white'
+                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                                      }`}
+                                    >
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </label>
+                          </div>
+                          <div className="rounded-[16px] border border-slate-200/80 bg-slate-50 px-3 py-2.5 text-[11px] leading-5 text-slate-500">
+                            <div className="font-medium text-slate-700">
+                              当前执行摘要
+                            </div>
+                            <div className="mt-1">
+                              {SKILL_ROUTE_PRESETS[customSkillDraftRouteIntent].routeSummary}
+                            </div>
+                          </div>
                           <label className="block">
                             <div className="mb-1.5 text-[11px] font-medium text-slate-500">
                               可复用执行说明

@@ -195,3 +195,62 @@ test('applyEnvironmentReferenceProtocol infers smartEdit aspect ratio from marke
   assert.equal(call.params.sourceUrl, 'data:image/png;base64,smartedit');
   assert.equal(call.params.aspectRatio, '16:9');
 });
+
+test('applyEnvironmentReferenceProtocol prioritizes deduped marker references for smartEdit', async () => {
+  const call = {
+    skillName: 'smartEdit',
+    params: {
+      instruction: 'Add a butterfly near the marked spot.',
+    },
+  } as any;
+
+  const result = await applyEnvironmentReferenceProtocol({
+    task: {
+      input: {
+        attachments: [
+          {
+            type: 'image/png',
+            markerName: 'Selection',
+            markerInfo: {
+              fullImageUrl: 'https://example.com/original.png',
+              normalizedX: 0.48,
+              normalizedY: 0.51,
+              width: 300,
+              height: 300,
+              imageWidth: 1600,
+              imageHeight: 900,
+            },
+          },
+        ],
+        uploadedAttachments: ['https://example.com/annotated.png'],
+        metadata: { imageHostProvider: 'mock-host' },
+      },
+    } as any,
+    call,
+    callIndex: 0,
+    maxReferenceImages: 4,
+    dependencies: {
+      collectReferenceCandidatesFn: () => ({
+        limitedCandidates: ['https://example.com/annotated.png', 'ATTACHMENT_0'],
+        sourceCount: 2,
+        truncated: false,
+      }),
+      resolveAttachmentTokenFn: async (_task, value) =>
+        value === 'ATTACHMENT_0' ? 'https://example.com/annotated.png' : value,
+    },
+  });
+
+  assert.equal(call.params.sourceUrl, 'https://example.com/original.png');
+  assert.equal(call.params.aspectRatio, '16:9');
+  assert.deepEqual(call.params.referenceImages, ['https://example.com/annotated.png']);
+  assert.equal(call.params.referenceImage, 'https://example.com/annotated.png');
+  assert.equal(call.params.reference_image_url, 'https://example.com/annotated.png');
+  assert.equal(call.params.init_image, 'https://example.com/annotated.png');
+  assert.match(String(call.params.instruction), /visible marker overlay/i);
+  assert.match(String(call.params.instruction), /48%/);
+  assert.match(
+    String(call.params.parameters?.preservePrompt),
+    /marker-selected target area/i,
+  );
+  assert.deepEqual(result?.references, ['https://example.com/annotated.png']);
+});

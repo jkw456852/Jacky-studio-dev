@@ -237,6 +237,8 @@ export interface AgentTaskMetadata {
   forceSkills?: boolean;
   executeProposalId?: string;
   selectedSkillCalls?: SkillCall[];
+  skillFollowUpMode?: 'auto-clarify' | 'direct-run';
+  skillClarifyChecklist?: string[];
   skillData?: {
     id?: string;
     pluginId?: string;

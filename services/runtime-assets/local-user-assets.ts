@@ -10,6 +10,11 @@ import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,
 } from "../../utils/safe-storage.ts";
+import {
+  cancelPendingStudioUserAssetDelete,
+  clearPendingStudioUserAssetDeletes,
+  recordPendingStudioUserAssetDelete,
+} from "./delete-sync.ts";
 import type { StudioUserAssetApi } from "./api.ts";
 import type {
   StudioEvolutionRecord,
@@ -1741,6 +1746,7 @@ const clearLegacyWorkspacePreferenceKeys = (): void => {
 export const clearLocalStudioUserAssetStorage = (): void => {
   safeLocalStorageRemoveItem(USER_ASSET_STORAGE_KEY);
   safeLocalStorageRemoveItem(USER_ASSET_AUDIT_STORAGE_KEY);
+  clearPendingStudioUserAssetDeletes();
   safeLocalStorageRemoveItem(LEGACY_AGENT_PROMPT_ADDON_STORAGE_KEY);
   safeLocalStorageRemoveItem(LEGACY_ROLE_DRAFT_STORAGE_KEY);
   clearLegacyWorkspacePreferenceKeys();
@@ -2226,11 +2232,36 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
 
   setSkillPreferences: (patch) => {
     const state = readState();
+    const previousCustomSkillIds = new Set(
+      Object.keys(state.skillPreferences.customSkillConfigs || {}),
+    );
     state.skillPreferences = normalizeSkillPreferences({
       ...state.skillPreferences,
       ...patch,
       updatedAt: Date.now(),
     });
+    const nextActiveQuickSkillId = String(
+      state.skillPreferences.activeQuickSkill?.id || "",
+    ).trim();
+    if (nextActiveQuickSkillId) {
+      cancelPendingStudioUserAssetDelete(
+        "skill-custom-config",
+        nextActiveQuickSkillId,
+      );
+    }
+    Object.keys(patch.customSkillConfigs || {}).forEach((skillId) => {
+      cancelPendingStudioUserAssetDelete("skill-custom-config", skillId);
+    });
+    if (patch.customSkillConfigs) {
+      const nextCustomSkillIdSet = new Set(
+        Object.keys(state.skillPreferences.customSkillConfigs || {}),
+      );
+      previousCustomSkillIds.forEach((skillId) => {
+        if (!nextCustomSkillIdSet.has(skillId)) {
+          recordPendingStudioUserAssetDelete("skill-custom-config", skillId);
+        }
+      });
+    }
     return commitUnifiedState(state, {
       action: "update",
       targetKind: "skill-preference",
@@ -2243,11 +2274,30 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
 
   setPluginPreferences: (patch) => {
     const state = readState();
+    const previousPluginRecordIds = new Set(
+      Object.keys(state.pluginPreferences.records || {}),
+    );
     state.pluginPreferences = normalizePluginPreferences({
       ...state.pluginPreferences,
       ...patch,
       updatedAt: Date.now(),
     });
+    Object.keys(patch.records || {}).forEach((pluginId) => {
+      cancelPendingStudioUserAssetDelete("plugin-preference-record", pluginId);
+    });
+    if (patch.records) {
+      const nextPluginRecordIdSet = new Set(
+        Object.keys(state.pluginPreferences.records || {}),
+      );
+      previousPluginRecordIds.forEach((pluginId) => {
+        if (!nextPluginRecordIdSet.has(pluginId)) {
+          recordPendingStudioUserAssetDelete(
+            "plugin-preference-record",
+            pluginId,
+          );
+        }
+      });
+    }
     return commitUnifiedState(state, {
       action: "update",
       targetKind: "plugin-preference",
@@ -2268,8 +2318,10 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
         schemaVersion: ROLE_ADDON_VERSION,
         updatedAt: Date.now(),
       };
+      cancelPendingStudioUserAssetDelete("agent-role-addon", agentId);
     } else {
       delete state.agentPromptAddons[agentId];
+      recordPendingStudioUserAssetDelete("agent-role-addon", agentId);
     }
     return commitUnifiedState(state, {
       action: normalized ? "update" : "remove",
@@ -2284,6 +2336,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
   clearAgentPromptAddon: (agentId) => {
     const state = readState();
     delete state.agentPromptAddons[agentId];
+    recordPendingStudioUserAssetDelete("agent-role-addon", agentId);
     return commitUnifiedState(state, {
       action: "remove",
       targetKind: "agent-role-addon",
@@ -2299,6 +2352,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
     const normalizedDraft = normalizeDraft(draft);
     if (!normalizedDraft) {
       delete state.latestRoleDrafts[agentId];
+      recordPendingStudioUserAssetDelete("role-draft", agentId);
       return commitUnifiedState(state, {
         action: "remove",
         targetKind: "role-draft",
@@ -2317,6 +2371,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
       roleStrategyReason: String(options?.roleStrategyReason || "").trim(),
       ...normalizedDraft,
     };
+    cancelPendingStudioUserAssetDelete("role-draft", agentId);
     return commitUnifiedState(state, {
       action: "update",
       targetKind: "role-draft",
@@ -2328,6 +2383,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
   clearLatestRoleDraft: (agentId) => {
     const state = readState();
     delete state.latestRoleDrafts[agentId];
+    recordPendingStudioUserAssetDelete("role-draft", agentId);
     return commitUnifiedState(state, {
       action: "remove",
       targetKind: "role-draft",
@@ -2629,6 +2685,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
     if (!normalized) return null;
     const state = readState();
     state.styleLibraries[normalized.id] = normalized;
+    cancelPendingStudioUserAssetDelete("style-library", normalized.id);
     return (
       commitUnifiedState(state, {
         action: "update",
@@ -2644,6 +2701,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
     const state = readState();
     if (normalizedId) {
       delete state.styleLibraries[normalizedId];
+      recordPendingStudioUserAssetDelete("style-library", normalizedId);
     }
     return commitUnifiedState(state, {
       action: "remove",
@@ -2692,6 +2750,7 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
       sourcePreviewType:
         options?.sourcePreviewType || existing?.sourcePreviewType || normalized.sourcePreviewType,
     };
+    cancelPendingStudioUserAssetDelete("style-library-candidate", normalized.id);
     return (
       commitUnifiedState(state, {
         action: "update",
@@ -2707,6 +2766,10 @@ export const createLocalStudioUserAssetApi = (): StudioUserAssetApi => ({
     const state = readState();
     if (normalizedId) {
       delete state.styleLibraryCandidates[normalizedId];
+      recordPendingStudioUserAssetDelete(
+        "style-library-candidate",
+        normalizedId,
+      );
     }
     return commitUnifiedState(state, {
       action: "remove",
