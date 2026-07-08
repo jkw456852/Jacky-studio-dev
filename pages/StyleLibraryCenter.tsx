@@ -1864,6 +1864,136 @@ const StyleLibraryCenter: React.FC = () => {
         </div>
       ) : null}
 
+      {activeGalleryCard ? (
+        <div className="fixed inset-0 z-[60] bg-[rgba(15,23,42,0.42)] p-4 backdrop-blur-[2px]">
+          <div className="mx-auto flex h-[min(88vh,860px)] w-full max-w-[980px] min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] lg:flex-row">
+            <div className="border-b border-slate-100 bg-slate-50/70 p-5 lg:w-[360px] lg:border-b-0 lg:border-r">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-[12px] font-medium text-slate-500">
+                    {activeGalleryCard.type === "case"
+                      ? "画廊案例"
+                      : activeGalleryCard.type === "template"
+                        ? "画廊模板"
+                        : "外部来源"}
+                  </div>
+                  <div className="mt-2 text-[22px] font-semibold tracking-[-0.02em] text-slate-950">
+                    {activeGalleryCard.title}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-slate-900"
+                  onClick={handleCloseGalleryCard}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div
+                className="relative mt-5 aspect-[0.78] overflow-hidden rounded-[18px] border border-slate-200"
+                style={{
+                  background: activeGalleryCard.cover
+                    ? `linear-gradient(180deg, rgba(15,23,42,0.02), rgba(15,23,42,0.10)), url(${activeGalleryCard.cover}) center/cover no-repeat`
+                    : getCardPreviewBackground(0),
+                }}
+              >
+                {activeGalleryCard.type === "source" ? (
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-transparent px-4 pb-4 pt-12 text-white">
+                    <div className="text-[12px] font-medium text-white/85">
+                      {activeGalleryCard.repository || "外部来源"}
+                    </div>
+                    <div className="mt-2 text-[13px] leading-6 text-white/78">
+                      作为画廊的补充数据源展示在这里，避免只有单一来源。
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {activeGalleryCard.chips.map((chip) => (
+                  <span
+                    key={`${activeGalleryCard.key}-${chip}`}
+                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                {activeGalleryCard.type === "source" ? (
+                  <button
+                    type="button"
+                    className={primaryButtonClass}
+                    onClick={() => handleOpenGallerySource(activeGalleryCard)}
+                  >
+                    <ArrowUpRight size={15} />
+                    查看仓库
+                  </button>
+                ) : activeGalleryCard.preview ? (
+                  <button
+                    type="button"
+                    className={primaryButtonClass}
+                    onClick={() => handleImportFromGallery(activeGalleryCard.preview!)}
+                  >
+                    <Sparkles size={15} />
+                    导入到风格卡片
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={subtleButtonClass}
+                  onClick={handleCloseGalleryCard}
+                >
+                  返回画廊
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
+              <div className="rounded-[20px] border border-slate-200 bg-white p-5">
+                <div className="text-[16px] font-semibold text-slate-950">内容概览</div>
+                <div className="mt-3 text-[14px] leading-7 text-slate-600">
+                  {activeGalleryCard.description || activeGalleryCard.prompt || "暂无描述"}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-5">
+                <div className="text-[16px] font-semibold text-slate-950">
+                  {activeGalleryCard.type === "source" ? "收录价值" : "Prompt 预览"}
+                </div>
+                {activeGalleryCard.type === "source" ? (
+                  <div className="mt-3 space-y-3">
+                    {(activeGalleryCard.highlights || []).map((point) => (
+                      <div
+                        key={point}
+                        className="rounded-[14px] border border-slate-100 bg-slate-50 px-4 py-3 text-[13px] leading-6 text-slate-600"
+                      >
+                        {point}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 whitespace-pre-wrap rounded-[14px] border border-slate-100 bg-slate-50 px-4 py-4 text-[13px] leading-6 text-slate-700">
+                    {activeGalleryCard.prompt}
+                  </div>
+                )}
+              </div>
+
+              {activeGalleryCard.repository ? (
+                <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-5">
+                  <div className="text-[16px] font-semibold text-slate-950">来源信息</div>
+                  <div className="mt-3 text-[13px] leading-6 text-slate-600">
+                    {activeGalleryCard.repository}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {editor ? (
         <div className="fixed inset-0 z-50 bg-[rgba(15,23,42,0.42)] p-4 backdrop-blur-[2px]">
           <div className="mx-auto flex h-[min(92vh,940px)] w-full max-w-[1120px] min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] lg:flex-row">
