@@ -176,7 +176,7 @@ export const resolveRoutingDecision = async ({
       handoffMessage: `User request: ${message}`,
       confidence: 0.75,
       roleStrategy: 'reuse',
-      roleStrategyReason: 'Local keyword routing matched an existing specialist.',
+      roleStrategyReason: 'Local single-agent pre-route kept the request on Coco.',
     } as EnhancedRoutingDecision;
   } else {
     try {
@@ -207,7 +207,7 @@ export const resolveRoutingDecision = async ({
   }
 
   if (!decision) {
-    const fallbackAgent = shouldPreferAutonomousChatFallback ? 'coco' : 'poster';
+    const fallbackAgent = 'coco';
     decision = buildFallbackRoutingDecision(
       message,
       fallbackAgent as AgentType,

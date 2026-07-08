@@ -1,9 +1,9 @@
 import { useCallback, type MutableRefObject } from "react";
 import { extractTextFromImage, generateImage } from "../../../services/gemini";
 import type { ImageGenerationConfig } from "../../../services/gemini";
-import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
+import { smartEditSkill } from "../../../services/skills/smart-edit.skill.ts";
 import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
-import type { DesignTaskMode } from "../../../types/common";
+import type { DesignTaskMode } from "../../../types/common.ts";
 
 type PersistEditDetails = {
   instruction: string;

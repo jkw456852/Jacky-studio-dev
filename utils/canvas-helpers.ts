@@ -3,7 +3,7 @@
  * 处理资产到画布元素的转换
  */
 
-import { GeneratedAsset } from '../types/agent.types';
+import { GeneratedAsset } from '../types/agent.types.ts';
 import { CanvasElement } from '../types';
 
 const IMAGE_FIT_VIEWPORT_RATIO = 0.6;

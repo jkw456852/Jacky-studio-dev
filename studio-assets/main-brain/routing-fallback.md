@@ -5,43 +5,43 @@
   "rules": [
     {
       "keywords": ["logo", "vi", "品牌", "标志", "商标", "brand", "视觉识别", "品牌手册", "色彩系统"],
-      "agent": "vireo",
+      "agent": "coco",
       "priority": 2,
       "label": "品牌/VI/Logo"
     },
     {
       "keywords": ["故事板", "分镜", "九宫格", "分镜图", "storyboard", "脚本", "剧本", "镜头", "shot list", "场景设计", "体验", "氛围"],
-      "agent": "cameron",
+      "agent": "coco",
       "priority": 1,
       "label": "故事板/分镜"
     },
     {
       "keywords": ["包装", "package", "packaging", "礼盒", "瓶身", "标签", "盒子", "瓶子", "罐子", "unboxing"],
-      "agent": "package",
+      "agent": "coco",
       "priority": 10,
       "label": "包装设计"
     },
     {
       "keywords": ["动画", "motion", "动效", "gif", "animation", "视频", "video", "片头", "转场", "vfx", "3d动画"],
-      "agent": "motion",
+      "agent": "coco",
       "priority": 4,
       "label": "动效/视频/动画"
     },
     {
       "keywords": ["营销", "campaign", "推广", "电商", "亚马逊", "amazon", "副图", "listing", "主图", "详情图", "shopify", "淘宝", "天猫", "小红书", "一套", "一组", "系列", "套图"],
-      "agent": "campaign",
+      "agent": "coco",
       "priority": 5,
       "label": "电商/营销/多图系列"
     },
     {
       "keywords": ["海报", "poster", "banner", "宣传", "广告", "传单", "社交媒体", "instagram", "朋友圈", "封面", "邀请函", "贺卡", "名片", "证书", "节日", "春节", "新年", "圣诞", "中秋"],
-      "agent": "poster",
+      "agent": "coco",
       "priority": 6,
       "label": "海报/单图设计"
     },
     {
       "keywords": ["设计", "做", "生成", "画", "制作", "创作", "帮我", "图片", "图", "海报", "卡片", "素材", "风格", "一个", "几张"],
-      "agent": "poster",
+      "agent": "coco",
       "priority": 99,
       "label": "通用设计请求"
     }
@@ -60,3 +60,4 @@
 - 离线兜底
 - API 不可用时的安全降级
 - 可解释的人工维护入口
+- 单智能体模式下的关键词归一化入口（所有设计类请求先落到 Coco，再由 Coco 决定 skill 和工作流）

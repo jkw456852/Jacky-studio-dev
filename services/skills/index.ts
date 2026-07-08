@@ -1,20 +1,20 @@
-import { imageGenSkill } from './image-gen.skill';
-import { videoGenSkill } from './video-gen.skill';
-import { textExtractSkill } from './text-extract.skill';
-import { regionAnalyzeSkill } from './region-analyze.skill';
-import { copyGenSkill } from './copy-gen.skill';
-import { smartEditSkill } from './smart-edit.skill';
-import { exportSkill } from './export.skill';
-import { touchEditSkill } from './touch-edit.skill';
-import { workspaceSearchSkill } from './workspace-search.skill';
-import { runJkAiOneclick, formatJkaiOneclickResult } from './xcai-oneclick.skill';
-import { generateModelSkill } from './generate-model.skill';
-import { analyzeClothingProductSkill } from './analyze-clothing-product.skill';
-import { clothingStudioSkill } from './clothing-studio.skill';
-import { clothingStudioWorkflowSkill } from './clothing-studio-workflow.skill';
-import { analyzeListingProductSkill } from './analyze-listing-product.skill';
-import { amazonListingSkill } from './amazon-listing.skill';
-import { cnDetailPageSkill } from './cn-detail-page.skill';
+import { imageGenSkill } from './image-gen.skill.ts';
+import { videoGenSkill } from './video-gen.skill.ts';
+import { textExtractSkill } from './text-extract.skill.ts';
+import { regionAnalyzeSkill } from './region-analyze.skill.ts';
+import { copyGenSkill } from './copy-gen.skill.ts';
+import { smartEditSkill } from './smart-edit.skill.ts';
+import { exportSkill } from './export.skill.ts';
+import { touchEditSkill } from './touch-edit.skill.ts';
+import { workspaceSearchSkill } from './workspace-search.skill.ts';
+import { runJkAiOneclick, formatJkaiOneclickResult } from './xcai-oneclick.skill.ts';
+import { generateModelSkill } from './generate-model.skill.ts';
+import { analyzeClothingProductSkill } from './analyze-clothing-product.skill.ts';
+import { clothingStudioSkill } from './clothing-studio.skill.ts';
+import { clothingStudioWorkflowSkill } from './clothing-studio-workflow.skill.ts';
+import { analyzeListingProductSkill } from './analyze-listing-product.skill.ts';
+import { amazonListingSkill } from './amazon-listing.skill.ts';
+import { cnDetailPageSkill } from './cn-detail-page.skill.ts';
 import {
   ecomAutofillSupplementsSkill,
   ecomAutofillImageAnalysesSkill,
@@ -25,7 +25,7 @@ import {
   ecomReviewGeneratedResultSkill,
   ecomRewritePromptSkill,
   ecomSupplementQuestionsSkill,
-} from './ecom-oneclick-workflow.skill';
+} from './ecom-oneclick-workflow.skill.ts';
 import { REGISTERED_SKILL_NAMES } from './skill-manifest.ts';
 import { formatSkillExecutionResult, resolveSkillHandler } from './skill-runtime.ts';
 import {

@@ -1,4 +1,4 @@
-import type { Requirements, ModelGenOptions } from '../types/workflow.types';
+import type { Requirements, ModelGenOptions } from '../types/workflow.types.ts';
 
 export function buildModelConstraintsText(spec?: ModelGenOptions): string {
   if (!spec) return '';

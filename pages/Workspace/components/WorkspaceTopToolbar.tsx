@@ -170,7 +170,6 @@ export const WorkspaceTopToolbar: React.FC<WorkspaceTopToolbarProps> = ({
   return (
     <div
       className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-[0_2px_20px_rgba(0,0,0,0.08)] border border-gray-200/60 px-2 py-1.5 flex flex-row gap-0.5 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 items-center"
-      style={{ marginLeft: showAssistant ? "-240px" : "0" }}
     >
       <div className="relative group/nav" ref={navMenuRef}>
         <button

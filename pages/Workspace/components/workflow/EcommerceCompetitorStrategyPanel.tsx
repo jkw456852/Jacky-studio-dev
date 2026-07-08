@@ -16,7 +16,7 @@ import {
 import {
   useEcommerceOneClickState,
   useEcommerceOneClickStore,
-} from "../../../../stores/ecommerceOneClick.store";
+} from "../../../../stores/ecommerceOneClick.store.ts";
 import {
   CompetitorDeckExtractError,
   extractCompetitorDeckFromUrl,
@@ -40,7 +40,7 @@ import type {
   EcommerceCompetitorDeckInput,
   EcommerceCompetitorImageAnalysisItem,
   EcommerceCompetitorStrategyMode,
-} from "../../../../types/workflow.types";
+} from "../../../../types/workflow.types.ts";
 import { resolveStoredTopicAssetUrl } from "../../../../services/topic-memory";
 import {
   dispatchEcommercePlanGroupNavigate,

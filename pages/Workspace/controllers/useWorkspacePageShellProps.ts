@@ -12,7 +12,7 @@ import type {
   WorkspaceBrowserAgentAspectRatioOption,
   WorkspaceBrowserAgentModelOption,
 } from "../browserAgentHost";
-import { AssistantSidebar } from "../components";
+import type { AssistantSidebarProps } from "../components/assistantSidebar.types";
 import { ToolbarBottom } from "../components/ToolbarBottom";
 import { WorkspaceCanvasElementsLayer } from "../components/WorkspaceCanvasElementsLayer";
 import { WorkspaceCanvasOverlayLayer } from "../components/WorkspaceCanvasOverlayLayer";
@@ -28,7 +28,7 @@ import { WorkspaceTopToolbar } from "../components/WorkspaceTopToolbar";
 import { WorkspaceTouchEditIndicator } from "../components/WorkspaceTouchEditIndicator";
 import { WorkspaceTouchEditPopup } from "../components/WorkspaceTouchEditPopup";
 import { getElementSourceUrl } from "../workspaceShared";
-import { createStyleLibraryDraftFromMode } from "../../../services/vision-orchestrator/style-library";
+import { createStyleLibraryDraftFromMode } from "../../../services/vision-orchestrator/style-library.ts";
 
 type Point = {
   x: number;
@@ -37,7 +37,7 @@ type Point = {
 
 type UseWorkspacePageShellPropsArgs = {
   workspaceLeftPanelProps: React.ComponentProps<typeof WorkspaceLeftPanel>;
-  assistantSidebarProps: React.ComponentProps<typeof AssistantSidebar>;
+  assistantSidebarProps: AssistantSidebarProps;
   workspaceCanvasElementsLayerProps: React.ComponentProps<
     typeof WorkspaceCanvasElementsLayer
   >;
@@ -295,7 +295,7 @@ export const useWorkspacePageShellProps = ({
   }, [setTouchEditInstruction, setTouchEditPopup]);
 
   const workspaceSidebarLayerProps = React.useMemo<
-    React.ComponentProps<typeof WorkspaceSidebarLayer>
+    Omit<React.ComponentProps<typeof WorkspaceSidebarLayer>, "mainContent">
   >(
     () => ({
       leftPanel: workspaceLeftPanelProps,
@@ -429,11 +429,11 @@ export const useWorkspacePageShellProps = ({
           }
           case "genImageCount": {
             const nextCount = Number(rawValue);
-            if (![1, 2, 3, 4].includes(nextCount)) {
+            if (!Number.isFinite(nextCount) || nextCount < 1) {
               return { accepted: false, reason: `Invalid image count: ${rawValue}` };
             }
             const accepted = updateElementById(targetId, {
-              genImageCount: nextCount as CanvasElement["genImageCount"],
+              genImageCount: Math.floor(nextCount),
             });
             return {
               accepted,
@@ -743,11 +743,6 @@ export const useWorkspacePageShellProps = ({
         onShowAssistant: handleOpenAssistant,
         onOpenAnnouncements,
         unreadAnnouncementCount,
-        workflowRecipesOpen: leftPanelMode === "workflow-recipes",
-        onToggleWorkflowRecipes: () =>
-          setLeftPanelMode(
-            leftPanelMode === "workflow-recipes" ? null : "workflow-recipes",
-          ),
       },
       bottomToolbar: {
         leftPanelMode,

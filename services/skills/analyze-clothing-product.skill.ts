@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getBestModelId, generateJsonResponse } from '../gemini';
-import type { ClothingAnalysis, ProductType } from '../../types/workflow.types';
+import type { ClothingAnalysis, ProductType } from '../../types/workflow.types.ts';
 
 const outputSchema = z.object({
   productType: z.enum(['top', 'dress', 'pants', 'skirt', 'set', 'outerwear', 'unknown']),

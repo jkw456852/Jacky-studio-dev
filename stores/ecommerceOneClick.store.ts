@@ -18,8 +18,8 @@ import type {
   EcommerceWorkflowImage,
   EcommerceWorkflowMode,
   EcommerceWorkflowStep,
-} from '../types/workflow.types';
-import { buildCompetitorPlanningContext } from '../utils/ecommerce-competitor-planning';
+} from '../types/workflow.types.ts';
+import { buildCompetitorPlanningContext } from '../utils/ecommerce-competitor-planning.ts';
 
 type ProgressState = {
   done: number;

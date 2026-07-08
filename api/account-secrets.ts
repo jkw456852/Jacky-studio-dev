@@ -4,7 +4,7 @@ import {
   createEmptyAccountSecretsSnapshot,
   normalizeAccountSecretsSnapshot,
   type StudioAccountSecretsSnapshot,
-} from '../services/account-secrets-shared.js';
+} from '../services/account-secrets-shared.ts';
 
 type AccountSecretsCipherEnvelope = {
   version: 1;

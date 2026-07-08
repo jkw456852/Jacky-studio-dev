@@ -260,6 +260,7 @@ const DEFAULT_SKILL_PREFERENCES = {
   recentSkillIds: [] as string[],
   pinnedSkillIds: [] as string[],
   customSkillConfigs: {} as Record<string, Record<string, unknown>>,
+  frontstageSkillRuntimeConfigs: {} as Record<string, Record<string, unknown>>,
 };
 
 const arraysEqual = (left: string[], right: string[]): boolean =>
@@ -955,6 +956,10 @@ export const mergeStudioUserAssetStates = (args: {
         customSkillConfigs: {
           ...(remote.skillPreferences.customSkillConfigs || {}),
           ...(local.skillPreferences.customSkillConfigs || {}),
+        },
+        frontstageSkillRuntimeConfigs: {
+          ...(remote.skillPreferences.frontstageSkillRuntimeConfigs || {}),
+          ...(local.skillPreferences.frontstageSkillRuntimeConfigs || {}),
         },
       };
       return;

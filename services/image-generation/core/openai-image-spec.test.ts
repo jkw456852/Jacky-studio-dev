@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  dataUrlToFilePayload,
   resolveCanonicalImageModelDisplayName,
   resolveCanonicalImageModelId,
   resolveOpenAIImageSize,
@@ -56,5 +57,25 @@ test('resolveOpenAIImageSize honors explicit exact sizes over presets', () => {
   assert.equal(
     resolveOpenAIImageSize('gpt-image-2', '1:1', '1K', '1600x900'),
     '1600x896',
+  )
+})
+
+test('resolveCanonicalImageModelDisplayName collapses GPT Image aliases to the transport-facing id', () => {
+  assert.equal(resolveCanonicalImageModelDisplayName('GPT Image 2'), 'gpt-image-2')
+  assert.equal(resolveCanonicalImageModelDisplayName('gptimage2'), 'gpt-image-2')
+})
+
+test('dataUrlToFilePayload normalizes whitespace and missing padding in base64 payloads', async () => {
+  const payload = dataUrlToFilePayload('data:image/png;base64,a Gk', 'sample')
+  assert.ok(payload)
+  assert.equal(payload?.filename, 'sample.png')
+  assert.equal(payload?.blob.type, 'image/png')
+  assert.equal(await payload?.blob.text(), 'hi')
+})
+
+test('dataUrlToFilePayload returns null for invalid base64 payloads', () => {
+  assert.equal(
+    dataUrlToFilePayload('data:image/png;base64,%%%not-valid%%%', 'sample'),
+    null,
   )
 })

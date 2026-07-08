@@ -30,10 +30,17 @@ import {
   type WorkspaceImageResolutionPreset,
   type WorkspaceImageSizeMode,
   type WorkspaceImageSupportStatus,
-} from "../../../services/openai-image-presets";
+} from "../../../services/openai-image-presets.ts";
 import { isLikelyGeneratedReferencePreview } from "../workspaceShared";
 
 const IMAGE_QUALITY_OPTIONS = ["high", "medium", "low"] as const;
+const IMAGE_COUNT_QUICK_OPTIONS = [1, 2, 4, 8, 16, 32] as const;
+
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
+};
 
 type ImageModelOption = {
   id: string;
@@ -806,16 +813,15 @@ const WorkspaceImageConfigPanelImpl: React.FC<
               <ChevronDown size={10} className="opacity-50" />
             </button>
             {showCountPicker && (
-              <div className="absolute bottom-full mb-2 right-0 w-28 bg-white rounded-xl shadow-xl border border-gray-100 p-1 z-[60]">
-                {([1, 2, 3, 4] as const).map((count) => (
+              <div className="absolute bottom-full mb-2 right-0 w-36 bg-white rounded-xl shadow-xl border border-gray-100 p-1 z-[60]">
+                {IMAGE_COUNT_QUICK_OPTIONS.map((count) => (
                   <button
                     key={count}
                     onClick={() => {
                       updateSelectedElement({ genImageCount: count });
-                      setShowCountPicker(false);
                     }}
                     className={`w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg text-xs transition ${
-                      (element.genImageCount || 1) === count
+                      normalizePositiveInteger(element.genImageCount) === count
                         ? "text-blue-600 font-bold bg-blue-50/30"
                         : "text-gray-600"
                     }`}
@@ -823,6 +829,25 @@ const WorkspaceImageConfigPanelImpl: React.FC<
                     {count}张
                   </button>
                 ))}
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={normalizePositiveInteger(element.genImageCount)}
+                  onChange={(event) =>
+                    updateSelectedElement({
+                      genImageCount: normalizePositiveInteger(
+                        event.currentTarget.value,
+                        normalizePositiveInteger(element.genImageCount),
+                      ),
+                    })
+                  }
+                  className="mt-1 h-8 w-full rounded-lg border border-gray-100 px-2 text-center text-xs font-bold text-gray-700 outline-none focus:border-gray-300"
+                  aria-label="生成张数"
+                />
+                <div className="mt-1 px-1 text-[10px] leading-4 text-gray-400">
+                  常用预设只是快捷按钮；项目不设最大张数，实际由供应商决定。
+                </div>
               </div>
             )}
           </div>

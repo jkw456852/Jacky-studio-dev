@@ -1,6 +1,6 @@
 import type { AgentType } from "../../types/agent.types";
 import { getStudioUserAssetApi } from "../runtime-assets/api";
-import { getStudioAgentSystemPrompt } from "../runtime-assets/studio-registry";
+import { getStudioAgentSystemPrompt } from "../runtime-assets/studio-registry.ts";
 
 export const getBuiltInAgentPrompt = (agentId: AgentType): string =>
   getStudioAgentSystemPrompt(agentId);

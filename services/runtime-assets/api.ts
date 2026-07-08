@@ -4,8 +4,8 @@ import type {
   StudioRoleEntity,
   StudioRoleVersionRecord,
   StudioTemporaryRoleDraft,
-} from "../../types/agent.types";
-import type { WorkspaceStyleLibrary } from "../../types/common";
+} from "../../types/agent.types.ts";
+import type { WorkspaceStyleLibrary } from "../../types/common.ts";
 import { createLocalStudioUserAssetApi } from "./local-user-assets.ts";
 import { createRemoteStudioUserAssetApi } from "./remote-user-assets.ts";
 import type {

@@ -6,11 +6,11 @@ import type {
   EcommerceCompetitorPageAnalysis,
   EcommerceCompetitorPageRole,
   EcommerceCompetitorTextDensity,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 import { generateJsonResponse, getBestModelId } from "./gemini";
 import { resolveStoredTopicAssetUrl } from "./topic-memory";
-import { useImageHostStore } from "../stores/imageHost.store";
-import { uploadImage } from "../utils/uploader";
+import { useImageHostStore } from "../stores/imageHost.store.ts";
+import { uploadImage } from "../utils/uploader.ts";
 
 type CompetitorDeckFailure = {
   deckId: string;

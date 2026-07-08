@@ -4,11 +4,15 @@ import {
   ImageGenerationRequest,
   VideoGenerationRequest,
 } from "./types";
-import { geminiImageProvider, geminiVideoProvider } from "./gemini.provider";
-import { replicateImageProvider } from "./replicate.provider";
-import { klingVideoProvider } from "./kling.provider";
-import { ProviderError } from "../../utils/provider-error";
-import { resolveCanonicalImageModelDisplayName } from "../image-generation/core/openai-image-spec";
+import { geminiImageProvider, geminiVideoProvider } from "./gemini.provider.ts";
+import { replicateImageProvider } from "./replicate.provider.ts";
+import { klingVideoProvider } from "./kling.provider.ts";
+import { ProviderError } from "../../utils/provider-error.ts";
+import { resolveCanonicalImageModelDisplayName } from "../image-generation/core/openai-image-spec.ts";
+import {
+  hasUsableApiKeyForProviderId,
+  resolveFirstUsableProviderId,
+} from "../provider-config.ts";
 
 // All registered providers
 const imageProviders: Map<string, ImageProvider> = new Map([
@@ -56,7 +60,19 @@ const resolvePreferredImageProviderId = (): string | null => {
   try {
     if (typeof window !== 'undefined') {
       const raw = window.localStorage.getItem('workspace_preferred_image_provider_id');
-      if (raw) return raw;
+      if (raw && raw.trim() && raw.trim().toLowerCase() !== 'default') return raw.trim();
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+const resolveActiveImageProviderId = (): string | null => {
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('api_provider');
+      if (raw && raw.trim() && raw.trim().toLowerCase() !== 'default') return raw.trim();
     }
   } catch {
     // ignore
@@ -96,7 +112,14 @@ const warnModelFallback = (
   requestedModel: string,
   resolvedModel: string,
   fallbackProviderId: string,
+  reason: "unknown-model" | "provider-override" = "unknown-model",
 ) => {
+  if (reason === "provider-override") {
+    console.info(
+      `[provider-router] ${type} model "${requestedModel}" (resolved: "${resolvedModel}") routed to explicit provider "${fallbackProviderId}"`,
+    );
+    return;
+  }
   console.warn(
     `[provider-router] Unknown ${type} model "${requestedModel}" (resolved: "${resolvedModel}") -> fallback provider "${fallbackProviderId}"`,
   );
@@ -139,15 +162,42 @@ export async function generateImageWithProvider(
   const requestedModel = String(model || "").trim();
   const resolvedModel = resolveImageModel(requestedModel);
   const matchedProviderId = modelToImageProvider[resolvedModel];
-  const preferredProviderId = request.providerId || resolvePreferredImageProviderId();
+  const explicitProviderId = (() => {
+    const raw = String(request.providerId || "").trim();
+    if (!raw) return null;
+    if (raw.toLowerCase() === "default" || raw.toLowerCase() === "auto") {
+      return null;
+    }
+    return raw;
+  })();
+  const preferredProviderId = resolvePreferredImageProviderId();
+  const activeProviderId = resolveActiveImageProviderId();
   if (!matchedProviderId && shouldUseStrictModelRouting()) {
     throw createModelNotFoundError("image", requestedModel, resolvedModel);
   }
-  const providerId = matchedProviderId
-    || (preferredProviderId && imageProviders.has(preferredProviderId) ? preferredProviderId : null)
-    || "gemini"; // 默认回落到 Gemini / 云雾中转大管家
+  const providerId =
+    resolveFirstUsableProviderId([
+      explicitProviderId,
+      preferredProviderId,
+      activeProviderId,
+      matchedProviderId,
+      "gemini",
+    ]) ||
+    explicitProviderId ||
+    preferredProviderId ||
+    activeProviderId ||
+    matchedProviderId ||
+    "gemini";
   if (!matchedProviderId) {
     warnModelFallback("image", requestedModel, resolvedModel, providerId);
+  } else if (providerId !== matchedProviderId) {
+    warnModelFallback(
+      "image",
+      requestedModel,
+      resolvedModel,
+      providerId,
+      "provider-override",
+    );
   }
   const provider = imageProviders.get(providerId);
 
@@ -163,6 +213,16 @@ export async function generateImageWithProvider(
       imageSize: request.imageSize as '1K' | '2K' | '4K' | undefined,
       exactSize: request.exactSize,
       imageQuality: request.imageQuality,
+      background: request.background,
+      outputFormat: request.outputFormat,
+      outputCompression: request.outputCompression,
+      moderation: request.moderation,
+      n: request.n,
+      partialImages: request.partialImages,
+      stream: request.stream,
+      style: request.style,
+      responseFormat: request.responseFormat,
+      inputFidelity: request.inputFidelity,
       referenceImage: request.referenceImage,
       referenceImages: request.referenceImages,
       maskImage: request.maskImage,
@@ -175,6 +235,17 @@ export async function generateImageWithProvider(
       consistencyContext: request.consistencyContext,
       onSubmitted: request.onSubmitted as any,
       onTransportPrepared: request.onTransportPrepared as any,
+    });
+  }
+
+  if (!hasUsableApiKeyForProviderId(providerId)) {
+    throw new ProviderError({
+      provider: providerId,
+      code: "API_KEY_MISSING",
+      retryable: false,
+      stage: "config",
+      details: `missing_api_key:image:${resolvedModel}`,
+      message: `当前生图通道 ${providerId} 未配置可用密钥。`,
     });
   }
 

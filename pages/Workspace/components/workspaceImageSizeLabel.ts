@@ -2,7 +2,7 @@ import {
   getImageModelSupportState,
   isGptImage2FamilyModel,
   type WorkspaceImageResolutionPreset,
-} from "../../../services/openai-image-presets";
+} from "../../../services/openai-image-presets.ts";
 
 export const getImageResolutionDisplayLabel = (opts: {
   resolution: WorkspaceImageResolutionPreset;

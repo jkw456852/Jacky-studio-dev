@@ -11,10 +11,9 @@ import {
   getRenderableImageAssetUrl,
   sanitizePersistableAttachmentPreviewUrl,
 } from '../workspaceShared';
-import { getGeneratedConversationFilesFromAgentData } from "../components/generatedFiles";
+import { compactAssistantThreadForPersistence } from "./workspaceAssistantThreadPersistence.ts";
 
 const MAX_HISTORY_STEPS = 30;
-const MAX_CONVERSATIONS = 12;
 const MAX_CONVERSATION_MESSAGES = 80;
 const MAX_MESSAGE_TEXT = 12000;
 const MAX_ANALYSIS_TEXT = 8000;
@@ -23,9 +22,19 @@ const MAX_SUGGESTIONS = 12;
 const MAX_IMAGE_URLS = 16;
 const MAX_VIDEO_URLS = 8;
 const DATA_URL_PREFIX = /^data:/i;
-const MAX_PERSISTED_ASSETS = 16;
 const MAX_PROGRESS_LOG_ITEMS = 24;
 const MAX_DRAFT_INPUT_BLOCKS = 24;
+const MAX_QUICK_SKILL_CONFIG_TEXT = 4000;
+const MAX_QUICK_SKILL_CONFIG_DEPTH = 6;
+
+const QUICK_SKILL_CONFIG_VOLATILE_KEYS = new Set([
+  'createdAt',
+  'updatedAt',
+  'lastUsedAt',
+  'lastSuccessfulAt',
+  'distilledAt',
+  'markdownAssetUpdatedAt',
+]);
 
 type PersistedExecutionTrace = NonNullable<
   NonNullable<ChatMessage["agentData"]>["executionTrace"]
@@ -56,6 +65,85 @@ const trimText = (value: unknown, maxLength: number): string => {
     return value;
   }
   return value.slice(0, maxLength);
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const shouldDropQuickSkillConfigKey = (key: string): boolean =>
+  QUICK_SKILL_CONFIG_VOLATILE_KEYS.has(key) ||
+  key.endsWith('UpdatedAt') ||
+  key.endsWith('CreatedAt');
+
+const sanitizeQuickSkillConfigValue = (
+  value: unknown,
+  depth = 0,
+): unknown => {
+  if (depth > MAX_QUICK_SKILL_CONFIG_DEPTH) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const next = value
+      .map((item) => sanitizeQuickSkillConfigValue(item, depth + 1))
+      .filter((item) => item !== undefined);
+    return next.length > 0 ? next : undefined;
+  }
+
+  if (isPlainObject(value)) {
+    const next = Object.keys(value)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        if (shouldDropQuickSkillConfigKey(key)) {
+          return acc;
+        }
+        const sanitized = sanitizeQuickSkillConfigValue(value[key], depth + 1);
+        if (sanitized !== undefined) {
+          acc[key] = sanitized;
+        }
+        return acc;
+      }, {});
+
+    return Object.keys(next).length > 0 ? next : undefined;
+  }
+
+  if (typeof value === 'string') {
+    const text = trimText(value, MAX_QUICK_SKILL_CONFIG_TEXT).trim();
+    return text || undefined;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  return undefined;
+};
+
+export const sanitizeQuickSkillForPersistence = (
+  skill: ChatMessage['skillData'] | null | undefined,
+): ChatMessage['skillData'] | undefined => {
+  if (
+    !skill ||
+    !trimText(skill.id, 120) ||
+    !trimText(skill.name, 120) ||
+    !trimText(skill.iconName, 120)
+  ) {
+    return undefined;
+  }
+
+  const sanitizedConfig = sanitizeQuickSkillConfigValue(skill.config);
+
+  return {
+    id: trimText(skill.id, 120),
+    pluginId: trimText(skill.pluginId, 120) || undefined,
+    name: trimText(skill.name, 120),
+    iconName: trimText(skill.iconName, 120),
+    ...(isPlainObject(sanitizedConfig) ? { config: sanitizedConfig } : {}),
+  };
 };
 
 const compactPersistedUrls = (
@@ -133,6 +221,13 @@ const compactExecutionTrace = (
         .filter(Boolean)
         .slice(-MAX_PROGRESS_LOG_ITEMS)
     : [];
+  const normalizedThoughtTrace = Array.isArray((trace as any).thoughtTrace)
+    ? (trace as any).thoughtTrace
+        .filter((item: unknown): item is string => typeof item === "string")
+        .map((item: string) => trimText(item, 280))
+        .filter(Boolean)
+        .slice(-MAX_PROGRESS_LOG_ITEMS)
+    : normalizedProgressLog;
 
   const nextTrace = {
     status:
@@ -149,6 +244,8 @@ const compactExecutionTrace = (
       typeof trace.totalSteps === "number" ? trace.totalSteps : undefined,
     progressLog:
       normalizedProgressLog.length > 0 ? normalizedProgressLog : undefined,
+    thoughtTrace:
+      normalizedThoughtTrace.length > 0 ? normalizedThoughtTrace : undefined,
     stopReason: trimText(trace.stopReason, 80) || undefined,
     stopReasonLabel: trimText(trace.stopReasonLabel, 80) || undefined,
     errorCode: trimText(trace.errorCode, 80) || undefined,
@@ -376,11 +473,24 @@ const compactSkillCalls = (
       call && typeof call === "object"
         ? {
             skillName: trimText(call.skillName, 80),
+            toolCallId: trimText(call.toolCallId, 120) || undefined,
             success:
               typeof call.success === "boolean" ? call.success : undefined,
             description: trimText(call.description, 200) || undefined,
             title: trimText(call.title, 120) || undefined,
             error: trimText(call.error, 240) || undefined,
+            result:
+              call.result !== undefined
+                ? call.result
+                : undefined,
+            artifact:
+              call.artifact !== undefined
+                ? call.artifact
+                : undefined,
+            modelContent:
+              call.modelContent !== undefined
+                ? call.modelContent
+                : undefined,
           }
         : null,
     )
@@ -431,34 +541,6 @@ const compactProposals = (
     .filter((item) => Boolean(item?.id)) as PersistedProposal[];
 
   return next.length > 0 ? next : undefined;
-};
-
-const compactPersistedAssets = (
-  message: ChatMessage,
-): NonNullable<NonNullable<ChatMessage["agentData"]>["assets"]> | undefined => {
-  const files = getGeneratedConversationFilesFromAgentData(
-    message.agentData,
-    message.timestamp,
-  );
-  if (files.length === 0) {
-    return undefined;
-  }
-
-  return files.slice(0, MAX_PERSISTED_ASSETS).map((file, index) => ({
-    id:
-      (Array.isArray(message.agentData?.assets) &&
-        typeof message.agentData.assets[index] === "object" &&
-        message.agentData.assets[index] &&
-        typeof (message.agentData.assets[index] as { id?: unknown }).id === "string" &&
-        ((message.agentData.assets[index] as { id?: string }).id || "").trim()) ||
-      `persisted-asset-${message.id}-${index}`,
-    type: file.type,
-    url: file.url,
-    metadata: {
-      model: file.model,
-      agentId: "coco",
-    },
-  }));
 };
 
 const compactInlineParts = (message: ChatMessage): ChatMessage["inlineParts"] => {
@@ -587,19 +669,6 @@ const compactDraftInputBlocks = (
 };
 
 const trimChatMessage = (message: ChatMessage): ChatMessage => {
-  const generatedFiles = getGeneratedConversationFilesFromAgentData(
-    message.agentData,
-    message.timestamp,
-  );
-  const imageUrls = generatedFiles
-    .filter((file) => file.type === "image")
-    .map((file) => file.url)
-    .slice(0, MAX_IMAGE_URLS);
-  const videoUrls = generatedFiles
-    .filter((file) => file.type === "video")
-    .map((file) => file.url)
-    .slice(0, MAX_VIDEO_URLS);
-  const assets = compactPersistedAssets(message);
   const attachments = compactPersistedUrls(message.attachments, MAX_IMAGE_URLS);
 
   return {
@@ -613,6 +682,13 @@ const trimChatMessage = (message: ChatMessage): ChatMessage => {
       typeof message.feedbackUpdatedAt === "number"
         ? message.feedbackUpdatedAt
         : undefined,
+    quote:
+      message.quote && typeof message.quote === "object"
+        ? {
+            text: trimText(message.quote.text, 800),
+            messageId: trimText(message.quote.messageId, 120),
+          }
+        : undefined,
     attachments: attachments.length > 0 ? attachments : undefined,
     attachmentMetadata: undefined,
     inlineParts: compactInlineParts(message),
@@ -621,9 +697,6 @@ const trimChatMessage = (message: ChatMessage): ChatMessage => {
           model: message.agentData.model,
           title: trimText(message.agentData.title, 120),
           description: trimText(message.agentData.description, 400),
-          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-          videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
-          assets,
           proposals: compactProposals(message.agentData.proposals),
           skillCalls: compactSkillCalls(message.agentData.skillCalls),
           analysis:
@@ -682,7 +755,6 @@ export const trimConversationsForPersist = (
   conversations
     .slice()
     .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))
-    .slice(0, MAX_CONVERSATIONS)
     .map((conversation) => ({
       ...conversation,
       pinned: conversation.pinned === true ? true : undefined,
@@ -700,6 +772,9 @@ export const trimConversationsForPersist = (
         trimText(conversation.branchedFromMessageId, 120) || undefined,
       branchPointLabel:
         trimText(conversation.branchPointLabel, 120) || undefined,
+      assistantThread: compactAssistantThreadForPersistence(
+        conversation.assistantThread,
+      ),
       draft:
         conversation.draft &&
         typeof conversation.draft === "object"
@@ -713,29 +788,9 @@ export const trimConversationsForPersist = (
                 conversation.draft.creationMode === "agent"
                   ? conversation.draft.creationMode
                   : undefined,
-              quickSkill:
-                conversation.draft.quickSkill &&
-                typeof conversation.draft.quickSkill === "object" &&
-                trimText(conversation.draft.quickSkill.id, 120) &&
-                trimText(conversation.draft.quickSkill.name, 120) &&
-                trimText(conversation.draft.quickSkill.iconName, 120)
-                  ? {
-                      id: trimText(conversation.draft.quickSkill.id, 120),
-                      pluginId:
-                        trimText(conversation.draft.quickSkill.pluginId, 120) ||
-                        undefined,
-                      name: trimText(conversation.draft.quickSkill.name, 120),
-                      iconName: trimText(
-                        conversation.draft.quickSkill.iconName,
-                        120,
-                      ),
-                      config:
-                        conversation.draft.quickSkill.config &&
-                        typeof conversation.draft.quickSkill.config === "object"
-                          ? conversation.draft.quickSkill.config
-                          : undefined,
-                    }
-                  : undefined,
+              quickSkill: sanitizeQuickSkillForPersistence(
+                conversation.draft.quickSkill,
+              ),
               modelMode:
                 conversation.draft.modelMode === "thinking" ||
                 conversation.draft.modelMode === "fast"

@@ -2,6 +2,11 @@ import type {
   AgentTaskMetadata,
   ProjectContext,
 } from '../../types/agent.types.ts';
+import type { ChatMessage } from '../../types/common.ts';
+import {
+  isNormalizedImageDataUrl,
+  normalizeImageDataUrlString,
+} from './data-url-helpers.ts';
 import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 import { summarizeReferenceSet } from '../topic-memory.ts';
 import { getMemoryKey } from '../topicMemory/key.ts';
@@ -79,6 +84,109 @@ const dedupeUrls = (urls: string[]) =>
       arr.indexOf(url) === index,
   );
 
+const HTTP_URL_PATTERN = /^https?:\/\//i;
+const IMAGE_URL_PATTERN =
+  /\.(png|jpe?g|webp|gif|bmp|svg)(?:[?#].*)?$/i;
+
+const normalizeImageUrl = (value: unknown): string => {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!HTTP_URL_PATTERN.test(url)) return '';
+  if (IMAGE_URL_PATTERN.test(url)) return url;
+  return '';
+};
+
+const normalizeReferenceCandidate = (value: unknown): string => {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url) return '';
+  if (HTTP_URL_PATTERN.test(url) && IMAGE_URL_PATTERN.test(url)) return url;
+  const normalizedDataUrl = normalizeImageDataUrlString(url);
+  if (normalizedDataUrl) return normalizedDataUrl;
+  return '';
+};
+
+const collectImageAssetUrls = (assets: unknown): string[] =>
+  Array.isArray(assets)
+    ? assets
+        .map((asset) => {
+          if (!asset || typeof asset !== 'object') return '';
+          const typedAsset = asset as { type?: unknown; url?: unknown };
+          if (typedAsset.type && typedAsset.type !== 'image') return '';
+          return normalizeReferenceCandidate(typedAsset.url);
+        })
+        .filter(Boolean)
+    : [];
+
+export const extractReferenceImageUrlsFromMessage = (
+  message: Pick<ChatMessage, 'attachments' | 'inlineParts' | 'agentData'> | null | undefined,
+): string[] =>
+  dedupeUrls([
+    ...((message?.attachments || []).map(normalizeReferenceCandidate).filter(Boolean)),
+    ...((message?.inlineParts || [])
+      .map((part) =>
+        part?.type === 'attachment' ? normalizeReferenceCandidate(part.url) : '',
+      )
+      .filter(Boolean)),
+    ...((message?.agentData?.imageUrls || [])
+      .map(normalizeReferenceCandidate)
+      .filter(Boolean)),
+    ...collectImageAssetUrls(message?.agentData?.assets),
+  ]);
+
+export interface DesignSessionReferenceSnapshot {
+  approvedAssetIds?: unknown;
+  subjectAnchors?: unknown;
+}
+
+export const extractDesignSessionReferenceUrls = (
+  designSession: DesignSessionReferenceSnapshot | null | undefined,
+  options?: { maxUrls?: number },
+): string[] => {
+  const maxUrls = Math.max(1, options?.maxUrls || 8);
+  const approvedList = Array.isArray(designSession?.approvedAssetIds)
+    ? (designSession?.approvedAssetIds as unknown[])
+    : [];
+  const anchorList = Array.isArray(designSession?.subjectAnchors)
+    ? (designSession?.subjectAnchors as unknown[])
+    : [];
+  const merged: string[] = [];
+  for (const candidate of [...approvedList, ...anchorList]) {
+    const url = normalizeImageUrl(candidate);
+    if (!url) continue;
+    if (!merged.includes(url)) merged.push(url);
+    if (merged.length >= maxUrls) break;
+  }
+  return merged;
+};
+
+export const collectConversationReferenceImageUrls = (
+  messages: ChatMessage[],
+  options?: {
+    maxMessages?: number;
+    maxUrls?: number;
+  },
+): string[] => {
+  const maxMessages = Math.max(1, options?.maxMessages || 6);
+  const maxUrls = Math.max(1, options?.maxUrls || 6);
+  const recentMessages = Array.isArray(messages)
+    ? messages.slice(-maxMessages).reverse()
+    : [];
+  const collected: string[] = [];
+
+  for (const message of recentMessages) {
+    const urls = extractReferenceImageUrlsFromMessage(message);
+    for (const url of urls) {
+      if (!collected.includes(url)) {
+        collected.push(url);
+      }
+      if (collected.length >= maxUrls) {
+        return collected;
+      }
+    }
+  }
+
+  return collected;
+};
+
 const isUnifiedSidebarAgentMetadata = (metadata?: AgentTaskMetadata) =>
   metadata?.allowAutonomousRouting === true &&
   isUnifiedSidebarAgentSkill(metadata?.skillData);
@@ -125,7 +233,9 @@ export const collectInheritedReferenceUrls = ({
 }: CollectInheritedReferenceUrlsOptions) => {
   const isFollowUpEdit =
     !shouldPreferUploadedReferences &&
-    FOLLOW_UP_REFERENCE_PATTERN.test(message);
+    /(换个|换一|换成|改成|修改|调整|重来|再来|重新|上一张|上一张图|前一张|前一张图|刚刚那张|这张|这次|change|another|different|new style|retry|redo|again)/i.test(
+      message,
+    );
 
   if (!isFollowUpEdit) {
     return [];
@@ -133,7 +243,7 @@ export const collectInheritedReferenceUrls = ({
 
   return dedupeUrls([
     ...currentTaskAssetUrls.slice(0, 2),
-    ...recentHistoryAttachmentUrls.slice(0, 2),
+    ...recentHistoryAttachmentUrls.slice(0, 3),
     ...sessionApprovedUrls.slice(0, 2),
   ]).slice(0, 3);
 };

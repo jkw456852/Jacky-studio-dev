@@ -1,6 +1,8 @@
 import React, { memo } from "react";
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
   Image as ImageIcon,
   Loader2,
   RefreshCw,
@@ -96,6 +98,8 @@ type WorkspaceCanvasImageElementProps = {
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat("en", {
   numeric: "auto",
 });
+const LABEL_EXPAND_CHILDREN = "展开子级节点";
+const LABEL_COLLAPSE_CHILDREN = "收起子级节点";
 const LABEL_PENDING_IMAGE = "\u56fe\u7247\u8282\u70b9";
 const LABEL_GENERATING = "\u751f\u56fe\u4e2d";
 const LABEL_GENERATING_MAGIC = "\u6b63\u5728\u6574\u7406\u89c4\u5212";
@@ -508,6 +512,64 @@ const TreeNodePorts: React.FC<{
   );
 };
 
+const TreeNodeCollapseControl: React.FC<{
+  hasChildren: boolean;
+  isCollapsed: boolean;
+  isSelected: boolean;
+  onToggle: () => void;
+}> = ({ hasChildren, isCollapsed, isSelected, onToggle }) => {
+  if (!hasChildren) {
+    return null;
+  }
+
+  if (isSelected) {
+    return (
+      <button
+        type="button"
+        aria-label={isCollapsed ? LABEL_EXPAND_CHILDREN : LABEL_COLLAPSE_CHILDREN}
+        className="absolute left-1/2 top-full z-30 flex h-7 w-7 -translate-x-1/2 translate-y-3 items-center justify-center rounded-full border border-[#d8d6df] bg-[#f8f8fb] text-[#7b8090] shadow-[0_6px_14px_rgba(15,23,42,0.10)] transition hover:text-[#111827]"
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+      </button>
+    );
+  }
+
+  if (!isCollapsed) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={LABEL_EXPAND_CHILDREN}
+      className="absolute left-1/2 top-full z-20 flex -translate-x-1/2 translate-y-2 items-center justify-center"
+      onMouseDown={(event) => {
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <span className="flex items-center gap-1 rounded-full border border-[#d8d6df] bg-[rgba(248,248,251,0.94)] px-2 py-1 shadow-[0_6px_14px_rgba(15,23,42,0.08)] backdrop-blur-sm transition hover:border-[#c7c4d0] hover:bg-[rgba(255,255,255,0.98)]">
+        <span className="flex items-center gap-0.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#7C5CFF]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#7C5CFF]/75" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#7C5CFF]/55" />
+        </span>
+        <ChevronDown size={11} className="text-[#7b8090]" />
+      </span>
+    </button>
+  );
+};
+
 const WorkspaceCanvasImageElementImpl: React.FC<
   WorkspaceCanvasImageElementProps
 > = ({
@@ -551,6 +613,15 @@ const WorkspaceCanvasImageElementImpl: React.FC<
   const isTreePromptNode = treeNodeKind === "prompt";
   const isTreeImageNode = treeNodeKind === "image";
   const isTreeNode = isTreePromptNode || isTreeImageNode;
+  const hasTreeChildren = React.useMemo(
+    () =>
+      elements.some(
+        (item) =>
+          item.id !== element.id && getAllNodeParentIds(item).includes(element.id),
+      ),
+    [element.id, elements],
+  );
+  const isTreeChildrenCollapsed = hasTreeChildren && Boolean(element.treeChildrenCollapsed);
   const displayUrl = hasUrl ? getElementDisplayUrl(element) : undefined;
   const elementSourceUrl = element.originalUrl || element.url || "";
   const sourceUrl = elementSourceUrl || undefined;
@@ -602,6 +673,18 @@ const WorkspaceCanvasImageElementImpl: React.FC<
     },
     [element.id, setElementsSynced],
   );
+  const toggleTreeChildrenCollapsed = React.useCallback(() => {
+    setElementsSynced((currentElements) =>
+      currentElements.map((item) =>
+        item.id === element.id
+          ? {
+              ...item,
+              treeChildrenCollapsed: !Boolean(item.treeChildrenCollapsed),
+            }
+          : item,
+      ),
+    );
+  }, [element.id, setElementsSynced]);
 
   return (
     <div
@@ -782,6 +865,14 @@ const WorkspaceCanvasImageElementImpl: React.FC<
           ) : null}
         </>
       )}
+      {isTreeNode ? (
+        <TreeNodeCollapseControl
+          hasChildren={hasTreeChildren}
+          isCollapsed={isTreeChildrenCollapsed}
+          isSelected={isSelected}
+          onToggle={toggleTreeChildrenCollapsed}
+        />
+      ) : null}
     </div>
   );
 };

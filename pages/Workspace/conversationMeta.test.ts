@@ -5,14 +5,18 @@ import type {
   ConversationSession,
   InputBlock,
 } from "../../types/common.ts";
+import { toAssistantUiStorageEntry } from "../../services/assistant-ui/ui-message-normalization.ts";
 import {
+  deriveConversationSearchText,
   deriveConversationSidebarPreview,
-  deriveConversationStatusSummary,
+  getConversationMessageCount,
   getConversationHistoryGroupKey,
   groupConversationsForSidebar,
+  matchesConversationSearch,
   resolveActiveConversationTitle,
   resolveConversationFallback,
 } from "./conversationMeta.ts";
+import { deriveConversationStatusSummary } from "./legacyConversationStatus.ts";
 
 const createTextBlock = (text: string): InputBlock => ({
   id: `text-${text}`,
@@ -41,6 +45,24 @@ const createConversation = (
   ...overrides,
 });
 
+const createThreadEntry = (
+  id: string,
+  role: "user" | "assistant",
+  parentId: string | null,
+  text: string,
+) => {
+  const entry = toAssistantUiStorageEntry({
+    parentId,
+    message: {
+      id,
+      role,
+      parts: [{ type: "text", text }],
+    },
+  });
+  assert.ok(entry);
+  return entry;
+};
+
 test("deriveConversationStatusSummary prefers unsent draft over message-derived status", () => {
   const conversation = createConversation({
     draft: {
@@ -59,7 +81,7 @@ test("deriveConversationStatusSummary prefers unsent draft over message-derived 
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "draft");
-  assert.equal(result.label, "Draft");
+  assert.equal(result.label, "草稿");
   assert.equal(result.tone, "success");
 });
 
@@ -79,7 +101,7 @@ test("deriveConversationStatusSummary returns running for active execution trace
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "running");
-  assert.equal(result.label, "Running");
+  assert.equal(result.label, "运行中");
   assert.equal(result.detail, "Generating results");
   assert.equal(result.tone, "info");
 });
@@ -100,7 +122,7 @@ test("deriveConversationStatusSummary recognizes need-user-input stop reasons", 
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "needs-input");
-  assert.equal(result.label, "Needs input");
+  assert.equal(result.label, "等待你继续");
   assert.equal(result.tone, "warning");
 });
 
@@ -120,7 +142,7 @@ test("deriveConversationStatusSummary recognizes stopped cancelled runs", () => 
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "stopped");
-  assert.equal(result.label, "Stopped");
+  assert.equal(result.label, "已停止");
   assert.equal(result.tone, "warning");
 });
 
@@ -142,7 +164,7 @@ test("deriveConversationStatusSummary recognizes stopped persisted status labels
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "stopped");
-  assert.equal(result.label, "Stopped");
+  assert.equal(result.label, "已停止");
   assert.equal(result.tone, "warning");
 });
 
@@ -164,7 +186,7 @@ test("deriveConversationStatusSummary recognizes failed replies", () => {
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "failed");
-  assert.equal(result.label, "Failed");
+  assert.equal(result.label, "失败");
   assert.equal(result.detail, "Failure reason");
   assert.equal(result.tone, "danger");
 });
@@ -185,7 +207,7 @@ test("deriveConversationStatusSummary recognizes completed replies", () => {
 
   const result = deriveConversationStatusSummary(conversation);
   assert.equal(result.kind, "completed");
-  assert.equal(result.label, "Completed");
+  assert.equal(result.label, "已完成");
   assert.equal(result.detail, "Assets are ready");
   assert.equal(result.tone, "success");
 });
@@ -232,6 +254,28 @@ test("deriveConversationSidebarPreview falls back to draft preview when messages
   const result = deriveConversationSidebarPreview(conversation);
   assert.equal(result.source, "draft");
   assert.equal(result.text, "draft preview text");
+});
+
+test("conversation metadata prefers official assistant-ui thread parts over empty legacy messages", () => {
+  const conversation = createConversation({
+    title: "Thread title",
+    messages: [],
+    assistantThread: {
+      headId: "assistant-1",
+      messages: [
+        createThreadEntry("user-1", "user", null, "official thread prompt"),
+        createThreadEntry("assistant-1", "assistant", "user-1", "official thread reply"),
+      ],
+    },
+  });
+
+  const preview = deriveConversationSidebarPreview(conversation);
+
+  assert.equal(preview.source, "message");
+  assert.equal(preview.text, "official thread reply");
+  assert.match(deriveConversationSearchText(conversation), /official thread prompt/);
+  assert.equal(matchesConversationSearch(conversation, "thread reply"), true);
+  assert.equal(getConversationMessageCount(conversation), 2);
 });
 
 test("groupConversationsForSidebar groups pinned and recency buckets in product order", () => {

@@ -35,7 +35,7 @@ import {
 } from "../services/gpt-image-inspiration";
 import type { SmartImportPreview } from "../services/gpt-image-smart-import";
 import { generateJsonResponse, getBestModelSelection } from "../services/gemini";
-import { normalizeReferenceToDataUrl } from "../services/image-reference-resolver";
+import { normalizeReferenceToDataUrl } from "../services/image-reference-resolver.ts";
 import { generateImageWithProvider } from "../services/providers";
 import {
   getMappedModelConfigs,
@@ -135,14 +135,125 @@ type BusyAction =
 
 type GalleryPreviewCard = {
   key: string;
-  type: "case" | "template";
+  type: "case" | "template" | "source";
   title: string;
   cover: string;
   description: string;
   prompt: string;
   chips: string[];
-  preview: SmartImportPreview;
+  preview?: SmartImportPreview;
+  externalUrl?: string;
+  repository?: string;
+  highlights?: string[];
 };
+
+const EXTERNAL_GALLERY_SOURCES: GalleryPreviewCard[] = [
+  {
+    key: "source-unknowlei-nanobanana-website",
+    type: "source",
+    title: "Nano Banana Website",
+    repository: "unknowlei/nanobanana-website",
+    cover: "",
+    description: "补充 Nano Banana 方向的提示词组织方式、页面案例和灵感入口。",
+    prompt: "Nano Banana prompts, website inspirations, layout examples, prompt collections",
+    chips: ["Nano Banana", "网站案例", "提示词整理"],
+    externalUrl: "https://github.com/unknowlei/nanobanana-website",
+    highlights: [
+      "适合补齐 Nano Banana 相关的表达方式和视觉方向。",
+      "可以作为画廊的灵感来源，而不是只依赖单一内置数据。",
+    ],
+  },
+  {
+    key: "source-evolinkai-awesome-gpt-image-2-api-and-prompts",
+    type: "source",
+    title: "Awesome GPT Image 2 API and Prompts",
+    repository: "EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
+    cover: "",
+    description: "补充 GPT Image 2 的 API 用法、提示词样例和实践整理。",
+    prompt: "GPT Image 2 API prompts examples workflows",
+    chips: ["GPT Image 2", "API", "提示词样例"],
+    externalUrl: "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
+    highlights: [
+      "更偏向 GPT Image 2 的使用方法和 prompt 示例。",
+      "适合给画廊补充技术型和工作流型素材来源。",
+    ],
+  },
+  {
+    key: "source-zerolu-awesome-gpt-image",
+    type: "source",
+    title: "Awesome GPT Image",
+    repository: "ZeroLu/awesome-gpt-image",
+    cover: "",
+    description: "作为通用型 GPT Image 资源池，补充更宽的题材覆盖面。",
+    prompt: "awesome gpt image prompts cases inspiration",
+    chips: ["GPT Image", "综合资源", "题材扩展"],
+    externalUrl: "https://github.com/ZeroLu/awesome-gpt-image",
+    highlights: [
+      "适合扩展画廊的题材密度，不只局限于单一主题。",
+      "可以提供更综合的图像生成提示词入口。",
+    ],
+  },
+  {
+    key: "source-imgedify-awesome-gpt4o-image-prompts",
+    type: "source",
+    title: "Awesome GPT4o Image Prompts",
+    repository: "ImgEdify/Awesome-GPT4o-Image-Prompts",
+    cover: "",
+    description: "补充 GPT-4o 图像方向的提示词表达和风格线索。",
+    prompt: "GPT-4o image prompts visual styles prompt writing",
+    chips: ["GPT-4o", "图像提示词", "风格线索"],
+    externalUrl: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts",
+    highlights: [
+      "更适合补充 GPT-4o 语境下的 prompt 写法。",
+      "可以丰富画廊里现有卡片的风格描述来源。",
+    ],
+  },
+  {
+    key: "source-youmind-openlab-awesome-gpt-image-2",
+    type: "source",
+    title: "Awesome GPT Image 2",
+    repository: "YouMind-OpenLab/awesome-gpt-image-2",
+    cover: "",
+    description: "补充 GPT Image 2 相关的分类索引、案例线索和提示词沉淀。",
+    prompt: "GPT Image 2 inspirations categorized prompts references",
+    chips: ["GPT Image 2", "分类索引", "案例线索"],
+    externalUrl: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
+    highlights: [
+      "适合和现有画廊并排作为第二类数据来源。",
+      "能补充更系统化的分类和检索感受。",
+    ],
+  },
+  {
+    key: "source-youmind-openlab-awesome-nano-banana-pro-prompts",
+    type: "source",
+    title: "Awesome Nano Banana Pro Prompts",
+    repository: "YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    cover: "",
+    description: "补充 Nano Banana Pro 的提示词素材，增加风格差异度。",
+    prompt: "Nano Banana Pro prompts styles references",
+    chips: ["Nano Banana Pro", "提示词库", "风格扩展"],
+    externalUrl: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    highlights: [
+      "适合补齐 Nano Banana Pro 的专门来源。",
+      "能让画廊在模型维度上不再只有一种来源视角。",
+    ],
+  },
+  {
+    key: "source-davidwu0811-boop-awesome-gpt-image2-prompts",
+    type: "source",
+    title: "Awesome GPT Image2 Prompts",
+    repository: "davidwu0811-boop/awesome-gpt-image2-prompts",
+    cover: "",
+    description: "补充 GPT Image2 提示词集合，增加卡片池的变化感。",
+    prompt: "GPT Image2 prompt collection visual inspiration",
+    chips: ["GPT Image2", "Prompt Collection", "灵感补充"],
+    externalUrl: "https://github.com/davidwu0811-boop/awesome-gpt-image2-prompts",
+    highlights: [
+      "适合作为画廊里的附加来源入口。",
+      "可以增强整体数据池的丰富度和多样性。",
+    ],
+  },
+];
 
 const readLocalizedText = (value: LocalizedText | undefined, fallback = "") => {
   const zh = String(value?.zh || "").trim();
@@ -449,41 +560,43 @@ const buildSearchText = (library: WorkspaceStyleLibrary) =>
     .toLowerCase();
 
 const buildGalleryCards = (payload: GptImageInspirationPayload | null): GalleryPreviewCard[] => {
-  if (!payload) return [];
+  const caseCards: GalleryPreviewCard[] = !payload
+    ? []
+    : (payload.cases || []).map((item) => {
+        const category = facetLabel(item.category, payload.categories || []);
+        const styles = item.styles.map((style) => facetLabel(style, payload.styles || []));
+        const scenes = item.scenes.map((scene) => facetLabel(scene, payload.scenes || []));
+        return {
+          key: `case-${item.id}`,
+          type: "case" as const,
+          title: item.title,
+          cover: item.image,
+          description: item.promptPreview || item.prompt,
+          prompt: item.prompt,
+          chips: dedupeStrings([category, ...styles, ...scenes], 6),
+          preview: { type: "case" as const, item },
+        };
+      });
 
-  const caseCards: GalleryPreviewCard[] = (payload.cases || []).map((item) => {
-    const category = facetLabel(item.category, payload.categories || []);
-    const styles = item.styles.map((style) => facetLabel(style, payload.styles || []));
-    const scenes = item.scenes.map((scene) => facetLabel(scene, payload.scenes || []));
-    return {
-      key: `case-${item.id}`,
-      type: "case" as const,
-      title: item.title,
-      cover: item.image,
-      description: item.promptPreview || item.prompt,
-      prompt: item.prompt,
-      chips: dedupeStrings([category, ...styles, ...scenes], 6),
-      preview: { type: "case" as const, item },
-    };
-  });
+  const templateCards: GalleryPreviewCard[] = !payload
+    ? []
+    : (payload.templates || []).map((item) => {
+        const category = facetLabel(item.category, payload.categories || []);
+        const styles = item.styles.map((style) => facetLabel(style, payload.styles || []));
+        const scenes = item.scenes.map((scene) => facetLabel(scene, payload.scenes || []));
+        return {
+          key: `template-${item.id}`,
+          type: "template" as const,
+          title: readLocalizedText(item.title, item.id),
+          cover: item.cover,
+          description: readLocalizedText(item.description),
+          prompt: buildGalleryPrompt({ type: "template", item }, payload),
+          chips: dedupeStrings([category, ...styles, ...scenes, ...(item.tags || [])], 6),
+          preview: { type: "template" as const, item },
+        };
+      });
 
-  const templateCards: GalleryPreviewCard[] = (payload.templates || []).map((item) => {
-    const category = facetLabel(item.category, payload.categories || []);
-    const styles = item.styles.map((style) => facetLabel(style, payload.styles || []));
-    const scenes = item.scenes.map((scene) => facetLabel(scene, payload.scenes || []));
-    return {
-      key: `template-${item.id}`,
-      type: "template" as const,
-      title: readLocalizedText(item.title, item.id),
-      cover: item.cover,
-      description: readLocalizedText(item.description),
-      prompt: buildGalleryPrompt({ type: "template", item }, payload),
-      chips: dedupeStrings([category, ...styles, ...scenes, ...(item.tags || [])], 6),
-      preview: { type: "template" as const, item },
-    };
-  });
-
-  return [...caseCards, ...templateCards];
+  return [...caseCards, ...templateCards, ...EXTERNAL_GALLERY_SOURCES];
 };
 
 const toDataUrl = (file: File): Promise<string> =>
@@ -720,6 +833,7 @@ const StyleLibraryCenter: React.FC = () => {
   const [galleryPayload, setGalleryPayload] = React.useState<GptImageInspirationPayload | null>(null);
   const [galleryStatus, setGalleryStatus] = React.useState<"idle" | "loading" | "ready" | "error">("idle");
   const [galleryError, setGalleryError] = React.useState("");
+  const [activeGalleryCard, setActiveGalleryCard] = React.useState<GalleryPreviewCard | null>(null);
   const imageModelConfigs = React.useMemo(() => getMappedModelConfigs("image"), []);
   const defaultImageModelRaw = imageModelConfigs[0]?.raw || imageModelConfigs[0]?.modelId || "";
   const [sampleGenerator, setSampleGenerator] = React.useState<StyleSampleGeneratorState>({
@@ -808,7 +922,10 @@ const StyleLibraryCenter: React.FC = () => {
     const normalized = galleryQuery.trim().toLowerCase();
     if (!normalized) return galleryCards;
     return galleryCards.filter((item) =>
-      [item.title, item.description, item.prompt, ...item.chips].join(" ").toLowerCase().includes(normalized),
+      [item.title, item.description, item.prompt, item.repository || "", ...(item.highlights || []), ...item.chips]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
     );
   }, [galleryCards, galleryQuery]);
 
@@ -1131,6 +1248,19 @@ const StyleLibraryCenter: React.FC = () => {
     setShowGalleryPicker(true);
   }, []);
 
+  const handleOpenGalleryCard = React.useCallback((item: GalleryPreviewCard) => {
+    setActiveGalleryCard(item);
+  }, []);
+
+  const handleCloseGalleryCard = React.useCallback(() => {
+    setActiveGalleryCard(null);
+  }, []);
+
+  const handleOpenGallerySource = React.useCallback((item: GalleryPreviewCard) => {
+    if (!item.externalUrl) return;
+    window.open(item.externalUrl, "_blank", "noopener,noreferrer");
+  }, []);
+
   const handleImportFromGalleryLegacy = React.useCallback(
     async (preview: SmartImportPreview) => {
       const nextEditor = buildGalleryEditor(preview, galleryPayload);
@@ -1186,6 +1316,7 @@ const StyleLibraryCenter: React.FC = () => {
       const requestId = galleryImportRequestRef.current + 1;
       galleryImportRequestRef.current = requestId;
 
+      setActiveGalleryCard(null);
       setShowGalleryPicker(false);
       setEditor(nextEditor);
 
@@ -1668,7 +1799,7 @@ const StyleLibraryCenter: React.FC = () => {
                       <button
                         key={item.key}
                         type="button"
-                        onClick={() => handleImportFromGallery(item.preview)}
+                        onClick={() => handleOpenGalleryCard(item)}
                         className="group text-left"
                       >
                         <div
@@ -1680,7 +1811,23 @@ const StyleLibraryCenter: React.FC = () => {
                           }}
                         >
                           <div className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-700 backdrop-blur">
-                            {item.type === "case" ? "画廊案例" : "画廊模板"}
+                            {item.type === "case"
+                              ? "画廊案例"
+                              : item.type === "template"
+                                ? "画廊模板"
+                                : "外部来源"}
+                          </div>
+                          {item.type === "source" ? (
+                            <div className="absolute right-3 top-3 rounded-full bg-slate-950/78 p-2 text-white backdrop-blur">
+                              <ArrowUpRight size={14} />
+                            </div>
+                          ) : null}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/72 via-slate-950/8 to-transparent px-4 pb-4 pt-12">
+                            <div className="text-[12px] font-medium text-white/90">
+                              {item.type === "source"
+                                ? item.repository || "外部来源"
+                                : "点击查看详情"}
+                            </div>
                           </div>
                         </div>
                         <div className="px-1 pt-3">

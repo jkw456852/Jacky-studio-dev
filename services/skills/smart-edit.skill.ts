@@ -4,7 +4,7 @@ import {
   validateTransparentCutoutResult,
 } from '../gemini';
 import { generateImageWithProvider } from '../providers';
-import { normalizeReferenceToDataUrl } from '../image-reference-resolver';
+import { normalizeReferenceToDataUrl } from '../image-reference-resolver.ts';
 
 type SmartEditType =
   | 'background-remove'

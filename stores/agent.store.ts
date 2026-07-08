@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import {
+import type {
   AgentRoleDraft,
   AgentTask,
   AgentType,
   RoleGovernanceMode,
   RoleSource,
-} from '../types/agent.types';
-import {
+} from '../types/agent.types.ts';
+import type {
   CanvasElement,
   ChatMessage,
   ImageModel,
@@ -16,7 +16,12 @@ import {
   InputBlock,
   VideoModel,
   WorkspaceInputFile,
-} from '../types';
+} from '../types/index.ts';
+import {
+  appendSanitizedProgressMessage,
+  sanitizeAgentProgressLog,
+  sanitizeAgentProgressMessage,
+} from '../services/agents/progress-sanitizer.ts';
 
 type VideoGenDuration = NonNullable<CanvasElement['genDuration']>;
 type VideoGenQuality = NonNullable<CanvasElement['genQuality']>;
@@ -45,7 +50,7 @@ export interface AgentComposerState {
 export interface AgentGenerationState {
   imageGenRatio: string;
   imageGenRes: '1K' | '2K' | '4K';
-  imageGenCount: 1 | 2 | 3 | 4;
+  imageGenCount: number;
   imageGenUploads: File[];
   isPickingFromCanvas: boolean;
   videoGenRatio: string;
@@ -327,7 +332,7 @@ interface AgentState {
 
     setImageGenRatio: (ratio: string) => void;
     setImageGenRes: (res: '1K' | '2K' | '4K') => void;
-    setImageGenCount: (count: 1 | 2 | 3 | 4) => void;
+    setImageGenCount: (count: number) => void;
     setImageGenUploads: (files: File[]) => void;
     setIsPickingFromCanvas: (picking: boolean) => void;
 
@@ -429,28 +434,66 @@ export const useAgentStore = create<AgentState>()(
             return;
           }
           // 自动把新的 progressMessage 追加到 progressLog（去重 + 保留历史）
-          const prevLog = state.currentTask?.progressLog || [];
-          const newMsg = task.progressMessage;
-          let log = prevLog;
-          if (newMsg && (prevLog.length === 0 || prevLog[prevLog.length - 1] !== newMsg)) {
-            log = [...prevLog, newMsg];
+          const isSameTask = state.currentTask?.id === task.id;
+          const prevLog = isSameTask
+            ? sanitizeAgentProgressLog(state.currentTask?.progressLog || [])
+            : [];
+          const incomingLog = sanitizeAgentProgressLog(task.progressLog || []);
+          const hasIncomingProgressMessage = Object.prototype.hasOwnProperty.call(
+            task,
+            "progressMessage",
+          );
+          const previousStreamingText = isSameTask
+            ? state.currentTask?.streamingText || ""
+            : "";
+          const previousReasoningText = isSameTask
+            ? state.currentTask?.reasoningText || ""
+            : "";
+          const previousThoughtTrace = isSameTask
+            ? state.currentTask?.thoughtTrace || []
+            : [];
+          const previousProgressMessage = sanitizeAgentProgressMessage(
+            state.currentTask?.progressMessage || "",
+          );
+          const newMsg = hasIncomingProgressMessage
+            ? sanitizeAgentProgressMessage(task.progressMessage)
+            : "";
+          let log = sanitizeAgentProgressLog([...prevLog, ...incomingLog]);
+          if (newMsg) {
+            log = appendSanitizedProgressMessage(log, newMsg);
           }
           // 任务切换（新 id）时重置 log
-          if (state.currentTask?.id !== task.id) {
-            log = newMsg ? [newMsg] : [];
-          }
+          const progressMessage = hasIncomingProgressMessage
+            ? newMsg || (isSameTask ? previousProgressMessage : "") || undefined
+            : isSameTask
+              ? previousProgressMessage || undefined
+              : undefined;
+          const nextStreamingText =
+            typeof task.streamingText === "string"
+              ? task.streamingText
+              : isSameTask
+                ? previousStreamingText
+                : "";
+          const nextReasoningText =
+            typeof task.reasoningText === "string"
+              ? task.reasoningText
+              : isSameTask
+                ? previousReasoningText
+                : "";
+          const nextThoughtTrace =
+            Array.isArray(task.thoughtTrace) && task.thoughtTrace.length > 0
+              ? sanitizeAgentProgressLog(task.thoughtTrace)
+              : isSameTask && previousThoughtTrace.length > 0
+                ? sanitizeAgentProgressLog(previousThoughtTrace)
+                : log;
           state.currentTask = {
             ...state.currentTask,
             ...task,
+            progressMessage,
             progressLog: log,
-            streamingText:
-              typeof task.streamingText === "string"
-                ? task.streamingText
-                : state.currentTask?.streamingText || "",
-            reasoningText:
-              typeof task.reasoningText === "string"
-                ? task.reasoningText
-                : state.currentTask?.reasoningText || "",
+            thoughtTrace: nextThoughtTrace,
+            streamingText: nextStreamingText,
+            reasoningText: nextReasoningText,
           };
         }),
 
@@ -550,10 +593,19 @@ export const useAgentStore = create<AgentState>()(
 
         updateInputBlock: (id, updates) => set((state) => {
           const block = state.composer.inputBlocks.find(b => b.id === id);
-          if (block) {
-            Object.assign(block, updates);
-            state.composer.confirmedAttachments = collectConfirmedAttachmentsFromBlocks(state.composer.inputBlocks);
-          }
+          if (!block) return;
+          // Fast path: text-only updates on text blocks cannot change
+          // confirmedAttachments (only file blocks produce attachments). This
+          // runs on every keystroke, so skipping the rescan + array rebuild
+          // keeps typing snappy.
+          const updateKeys = Object.keys(updates as Record<string, unknown>);
+          const isPureTextUpdate =
+            block.type === 'text' &&
+            updateKeys.length > 0 &&
+            updateKeys.every((key) => key === 'text');
+          Object.assign(block, updates);
+          if (isPureTextUpdate) return;
+          state.composer.confirmedAttachments = collectConfirmedAttachmentsFromBlocks(state.composer.inputBlocks);
         }),
 
         setActiveBlockId: (id) => set((state) => {
@@ -656,7 +708,10 @@ export const useAgentStore = create<AgentState>()(
           state.generation.imageGenRes = res;
         }),
         setImageGenCount: (count) => set((state) => {
-          state.generation.imageGenCount = count;
+          const numeric = Number(count);
+          state.generation.imageGenCount = Number.isFinite(numeric)
+            ? Math.max(1, Math.floor(numeric))
+            : 1;
         }),
         setImageGenUploads: (files) => set((state) => {
           state.generation.imageGenUploads = files;

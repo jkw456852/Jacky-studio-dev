@@ -6,7 +6,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
+import { smartEditSkill } from "../../../services/skills/smart-edit.skill.ts";
 import type { CanvasElement, ChatMessage } from "../../../types";
 import {
   calcUpscaleTargetSize,

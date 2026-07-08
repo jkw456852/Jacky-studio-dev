@@ -1,5 +1,5 @@
-import { VideoProvider, VideoGenerationRequest } from './types';
-import { fetchWithResilience } from '../http/api-client';
+import { VideoProvider, VideoGenerationRequest } from './types.ts';
+import { fetchWithResilience } from '../http/api-client.ts';
 
 const getKlingKey = (): string => {
   return localStorage.getItem('kling_api_key') || '';

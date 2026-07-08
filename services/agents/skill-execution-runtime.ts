@@ -11,6 +11,11 @@ export interface SkillExecutionResultLike extends SkillExecutionCallLike {
   result?: any;
   success: boolean;
   error?: string;
+  errorDetail?: {
+    rawMessage?: string;
+    httpStatus?: number;
+    proxyTarget?: string;
+  };
 }
 
 export interface SkillExecutionTelemetryStats {
@@ -30,7 +35,7 @@ export interface ReferenceInjectionTelemetry {
 }
 
 export const SKILL_TIMEOUTS: Record<string, number> = {
-  generateImage: 180_000,
+  generateImage: 300_000,
   smartEdit: 600_000,
   touchEdit: 600_000,
   generateVideo: 180_000,
@@ -63,6 +68,62 @@ export interface ExecuteSkillWithTimeoutOptions<TResult> {
   clearTimeoutFn?: typeof globalThis.clearTimeout;
 }
 
+const isAbortSignalLike = (value: unknown): value is AbortSignal =>
+  typeof AbortSignal !== 'undefined' && value instanceof AbortSignal;
+
+const mergeAbortSignals = (signals: Array<AbortSignal | undefined>) => {
+  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  if (activeSignals.length === 0) {
+    return {
+      signal: undefined,
+      cleanup: () => undefined,
+    };
+  }
+
+  if (activeSignals.length === 1) {
+    return {
+      signal: activeSignals[0],
+      cleanup: () => undefined,
+    };
+  }
+
+  const controller = new AbortController();
+  const onAbort = (event: Event) => {
+    const sourceSignal = event.target;
+    if (controller.signal.aborted) {
+      return;
+    }
+    controller.abort(
+      sourceSignal && typeof sourceSignal === 'object' && 'reason' in sourceSignal
+        ? (sourceSignal as AbortSignal).reason
+        : undefined,
+    );
+    cleanup();
+  };
+
+  const cleanup = () => {
+    activeSignals.forEach((signal) => {
+      signal.removeEventListener('abort', onAbort);
+    });
+  };
+
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return {
+        signal: controller.signal,
+        cleanup,
+      };
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup,
+  };
+};
+
 export const executeSkillWithTimeout = async <TResult>({
   skillName,
   params,
@@ -75,14 +136,38 @@ export const executeSkillWithTimeout = async <TResult>({
     typeof timeoutMs === 'number' && timeoutMs > 0
       ? timeoutMs
       : DEFAULT_SKILL_TIMEOUT;
+  const timeoutError = buildSkillTimeoutError(skillName, effectiveTimeoutMs);
+  const timeoutController = new AbortController();
+  const mergedSignal = mergeAbortSignals([
+    isAbortSignalLike(params?.signal) ? params.signal : undefined,
+    timeoutController.signal,
+  ]);
+  const nextParams =
+    mergedSignal.signal && mergedSignal.signal !== params?.signal
+      ? {
+          ...params,
+          signal: mergedSignal.signal,
+        }
+      : params;
+  const skillPromise = Promise.resolve(executeSkillFn(skillName, nextParams));
 
-  return runWithTimeout({
-    promise: Promise.resolve(executeSkillFn(skillName, params)),
-    timeoutMs: effectiveTimeoutMs,
-    createTimeoutError: () => buildSkillTimeoutError(skillName, effectiveTimeoutMs),
-    setTimeoutFn,
-    clearTimeoutFn,
-  });
+  try {
+    return await runWithTimeout({
+      promise: skillPromise,
+      timeoutMs: effectiveTimeoutMs,
+      createTimeoutError: () => timeoutError,
+      setTimeoutFn,
+      clearTimeoutFn,
+    });
+  } catch (error) {
+    if (error === timeoutError) {
+      timeoutController.abort(timeoutError);
+      void skillPromise.catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    mergedSignal.cleanup();
+  }
 };
 
 export const buildSuccessfulSkillExecutionResult = (
@@ -97,10 +182,12 @@ export const buildSuccessfulSkillExecutionResult = (
 export const buildFailedSkillExecutionResult = (
   call: SkillExecutionCallLike,
   error: string,
+  errorDetail?: SkillExecutionResultLike['errorDetail'],
 ): SkillExecutionResultLike => ({
   ...call,
   error,
   success: false,
+  ...(errorDetail ? { errorDetail } : {}),
 });
 
 export const buildUnhandledSkillExecutionFailureResult = (

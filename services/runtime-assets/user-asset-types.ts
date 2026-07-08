@@ -4,8 +4,8 @@ import type {
   StudioRoleEntity,
   StudioRoleVersionRecord,
   StudioTemporaryRoleDraft,
-} from "../../types/agent.types";
-import type { WorkspaceStyleLibrary } from "../../types/common";
+} from "../../types/agent.types.ts";
+import type { WorkspaceStyleLibrary } from "../../types/common.ts";
 
 export const STUDIO_USER_ASSET_STATE_VERSION = 5;
 export const STUDIO_MAIN_BRAIN_ASSET_VERSION = 1;
@@ -285,6 +285,7 @@ export interface StudioSkillPreferencesAsset {
   recentSkillIds: string[];
   pinnedSkillIds: string[];
   customSkillConfigs: Record<string, Record<string, unknown>>;
+  frontstageSkillRuntimeConfigs?: Record<string, Record<string, unknown>>;
 }
 
 export interface StudioPluginPreferenceEntry {

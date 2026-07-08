@@ -12,8 +12,6 @@ type WorkspaceHeaderBarProps = {
   onShowAssistant: () => void;
   onOpenAnnouncements: () => void;
   unreadAnnouncementCount: number;
-  workflowRecipesOpen?: boolean;
-  onToggleWorkflowRecipes?: () => void;
 };
 
 const NODE_INTERACTION_MODE_META: Record<
@@ -42,8 +40,6 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
   onShowAssistant,
   onOpenAnnouncements,
   unreadAnnouncementCount,
-  workflowRecipesOpen = false,
-  onToggleWorkflowRecipes,
 }) => {
   const currentModeMeta = NODE_INTERACTION_MODE_META[nodeInteractionMode];
   const CurrentModeIcon = currentModeMeta.icon;
@@ -56,9 +52,6 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
   return (
     <div
       className="absolute top-4 left-5 right-5 flex justify-between items-center z-30 pointer-events-none transition-all duration-300"
-      style={{
-        paddingRight: showAssistant && !workflowRecipesOpen ? "500px" : "0",
-      }}
     >
       <div className="flex items-center gap-3 pointer-events-auto">
         <button
@@ -141,19 +134,6 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
               {unreadAnnouncementCount > 9 ? "9+" : unreadAnnouncementCount}
             </span>
           ) : null}
-        </button>
-        <button
-          type="button"
-          onClick={onToggleWorkflowRecipes}
-          className={[
-            "inline-flex h-10 items-center gap-2 rounded-full border px-4.5 text-sm font-semibold shadow-[0_8px_24px_rgba(15,23,42,0.10)] backdrop-blur-sm transition",
-            workflowRecipesOpen
-              ? "border-gray-900 bg-gray-900 text-white"
-              : "border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50",
-          ].join(" ")}
-        >
-          <LayoutTemplate size={15} className={workflowRecipesOpen ? "text-white" : "text-gray-600"} />
-          <span>工作流配方中心</span>
         </button>
         {!showAssistant && (
           <button

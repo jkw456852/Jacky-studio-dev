@@ -29,7 +29,9 @@ test('extractImageUrlsFromResult supports plain string and object-shaped image r
 test('extractImageUrlsFromResult reads nested image items and deduplicates repeated urls', () => {
   assert.deepEqual(
     extractImageUrlsFromResult({
+      anchorUrl: 'https://example.com/anchor.png',
       imageUrl: 'https://example.com/a.png',
+      anchorSheetUrl: 'https://example.com/sheet.png',
       images: [
         { url: 'https://example.com/a.png' },
         { imageUrl: 'https://example.com/b.png' },
@@ -38,6 +40,8 @@ test('extractImageUrlsFromResult reads nested image items and deduplicates repea
     }),
     [
       'https://example.com/a.png',
+      'https://example.com/anchor.png',
+      'https://example.com/sheet.png',
       'https://example.com/b.png',
       'https://example.com/c.png',
     ],

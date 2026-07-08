@@ -3,11 +3,11 @@ import {
   normalizeAccountSecretsSnapshot,
   type SearchDefaultsConfig,
   type SearchProviderConfig,
-} from './account-secrets-shared.js';
+} from './account-secrets-shared.ts';
 import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,
-} from '../utils/safe-storage.js';
+} from '../utils/safe-storage.ts';
 
 export interface LoadedSearchSettings {
   activeProviderId: string;

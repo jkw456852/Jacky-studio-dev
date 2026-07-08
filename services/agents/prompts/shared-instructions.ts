@@ -1,4 +1,4 @@
-import { getRegistrySharedInstructions } from "./registry";
+import { getRegistrySharedInstructions } from "./registry.ts";
 
 const shared = getRegistrySharedInstructions();
 

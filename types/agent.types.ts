@@ -1,7 +1,7 @@
-export type { ProjectContext } from './common';
-import type { ProjectContext } from './common';
+export type { ProjectContext } from './common.ts';
+import type { ProjectContext } from './common.ts';
 import type { ImageTextPolicy, PromptLanguagePolicy } from '../services/providers/types';
-import type { SearchResponse } from '../services/research/search.service';
+import type { SearchResponse } from '../services/research/search.service.ts';
 
 export type AgentType =
   | 'coco'
@@ -197,8 +197,16 @@ export interface AgentMultimodalContext {
   research?: AgentResearchContext;
   inlineParts?: Array<
     { type: 'text'; text: string } |
-    { type: 'attachment'; url: string; label: string; markerInfo?: import('./common').WorkspaceMarkerInfo }
+    { type: 'attachment'; url: string; label: string; markerInfo?: import('./common.ts').WorkspaceMarkerInfo }
   >;
+}
+
+export interface AgentSkillData {
+  id?: string;
+  pluginId?: string;
+  name?: string;
+  iconName?: string;
+  config?: Record<string, unknown>;
 }
 
 export interface AgentTaskMetadata {
@@ -230,7 +238,7 @@ export interface AgentTaskMetadata {
   preferredImageModel?: string;
   preferredImageProviderId?: string | null;
   preferredImageSize?: '1K' | '2K' | '4K';
-  preferredImageCount?: 1 | 2 | 3 | 4;
+  preferredImageCount?: number;
   promptLanguagePolicy?: PromptLanguagePolicy;
   textRenderPolicy?: ImageTextPolicy;
   imageHostProvider?: string;
@@ -239,13 +247,7 @@ export interface AgentTaskMetadata {
   selectedSkillCalls?: SkillCall[];
   skillFollowUpMode?: 'auto-clarify' | 'direct-run';
   skillClarifyChecklist?: string[];
-  skillData?: {
-    id?: string;
-    pluginId?: string;
-    name?: string;
-    iconName?: string;
-    config?: Record<string, unknown>;
-  };
+  skillData?: AgentSkillData;
   brandContextSummary?: string;
   topicPinnedContext?: string;
   conversationConstraintSummary?: string;
@@ -294,6 +296,7 @@ export interface AgentTask {
   progressStep?: number;     // 当前步骤 (1-based)
   totalSteps?: number;       // 总步骤数
   progressLog?: string[];    // 所有历史步骤消息（用于展开显示思考过程）
+  thoughtTrace?: string[];
   streamingText?: string;
   reasoningText?: string;
   input: {

@@ -3,7 +3,7 @@ import type {
   EcommerceBatchJob,
   EcommercePlanGroup,
   EcommerceResultItem,
-} from "../../../../types/workflow.types";
+} from "../../../../types/workflow.types.ts";
 
 export type WorkflowResultImage = EcommerceResultItem;
 

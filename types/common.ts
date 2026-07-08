@@ -88,7 +88,7 @@ export interface WorkspaceStyleLibraryTestCase {
   prompt: string;
   referenceImageUrls?: string[];
   aspectRatio?: string;
-  imageCount?: 1 | 2 | 3 | 4;
+  imageCount?: number;
   model?: string;
   expectedFocus?: string;
 }
@@ -99,7 +99,7 @@ export interface WorkspaceStyleLibraryTestResult {
   createdAt: number;
   model?: string;
   aspectRatio?: string;
-  imageCount?: 1 | 2 | 3 | 4;
+  imageCount?: number;
   passed?: boolean;
   note?: string;
   libraryVersion?: number;
@@ -194,7 +194,7 @@ export interface CanvasElement {
   genCustomWidth?: number;
   genCustomHeight?: number;
   genImageQuality?: 'low' | 'medium' | 'high';
-  genImageCount?: 1 | 2 | 3 | 4;
+  genImageCount?: number;
   genInfiniteRetry?: boolean;
   genRequirePlanApproval?: boolean;
   genReferenceRoleMode?: 'none' | 'default' | 'poster-product' | 'custom';
@@ -218,9 +218,6 @@ export interface CanvasElement {
   treeNodeTone?: string;
   treeChildrenCollapsed?: boolean;
   workflowNodeId?: string;
-  workflowRecipeId?: string;
-  workflowRecipeVersion?: string;
-  workflowNodeRole?: 'entry' | 'processor' | 'output';
 
   // Video Gen Specifics
   genStartFrame?: string;
@@ -270,6 +267,10 @@ export interface ConversationSession {
   id: string;
   title: string;
   messages: ChatMessage[];
+  assistantThread?: {
+    headId?: string | null;
+    messages: AssistantThreadMessageStorageEntry[];
+  };
   createdAt: number;
   updatedAt: number;
   autoTitle?: boolean;
@@ -286,6 +287,13 @@ export interface ConversationSession {
   parentConversationTitle?: string;
   branchedFromMessageId?: string;
   branchPointLabel?: string;
+}
+
+export interface AssistantThreadMessageStorageEntry {
+  id: string;
+  parent_id: string | null;
+  format: string;
+  content: Record<string, any>;
 }
 
 export interface Project {
@@ -320,6 +328,10 @@ export interface ChatSendOptions {
     previousAssistantMessageId?: string;
     triggerMessageId?: string;
   };
+  quote?: {
+    text: string;
+    messageId: string;
+  };
 }
 
 export interface ChatMessage {
@@ -330,6 +342,10 @@ export interface ChatMessage {
   workflowUi?: WorkflowUiMessage;
   timestamp: number;
   responseToMessageId?: string;
+  quote?: {
+    text: string;
+    messageId: string;
+  };
   lineage?: ChatMessageLineage;
   feedback?: 'up' | 'down' | null;
   feedbackUpdatedAt?: number;
@@ -374,7 +390,10 @@ export interface ChatMessage {
       success?: boolean;
       description?: string;
       title?: string;
+      toolCallId?: string;
       result?: any;
+      artifact?: any;
+      modelContent?: any;
       params?: Record<string, any>;
       error?: string;
     }>;
@@ -401,6 +420,7 @@ export interface ChatMessage {
       progressStep?: number;
       totalSteps?: number;
       progressLog?: string[];
+      thoughtTrace?: string[];
       streamingText?: string;
       reasoningText?: string;
       stopReason?: string;
@@ -568,4 +588,4 @@ export interface ProjectContext {
   existingAssets: CanvasElement[];
   conversationHistory: ChatMessage[];
 }
-import type { WorkflowUiMessage } from './workflow.types';
+import type { WorkflowUiMessage } from './workflow.types.ts';

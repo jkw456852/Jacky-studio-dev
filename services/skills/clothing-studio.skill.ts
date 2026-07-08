@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { imageGenSkill } from './image-gen.skill';
-import { ensureWhiteBackground } from '../image-postprocess';
+import { imageGenSkill } from './image-gen.skill.ts';
+import { ensureWhiteBackground } from '../image-postprocess.ts';
 
 type Platform = 'amazon' | 'taobao' | 'tmall' | 'unknown';
 
@@ -9,7 +9,7 @@ const schema = z.object({
   brief: z.string().optional(),
   platform: z.string().optional(),
   background: z.string().optional(),
-  count: z.number().int().min(1).max(10).optional(),
+  count: z.number().int().min(1).optional(),
   aspectRatio: z.string().optional(),
   imageSize: z.enum(['1K', '2K', '4K']).optional(),
   model: z.string().optional(),
@@ -26,6 +26,12 @@ const normalizePlatform = (raw?: string): Platform => {
 
 const detectPlatformFromBrief = (brief: string): Platform => {
   return normalizePlatform(brief);
+};
+
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
 };
 
 const buildBackground = (background?: string) => {
@@ -83,7 +89,7 @@ export async function clothingStudioSkill(raw: unknown): Promise<ClothingStudioR
     ? normalizePlatform(params.platform)
     : detectPlatformFromBrief(brief);
 
-  const count = Math.max(1, Math.min(10, Number(params.count ?? 3)));
+  const count = normalizePositiveInteger(params.count, 3);
   const aspectRatio = String(params.aspectRatio || '3:4');
   const imageSize = (params.imageSize || '2K') as '1K' | '2K' | '4K';
   const model = String(params.model || 'nanobanana2');

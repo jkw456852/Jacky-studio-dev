@@ -5,6 +5,7 @@ import {
   normalizeWorkspaceImageSize,
   parseImageSizeString,
 } from '../../openai-image-presets.ts'
+import { normalizeImageDataUrlString } from '../../agents/data-url-helpers.ts'
 
 export const isOpenAICompatibleImageModel = (model: string): boolean => {
   const normalized = String(model || '').trim().toLowerCase()
@@ -112,11 +113,17 @@ export const dataUrlToFilePayload = (
   dataUrl: string,
   fallbackName: string,
 ): { blob: Blob; filename: string } | null => {
-  const match = String(dataUrl || '').match(/^data:(.+);base64,(.+)$/)
+  const normalizedDataUrl = normalizeImageDataUrlString(dataUrl)
+  const match = String(normalizedDataUrl || '').match(/^data:(.+);base64,([\s\S]+)$/)
   if (!match) return null
 
   const mimeType = match[1]
-  const binary = atob(match[2])
+  let binary = ''
+  try {
+    binary = atob(match[2])
+  } catch {
+    return null
+  }
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index)

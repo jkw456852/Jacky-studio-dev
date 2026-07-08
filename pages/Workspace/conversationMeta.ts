@@ -3,16 +3,14 @@ import type {
   ChatMessageLineage,
   ConversationSession,
 } from "../../types";
-import { normalizeLegacyAssistantMessageText } from "./components/AgentMessage.helpers";
+import { getAssistantThreadVisibleUiMessages } from "./controllers/assistantThreadRepository.ts";
+import { normalizeLegacyAssistantMessageText } from "./legacyAssistantText.ts";
 
 export const DEFAULT_CONVERSATION_TITLE = "新对话";
 const LEGACY_DEFAULT_CONVERSATION_TITLES = new Set(["New chat", "新对话"]);
 
 const MAX_TITLE_LENGTH = 36;
 const MAX_PREVIEW_LENGTH = 96;
-const STOPPED_ERROR_CODES = new Set(["USER_CANCELLED"]);
-const FAILED_ERROR_CODES = new Set(["LOAD_INTERRUPTED"]);
-const STOPPED_STATUS_LABELS = new Set(["已停止", "Stopped"]);
 
 const normalizeWhitespace = (value: string): string =>
   String(value || "")
@@ -89,10 +87,82 @@ const getLastMeaningfulMessageText = (messages: ChatMessage[]): string => {
   return "";
 };
 
+type AssistantThreadMessage = ReturnType<
+  typeof getAssistantThreadVisibleUiMessages
+>[number];
+
+const getAssistantThreadMessageSummaryText = (
+  message: AssistantThreadMessage,
+): string => {
+  const textParts: string[] = [];
+  let fileCount = 0;
+
+  for (const part of message.parts || []) {
+    if (part.type === "text") {
+      const text = normalizeMessageText(part.text || "");
+      if (text) textParts.push(text);
+      continue;
+    }
+
+    if (part.type === "file") {
+      const label =
+        normalizeWhitespace(part.filename || "") ||
+        normalizeWhitespace(part.mediaType || "");
+      textParts.push(label || "附件");
+      fileCount += 1;
+    }
+  }
+
+  const summary = normalizeWhitespace(textParts.join(" "));
+  if (summary) return summary;
+  if (fileCount > 0) {
+    return fileCount === 1 ? "1 个附件" : `${fileCount} 个附件`;
+  }
+  return "";
+};
+
+const getAssistantThreadMeaningfulTexts = (
+  thread: ConversationSession["assistantThread"] | undefined,
+): string[] =>
+  getAssistantThreadVisibleUiMessages(thread)
+    .map((message) => getAssistantThreadMessageSummaryText(message))
+    .filter(Boolean);
+
+const getFirstAssistantThreadMeaningfulText = (
+  thread: ConversationSession["assistantThread"] | undefined,
+  role?: "user" | "assistant",
+): string => {
+  const message = getAssistantThreadVisibleUiMessages(thread).find((item) => {
+    if (role && item.role !== role) return false;
+    return Boolean(getAssistantThreadMessageSummaryText(item));
+  });
+  return message ? getAssistantThreadMessageSummaryText(message) : "";
+};
+
+const getLastAssistantThreadMeaningfulText = (
+  thread: ConversationSession["assistantThread"] | undefined,
+): string => {
+  const messages = getAssistantThreadVisibleUiMessages(thread);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const summary = getAssistantThreadMessageSummaryText(messages[index]);
+    if (summary) return summary;
+  }
+  return "";
+};
+
 export const deriveConversationTitle = (
   messages: ChatMessage[],
   projectTitle?: string,
+  assistantThread?: ConversationSession["assistantThread"],
 ): string => {
+  const firstThreadUserMessage = getFirstAssistantThreadMeaningfulText(
+    assistantThread,
+    "user",
+  );
+  if (firstThreadUserMessage) {
+    return truncateText(firstThreadUserMessage, MAX_TITLE_LENGTH);
+  }
+
   const firstUserMessage = getFirstMeaningfulMessageText(messages, "user");
   if (firstUserMessage) {
     return truncateText(firstUserMessage, MAX_TITLE_LENGTH);
@@ -116,9 +186,11 @@ export const deriveConversationTitle = (
 };
 
 export const deriveConversationPreview = (
-  conversation: Pick<ConversationSession, "messages">,
+  conversation: Pick<ConversationSession, "messages" | "assistantThread">,
 ): string => {
-  const previewText = getLastMeaningfulMessageText(conversation.messages || []);
+  const previewText =
+    getLastAssistantThreadMeaningfulText(conversation.assistantThread) ||
+    getLastMeaningfulMessageText(conversation.messages || []);
   return truncateText(previewText, MAX_PREVIEW_LENGTH);
 };
 
@@ -162,13 +234,14 @@ export const hasConversationDraft = (
 };
 
 export const deriveConversationSidebarPreview = (
-  conversation: Pick<ConversationSession, "messages" | "draft">,
+  conversation: Pick<ConversationSession, "messages" | "assistantThread" | "draft">,
 ): {
   text: string;
   source: "message" | "draft" | "empty";
 } => {
   const messagePreview = deriveConversationPreview({
     messages: conversation.messages,
+    assistantThread: conversation.assistantThread,
   });
   if (messagePreview) {
     return {
@@ -189,28 +262,6 @@ export const deriveConversationSidebarPreview = (
     text: "",
     source: "empty",
   };
-};
-
-export type ConversationStatusTone =
-  | "neutral"
-  | "info"
-  | "success"
-  | "warning"
-  | "danger";
-
-export type ConversationStatusSummary = {
-  kind:
-    | "empty"
-    | "draft"
-    | "running"
-    | "needs-input"
-    | "stopped"
-    | "failed"
-    | "completed"
-    | "idle";
-  label: string;
-  detail?: string;
-  tone: ConversationStatusTone;
 };
 
 export type ConversationHistoryGroupKey =
@@ -253,137 +304,17 @@ const getStartOfLocalDay = (timestamp: number): number => {
   return date.getTime();
 };
 
-const getLastAssistantMessage = (
-  conversation: Pick<ConversationSession, "messages">,
-): ChatMessage | null => {
-  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "model") return messages[index];
-  }
-  return null;
-};
-
-export const deriveConversationStatusSummary = (
-  conversation: Pick<ConversationSession, "messages" | "draft">,
-): ConversationStatusSummary => {
-  if (hasConversationDraft(conversation)) {
-    return {
-      kind: "draft",
-      label: "草稿",
-      detail: "还有未发送的内容",
-      tone: "success",
-    };
-  }
-
-  const lastAssistantMessage = getLastAssistantMessage(conversation);
-  if (!lastAssistantMessage) {
-    return {
-      kind: "empty",
-      label: "空白",
-      detail: "还没有助手回复",
-      tone: "neutral",
-    };
-  }
-
-  const executionTrace = lastAssistantMessage.agentData?.executionTrace;
-  const browserSession = lastAssistantMessage.agentData?.browserSession;
-  const presentation = lastAssistantMessage.agentData?.presentation;
-  const stopReasonLabel = String(executionTrace?.stopReasonLabel || "").trim();
-  const errorCode = String(executionTrace?.errorCode || "").trim();
-  const statusLabel =
-    String(
-      presentation?.statusLabel ||
-        browserSession?.statusLabel ||
-        browserSession?.status ||
-        "",
-    ).trim() || undefined;
-  const normalizedStatusLabel = normalizeWhitespace(statusLabel || "");
-  const detail =
-    String(
-      browserSession?.summary ||
-        lastAssistantMessage.agentData?.postGenerationSummary ||
-        lastAssistantMessage.agentData?.description ||
-        "",
-    ).trim() || undefined;
-
-  if (
-    lastAssistantMessage.agentData?.isGenerating ||
-    executionTrace?.status === "analyzing" ||
-    executionTrace?.status === "executing" ||
-    browserSession?.status === "running" ||
-    browserSession?.status === "pending"
-  ) {
-    return {
-      kind: "running",
-      label: statusLabel || "运行中",
-      detail: detail || executionTrace?.progressMessage || "当前对话仍在处理",
-      tone: "info",
-    };
-  }
-
-  if (stopReasonLabel === "need-user-input") {
-    return {
-      kind: "needs-input",
-      label: "等待你继续",
-      detail: detail || "需要你补充下一步指令",
-      tone: "warning",
-    };
-  }
-
-  if (
-    STOPPED_ERROR_CODES.has(errorCode) ||
-    STOPPED_STATUS_LABELS.has(normalizedStatusLabel)
-  ) {
-    return {
-      kind: "stopped",
-      label: "已停止",
-      detail: detail || "已停止，保留现场方便继续",
-      tone: "warning",
-    };
-  }
-
-  if (
-    FAILED_ERROR_CODES.has(errorCode) ||
-    executionTrace?.status === "failed" ||
-    lastAssistantMessage.error
-  ) {
-    return {
-      kind: "failed",
-      label: statusLabel || "失败",
-      detail:
-        detail ||
-        normalizeMessageText(
-          String(executionTrace?.errorMessage || lastAssistantMessage.text || ""),
-        ) ||
-        "这次回复执行失败",
-      tone: "danger",
-    };
-  }
-
-  if (executionTrace?.status === "completed") {
-    return {
-      kind: "completed",
-      label: statusLabel || "已完成",
-      detail: detail || "这次处理已经完成",
-      tone: "success",
-    };
-  }
-
-  return {
-    kind: "idle",
-    label: "空闲",
-    detail: detail || "可以继续下一步",
-    tone: "neutral",
-  };
-};
-
 export const deriveConversationSearchText = (
-  conversation: Pick<ConversationSession, "title" | "messages">,
+  conversation: Pick<ConversationSession, "title" | "messages" | "assistantThread">,
 ): string => {
-  const messageCorpus = (conversation.messages || [])
+  const threadCorpus = getAssistantThreadMeaningfulTexts(
+    conversation.assistantThread,
+  ).join(" ");
+  const legacyCorpus = (conversation.messages || [])
     .map((message) => getMessageSummaryText(message))
     .filter(Boolean)
     .join(" ");
+  const messageCorpus = threadCorpus || legacyCorpus;
 
   return [conversation.title, messageCorpus]
     .map((value) => normalizeWhitespace(value || ""))
@@ -393,7 +324,7 @@ export const deriveConversationSearchText = (
 };
 
 export const matchesConversationSearch = (
-  conversation: Pick<ConversationSession, "title" | "messages">,
+  conversation: Pick<ConversationSession, "title" | "messages" | "assistantThread">,
   search: string,
 ): boolean => {
   const normalizedSearch = normalizeWhitespace(search).toLowerCase();
@@ -521,11 +452,12 @@ export const resolveActiveConversationTitle = (args: {
 };
 
 export const getConversationMessageCount = (
-  conversation: Pick<ConversationSession, "messages">,
+  conversation: Pick<ConversationSession, "messages" | "assistantThread">,
 ): number =>
-  Array.isArray(conversation.messages)
+  getAssistantThreadMeaningfulTexts(conversation.assistantThread).length ||
+  (Array.isArray(conversation.messages)
     ? conversation.messages.filter((message) => Boolean(getMessageSummaryText(message))).length
-    : 0;
+    : 0);
 
 export const deriveConversationBranchPointLabel = (
   message: Pick<ChatMessage, "text" | "inlineParts" | "attachments">,

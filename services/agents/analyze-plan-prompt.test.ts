@@ -93,6 +93,9 @@ test('buildAnalyzePlanPrompt keeps unified sidebar agent prompt free of legacy r
   assert.equal(result.fullPrompt.includes('roleGovernanceMode: approval_required'), false);
   assert.equal(result.fullPrompt.includes('[Capability Truth Snapshot]'), true);
   assert.equal(result.fullPrompt.includes('workspaceSearch'), true);
+  assert.equal(result.fullPrompt.includes('[Single-Agent Execution Rules]'), true);
+  assert.equal(result.fullPrompt.includes('handed off, routed, delegated, or transferred to Cameron'), true);
+  assert.equal(result.fullPrompt.includes('[Specialist Agents: routing targets, not skillCalls]'), false);
 });
 
 test('buildAnalyzePlanPrompt injects reusable custom skill context for custom skills', () => {
@@ -133,6 +136,60 @@ test('buildAnalyzePlanPrompt injects reusable custom skill context for custom sk
   assert.equal(result.fullPrompt.includes('active custom skill: 电商海报 Skill'), true);
   assert.equal(result.fullPrompt.includes('reusable instruction:'), true);
   assert.equal(result.fullPrompt.includes('questioning style, sequencing, output structure'), true);
+});
+
+test('buildAnalyzePlanPrompt injects workflow body for built-in frontstage skills', () => {
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['generateImage', 'generateCopy', 'workspaceSearch'],
+    message: '继续按这个 skill 帮我推进一版品牌视觉方案',
+    context: {
+      projectId: 'project-frontstage-skill-workflow',
+      projectTitle: 'Frontstage Skill Workflow Test',
+      conversationId: 'conversation-frontstage-skill-workflow',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    metadata: {
+      allowAutonomousRouting: true,
+      skillData: {
+        id: 'autonomous-main-brain',
+        name: '品牌视觉',
+        config: {
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          routeIntent: 'branding',
+          routeLabel: 'Branding',
+          description: '先统一品牌方向，再落到视觉系统与 KV。',
+          instruction: '先统一品牌语气、受众和参考方向，再拆成可执行的视觉系统或 KV 方案。',
+          examplePrompt: '帮我为这个护肤品牌做一版高端极简 KV。',
+          successfulRuns: 2,
+          lastSuccessfulPrompt: '帮我做一版高端极简的护肤品牌 KV。',
+          lastSuccessfulSummary: '先确认品牌调性和受众，再输出 KV 方向。',
+          lastSuccessfulOutput: '已输出品牌支柱、KV 方向与执行建议。',
+          reusableQuestions: ['品牌现在更想强化什么气质？', '这次主要面向谁，落在哪些应用场景？'],
+          executionOutline: ['先对齐品牌方向', '再定义视觉系统', '最后给 KV 与延展执行建议'],
+          outputBlueprint: ['先给方向判断', '再给系统与 KV', '最后给落地建议'],
+          toolPolicy: ['先用 generateCopy 稳定方向，再决定是否进入 generateImage。'],
+        },
+      },
+    },
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('[Frontstage Skill Workflow]'), true);
+  assert.equal(result.fullPrompt.includes('active frontstage skill: 品牌视觉'), true);
+  assert.equal(result.fullPrompt.includes('summary: 先统一品牌方向，再落到视觉系统与 KV。'), true);
+  assert.equal(result.fullPrompt.includes('example prompt: 帮我为这个护肤品牌做一版高端极简 KV。'), true);
+  assert.equal(result.fullPrompt.includes('successful runs: 2'), true);
+  assert.equal(result.fullPrompt.includes('last successful prompt: 帮我做一版高端极简的护肤品牌 KV。'), true);
+  assert.equal(result.fullPrompt.includes('reusable clarify questions: 品牌现在更想强化什么气质？ | 这次主要面向谁，落在哪些应用场景？'), true);
+  assert.equal(result.fullPrompt.includes('execution outline: 先对齐品牌方向 | 再定义视觉系统 | 最后给 KV 与延展执行建议'), true);
+  assert.equal(result.fullPrompt.includes('tool policy: 先用 generateCopy 稳定方向，再决定是否进入 generateImage。'), true);
+  assert.equal(result.fullPrompt.includes('Treat this selected frontstage skill as an active workflow contract'), true);
+  assert.equal(result.fullPrompt.includes('reuse its decision pattern and output framing'), true);
 });
 
 test('buildAnalyzePlanPrompt includes autonomous routing bias for custom skills with frontstage execution hints', () => {
@@ -226,6 +283,55 @@ test('buildAnalyzePlanPrompt includes structured reusable seed fields for custom
   assert.equal(result.fullPrompt.includes('output blueprint:'), true);
 });
 
+test('buildAnalyzePlanPrompt injects successful custom skill memory for reuse', () => {
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['generateImage'],
+    message: '继续按这个 skill 做一版新的社媒封面',
+    context: {
+      projectId: 'project-custom-skill-memory',
+      projectTitle: 'Custom Skill Memory Test',
+      conversationId: 'conversation-custom-skill-memory',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    metadata: {
+      allowAutonomousRouting: true,
+      skillData: {
+        id: 'custom-skill-memory-001',
+        name: '社媒内容 Skill',
+        config: {
+          isCustomSkill: true,
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          summary: '先补齐传播目标，再输出社媒内容方案。',
+          lastSuccessfulPrompt: '帮我做一套新品发售社媒封面',
+          lastSuccessfulSummary: '先确认平台和卖点，再输出封面方向与文案结构。',
+          lastSuccessfulOutput: '已输出 3 张封面方向和对应文案结构。',
+          successfulRuns: 3,
+        },
+      },
+    },
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('successful runs: 3'), true);
+  assert.equal(
+    result.fullPrompt.includes('last successful prompt: 帮我做一套新品发售社媒封面'),
+    true,
+  );
+  assert.equal(
+    result.fullPrompt.includes('last successful summary: 先确认平台和卖点，再输出封面方向与文案结构。'),
+    true,
+  );
+  assert.equal(
+    result.fullPrompt.includes('reuse the successful decision pattern'),
+    true,
+  );
+});
+
 test('buildAnalyzePlanPrompt includes marker anchor details for marked image edit attachments', () => {
   const markerFile = {
     name: 'marker-annotated-1.png',
@@ -265,4 +371,51 @@ test('buildAnalyzePlanPrompt includes marker anchor details for marked image edi
   assert.equal(result.fullPrompt.includes('51% from the top'), true);
   assert.equal(result.fullPrompt.includes('https://example.com/original.png'), true);
   assert.equal(result.fullPrompt.includes('https://example.com/annotated.png'), true);
+});
+
+test('buildAnalyzePlanPrompt includes execution recipe lines for frontstage workflows', () => {
+  const result = buildAnalyzePlanPrompt({
+    agentId: 'coco',
+    systemPrompt: 'test system prompt',
+    preferredSkills: ['generateImage', 'generateVideo'],
+    message: 'Continue with this video workflow.',
+    context: {
+      projectId: 'project-frontstage-execution-recipe',
+      projectTitle: 'Frontstage Execution Recipe Test',
+      conversationId: 'conversation-frontstage-execution-recipe',
+      existingAssets: [],
+      conversationHistory: [],
+    },
+    metadata: {
+      allowAutonomousRouting: true,
+      skillData: {
+        id: 'autonomous-main-brain',
+        name: 'Video Workflow',
+        config: {
+          allowAutonomousRouting: true,
+          mode: 'unified-sidebar-agent',
+          routeIntent: 'video',
+          routeLabel: 'Short Video',
+          instruction: 'Lock hook and pacing before final video generation.',
+          executionOutline: ['Define hook', 'Create keyframe', 'Render final video'],
+          executionRecipe: [
+            'visual-request :: generateImage :: Create keyframes first',
+            'final-video :: generateVideo :: Render final video after keyframes',
+          ],
+          outputBlueprint: ['Hook', 'Storyboard', 'Video delivery'],
+        },
+      },
+    },
+    forceImageToolCall: false,
+    allowAutonomousRouting: true,
+  });
+
+  assert.equal(result.fullPrompt.includes('execution recipe:'), true);
+  assert.equal(result.fullPrompt.includes('Create keyframes first'), true);
+  assert.equal(
+    result.fullPrompt.includes(
+      'If you output multiple skillCalls, order them according to the execution recipe',
+    ),
+    true,
+  );
 });

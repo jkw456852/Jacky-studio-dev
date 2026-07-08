@@ -4,19 +4,19 @@ import {
   type ApiProviderConfig,
   type ImageHostProvider,
   type StudioAccountSecretsSnapshot,
-} from './account-secrets-shared.js';
+} from './account-secrets-shared.ts';
 import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,
   safeLocalStorageStateStorage,
-} from '../utils/safe-storage.js';
-import { loadProviderSettings } from './provider-settings.js';
+} from '../utils/safe-storage.ts';
+import { loadProviderSettings } from './provider-settings.ts';
 import {
   clearSearchSettingsStorage,
   loadSearchSettings,
   saveSearchSettings,
-} from './search-settings.js';
-import { useImageHostStore } from '../stores/imageHost.store.js';
+} from './search-settings.ts';
+import { useImageHostStore } from '../stores/imageHost.store.ts';
 
 export interface PushAccountSecretsToAccountOptions {
   accessToken: string;

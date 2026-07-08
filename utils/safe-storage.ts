@@ -16,11 +16,11 @@ const shouldTraceStorageWrite = (key: string): boolean => {
   if (!isBrowser()) return false;
   if (!TRACE_STORAGE_KEYS.has(key)) return false;
 
-  // Debug switch: set localStorage.debug_model_mapping_writes = 'off' to disable
+  // Debug switch: set localStorage.debug_model_mapping_writes = 'on' to enable
   const toggle = window.localStorage.getItem('debug_model_mapping_writes');
-  if (!toggle) return true;
+  if (!toggle) return false;
   const normalized = toggle.trim().toLowerCase();
-  return !(normalized === '0' || normalized === 'false' || normalized === 'off');
+  return normalized === '1' || normalized === 'true' || normalized === 'on';
 };
 
 const summarizeStorageValue = (value: string): unknown => {

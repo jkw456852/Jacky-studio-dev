@@ -1,6 +1,6 @@
 import type { ChatMessage } from "../../../../types";
-import type { EcommerceOneClickSessionState } from "../../../../stores/ecommerceOneClick.store";
-import type { EcommerceWorkflowStep } from "../../../../types/workflow.types";
+import type { EcommerceOneClickSessionState } from "../../../../stores/ecommerceOneClick.store.ts";
+import type { EcommerceWorkflowStep } from "../../../../types/workflow.types.ts";
 
 export type EcommercePublicStageId =
   | "INPUT"

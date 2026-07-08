@@ -1,5 +1,5 @@
-import type { AgentRoleDraft, AgentType } from "../../types/agent.types";
-import type { WorkspaceStyleLibrary } from "../../types/common";
+import type { AgentRoleDraft, AgentType } from "../../types/agent.types.ts";
+import type { WorkspaceStyleLibrary } from "../../types/common.ts";
 import { normalizeWorkspaceStyleLibrary } from "../vision-orchestrator/style-library.ts";
 import type { StudioUserAssetApi } from "./api.ts";
 import type {
@@ -152,6 +152,7 @@ const createEmptyState = (): StudioUserAssetState => ({
     recentSkillIds: [],
     pinnedSkillIds: [],
     customSkillConfigs: {},
+    frontstageSkillRuntimeConfigs: {},
   },
   pluginPreferences: {
     schemaVersion: 1,

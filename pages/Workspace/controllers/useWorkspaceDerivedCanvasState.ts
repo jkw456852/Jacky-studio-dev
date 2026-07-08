@@ -43,7 +43,7 @@ export const useWorkspaceDerivedCanvasState = ({
     const collapsedTreeNodeIds = groupVisibleElements
       .filter(
         (element) =>
-          resolveWorkspaceTreeNodeKind(element) === "prompt" &&
+          resolveWorkspaceTreeNodeKind(element) !== null &&
           element.treeChildrenCollapsed,
       )
       .map((element) => element.id);

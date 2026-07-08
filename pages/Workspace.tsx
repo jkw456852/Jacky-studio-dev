@@ -1,4 +1,4 @@
-/* cspell:ignore rehost rehosted inpainting */
+﻿/* cspell:ignore rehost rehosted inpainting */
 import React, {
   useState,
   useEffect,
@@ -91,9 +91,6 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import {
-  createChatSession,
-  getBestModelSelection,
-  sendMessage,
   generateImage,
   generateVideo,
   extractTextFromImage,
@@ -112,7 +109,7 @@ import {
   WorkspaceNodeInteractionMode,
 } from "../types";
 import { saveProject, formatDate } from "../services/storage";
-import { resolveProjectThumbnail } from "../services/project-thumbnail";
+import { resolveProjectThumbnail } from "../services/project-thumbnail.ts";
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
@@ -123,7 +120,11 @@ import {
   getMappedModelConfigs,
   getModelDisplayLabel,
 } from "../services/provider-settings";
-import { Content } from "@google/genai";
+import {
+  WORKSPACE_PREVIEW_URL_EVENT,
+  type WorkspacePreviewUrlEventDetail,
+} from "./Workspace/components/workspace-preview-events";
+import { getRenderableImageAssetUrl } from "./Workspace/workspaceShared";
 import { useWorkspaceCanvasLayerProps } from "./Workspace/controllers/useWorkspaceCanvasLayerProps";
 import { useWorkspaceCanvasAssetImport } from "./Workspace/controllers/useWorkspaceCanvasAssetImport";
 import { useWorkspaceCanvasElementInteraction } from "./Workspace/controllers/useWorkspaceCanvasElementInteraction";
@@ -145,8 +146,7 @@ import { useWorkspaceModelPreferences } from "./Workspace/controllers/useWorkspa
 import { useWorkspaceMultiSelectTools } from "./Workspace/controllers/useWorkspaceMultiSelectTools";
 import { useWorkspacePageShellProps } from "./Workspace/controllers/useWorkspacePageShellProps";
 import { useWorkspaceProjectLoader } from "./Workspace/controllers/useWorkspaceProjectLoader";
-import { useWorkspaceSend } from "./Workspace/controllers/useWorkspaceSend";
-import { useWorkspaceSmartGenerate } from "./Workspace/controllers/useWorkspaceSmartGenerate";
+import type { AssistantSidebarBootstrapRequest } from "./Workspace/components/assistantSidebar.types";
 import {
   buildDuplicatedCanvasSelection,
   createCanvasElementClipboardSnapshot,
@@ -154,38 +154,11 @@ import {
 } from "./Workspace/controllers/workspaceElementDuplication";
 import { useWorkspaceTouchEditActions } from "./Workspace/controllers/useWorkspaceTouchEditActions";
 import { useWorkspaceTextToolbarUi } from "./Workspace/controllers/useWorkspaceTextToolbarUi";
-import { useAgentOrchestrator } from "../hooks/useAgentOrchestrator";
-import { useProjectContext } from "../hooks/useProjectContext";
-import { getAgentInfo, executeAgentTask } from "../services/agents";
-import { localPreRoute } from "../services/agents/local-router";
-import { AgentAvatar } from "../components/agents/AgentAvatar";
 import { useAgentStore, normalizeInputBlocks } from "../stores/agent.store";
 import { useProjectStore } from "../stores/project.store";
 import { WorkspaceCanvasStage } from "./Workspace/components/WorkspaceCanvasStage";
-import { WorkspaceFocusedGroupBanner } from "./Workspace/components/WorkspaceFocusedGroupBanner";
-import { WorkspaceGeneratedFilesPanel } from "./Workspace/components/WorkspaceGeneratedFilesPanel";
-import { WorkspaceLayersPanel } from "./Workspace/components/WorkspaceLayersPanel";
 import { WorkspacePageOverlays } from "./Workspace/components/WorkspacePageOverlays";
 import { WorkspaceSidebarLayer } from "./Workspace/components/WorkspaceSidebarLayer";
-import {
-  RecipeLifecyclePanel,
-  type WorkflowRecipeImportDraft,
-  type WorkflowRecipeLifecycleRuntimeSummary,
-  type WorkflowRecipeLifecycleTab,
-  type WorkflowRecipeTestDraft,
-} from "./Workspace/components/workflow-recipes";
-import { importWorkflowRecipe } from "../services/workflow-recipes/importer";
-import {
-  runWorkflowRecipeSmokeTest,
-} from "../services/workflow-recipes/testing";
-import {
-  publishWorkflowRecipe,
-  rollbackWorkflowRecipePublication,
-} from "../services/workflow-recipes/publisher";
-import { FASHION_MODEL_TRYON_MVP_RECIPE } from "../services/workflow-recipes/presets/fashion-model-tryon-mvp.recipe";
-import { assetsToCanvasElementsAtCenter } from "../utils/canvas-helpers";
-import { AgentSelector } from "../components/agents/AgentSelector";
-import { TaskProgress } from "../components/agents/TaskProgress";
 import { AgentType } from "../types/agent.types";
 import {
   useClothingStudioChatStore,
@@ -194,7 +167,7 @@ import {
 import {
   useEcommerceOneClickStore,
   useEcommerceOneClickState,
-} from "../stores/ecommerceOneClick.store";
+} from "../stores/ecommerceOneClick.store.ts";
 import {
   syncClothingTopicMemory,
   syncEcommerceTopicMemory,
@@ -203,15 +176,18 @@ import {
 } from "../services/topic-memory";
 import {
   splitEcommerceImageAnalysisTextFieldList,
-} from "../utils/ecommerce-image-analysis";
-import { getActiveQuickSkillPreference } from "../services/runtime-assets/preferences";
+} from "../utils/ecommerce-image-analysis.ts";
+import {
+  getActiveQuickSkillPreference,
+  SKILL_PREFERENCES_UPDATED_EVENT,
+} from "../services/runtime-assets/preferences";
 import { buildEcommerceTextLayerPlan } from "../utils/ecommerce-text-layer-plan";
-import type { DesignTaskMode } from "../types/common";
+import type { DesignTaskMode } from "../types/common.ts";
 import type {
   ClothingAnalysis,
   EcommerceResultItem,
-} from "../types/workflow.types";
-import type { EcommerceOneClickSessionState } from "../stores/ecommerceOneClick.store";
+} from "../types/workflow.types.ts";
+import type { EcommerceOneClickSessionState } from "../stores/ecommerceOneClick.store.ts";
 import { useWorkspaceSidebarProps } from "./Workspace/controllers/useWorkspaceSidebarProps";
 import { useWorkspaceDesignConsistency } from "./Workspace/controllers/useWorkspaceDesignConsistency";
 import { useWorkspaceClothingWorkflow } from "./Workspace/controllers/useWorkspaceClothingWorkflow";
@@ -1167,7 +1143,7 @@ const cleanupOldEcommerceLocalCaches = (currentTopicId: string): void => {
       try {
         window.localStorage.removeItem(key);
       } catch (error) {
-        console.warn("[EcommerceWorkflow] 清理旧本地缓存失败:", error);
+        console.warn("[EcommerceWorkflow] 娓呯悊鏃ф湰鍦扮紦瀛樺け璐?", error);
       }
     });
 };
@@ -1185,7 +1161,7 @@ const cleanupAllOtherEcommerceLocalCaches = (currentTopicId: string): void => {
       try {
         window.localStorage.removeItem(key);
       } catch (error) {
-        console.warn("[EcommerceWorkflow] 清理其他本地缓存失败:", error);
+        console.warn("[EcommerceWorkflow] 娓呯悊鍏朵粬鏈湴缂撳瓨澶辫触:", error);
       }
     }
   }
@@ -1203,7 +1179,7 @@ const readEcommerceLocalCache = (
     if (!raw) return null;
     return JSON.parse(raw) as EcommerceLocalCache;
   } catch (error) {
-    console.error("[EcommerceWorkflow] 读取本地缓存失败:", error);
+    console.error("[EcommerceWorkflow] 璇诲彇鏈湴缂撳瓨澶辫触:", error);
     return null;
   }
 };
@@ -1222,7 +1198,7 @@ const writeEcommerceLocalCache = (
     window.localStorage.removeItem(getLegacyEcommerceLocalCacheKey(topicId));
   } catch (error) {
     if (!isQuotaExceededError(error)) {
-      console.error("[EcommerceWorkflow] 写入本地缓存失败:", error);
+      console.error("[EcommerceWorkflow] 鍐欏叆鏈湴缂撳瓨澶辫触:", error);
       return;
     }
 
@@ -1237,7 +1213,7 @@ const writeEcommerceLocalCache = (
       console.warn("[EcommerceWorkflow] Local cache exceeded, downgraded to compact snapshot.");
     } catch (retryError) {
       if (!isQuotaExceededError(retryError)) {
-        console.error("[EcommerceWorkflow] 写入精简本地缓存仍然失败:", retryError);
+        console.error("[EcommerceWorkflow] 鍐欏叆绮剧畝鏈湴缂撳瓨浠嶇劧澶辫触:", retryError);
         return;
       }
 
@@ -1252,7 +1228,7 @@ const writeEcommerceLocalCache = (
         window.localStorage.removeItem(getLegacyEcommerceLocalCacheKey(topicId));
         console.warn("[EcommerceWorkflow] Local cache exceeded again, downgraded to ultra-minimal snapshot.");
       } catch (finalError) {
-        console.error("[EcommerceWorkflow] 写入超轻量本地缓存仍然失败:", finalError);
+        console.error("[EcommerceWorkflow] 鍐欏叆瓒呰交閲忔湰鍦扮紦瀛樹粛鐒跺け璐?", finalError);
       }
     }
   }
@@ -1266,7 +1242,7 @@ const removeEcommerceLocalCache = (topicId: string): void => {
       window.localStorage.removeItem(key);
     });
   } catch (error) {
-    console.error("[EcommerceWorkflow] 删除本地缓存失败:", error);
+    console.error("[EcommerceWorkflow] 鍒犻櫎鏈湴缂撳瓨澶辫触:", error);
   }
 };
 
@@ -1349,7 +1325,7 @@ const Workspace: React.FC = () => {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const textEditDraftRef = useRef<Record<string, string>>({});
   const pendingSelectAllTextIdRef = useRef<string | null>(null);
-  const [projectTitle, setProjectTitle] = useState("未命名项目");
+  const [projectTitle, setProjectTitle] = useState("?????");
   const [nodeInteractionMode, setNodeInteractionMode] =
     useState<WorkspaceNodeInteractionMode>("branch");
   const nodeInteractionModeRef = useRef(nodeInteractionMode);
@@ -1417,28 +1393,9 @@ const Workspace: React.FC = () => {
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editingMarkerLabel, setEditingMarkerLabel] = useState("");
 
-  const [leftPanelMode, setLeftPanelMode] = useState<
-    "layers" | "files" | "workflow-recipes" | null
-  >(
+  const [leftPanelMode, setLeftPanelMode] = useState<"layers" | "files" | null>(
     null,
   );
-  const [workflowRecipeTab, setWorkflowRecipeTab] =
-    useState<WorkflowRecipeLifecycleTab>("import");
-  const [workflowRecipeImportDraft, setWorkflowRecipeImportDraft] =
-    useState<WorkflowRecipeImportDraft>({
-      rawJson: "",
-      fileName: "",
-    });
-  const [workflowRecipeTestDraft, setWorkflowRecipeTestDraft] =
-    useState<WorkflowRecipeTestDraft>({
-      inputJson:
-        '{\n  "garmentImages": ["asset://garment-front.png"],\n  "modelImage": "asset://model.png",\n  "requirements": {\n    "aspectRatio": "3:4",\n    "platform": "taobao",\n    "count": 1\n  },\n  "tryonBrief": "强调面料和版型保持一致"\n}',
-      constantsJson: '{\n  "defaultPrompt": "make a try-on image"\n}',
-      contextJson: '{\n  "requestId": "workflow-recipe-ui-smoke"\n}',
-    });
-  const [workflowRecipeRuntimeSummary, setWorkflowRecipeRuntimeSummary] =
-    useState<WorkflowRecipeLifecycleRuntimeSummary>({});
-  const [isWorkflowRecipeBusy, setIsWorkflowRecipeBusy] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -1450,7 +1407,6 @@ const Workspace: React.FC = () => {
   const [videoToolbarTab, setVideoToolbarTab] = useState<
     "frames" | "motion" | "multi"
   >("frames");
-  const [showFramePanel, setShowFramePanel] = useState(false);
   const [showFastEdit, setShowFastEdit] = useState(false);
   const [showLocalRedrawPanel, setShowLocalRedrawPanel] = useState(false);
   const fastEditPrompt = useAgentStore((s) => s.fastEditPrompt);
@@ -1478,11 +1434,14 @@ const Workspace: React.FC = () => {
     setMarkers,
   });
   const [prompt, setPrompt] = useState("");
-  const messages = useAgentStore((s) => s.messages);
   const isTyping = useAgentStore((s) => s.isTyping);
   // Conversation history
   const [conversations, setConversations] = useState<ConversationSession[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>("");
+  const [isProjectHydrated, setIsProjectHydrated] = useState(!id);
+  const [persistedActiveQuickSkill, setPersistedActiveQuickSkill] = useState<
+    ChatMessage["skillData"] | undefined
+  >(() => getActiveQuickSkillPreference() || undefined);
   const isLoadingRecord = useRef(false);
   const suspendAutoSaveUntilRef = useRef(0);
 
@@ -1509,6 +1468,28 @@ const Workspace: React.FC = () => {
       setIsAssistantFullscreen(false);
     }
   }, [isAssistantFullscreen, showAssistant]);
+
+  useEffect(() => {
+    const syncPersistedActiveQuickSkill = () => {
+      setPersistedActiveQuickSkill(getActiveQuickSkillPreference() || undefined);
+    };
+
+    syncPersistedActiveQuickSkill();
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.addEventListener(
+      SKILL_PREFERENCES_UPDATED_EVENT,
+      syncPersistedActiveQuickSkill as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        SKILL_PREFERENCES_UPDATED_EVENT,
+        syncPersistedActiveQuickSkill as EventListener,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const syncUnreadCount = () => {
@@ -1540,18 +1521,16 @@ const Workspace: React.FC = () => {
     markersRef.current = markers;
   }, [markers]);
 
-  const composerState = useAgentStore((s) => s.composer);
-  const inputBlocks = composerState.inputBlocks;
-  const activeBlockId = composerState.activeBlockId;
-  const selectionIndex = composerState.selectionIndex;
-  const selectionRect = composerState.selectionRect;
+  const inputBlocks = useAgentStore((s) => s.composer.inputBlocks);
+  const activeBlockId = useAgentStore((s) => s.composer.activeBlockId);
+  const selectionIndex = useAgentStore((s) => s.composer.selectionIndex);
+  const selectionRect = useAgentStore((s) => s.composer.selectionRect);
   const [selectedChipId, setSelectedChipId] = useState<string | null>(null); // For arrow key chip selection
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [hoveredChipId, setHoveredChipId] = useState<string | null>(null); // For hover preview
 
-  // prompt/attachments legacy states replaced by inputBlocks effectively,
-  // but keeping 'prompt' sync for other potential uses if needed, or simply deriving in handleSend.
-  // We will ignore 'prompt' and 'attachments' state for the INPUT area.
+  // Legacy prompt/attachment draft state is represented by inputBlocks now.
+  // The assistant-ui sidebar sends through its official composer runtime.
   const modelMode = useAgentStore((s) => s.modelMode);
   const webEnabled = useAgentStore((s) => s.webEnabled);
   const imageModelEnabled = useAgentStore((s) => s.imageModelEnabled);
@@ -1577,6 +1556,7 @@ const Workspace: React.FC = () => {
     setImageModelEnabled,
     setImageGenRatio,
     setImageGenRes,
+    setImageGenCount,
     setImageGenUploads,
     setIsPickingFromCanvas,
     setVideoGenRatio,
@@ -1613,6 +1593,30 @@ const Workspace: React.FC = () => {
   }, [activeBlockId]);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleWorkspacePreviewUrl = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspacePreviewUrlEventDetail>).detail;
+      const nextPreviewUrl =
+        getRenderableImageAssetUrl(detail?.url) ||
+        String(detail?.url || "").trim();
+      if (!nextPreviewUrl) {
+        return;
+      }
+      setPreviewUrl(nextPreviewUrl);
+    };
+
+    window.addEventListener(
+      WORKSPACE_PREVIEW_URL_EVENT,
+      handleWorkspacePreviewUrl as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        WORKSPACE_PREVIEW_URL_EVENT,
+        handleWorkspacePreviewUrl as EventListener,
+      );
+    };
+  }, []);
 
   // Creation mode: 'agent' | 'image' | 'video'
   type CreationMode = "agent" | "image" | "video";
@@ -1863,9 +1867,6 @@ const Workspace: React.FC = () => {
         label,
         genPrompt,
       );
-      // When the generation uses multiple reference images, the "correct" result
-      // may intentionally deviate from the anchor (e.g. product swap / install overlay).
-      // In that case we only warn but do not auto-rerun with suggested fixes.
       if (
         (typeof referenceCount === "number" && referenceCount > 1) ||
         validation.pass ||
@@ -1896,7 +1897,7 @@ const Workspace: React.FC = () => {
       );
       return retriedUrl;
     },
-    [maybeWarnConsistencyDrift],
+    [addMessage, maybeWarnConsistencyDrift],
   );
 
   const handleToggleConsistencyCheck = useCallback(
@@ -1915,15 +1916,13 @@ const Workspace: React.FC = () => {
     [projectActions],
   );
 
-  const handlePreviewConsistencyAnchor = useCallback(
-    (anchorUrl: string) => {
-      if (!anchorUrl) {
-        return;
-      }
-      setPreviewUrl(anchorUrl);
-    },
-    [setPreviewUrl],
-  );
+  const handlePreviewConsistencyAnchor = useCallback(() => {
+    const anchorUrl = String(currentConsistencyAnchorUrl || "").trim();
+    if (!anchorUrl) {
+      return;
+    }
+    setPreviewUrl(anchorUrl);
+  }, [currentConsistencyAnchorUrl, setPreviewUrl]);
 
   const handleSetConsistencyAnchorFromElement = useCallback(
     async (element: CanvasElement | null) => {
@@ -2058,7 +2057,7 @@ const Workspace: React.FC = () => {
           clarity: "2K",
           count: Math.max(
             1,
-            Math.min(10, clothingState.requirements.count || 1),
+            Math.floor(Number(clothingState.requirements.count) || 1),
           ),
           referenceUrl: clothingState.requirements.referenceUrl,
           description: clothingState.requirements.description,
@@ -2252,7 +2251,7 @@ const Workspace: React.FC = () => {
           topicId,
         );
       } catch (error) {
-        console.error("[EcommerceWorkflow] 鎭㈠宸ヤ綔娴佸揩鐓уけ璐?", error);
+        console.error("[EcommerceWorkflow] 閹垹顦插銉ょ稊濞翠礁鎻╅悡褍銇戠拹?", error);
         if (!cancelled && cached) {
           store.actions.hydrateSession(cached, topicId);
         }
@@ -2379,6 +2378,7 @@ const Workspace: React.FC = () => {
   const {
     activeImageModel,
     activeImageProviderId,
+    activeVideoModel,
     activeVideoProviderId,
     handleModeSwitch,
     modelPreferences,
@@ -2388,6 +2388,20 @@ const Workspace: React.FC = () => {
     clearMessages,
     setModelMode,
   });
+  const assistantModelPreferences = useMemo(
+    () => ({
+      ...modelPreferences,
+      translatePromptToEnglish,
+      enforceChineseTextInImage,
+      requiredChineseCopy,
+    }),
+    [
+      enforceChineseTextInImage,
+      modelPreferences,
+      requiredChineseCopy,
+      translatePromptToEnglish,
+    ],
+  );
 
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false);
@@ -2408,8 +2422,7 @@ const Workspace: React.FC = () => {
         target.closest(".right-sidebar");
       const isInputArea =
         target.closest(".input-flow-container") ||
-        target.closest(".message-list") ||
-        target.closest('[class*="InputArea"]');
+        target.closest(".message-list");
       const isPopupUI =
         target.closest(".history-popover-content") ||
         target.closest(".file-list-modal") ||
@@ -2545,30 +2558,6 @@ const Workspace: React.FC = () => {
       window.removeEventListener("focus", handleModelMappingChanged);
     };
   }, []);
-
-  // Agent orchestration
-  const projectContext = useProjectContext(
-    id || "",
-    projectTitle,
-    elements,
-    getCurrentConversationId(),
-  );
-  const {
-    currentTask,
-    isUploadingAttachments,
-    processMessage,
-    executeProposal,
-  } = useAgentOrchestrator({
-    projectContext,
-    canvasState: { elements, pan, zoom, showAssistant },
-    onElementsUpdate: (els) => {
-      elementsRef.current = els;
-      setElements(els);
-    },
-    onHistorySave: (els) => saveToHistory(els, markersRef.current),
-    autoAddToCanvas: true,
-    onAssetsGenerated: handleAgentGeneratedAssets,
-  });
 
   // Close video dropdowns on outside click
   useEffect(() => {
@@ -2817,9 +2806,6 @@ const Workspace: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refImageInputRef = useRef<HTMLInputElement>(null);
-  const chatSessionRef = useRef<ReturnType<typeof createChatSession> | null>(
-    null,
-  );
   const fontTriggerRef = useRef<HTMLButtonElement>(null);
   const weightTriggerRef = useRef<HTMLButtonElement>(null);
   const textSettingsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -2857,6 +2843,8 @@ const Workspace: React.FC = () => {
   const marqueeBoxRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialPromptProcessedRef = useRef(false);
+  const [assistantBootstrapRequest, setAssistantBootstrapRequest] =
+    useState<AssistantSidebarBootstrapRequest | null>(null);
   // Performance: store drag positions in ref to avoid re-renders during drag
   const dragOffsetsRef = useRef<Record<string, { x: number; y: number }>>({});
   const rafIdRef = useRef<number>(0);
@@ -3759,7 +3747,7 @@ const Workspace: React.FC = () => {
     image.crossOrigin = "anonymous";
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error("图片尺寸读取失败。"));
+      image.onerror = () => reject(new Error("?????????"));
       image.src = url;
     });
     return {
@@ -3900,7 +3888,7 @@ const Workspace: React.FC = () => {
         addMessage({
           id: `${Date.now()}`,
           role: "model",
-          text: `进入画板失败：${error instanceof Error ? error.message : "未知错误"}`,
+          text: `???????${error instanceof Error ? error.message : "????"}`,
           timestamp: Date.now(),
           error: true,
         });
@@ -4109,100 +4097,6 @@ const Workspace: React.FC = () => {
     updateDesignSession: projectActions.updateDesignSession,
   });
 
-  async function handleAgentGeneratedAssets(
-    assets: import("../types/agent.types").GeneratedAsset[],
-  ) {
-    const normalizedAssets = assets.filter(
-      (asset) =>
-        asset &&
-        (asset.type === "image" || asset.type === "video") &&
-        typeof asset.url === "string" &&
-        asset.url.trim().length > 0,
-    );
-    if (normalizedAssets.length === 0) return;
-
-    const existingUrls = new Set(
-      elementsRef.current
-        .flatMap((element) =>
-          [element.url, element.originalUrl, element.persistedOriginalUrl]
-            .map((item) => String(item || "").trim())
-            .filter(Boolean),
-        ),
-    );
-
-    const pendingAssets = normalizedAssets.filter(
-      (asset) => !existingUrls.has(asset.url.trim()),
-    );
-    if (pendingAssets.length === 0) return;
-
-    const viewport = getCanvasViewportSize(showAssistant);
-    const canvasCenter = getCanvasCenterPoint({
-      showAssistant,
-      pan,
-      zoom,
-    });
-    const baseZIndex =
-      elementsRef.current.reduce(
-        (max, element) => Math.max(max, element.zIndex || 0),
-        0,
-      ) + 1;
-    const createdAt = Date.now();
-    const nextElements = [...elementsRef.current];
-
-    for (let index = 0; index < pendingAssets.length; index += 1) {
-      const asset = pendingAssets[index];
-      if (asset.type !== "image") {
-        continue;
-      }
-
-      const proxied = await makeImageProxyFromUrl(
-        asset.url,
-        DEFAULT_PROXY_MAX_DIM,
-        viewport,
-      );
-
-      const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
-        proxied.originalWidth,
-        proxied.originalHeight,
-      );
-      const width = imageDisplaySize.width;
-      const height = imageDisplaySize.height;
-
-      nextElements.push({
-        id: asset.id || `agent-result-${createdAt}-${index}`,
-        type: "image",
-        url: proxied.displayUrl,
-        originalUrl: proxied.originalUrl,
-        proxyUrl:
-          proxied.displayUrl !== proxied.originalUrl
-            ? proxied.displayUrl
-            : undefined,
-        x:
-          canvasCenter.x -
-          width / 2 +
-          (index % 3) * (width + 24),
-        y:
-          canvasCenter.y -
-          height / 2 +
-          Math.floor(index / 3) * (height + 24),
-        width,
-        height,
-        zIndex: baseZIndex + index,
-        genPrompt: asset.metadata.prompt,
-        genModel: asset.metadata.model as ImageModel,
-        genAspectRatio: `${proxied.originalWidth}:${proxied.originalHeight}`,
-        nodeInteractionMode:
-          nodeInteractionMode === "branch" ? "branch" : undefined,
-        treeNodeKind: nodeInteractionMode === "branch" ? "image" : undefined,
-        hasFreshGeneratedGlow: true,
-      });
-    }
-
-    if (nextElements.length === elementsRef.current.length) return;
-    setElementsSynced(nextElements);
-    saveToHistory(nextElements, markersRef.current);
-  }
-
   // --- Image Processing Handlers ---
 
   const handleProductSwap = useWorkspaceProductSwap({
@@ -4296,97 +4190,6 @@ const Workspace: React.FC = () => {
     applyGeneratedImageToElement,
   });
 
-  const handleSmartGenerate = useWorkspaceSmartGenerate({
-    addMessage,
-    setIsTyping,
-    executeProposal,
-    showAssistant,
-    pan,
-    zoom,
-    elementsRef,
-    setElementsSynced,
-    setSelectedElementId,
-    selectedElementId,
-    activeImageModel,
-    activeImageProviderId,
-    nodeInteractionMode,
-    translatePromptToEnglish,
-    enforceChineseTextInImage,
-    requiredChineseCopy,
-    getDesignConsistencyContext: () => getDesignConsistencyContext() || {},
-    mergeConsistencyAnchorIntoReferences,
-    retryWithConsistencyFix: (
-      label,
-      initialUrl,
-      rerun,
-      anchorOverride,
-      genPrompt,
-      referenceCount,
-    ) =>
-      retryWithConsistencyFix(
-        label,
-        initialUrl,
-        rerun,
-        anchorOverride,
-        genPrompt,
-        referenceCount,
-      ),
-    applyGeneratedImageToElement,
-    createGeneratingTreeImageChildren,
-  });
-
-  const handleSend = useWorkspaceSend({
-    isUploadingAttachments,
-    isTyping,
-    webEnabled,
-    modelMode,
-    creationMode,
-    researchMode,
-    imageGenRatio,
-    imageGenRes,
-    imageGenCount,
-    videoGenRatio,
-    preferredImageModel: modelPreferences.preferredImageModel,
-    preferredImageProviderId: modelPreferences.preferredImageProviderId,
-    translatePromptToEnglish,
-    enforceChineseTextInImage,
-    requiredChineseCopy,
-    selectedElementId,
-    selectedElementIds,
-    elementsRef,
-    getElementSourceUrl,
-    ensureConversationId,
-    buildMemoryKey,
-    processMessage,
-    addMessage,
-    setIsTyping,
-    setInputBlocks,
-    clearInputDom: () => {
-      document.querySelectorAll('[id^="input-block-"]').forEach((element) => {
-        (element as HTMLElement).textContent = "";
-      });
-    },
-    handleSpecialSkillData: async ({ text, attachments, skillData }) => {
-      if (skillData?.id === "clothing-studio-workflow") {
-        await handleClothingWorkflowSend({
-          text,
-          attachments,
-        });
-        return true;
-      }
-
-      if (skillData?.id === "ecom-oneclick-workflow") {
-        await handleEcommerceWorkflowSend({
-          text,
-          attachments,
-        });
-        return true;
-      }
-
-      return false;
-    },
-  });
-
   const { handleTouchEditClick, handleTouchEditExecute } =
     useWorkspaceTouchEditActions({
       elements,
@@ -4405,32 +4208,12 @@ const Workspace: React.FC = () => {
       applyGeneratedImageToElement,
     });
 
-  // Handle Model Mode Switching
-  useEffect(() => {
-    const selectedModel = getBestModelSelection(
-      modelMode === "thinking" ? "thinking" : "text",
-    );
-
-    // Preserve history when switching models if possible, but basic recreation here
-    const historyContent: Content[] = messages.map((m) => ({
-      role: m.role,
-      parts: [{ text: m.text }],
-    }));
-    chatSessionRef.current = createChatSession(
-      selectedModel.modelId,
-      historyContent,
-      undefined,
-      selectedModel.providerId,
-    );
-  }, [modelMode]);
-
   useWorkspaceProjectLoader({
     id,
     locationState: location.state,
     isLoadingRecordRef: isLoadingRecord,
     suspendAutoSaveUntilRef,
     initialPromptProcessedRef,
-    chatSessionRef,
     createConversationId,
     setElementsSynced,
     setMarkersSynced,
@@ -4441,6 +4224,7 @@ const Workspace: React.FC = () => {
     setSelectedElementId,
     setSelectedElementIds,
     setActiveConversationId,
+    setProjectHydrated: setIsProjectHydrated,
     setZoom,
     setPan,
     setInputBlocks,
@@ -4448,7 +4232,7 @@ const Workspace: React.FC = () => {
     setWebEnabled,
     setImageModelEnabled,
     setCreationMode,
-    handleSend,
+    setAssistantBootstrapRequest,
     setElements,
   });
 
@@ -4480,15 +4264,16 @@ const Workspace: React.FC = () => {
   }, [isMarkableCanvasElementAtPoint]);
 
   useWorkspaceConversationPersistence({
-    messages,
     workspaceId: id,
     activeConversationId,
     projectTitle,
     currentInputBlocks: inputBlocks,
     creationMode,
-    activeQuickSkill: getActiveQuickSkillPreference() || undefined,
+    activeQuickSkill: persistedActiveQuickSkill,
     modelMode,
     webEnabled,
+    isLoadingRecordRef: isLoadingRecord,
+    suspendAutoSaveUntilRef,
     setConversations,
   });
 
@@ -4584,6 +4369,18 @@ const Workspace: React.FC = () => {
 
     // Native wheel listener for non-passive behavior (Prevent Browser Zoom and enable Pan)
     const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInsideAssistantSidebar = Boolean(
+        target?.closest("[data-assistant-sidebar-root]"),
+      );
+
+      if (isInsideAssistantSidebar) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+        }
+        return;
+      }
+
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const container = containerRef.current;
@@ -4614,31 +4411,28 @@ const Workspace: React.FC = () => {
 
         setZoom(newZoom);
         setPan(newPan);
-      } else {
-        if (e.ctrlKey) {
-          e.preventDefault();
-          return;
-        }
-        const target = e.target as HTMLElement | null;
-        // Allow scrolling in popovers/modals/textareas/sidebars
-        if (
-          target?.closest(
-            ".overflow-y-auto, textarea, input, .history-popover-content, .sidebar, .right-sidebar",
-          )
-        ) {
-          return;
-        }
-        e.preventDefault();
-
-        const oldPan = panRef.current;
-        const newPan = {
-          x: oldPan.x - e.deltaX,
-          y: oldPan.y - e.deltaY,
-        };
-
-        panRef.current = newPan;
-        setPan(newPan);
+        return;
       }
+
+      // Allow scrolling in popovers/modals/textareas/sidebars
+      if (
+        target?.closest(
+          ".overflow-y-auto, .overflow-y-scroll, textarea, input, .history-popover-content, .sidebar, .right-sidebar",
+        )
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const oldPan = panRef.current;
+      const newPan = {
+        x: oldPan.x - e.deltaX,
+        y: oldPan.y - e.deltaY,
+      };
+
+      panRef.current = newPan;
+      setPan(newPan);
     };
 
     // Attach to window to catch all scrolls and prevent browser zoom
@@ -4876,7 +4670,11 @@ const Workspace: React.FC = () => {
     addMessage,
   });
 
-  const { handleFileUpload, handleCanvasDrop } = useWorkspaceCanvasAssetImport({
+  const {
+    handleFileUpload,
+    handleCanvasDrop,
+    importUrlAssetToCanvas,
+  } = useWorkspaceCanvasAssetImport({
     showAssistant,
     pan,
     zoom,
@@ -5347,434 +5145,6 @@ const Workspace: React.FC = () => {
     deleteSelectedElement,
   ]);
 
-  const handleWorkflowRecipeImport = useCallback(() => {
-    setIsWorkflowRecipeBusy(true);
-    try {
-      const result = importWorkflowRecipe({
-        raw: workflowRecipeImportDraft.rawJson,
-        now: Date.now(),
-      });
-      setWorkflowRecipeRuntimeSummary((prev) => ({
-        ...prev,
-        recipe: result.recipe || null,
-        importReport: result.report,
-        testingRecord: result.testingRecord || prev.testingRecord || null,
-      }));
-      setWorkflowRecipeTab("testing");
-      setFeatureNotice(
-        result.ok
-          ? "Workflow recipe 已导入测试区骨架。"
-          : "Workflow recipe 导入失败，请查看校验报告。",
-      );
-    } finally {
-      setIsWorkflowRecipeBusy(false);
-    }
-  }, [workflowRecipeImportDraft.rawJson]);
-
-  const parseWorkflowRecipeJsonObject = (
-    label: string,
-    raw: string,
-  ): Record<string, unknown> => {
-    try {
-      const parsed = JSON.parse(raw || "{}") as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error(`${label} 必须是 JSON 对象。`);
-      }
-      return parsed as Record<string, unknown>;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : `${label} 解析失败，请输入合法 JSON 对象。`;
-      throw new Error(message);
-    }
-  };
-
-  const handleWorkflowRecipeSmokeTest = useCallback(async () => {
-    const now = Date.now();
-    const recipe =
-      workflowRecipeRuntimeSummary.recipe || FASHION_MODEL_TRYON_MVP_RECIPE;
-
-    setIsWorkflowRecipeBusy(true);
-    try {
-      const inputs = parseWorkflowRecipeJsonObject(
-        "输入参数",
-        workflowRecipeTestDraft.inputJson,
-      );
-      const constants = parseWorkflowRecipeJsonObject(
-        "常量",
-        workflowRecipeTestDraft.constantsJson,
-      );
-      const context = parseWorkflowRecipeJsonObject(
-        "上下文",
-        workflowRecipeTestDraft.contextJson,
-      );
-
-      const result = await runWorkflowRecipeSmokeTest({
-        recipe,
-        nodeId: `workspace-smoke:${recipe.recipeId}`,
-        inputs,
-        constants,
-        context,
-        capabilityExecutors: {
-          analyzeClothingProduct: async () => ({
-            productType: "tops",
-            isSet: false,
-            keyFeatures: ["crew neck"],
-            materialGuess: ["knit"],
-            colorPalette: ["black"],
-            fitSilhouette: ["regular"],
-            anchorDescription: "保持肩线、袖长和面料纹理",
-            forbiddenChanges: ["不要改袖长"],
-          }),
-          clothingStudioWorkflow: async () => ({
-            ui: { type: "clothingStudio.results", total: 1 },
-            images: [
-              {
-                url: "https://example.com/mvp-smoke.png",
-                label: "smoke",
-              },
-            ],
-            failedItems: [],
-          }),
-        },
-        now,
-      });
-
-      setWorkflowRecipeRuntimeSummary((prev) => ({
-        ...prev,
-        recipe,
-        testingRecord: result.testingRecord,
-        smokeTestReport: result.report,
-        nodeInstance: result.nodeInstance,
-        logs: result.report.logs,
-      }));
-      setWorkflowRecipeTab("testing");
-      setFeatureNotice(
-        result.status === "passed"
-          ? `Workflow recipe smoke test 已通过：${recipe.recipeId}@${recipe.version}`
-          : `Workflow recipe smoke test 失败：${result.report.errorCode || "unknown_error"}`,
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Workflow recipe smoke test 执行失败。";
-      const logs = [
-        {
-          level: "error" as const,
-          message,
-          timestamp: now,
-        },
-      ];
-      setWorkflowRecipeRuntimeSummary((prev) => ({
-        ...prev,
-        recipe,
-        nodeInstance: null,
-        testingRecord: {
-          recipeId: recipe.recipeId,
-          recipeVersion: recipe.version,
-          status: "failed",
-          lastRunAt: now,
-          lastErrorCode: "input_invalid",
-          lastErrorMessage: message,
-        },
-        smokeTestReport: {
-          schemaPassed: true,
-          dryRunPassed: false,
-          smokeRunPassed: false,
-          outputKeys: [],
-          logs,
-          errorCode: "input_invalid",
-          errorMessage: message,
-        },
-        logs,
-      }));
-      setFeatureNotice(message);
-    } finally {
-      setIsWorkflowRecipeBusy(false);
-    }
-  }, [workflowRecipeRuntimeSummary.recipe, workflowRecipeTestDraft]);
-
-  const handleWorkflowRecipePublish = useCallback(() => {
-    setIsWorkflowRecipeBusy(true);
-    try {
-      if (
-        !workflowRecipeRuntimeSummary.recipe ||
-        !workflowRecipeRuntimeSummary.importReport
-      ) {
-        setFeatureNotice("请先完成 workflow recipe 导入。");
-        return;
-      }
-      if (workflowRecipeRuntimeSummary.testingRecord?.status !== "passed") {
-        setFeatureNotice("请先通过 workflow recipe smoke test，再执行发布。");
-        return;
-      }
-      const result = publishWorkflowRecipe({
-        recipe: workflowRecipeRuntimeSummary.recipe,
-        report: workflowRecipeRuntimeSummary.importReport,
-        existing: workflowRecipeRuntimeSummary.publishRecord || null,
-        now: Date.now(),
-      });
-      if (!result.ok || !result.record) {
-        setFeatureNotice(result.reason || "当前 recipe 尚未满足发布门槛。");
-        return;
-      }
-      setWorkflowRecipeRuntimeSummary((prev) => ({
-        ...prev,
-        publishRecord: result.record || null,
-      }));
-      setWorkflowRecipeTab("library");
-      setFeatureNotice("Workflow recipe 已进入发布区骨架。");
-    } finally {
-      setIsWorkflowRecipeBusy(false);
-    }
-  }, [workflowRecipeRuntimeSummary]);
-
-  const handleWorkflowRecipeRollback = useCallback(
-    (targetVersion: string) => {
-      setIsWorkflowRecipeBusy(true);
-      try {
-        if (!workflowRecipeRuntimeSummary.publishRecord) {
-          setFeatureNotice("当前没有可回滚的 workflow recipe 发布记录。");
-          return;
-        }
-        const publishHistory =
-          workflowRecipeRuntimeSummary.publishRecord.publishHistory || [];
-        const fallbackVersion =
-          targetVersion === "previous"
-            ? publishHistory.length >= 2
-              ? publishHistory[publishHistory.length - 2]?.version ||
-                workflowRecipeRuntimeSummary.publishRecord.version
-              : workflowRecipeRuntimeSummary.publishRecord.version
-            : targetVersion;
-        const rolledBack = rollbackWorkflowRecipePublication({
-          target: workflowRecipeRuntimeSummary.publishRecord,
-          toVersion: fallbackVersion,
-          reason: "Workspace skeleton rollback",
-          now: Date.now(),
-        });
-        setWorkflowRecipeRuntimeSummary((prev) => ({
-          ...prev,
-          publishRecord: rolledBack,
-        }));
-        setFeatureNotice("Workflow recipe 回滚记录已写入骨架。");
-      } finally {
-        setIsWorkflowRecipeBusy(false);
-      }
-    },
-    [workflowRecipeRuntimeSummary.publishRecord],
-  );
-
-  const handleWorkflowRecipeInsertToCanvas = useCallback(() => {
-    const recipe = workflowRecipeRuntimeSummary.recipe;
-    const publishRecord = workflowRecipeRuntimeSummary.publishRecord;
-    if (!recipe || !publishRecord) {
-      setFeatureNotice("请先完成 workflow recipe 发布，再放入画板。");
-      return;
-    }
-
-    const now = Date.now();
-    const nodeId = `workflow-node-${now}`;
-    const groupId = `workflow-node-group-${now}`;
-    const cardId = `workflow-node-card-${now}`;
-    const titleId = `workflow-node-title-${now}`;
-    const metaId = `workflow-node-meta-${now}`;
-    const cardWidth = 320;
-    const cardHeight = 184;
-    const canvasCenter = getCanvasCenterPoint({
-      showAssistant,
-      pan,
-      zoom,
-    });
-    const cardX = canvasCenter.x - cardWidth / 2;
-    const cardY = canvasCenter.y - cardHeight / 2;
-    const nextZBase = elementsRef.current.length + 1;
-
-    const nodeInstance = {
-      ...(workflowRecipeRuntimeSummary.nodeInstance || {
-        recipeId: recipe.recipeId,
-        recipeVersion: recipe.version,
-        title: recipe.title,
-        summary: recipe.summary,
-        status: "configured" as const,
-        inputValues: {},
-        outputValues: {},
-        stepStates: [],
-      }),
-      nodeId,
-    };
-
-    const cardElement: CanvasElement = {
-      id: cardId,
-      type: "shape",
-      shapeType: "square",
-      x: cardX,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      zIndex: nextZBase,
-      cornerRadius: 12,
-      fillColor: "#f8fafc",
-      strokeColor: "#cbd5e1",
-      strokeWidth: 1,
-      groupId,
-      workflowNodeId: nodeId,
-      workflowRecipeId: recipe.recipeId,
-      workflowRecipeVersion: recipe.version,
-      workflowNodeRole: "processor",
-    };
-
-    const titleElement: CanvasElement = {
-      id: titleId,
-      type: "text",
-      text: recipe.title,
-      x: cardX + 20,
-      y: cardY + 18,
-      width: cardWidth - 40,
-      height: 28,
-      fontSize: 18,
-      fontWeight: 600,
-      fontFamily: "Inter",
-      fillColor: "#111827",
-      textAlign: "left",
-      lineHeight: 1.3,
-      letterSpacing: 0,
-      zIndex: nextZBase + 1,
-      groupId,
-      workflowNodeId: nodeId,
-      workflowRecipeId: recipe.recipeId,
-      workflowRecipeVersion: recipe.version,
-      workflowNodeRole: "processor",
-    };
-
-    const metaElement: CanvasElement = {
-      id: metaId,
-      type: "text",
-      text: `${recipe.recipeId}@${recipe.version}\n状态：${publishRecord.status} · 节点：${nodeInstance.status}`,
-      x: cardX + 20,
-      y: cardY + 58,
-      width: cardWidth - 40,
-      height: 72,
-      fontSize: 13,
-      fontWeight: 400,
-      fontFamily: "Inter",
-      fillColor: "#4b5563",
-      textAlign: "left",
-      lineHeight: 1.5,
-      letterSpacing: 0,
-      zIndex: nextZBase + 2,
-      groupId,
-      workflowNodeId: nodeId,
-      workflowRecipeId: recipe.recipeId,
-      workflowRecipeVersion: recipe.version,
-      workflowNodeRole: "processor",
-    };
-
-    const originalChildData = {
-      [cardId]: {
-        x: cardElement.x,
-        y: cardElement.y,
-        width: cardElement.width,
-        height: cardElement.height,
-        zIndex: cardElement.zIndex,
-      },
-      [titleId]: {
-        x: titleElement.x,
-        y: titleElement.y,
-        width: titleElement.width,
-        height: titleElement.height,
-        zIndex: titleElement.zIndex,
-      },
-      [metaId]: {
-        x: metaElement.x,
-        y: metaElement.y,
-        width: metaElement.width,
-        height: metaElement.height,
-        zIndex: metaElement.zIndex,
-      },
-    };
-
-    const groupElement: CanvasElement = {
-      id: groupId,
-      type: "group",
-      x: cardX,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      zIndex: nextZBase + 3,
-      children: [cardId, titleId, metaId],
-      isCollapsed: false,
-      originalChildData,
-      workflowNodeId: nodeId,
-      workflowRecipeId: recipe.recipeId,
-      workflowRecipeVersion: recipe.version,
-      workflowNodeRole: "processor",
-    };
-
-    const nextElements = [
-      ...elementsRef.current,
-      cardElement,
-      titleElement,
-      metaElement,
-      groupElement,
-    ];
-
-    setElementsSynced(nextElements);
-    saveToHistory(nextElements, markersRef.current);
-    setSelectedElementId(groupId);
-    setSelectedElementIds([groupId]);
-    setWorkflowRecipeRuntimeSummary((prev) => ({
-      ...prev,
-      nodeInstance,
-      canvasNodeId: nodeId,
-      canvasElementId: groupId,
-    }));
-    setFeatureNotice(`Workflow recipe 节点已放入画板：${recipe.title}`);
-  }, [
-    workflowRecipeRuntimeSummary.recipe,
-    workflowRecipeRuntimeSummary.publishRecord,
-    workflowRecipeRuntimeSummary.nodeInstance,
-    showAssistant,
-    pan,
-    zoom,
-    saveToHistory,
-    setElementsSynced,
-    markersRef,
-  ]);
-
-  const workflowRecipesPanel = useMemo(
-    () => (
-      <RecipeLifecyclePanel
-        activeTab={workflowRecipeTab}
-        onTabChange={setWorkflowRecipeTab}
-        summary={workflowRecipeRuntimeSummary}
-        importDraft={workflowRecipeImportDraft}
-        testDraft={workflowRecipeTestDraft}
-        busy={isWorkflowRecipeBusy}
-        onImportDraftChange={setWorkflowRecipeImportDraft}
-        onTestDraftChange={setWorkflowRecipeTestDraft}
-        onImportRecipe={handleWorkflowRecipeImport}
-        onRunSmokeTest={handleWorkflowRecipeSmokeTest}
-        onPublishRecipe={handleWorkflowRecipePublish}
-        onRollbackRecipe={handleWorkflowRecipeRollback}
-        onInsertToCanvas={handleWorkflowRecipeInsertToCanvas}
-      />
-    ),
-    [
-      handleWorkflowRecipeImport,
-      handleWorkflowRecipeInsertToCanvas,
-      handleWorkflowRecipePublish,
-      handleWorkflowRecipeRollback,
-      handleWorkflowRecipeSmokeTest,
-      isWorkflowRecipeBusy,
-      workflowRecipeImportDraft,
-      workflowRecipeRuntimeSummary,
-      workflowRecipeTab,
-      workflowRecipeTestDraft,
-    ],
-  );
-
   const { workspaceLeftPanelProps, assistantSidebarProps } =
     useWorkspaceSidebarProps({
       leftPanelMode,
@@ -5789,13 +5159,12 @@ const Workspace: React.FC = () => {
       handleElementMouseDown: canvasHandleElementMouseDown,
       setElements,
       setFocusedGroupId,
-      messages,
       setPreviewUrl,
       focusedGroupId,
-      workflowRecipesPanel,
       id,
       conversations,
       setConversations,
+      isProjectHydrated,
       activeConversationId,
       setActiveConversationId,
       showAssistant,
@@ -5803,77 +5172,37 @@ const Workspace: React.FC = () => {
       isAssistantFullscreen,
       setIsAssistantFullscreen,
       onToggleAssistantFullscreen: toggleAssistantFullscreen,
-      onOpenEcommerceWorkflow: openEcommerceWorkflow,
-      handleSend,
-      handleSmartGenerate,
+      modelMode,
+      webEnabled,
+      researchMode,
       addGenImage,
       activeImageModel,
       activeImageProviderId,
+      activeVideoModel,
+      activeVideoProviderId,
       imageGenRatio,
       imageGenRes,
+      imageGenCount,
+      videoGenRatio,
+      videoGenDuration,
       nodeInteractionMode,
-      creationMode,
-      setCreationMode,
-      setPrompt,
-      handleModeSwitch,
-      fileInputRef,
-      selectedChipId,
-      setSelectedChipId,
-      hoveredChipId,
-      setHoveredChipId,
-      showModeSelector,
-      setShowModeSelector,
-      showRatioPicker,
-      setShowRatioPicker,
-      showModelPicker,
-      setShowModelPicker,
-      isInputFocused,
-      setIsInputFocused,
-      isDragOver,
-      setIsDragOver,
-      isVideoPanelHovered,
-      setIsVideoPanelHovered,
-      showVideoSettingsDropdown,
-      setShowVideoSettingsDropdown,
-      modelPreferences,
-      markers,
-      handleSaveMarkerLabel,
-      handleClothingSubmitRequirements,
-      handleClothingGenerateModel,
-      handleClothingPickModel,
-      insertResultToCanvas,
-      handleClothingRetryFailed,
-      handleEcommerceRefineAnalysis,
-      handleEcommerceConfirmTypes,
-      handleEcommerceConfirmImageAnalyses,
-      handleEcommerceRetryImageAnalysis,
-      handleEcommerceRewritePlanPrompt,
-      handleEcommerceGenerateExtraPlanItem,
-      handleEcommerceGeneratePlanItem,
-      handleEcommerceOpenOverlayEditor,
-      handleEcommerceCloseOverlayEditor,
-      handleEcommerceSaveResultOverlayDraft,
-      handleEcommerceApplyResultOverlay,
-      handleEcommerceUploadResultOverlayFont,
-      handleEcommerceUploadResultOverlayIcon,
-      handleEcommerceResetResultOverlay,
-      handleEcommercePromoteResult,
-      handleEcommercePromoteSelectedResults,
-      handleEcommerceDeleteResult,
-      handleEcommerceConfirmPlans,
-      handleEcommerceConfirmSupplements,
-      handleEcommerceSelectModel,
-      handleEcommerceSyncBatchPlanItemRatio,
-      handleEcommerceSyncBatchPrompt,
-      handleEcommerceOpenBatchWorkbench,
-      handleEcommerceRunBatchGenerate: (promptOverrides, options) =>
-        handleEcommerceRunBatchGenerate(false, {
-          promptOverrides,
-          ...options,
-        }),
-      handleEcommerceRetryFailedBatch: () =>
-        handleEcommerceRunBatchGenerate(true),
-      handleEcommerceInsertToCanvas: insertEcommerceResultToCanvas,
+      modelPreferences: assistantModelPreferences,
+      importUrlAssetToCanvas,
+      assistantBootstrapRequest,
+      onAssistantBootstrapRequestConsumed: (requestId) => {
+        setAssistantBootstrapRequest((current) =>
+          current?.id === requestId ? null : current,
+        );
+      },
+      imageGenerationUi: {
+        autoModelSelect: modelPreferences.autoModelSelect,
+        setAutoModelSelect: modelPreferences.setAutoModelSelect,
+        setImageGenRatio,
+        setImageGenRes,
+        setImageGenCount,
+        setPreferredImageModel: modelPreferences.setPreferredImageModel,
+        setPreferredImageProviderId: modelPreferences.setPreferredImageProviderId,
+      },
     });
 
   const {
@@ -6148,13 +5477,18 @@ const Workspace: React.FC = () => {
       />
       <div className="flex flex-1 relative overflow-hidden">
         <WorkspacePageOverlays {...workspacePageOverlaysProps} />
-        <WorkspaceSidebarLayer {...workspaceSidebarLayerProps} />
-        {!(showAssistant && isAssistantFullscreen) ? (
-          <WorkspaceCanvasStage {...workspaceCanvasStageProps} />
-        ) : null}
+        <WorkspaceSidebarLayer
+          {...workspaceSidebarLayerProps}
+          mainContent={
+            !(showAssistant && isAssistantFullscreen) ? (
+              <WorkspaceCanvasStage {...workspaceCanvasStageProps} />
+            ) : null
+          }
+        />
       </div>
     </div>
   );
 };
 
 export default Workspace;
+

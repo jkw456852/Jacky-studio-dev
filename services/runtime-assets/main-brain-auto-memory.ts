@@ -1,4 +1,4 @@
-import type { AgentTask } from "../../types/agent.types";
+import type { AgentTask } from "../../types/agent.types.ts";
 import type { StudioUserAssetApi } from "./api.ts";
 import { getStudioUserAssetApi } from "./api.ts";
 import type {

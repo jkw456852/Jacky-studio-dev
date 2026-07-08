@@ -1,5 +1,5 @@
 import type { WorkspaceStyleLibrary } from "../../types";
-import { normalizeWorkspaceStyleLibrary } from "./style-library";
+import { normalizeWorkspaceStyleLibrary } from "./style-library.ts";
 
 export type StyleLibraryDraftTestCase = {
   id: string;
@@ -7,7 +7,7 @@ export type StyleLibraryDraftTestCase = {
   prompt: string;
   referenceImageUrlsText: string;
   aspectRatio: string;
-  imageCount: "" | "1" | "2" | "3" | "4";
+  imageCount: string;
   model: string;
   expectedFocus: string;
 };
@@ -29,7 +29,7 @@ export type StyleLibraryDraftTestResult = {
   createdAt: string;
   model: string;
   aspectRatio: string;
-  imageCount: "" | "1" | "2" | "3" | "4";
+  imageCount: string;
   passed: "pending" | "passed" | "failed";
   note: string;
 };
@@ -68,22 +68,14 @@ export type StyleLibraryDraftState = {
 const toLineText = (values: string[] | undefined) =>
   Array.isArray(values) ? values.join("\n") : "";
 
-const toDraftImageCount = (
-  value: 1 | 2 | 3 | 4 | undefined,
-): "" | "1" | "2" | "3" | "4" => {
-  if (value === 1 || value === 2 || value === 3 || value === 4) {
-    return String(value) as "1" | "2" | "3" | "4";
-  }
-  return "";
+const toDraftImageCount = (value: number | undefined): string => {
+  if (!Number.isFinite(value) || Number(value) <= 0) return "";
+  return String(Math.floor(Number(value)));
 };
 
-const parseDraftImageCount = (
-  value: string,
-): 1 | 2 | 3 | 4 | undefined => {
+const parseDraftImageCount = (value: string): number | undefined => {
   const parsed = Number(value);
-  return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4
-    ? (parsed as 1 | 2 | 3 | 4)
-    : undefined;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 };
 
 export const buildStyleLibraryDraft = (

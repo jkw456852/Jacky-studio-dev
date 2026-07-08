@@ -1,17 +1,17 @@
 import React from "react";
 import { Download, Video } from "lucide-react";
-import type { ChatMessage } from "../../../types";
-import { getGeneratedConversationFiles } from "./generatedFiles";
+import type { ConversationSession } from "../../../types";
+import { getGeneratedConversationFilesFromAssistantThread } from "./generatedFiles.ts";
 
 type WorkspaceGeneratedFilesPanelProps = {
-  messages: ChatMessage[];
+  assistantThread?: ConversationSession["assistantThread"];
   onPreviewImage: (url: string) => void;
 };
 
 export const WorkspaceGeneratedFilesPanel: React.FC<
   WorkspaceGeneratedFilesPanelProps
-> = ({ messages, onPreviewImage }) => {
-  const files = getGeneratedConversationFiles(messages);
+> = ({ assistantThread, onPreviewImage }) => {
+  const files = getGeneratedConversationFilesFromAssistantThread(assistantThread);
 
   if (files.length === 0) {
     return <div className="py-16 text-center text-xs text-gray-400">暂无文件</div>;

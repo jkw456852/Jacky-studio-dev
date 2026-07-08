@@ -3,7 +3,7 @@ import type { CanvasElement } from "../../types";
 import {
   getAspectRatioPreviewSize,
   WORKSPACE_IMAGE_ASPECT_RATIO_VALUES,
-} from "../../services/openai-image-presets";
+} from "../../services/openai-image-presets.ts";
 
 export const FONTS = [
   "Inter",
@@ -95,10 +95,30 @@ export const calcInitialDisplaySize = (
   };
 };
 
-export const getCanvasViewportSize = (showAssistant: boolean) => ({
-  width: Math.max(320, window.innerWidth - (showAssistant ? 480 : 0)),
-  height: Math.max(240, window.innerHeight),
-});
+export const resolveWorkspaceCanvasViewportSize = (): {
+  width: number;
+  height: number;
+} | null => {
+  if (typeof document === "undefined") return null;
+  const canvasHost = document.querySelector<HTMLElement>(
+    "[data-browser-agent-host-id='workspace-canvas-main']",
+  );
+  if (!canvasHost) return null;
+  const rect = canvasHost.getBoundingClientRect();
+  if (!(rect.width > 0) || !(rect.height > 0)) return null;
+  return {
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+};
+
+export const getCanvasViewportSize = (_showAssistant: boolean) => {
+  const measured = resolveWorkspaceCanvasViewportSize();
+  return {
+    width: Math.max(320, measured?.width ?? window.innerWidth),
+    height: Math.max(240, measured?.height ?? window.innerHeight),
+  };
+};
 
 export const getCanvasCenterPoint = ({
   showAssistant,

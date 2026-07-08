@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { BrandInfo, DesignSessionState, DesignTaskMode } from '../types/common';
+import type { BrandInfo, DesignSessionState, DesignTaskMode } from '../types/common.ts';
 import { safeLocalStorageStateStorage } from '../utils/safe-storage';
 
 const MAX_PERSIST_LIST = 20;

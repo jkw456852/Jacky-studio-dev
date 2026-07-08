@@ -6,6 +6,7 @@ import {
   inferMainBrainRuntimeAction,
   summarizeMainBrainSkillRound,
 } from './main-brain-recovery.ts';
+import { shouldSuppressFrontstageSkillExecutionForMessage } from './frontstage-skill-execution.ts';
 
 export type MainBrainRuntimePhase =
   | 'understand'
@@ -102,6 +103,20 @@ const truncateText = (value: unknown, maxChars = 220): string => {
   const text = typeof value === 'string' ? value.trim() : String(value ?? '').trim();
   if (!text) return '';
   return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
+};
+
+const summarizeRuntimeAssetRef = (value: unknown): string => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return '';
+
+  const dataUrlMatch = text.match(/^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+  if (dataUrlMatch) {
+    const mimeType = dataUrlMatch[1] || 'image/*';
+    const base64Chars = (dataUrlMatch[2] || '').length;
+    return `[inline image ${mimeType}, base64 ${base64Chars} chars]`;
+  }
+
+  return truncateText(text, 160);
 };
 
 const buildLatestSkillResultEvidence = (skillResults: any[]): string[] => {
@@ -224,7 +239,11 @@ export const buildRuntimeMessage = (
   snapshot: MainBrainRuntimeStateSnapshot,
 ) => {
   const latestTurn = turns.length > 0 ? turns[turns.length - 1] : null;
-  const latestAssets = latestTurn?.assets.slice(-3).map((asset) => asset.url) || [];
+  const latestAssets =
+    latestTurn?.assets
+      .slice(-3)
+      .map((asset) => summarizeRuntimeAssetRef(asset.url))
+      .filter(Boolean) || [];
   const latestFailures = latestTurn
     ? buildMainBrainFailureHints(latestTurn.skillResults).slice(-2)
     : [];
@@ -290,7 +309,22 @@ export const buildRuntimeMessage = (
   return parts.join('\n');
 };
 
-export const collectExecutableSkillCalls = (plan: any): any[] => {
+export const collectExecutableSkillCalls = (
+  plan: any,
+  options?: {
+    originalMessage?: string;
+    metadata?: AgentTask['input']['metadata'];
+  },
+): any[] => {
+  if (
+    options?.originalMessage &&
+    shouldSuppressFrontstageSkillExecutionForMessage({
+      message: options.originalMessage,
+      metadata: options.metadata,
+    })
+  ) {
+    return [];
+  }
   if (!plan || typeof plan !== 'object') return [];
   if (Array.isArray(plan.skillCalls) && plan.skillCalls.length > 0) {
     return plan.skillCalls;
@@ -387,7 +421,10 @@ export const runMainBrainRuntime = async ({
     );
 
     finalPlan = plan;
-    const skillCalls = collectExecutableSkillCalls(plan);
+    const skillCalls = collectExecutableSkillCalls(plan, {
+      originalMessage: task.input.message,
+      metadata: task.input.metadata,
+    });
     const decision = buildDecision(turn, plan, skillCalls);
     decisions.push(decision);
 

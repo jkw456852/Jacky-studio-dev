@@ -10,14 +10,14 @@ import {
   X,
 } from 'lucide-react';
 import type { StudioUserAssetApi } from '../../../services/runtime-assets/api';
-import { getMainBrainPreferenceBlock } from '../../../services/runtime-assets/main-brain';
+import { getMainBrainPreferenceBlock } from '../../../services/runtime-assets/main-brain.ts';
 import type {
   StudioMainBrainHeartbeatAsset,
   StudioMainBrainSearchPolicy,
   StudioMainBrainSoulAsset,
   StudioMainBrainUserAsset,
   StudioMainBrainWorkflowAsset,
-} from '../../../services/runtime-assets/user-asset-types';
+} from '../../../services/runtime-assets/user-asset-types.ts';
 
 type MainBrainConfigCenterProps = {
   onClose: () => void;
@@ -655,7 +655,7 @@ export const MainBrainConfigCenter: React.FC<MainBrainConfigCenterProps> = ({
                         description="这里适合写少量长期约束。复杂规则不要堆在这里。"
                         value={legacyPreferenceDraft}
                         onChange={onLegacyPreferenceDraftChange}
-                        placeholder="例如：改代码前先确认是否仍然走到了旧链路。"
+                        placeholder="例如：改代码前先确认是否仍然符合 assistant-ui / AI SDK 官方接法。"
                         minHeight="160px"
                       />
                       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">

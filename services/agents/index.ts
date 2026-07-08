@@ -1,15 +1,15 @@
-import { AgentType, AgentTask, AgentInfo } from '../../types/agent.types';
-import { EnhancedBaseAgent } from './enhanced-base-agent';
-import { getStudioPrimaryAgentIds } from '../runtime-assets/studio-registry';
-import { cocoAgent } from './agents/coco.agent';
-import { vireoAgent } from './agents/vireo.agent';
-import { cameronAgent } from './agents/cameron.agent';
-import { posterAgent } from './agents/poster.agent';
-import { packageAgent } from './agents/package.agent';
-import { motionAgent } from './agents/motion.agent';
-import { campaignAgent } from './agents/campaign.agent';
-import { clothingAgent } from './agents/clothing.agent';
-import { promptOptimizerAgent } from './agents/prompt-optimizer.agent';
+import { AgentType, AgentTask, AgentInfo } from '../../types/agent.types.ts';
+import { EnhancedBaseAgent } from './enhanced-base-agent.ts';
+import { getStudioPrimaryAgentIds } from '../runtime-assets/studio-registry.ts';
+import { cocoAgent } from './agents/coco.agent.ts';
+import { vireoAgent } from './agents/vireo.agent.ts';
+import { cameronAgent } from './agents/cameron.agent.ts';
+import { posterAgent } from './agents/poster.agent.ts';
+import { packageAgent } from './agents/package.agent.ts';
+import { motionAgent } from './agents/motion.agent.ts';
+import { campaignAgent } from './agents/campaign.agent.ts';
+import { clothingAgent } from './agents/clothing.agent.ts';
+import { promptOptimizerAgent } from './agents/prompt-optimizer.agent.ts';
 
 export const AGENT_REGISTRY: Record<AgentType, EnhancedBaseAgent> = {
   coco: cocoAgent,
@@ -46,12 +46,12 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentTask> {
 }
 
 // 导出核心模块
-export { EnhancedBaseAgent } from './enhanced-base-agent';
-export { routeToAgent } from './enhanced-orchestrator';
+export { EnhancedBaseAgent } from './enhanced-base-agent.ts';
+export { routeToAgent } from './enhanced-orchestrator.ts';
 
 // 导出本地路由（降级方案）
-export { localPreRoute, isChatMessage, isVagueRequest, isEditRequest } from './local-router';
+export { localPreRoute, isChatMessage, isVagueRequest, isEditRequest } from './local-router.ts';
 
 // 导出 Pipeline 系统
-export { executePipeline, detectPipeline, PIPELINES } from './pipeline';
-export type { Pipeline, PipelineResult } from './pipeline';
+export { executePipeline, detectPipeline, PIPELINES } from './pipeline.ts';
+export type { Pipeline, PipelineResult } from './pipeline.ts';

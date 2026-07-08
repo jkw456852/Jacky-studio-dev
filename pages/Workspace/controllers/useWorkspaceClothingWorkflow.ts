@@ -1,18 +1,19 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { CanvasElement, ChatMessage, InputBlock, Marker } from "../../../types";
-import type { ImageModel } from "../../../types/common";
+import type { ImageModel } from "../../../types/common.ts";
 import type {
   ModelGenOptions,
   Requirements,
   WorkflowUiMessage,
-} from "../../../types/workflow.types";
+} from "../../../types/workflow.types.ts";
 import {
   useClothingStudioChatStore,
   type ClothingSessionState,
 } from "../../../stores/clothingStudioChat.store";
 import { useImageHostStore } from "../../../stores/imageHost.store";
-import { uploadImage } from "../../../utils/uploader";
-import { executeSkill } from "../../../services/skills";
+import { uploadImage } from "../../../utils/uploader.ts";
+import { executeSkill } from "../../../services/skills/index.ts";
+import { recordCustomSkillSuccessfulRun } from "../../../services/runtime-assets/preferences";
 import {
   addTopicMemoryItem,
   extractConstraintHints,
@@ -20,6 +21,7 @@ import {
   upsertTopicSnapshot,
 } from "../../../services/topic-memory";
 import { getMappedModelIds } from "../../../services/provider-settings";
+import { resolveWorkspaceCanvasViewportSize } from "../workspaceShared";
 
 type ClothingActions = ReturnType<typeof useClothingStudioChatStore.getState>["actions"];
 
@@ -81,6 +83,17 @@ const getErrorMessage = (
 ): string => (error instanceof Error ? error.message : fallback);
 
 const DEFAULT_AUTO_IMAGE_MODEL: ImageModel = "Nano Banana Pro";
+const CLOTHING_WORKFLOW_SKILL: ChatMessage["skillData"] = {
+  id: "clothing-studio-workflow",
+  name: "服饰工作流",
+  iconName: "ImageIcon",
+  config: {
+    frontstageSkillId: "clothing-studio-workflow",
+    followUpMode: "auto-clarify",
+    requiresAttachments: true,
+    mode: "workflow",
+  },
+};
 
 const getEffectiveClothingImageModel = (
   autoModelSelect: boolean,
@@ -136,8 +149,9 @@ export function useWorkspaceClothingWorkflow(
 
   const insertResultToCanvas = useCallback(
     (url: string, label?: string) => {
-      const containerW = window.innerWidth - (showAssistant ? 480 : 0);
-      const containerH = window.innerHeight;
+      const viewport = resolveWorkspaceCanvasViewportSize();
+      const containerW = viewport?.width ?? window.innerWidth;
+      const containerH = viewport?.height ?? window.innerHeight;
       const centerX = (containerW / 2 - pan.x) / (zoom / 100);
       const centerY = (containerH / 2 - pan.y) / (zoom / 100);
       const newEl: CanvasElement = {
@@ -424,6 +438,38 @@ export function useWorkspaceClothingWorkflow(
               }),
             ),
           );
+        }
+
+        if (images.length > 0) {
+          const summaryParts = [
+            clothingState.analysis?.productType
+              ? `已按 ${clothingState.analysis.productType} 品类执行`
+              : "",
+            requirements.platform ? `平台：${requirements.platform}` : "",
+            requirements.aspectRatio ? `画幅：${requirements.aspectRatio}` : "",
+            requirements.count ? `产出 ${images.length}/${requirements.count} 张结果` : "",
+          ].filter(Boolean);
+
+          const promptSummary = [
+            requirements.description,
+            requirements.extraText,
+            clothingState.analysis?.anchorDescription,
+          ]
+            .filter((item) => String(item || "").trim())
+            .join("；")
+            .slice(0, 600);
+
+          await recordCustomSkillSuccessfulRun({
+            skill: CLOTHING_WORKFLOW_SKILL,
+            prompt: promptSummary,
+            summary:
+              summaryParts.join("，") ||
+              "已完成服饰工作流，并输出可继续筛选或上板的结果。",
+            outputText: images
+              .slice(0, 3)
+              .map((item, index) => `${index + 1}. ${item.label || item.url}`)
+              .join("\n"),
+          });
         }
       } catch (error) {
         const isAbort =

@@ -1,5 +1,5 @@
 import { generateVideoWithProvider } from '../providers';
-import { VideoGenSkillParams } from '../../types/skill.types';
+import { VideoGenSkillParams } from '../../types/skill.types.ts';
 
 export async function videoGenSkill(params: VideoGenSkillParams): Promise<string | null> {
   return generateVideoWithProvider(

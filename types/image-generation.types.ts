@@ -6,8 +6,13 @@ export type ImageTransportMode =
 
 export interface ImageRequestWarning {
   code:
+    | 'MODEL_DEFAULTED'
     | 'MODEL_NORMALIZED'
     | 'ASPECT_RATIO_NORMALIZED'
+    | 'IMAGE_SIZE_NORMALIZED'
+    | 'EXACT_SIZE_NORMALIZED'
+    | 'EXACT_SIZE_DOWNGRADED'
+    | 'FIELD_IGNORED'
     | 'SIZE_RESOLVED'
     | 'ROUTE_SWITCHED'
     | 'PAYLOAD_MODE_SWITCHED';

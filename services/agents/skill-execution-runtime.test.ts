@@ -13,15 +13,15 @@ import {
 } from './skill-execution-runtime.ts';
 
 test('resolveSkillTimeoutMs returns configured timeout and default fallback', () => {
-  assert.equal(resolveSkillTimeoutMs('generateImage'), 180_000);
+  assert.equal(resolveSkillTimeoutMs('generateImage'), 300_000);
   assert.equal(resolveSkillTimeoutMs('unknownSkill'), DEFAULT_SKILL_TIMEOUT);
   assert.equal(resolveSkillTimeoutMs('  generateCopy  '), 15_000);
 });
 
 test('buildSkillTimeoutError includes skill name and seconds', () => {
-  const error = buildSkillTimeoutError('generateImage', 180_000);
+  const error = buildSkillTimeoutError('generateImage', 300_000);
   assert.match(error.message, /generateImage/);
-  assert.match(error.message, /180s/);
+  assert.match(error.message, /300s/);
 });
 
 test('executeSkillWithTimeout resolves successful skill results and clears timer', async () => {
@@ -59,6 +59,43 @@ test('executeSkillWithTimeout rejects with timeout error when timer fires first'
       }),
     /smartEdit.*5s/,
   );
+});
+
+test('executeSkillWithTimeout aborts the underlying skill signal on timeout', async () => {
+  let receivedSignal: AbortSignal | undefined;
+  let aborted = false;
+
+  await assert.rejects(
+    () =>
+      executeSkillWithTimeout({
+        skillName: 'generateImage',
+        params: {},
+        timeoutMs: 5000,
+        executeSkillFn: async (_skillName, params) => {
+          receivedSignal = params.signal as AbortSignal | undefined;
+          if (receivedSignal) {
+            receivedSignal.addEventListener(
+              'abort',
+              () => {
+                aborted = true;
+              },
+              { once: true },
+            );
+          }
+          return new Promise(() => undefined);
+        },
+        setTimeoutFn: (((handler: (...args: any[]) => void) => {
+          handler();
+          return 1 as any;
+        }) as unknown) as typeof globalThis.setTimeout,
+        clearTimeoutFn: ((() => undefined) as unknown) as typeof globalThis.clearTimeout,
+      }),
+    /generateImage.*5s/,
+  );
+
+  assert.ok(receivedSignal, 'expected timeout wrapper to provide an AbortSignal');
+  assert.equal(receivedSignal?.aborted, true);
+  assert.equal(aborted, true);
 });
 
 test('result envelope helpers normalize success, handled failure, and unhandled failure', () => {

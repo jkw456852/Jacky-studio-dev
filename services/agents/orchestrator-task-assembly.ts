@@ -98,12 +98,12 @@ export const buildRolePromptAddonFromDecision = (
     return {
       rolePromptLabel: `augment:${decision.targetAgent}`,
       rolePromptAddon: [
-        'Reuse your existing specialist identity as the base role.',
+        'Reuse your existing execution identity as the base role.',
         reason ? `Task-specific augmentation reason: ${reason}` : '',
         draftBlock,
-        handoffMessage ? `Task handoff context: ${handoffMessage}` : '',
+        handoffMessage ? `Task execution context: ${handoffMessage}` : '',
         `Current user request: ${messageForExecution}`,
-        'Add only the missing task-specific constraints. Do not discard your existing specialist strengths.',
+        'Add only the missing task-specific constraints. Do not discard your existing execution strengths.',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -117,7 +117,7 @@ export const buildRolePromptAddonFromDecision = (
         'Treat your built-in role as an execution shell, but switch to a temporary task brain for this request.',
         reason ? `Why a temporary task brain is needed: ${reason}` : '',
         draftBlock,
-        handoffMessage ? `Temporary brain brief: ${handoffMessage}` : '',
+        handoffMessage ? `Temporary brain execution brief: ${handoffMessage}` : '',
         `Current user request: ${messageForExecution}`,
         'Compose the missing role logic dynamically, but keep tool discipline and output quality strict.',
       ]
@@ -157,12 +157,9 @@ export const buildAutoRoleSessionState = (
 
 export const shouldUseImmediateResponseShortcut = (
   decision: Pick<AgentRoutingDecision, 'action'>,
-  metadata?: AgentTaskMetadata,
+  _metadata?: AgentTaskMetadata,
 ): boolean => {
-  if (decision.action !== 'respond' && decision.action !== 'clarify') {
-    return false;
-  }
-  return metadata?.allowAutonomousRouting !== true;
+  return decision.action === 'respond' || decision.action === 'clarify';
 };
 
 export const buildImmediateResponseTask = ({

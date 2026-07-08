@@ -131,6 +131,7 @@ export const injectExecutionPreferences = (call: any, task: AgentTask) => {
     if (
       typeof preferredImageSize === 'string' &&
       preferredImageSize &&
+      creationMode === 'image' &&
       !call.params.imageSize
     ) {
       call.params.imageSize = preferredImageSize;

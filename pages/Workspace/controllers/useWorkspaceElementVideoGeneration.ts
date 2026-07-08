@@ -1,6 +1,6 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { CanvasElement, ChatMessage, Marker, VideoModel } from "../../../types";
-import { videoGenSkill } from "../../../services/skills/video-gen.skill";
+import { videoGenSkill } from "../../../services/skills/video-gen.skill.ts";
 
 type UseWorkspaceElementVideoGenerationOptions = {
   elementsRef: MutableRefObject<CanvasElement[]>;

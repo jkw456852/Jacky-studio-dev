@@ -24,11 +24,29 @@ export const buildOpenAIImageGenerationBody = (opts: {
   size: string
   quality?: 'low' | 'medium' | 'high'
   normalizedAspectRatio?: string | null
+  background?: 'transparent' | 'opaque' | 'auto'
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+  outputCompression?: number
+  moderation?: 'low' | 'auto'
+  n?: number
+  partialImages?: number
+  stream?: boolean
+  style?: 'vivid' | 'natural'
+  responseFormat?: 'url' | 'b64_json'
 }) => ({
   model: opts.model,
   prompt: opts.prompt,
   size: opts.size,
   ...(opts.quality ? { quality: opts.quality } : {}),
+  ...(opts.background ? { background: opts.background } : {}),
+  ...(opts.outputFormat ? { output_format: opts.outputFormat } : {}),
+  ...(typeof opts.outputCompression === 'number' ? { output_compression: opts.outputCompression } : {}),
+  ...(opts.moderation ? { moderation: opts.moderation } : {}),
+  ...(typeof opts.n === 'number' ? { n: opts.n } : {}),
+  ...(typeof opts.partialImages === 'number' ? { partial_images: opts.partialImages } : {}),
+  ...(typeof opts.stream === 'boolean' ? { stream: opts.stream } : {}),
+  ...(opts.style ? { style: opts.style } : {}),
+  ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
   ...(opts.normalizedAspectRatio ? { aspect_ratio: opts.normalizedAspectRatio } : {}),
 })
 

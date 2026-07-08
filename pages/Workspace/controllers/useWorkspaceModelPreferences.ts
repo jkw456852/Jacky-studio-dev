@@ -203,6 +203,9 @@ export const useWorkspaceModelPreferences = ({
   const activeImageProviderId = autoModelSelect
     ? getMappedPrimaryImageProviderId()
     : preferredImageProviderId;
+  const activeVideoModel = autoModelSelect
+    ? getMappedPrimaryVideoModel()
+    : preferredVideoModel;
   const activeVideoProviderId = autoModelSelect
     ? getMappedPrimaryVideoProviderId()
     : preferredVideoProviderId;
@@ -293,6 +296,7 @@ export const useWorkspaceModelPreferences = ({
   return {
     activeImageModel,
     activeImageProviderId,
+    activeVideoModel,
     activeVideoProviderId,
     handleModeSwitch,
     modelPreferences: {

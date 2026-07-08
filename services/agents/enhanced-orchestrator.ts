@@ -243,9 +243,10 @@ ${latestRoleDraftSummary || 'No recent temporary role drafts are currently store
 
 Routing policy:
 - First check whether an existing role already fits well enough to reuse directly.
-- Reuse should be the default when an existing specialist plus its durable role layer already covers the task.
+- Prefer keeping the request on Coco unless a system-level reason truly requires a different role shell.
+- Reuse should be the default when an existing execution role plus its durable role layer already covers the task.
 - If an existing role mostly fits but needs task-specific constraints or a prompt addon, set roleStrategy="augment".
-- Prefer augment when the gap is narrow, local, and can be solved by a temporary overlay without inventing a brand-new specialist.
+- Prefer augment when the gap is narrow, local, and can be solved by a temporary overlay without inventing a brand-new execution role.
 - Only choose roleStrategy="create" when no existing role can responsibly cover the task without inventing too much.
 - Prefer stable role reuse over rewriting the team structure on every request.
 - If a durable user role addon already exists for the target role, treat that as evidence that the user has been shaping this role intentionally; do not create a new temporary role unless that durable layer is clearly insufficient.
@@ -253,7 +254,7 @@ Routing policy:
 - When roleStrategy="create", also return roleDraft with title, summary, and 3-6 concrete instructions for the temporary role brain.
 - When roleStrategy="augment", return roleDraft if a structured temporary overlay would help the existing role execute better.
 
-Analyze and route to appropriate agent. Return JSON with:
+Analyze and choose the safest execution path. In single-agent mode, default to "coco" unless another role shell is explicitly required. Return JSON with:
 {
   "action": "route",
   "targetAgent": "<agent_id>",
@@ -409,7 +410,7 @@ function createFallbackDecision(
         handoffMessage: '我将协助您处理这个请求',
         confidence: 0.5,
         roleStrategy: 'reuse',
-        roleStrategyReason: 'Fallback route used the safest existing specialist path.',
+        roleStrategyReason: 'Fallback route used the safest single-agent path.',
         fallbackOptions: [],
         estimatedDuration: 30,
         requiredSkills: []

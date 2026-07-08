@@ -100,6 +100,43 @@ test('buildMainBrainTaskOutput normalizes final plan and runtime result into tas
   assert.equal(result.runtime?.stopReasonLabel, 'answered');
 });
 
+test('buildMainBrainTaskOutput sanitizes legacy specialist handoff wording in visible fields', () => {
+  const asset = { id: 'a', type: 'image', url: 'u', metadata: { agentId: 'coco' } } as any;
+  const result = buildMainBrainTaskOutput({
+    finalPlan: {
+      analysis: '这次更适合由 Cameron（摄影与写实专家） 处理。',
+      preGenerationMessage: '我先交给 Cameron（摄影与写实专家） 执行这一轮。',
+      answerSegments: [
+        { text: '已由 Cameron（摄影与写实专家） 负责生成第一版结果。' },
+      ],
+      proposals: [],
+    },
+    assets: [asset],
+    runtimeResult: {
+      turns: [{}, {}] as any,
+      observations: [],
+      decisions: [],
+      snapshots: [{ executionRounds: 1 }] as any,
+      finalPlan: { proposals: [] },
+      allSkillResults: [{ success: true, skillName: 'generateImage' }],
+      allAssets: [asset],
+      stopReason: 'responded',
+    } as any,
+    resolvedOutput: {
+      message: '本次任务由 Cameron（摄影与写实专家） 调度执行。',
+      postGenerationSummary: '这一版已经交给 Cameron（摄影与写实专家） 处理完成。',
+      adjustments: [],
+      stopReasonLabel: 'answered',
+    },
+  });
+
+  assert.equal(result.message, '本次任务由我直接处理。');
+  assert.equal(result.analysis, '这次更适合由我直接处理。');
+  assert.equal(result.preGenerationMessage, '我先直接处理这一轮。');
+  assert.equal(result.postGenerationSummary, '这一版已经直接处理完成。');
+  assert.equal(result.answerSegments?.[0]?.text, '我已直接生成第一版结果。');
+});
+
 test('buildAgentTaskOutput preserves role governance audit for standard completion path', () => {
   const audit = {
     summary: '已自动更新专家壳 poster 的长期 addon。',

@@ -71,3 +71,16 @@ pages/**/*.codex-backup-*.tsx.bak
 pages/*.broken-backup
 pages/**/*.broken-backup
 pages/**/*.broken-backup.*
+
+# Codex temporary verification bundles, screenshots, and debug traces
+.codex-temp-esbuild-check-*
+.codex-encoding-*.json
+.codex-artifacts/
+.codex-tmp/
+.codex-temp/
+.codex-temp-*.png
+.codex_tmp_*
+tmp-assistant-sidebar-*.png
+tmp-skill-*.png
+role-mainbrain-tsc.txt
+workflow-recipe-ui-tsc.txt

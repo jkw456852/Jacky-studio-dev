@@ -38,6 +38,54 @@ const mapStopReasonLabel = (
   }
 };
 
+const summarizeLatestSkillFailures = (
+  runtimeResult: MainBrainRuntimeResult,
+): string | undefined => {
+  const latestTurn = runtimeResult.turns.length > 0
+    ? runtimeResult.turns[runtimeResult.turns.length - 1]
+    : null;
+  if (!latestTurn) return undefined;
+  const failures = (latestTurn.skillResults || []).filter(
+    (item) => item && item.success === false,
+  );
+  if (failures.length === 0) return undefined;
+
+  const lines = failures.slice(0, 3).map((failure: any) => {
+    const skillName = String(failure?.skillName || 'skill');
+    const friendly = String(failure?.error || '').trim();
+    const detail = failure?.errorDetail || {};
+    let upstream: string | undefined;
+    try {
+      if (detail.proxyTarget) upstream = new URL(detail.proxyTarget).host;
+    } catch {
+      upstream = undefined;
+    }
+    const status = typeof detail.httpStatus === 'number' ? detail.httpStatus : undefined;
+    const parts: string[] = [];
+    if (upstream) parts.push('上游: ' + upstream);
+    if (typeof status === 'number') parts.push('状态码 ' + status);
+    const tail = parts.length > 0 ? '（' + parts.join('，') + '）' : '';
+    const base = friendly || '调用失败';
+    return '- ' + skillName + ' ' + base + tail;
+  });
+
+  const hasOverload = failures.some((failure: any) => {
+    const status = failure?.errorDetail?.httpStatus;
+    return status === 502 || status === 503 || status === 504;
+  });
+  const hasAuth = failures.some((failure: any) => {
+    const status = failure?.errorDetail?.httpStatus;
+    return status === 401 || status === 403;
+  });
+  const guidance = hasOverload
+    ? '上游服务暂时不可达（多为中转/代理 5xx）。建议换一条同类型的备用模型或稍后重试。'
+    : hasAuth
+      ? '上游拒绝鉴权，去 Settings 检查这个 provider 的 API Key 或权限。'
+      : '请根据上游错误信息调整后重试。';
+
+  return ['这一轮工具调用没有成功完成：', ...lines, '', guidance].join('\n');
+};
+
 const buildFallbackMessage = (
   runtimeResult: MainBrainRuntimeResult,
   assetCount: number,
@@ -56,6 +104,21 @@ const buildFallbackMessage = (
   }
   if (assetCount > 0) {
     return `我已经根据当前需求完成了 ${assetCount} 个结果，并基于这些结果收束为本轮输出。`;
+  }
+  const failureSummary = summarizeLatestSkillFailures(runtimeResult);
+  if (failureSummary) return failureSummary;
+
+  // If the runtime exited 'responded' with zero assets AND zero skill calls,
+  // the planner decided to chat instead of invoking any tool. That's fine
+  // when the user genuinely asked a question, but bad when the user actually
+  // asked for content ("生成/做一张/给我一个..."). In any case, the
+  // gentle catch-all line lies about progress, so we say so plainly.
+  const totalSkillCalls = runtimeResult.turns.reduce(
+    (acc, item) => acc + (Array.isArray(item.skillCalls) ? item.skillCalls.length : 0),
+    0,
+  );
+  if (totalSkillCalls === 0) {
+    return '这一轮我没有调用任何工具，也没有可输出的内容。如果你期望我执行某个动作（比如生成/修改图片），请把需求再写得更明确一些再发一次。';
   }
   return '我已经根据当前需求完成了这一轮判断与处理。';
 };
@@ -159,10 +222,20 @@ export const resolveMainBrainOutput = ({
     composePostGenerationSummary,
   );
 
+  const usedFallbackMessage =
+    !(typeof finalPlan.message === 'string' && finalPlan.message.trim().length > 0) &&
+    !(typeof finalPlan.analysis === 'string' && finalPlan.analysis.trim().length > 0);
+  const failureSummaryForLlm =
+    assets.length === 0 && !usedFallbackMessage
+      ? summarizeLatestSkillFailures(runtimeResult)
+      : undefined;
+
   const finalMessage = stripGenerationBlocks(
     assets.length > 0 && postGenerationSummary
       ? `${baseMessage}\n\n${postGenerationSummary}`
-      : baseMessage,
+      : failureSummaryForLlm
+        ? `${baseMessage}\n\n${failureSummaryForLlm}`
+        : baseMessage,
   );
 
   const shouldAskUserForNextInput = runtimeResult.stopReason === 'wait-for-input';

@@ -1,5 +1,5 @@
 import { analyzeImageRegion } from '../gemini';
-import { RegionAnalyzeSkillParams } from '../../types/skill.types';
+import { RegionAnalyzeSkillParams } from '../../types/skill.types.ts';
 
 export async function regionAnalyzeSkill(params: RegionAnalyzeSkillParams): Promise<string | null> {
   try {

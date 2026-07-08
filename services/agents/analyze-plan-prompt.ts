@@ -2,6 +2,7 @@ import type { ProjectContext } from '../../types/common';
 import type { RoleGovernanceMode } from '../../types/agent.types';
 import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 import { buildRuntimeRolePrompt } from './runtime-role.ts';
+import { extractReferenceImageUrlsFromMessage } from './orchestrator-multimodal.ts';
 import {
   buildMainBrainCapabilityPromptSummary,
   buildMainBrainCapabilityTruthSnapshot,
@@ -13,6 +14,7 @@ const MAX_MESSAGE_TEXT_CHARS = 1200;
 const MAX_TOPIC_CONTEXT_CHARS = 1200;
 const MAX_REFERENCE_SUMMARY_CHARS = 400;
 const MAX_BRAND_INFO_CHARS = 400;
+const MAX_SKILL_SUCCESS_OUTPUT_CHARS = 420;
 
 const truncateText = (value: unknown, maxChars: number): string => {
   const text = typeof value === 'string' ? value : String(value ?? '');
@@ -26,6 +28,18 @@ const compactJson = (value: unknown, maxChars: number): string => {
     return '{}';
   }
 };
+
+const normalizeConfigStringList = (
+  value: unknown,
+  maxItems: number,
+  maxCharsPerItem = 120,
+): string[] =>
+  Array.isArray(value)
+    ? value
+        .map((item: unknown) => truncateText(item, maxCharsPerItem))
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
 
 // 构造 inlineParts 的文本描述，帮助后端理解文本和附件的相对位置
 const buildInlinePartsDescription = (
@@ -144,24 +158,23 @@ const buildCustomSkillContextSection = (metadata?: Record<string, any>): string 
     config.sourceConversationTitle || '',
     120,
   );
-  const reusableQuestions = Array.isArray(config.reusableQuestions)
-    ? config.reusableQuestions
-        .map((item: unknown) => truncateText(item, 120))
-        .filter(Boolean)
-        .slice(0, 5)
-    : [];
-  const executionOutline = Array.isArray(config.executionOutline)
-    ? config.executionOutline
-        .map((item: unknown) => truncateText(item, 120))
-        .filter(Boolean)
-        .slice(0, 6)
-    : [];
-  const outputBlueprint = Array.isArray(config.outputBlueprint)
-    ? config.outputBlueprint
-        .map((item: unknown) => truncateText(item, 120))
-        .filter(Boolean)
-        .slice(0, 5)
-    : [];
+  const successfulRuns = Number(config.successfulRuns || 0);
+  const lastSuccessfulPrompt = truncateText(
+    config.lastSuccessfulPrompt || '',
+    320,
+  );
+  const lastSuccessfulSummary = truncateText(
+    config.lastSuccessfulSummary || '',
+    320,
+  );
+  const lastSuccessfulOutput = truncateText(
+    config.lastSuccessfulOutput || '',
+    MAX_SKILL_SUCCESS_OUTPUT_CHARS,
+  );
+  const reusableQuestions = normalizeConfigStringList(config.reusableQuestions, 5);
+  const executionOutline = normalizeConfigStringList(config.executionOutline, 6);
+  const executionRecipe = normalizeConfigStringList(config.executionRecipe, 6, 180);
+  const outputBlueprint = normalizeConfigStringList(config.outputBlueprint, 5);
 
   return `
 [Custom Skill Context]
@@ -170,17 +183,94 @@ const buildCustomSkillContextSection = (metadata?: Record<string, any>): string 
 - reusable instruction: ${skillInstruction || 'Follow the proven workflow from the original conversation and adapt it to the new request.'}
 - example prompt: ${examplePrompt || 'none'}
 - source conversation: ${sourceConversationTitle || 'none'}
+- successful runs: ${Number.isFinite(successfulRuns) ? successfulRuns : 0}
+- last successful prompt: ${lastSuccessfulPrompt || 'none'}
+- last successful summary: ${lastSuccessfulSummary || 'none'}
+- last successful output excerpt: ${lastSuccessfulOutput || 'none'}
 - reusable question patterns: ${reusableQuestions.join(' | ') || 'none'}
 - execution outline: ${executionOutline.join(' | ') || 'none'}
+- execution recipe: ${executionRecipe.join(' | ') || 'none'}
 - output blueprint: ${outputBlueprint.join(' | ') || 'none'}
 - Treat this custom skill as a reusable workflow shell distilled from a successful prior conversation.
 - Reuse its questioning style, sequencing, output structure, and quality bar before falling back to generic habits.
+- When the current request is similar, reuse the successful decision pattern, output framing, and level of completeness from the latest successful run before improvising.
+- Do not copy the previous output literally; inherit the workflow logic, not the surface wording.
 - Keep the workflow flexible: adapt to the new request, ask for any missing inputs, and do not overfit to the original example literally.
 - When the user request conflicts with the saved custom skill, prioritize the current request and explain the adjustment.
 `;
 };
 
-const buildAutonomousSkillBiasSection = (metadata?: Record<string, any>): string => {
+const buildFrontstageSkillWorkflowSection = (
+  metadata?: Record<string, any>,
+): string => {
+  const skillData =
+    metadata?.skillData && typeof metadata.skillData === 'object'
+      ? (metadata.skillData as Record<string, any>)
+      : undefined;
+  const config =
+    skillData?.config && typeof skillData.config === 'object'
+      ? (skillData.config as Record<string, any>)
+      : undefined;
+  if (!config || config.allowAutonomousRouting !== true || config.isCustomSkill === true) {
+    return '';
+  }
+
+  const skillName = truncateText(skillData?.name || config.routeLabel || 'Frontstage Skill', 80);
+  const skillSummary = truncateText(config.summary || config.description || '', 320);
+  const skillInstruction = truncateText(config.instruction || '', 900);
+  const examplePrompt = truncateText(config.examplePrompt || '', 320);
+  const successfulRuns = Number(config.successfulRuns || 0);
+  const lastSuccessfulPrompt = truncateText(config.lastSuccessfulPrompt || '', 320);
+  const lastSuccessfulSummary = truncateText(config.lastSuccessfulSummary || '', 320);
+  const lastSuccessfulOutput = truncateText(
+    config.lastSuccessfulOutput || '',
+    MAX_SKILL_SUCCESS_OUTPUT_CHARS,
+  );
+  const reusableQuestions = normalizeConfigStringList(config.reusableQuestions, 6);
+  const executionOutline = normalizeConfigStringList(config.executionOutline, 7);
+  const executionRecipe = normalizeConfigStringList(config.executionRecipe, 6, 180);
+  const outputBlueprint = normalizeConfigStringList(config.outputBlueprint, 6);
+  const toolPolicy = normalizeConfigStringList(config.toolPolicy, 6, 160);
+
+  if (
+    !skillInstruction &&
+    reusableQuestions.length === 0 &&
+    executionOutline.length === 0 &&
+    executionRecipe.length === 0 &&
+    outputBlueprint.length === 0 &&
+    toolPolicy.length === 0
+  ) {
+    return '';
+  }
+
+  return `
+[Frontstage Skill Workflow]
+- active frontstage skill: ${skillName}
+- summary: ${skillSummary || 'none'}
+- reusable instruction: ${skillInstruction || 'Follow the selected frontstage workflow before falling back to a generic response.'}
+- example prompt: ${examplePrompt || 'none'}
+- successful runs: ${Number.isFinite(successfulRuns) ? successfulRuns : 0}
+- last successful prompt: ${lastSuccessfulPrompt || 'none'}
+- last successful summary: ${lastSuccessfulSummary || 'none'}
+- last successful output excerpt: ${lastSuccessfulOutput || 'none'}
+- reusable clarify questions: ${reusableQuestions.join(' | ') || 'none'}
+- execution outline: ${executionOutline.join(' | ') || 'none'}
+- execution recipe: ${executionRecipe.join(' | ') || 'none'}
+- output blueprint: ${outputBlueprint.join(' | ') || 'none'}
+- tool policy: ${toolPolicy.join(' | ') || 'none'}
+- Treat this selected frontstage skill as an active workflow contract for the turn, not as a cosmetic label.
+- Reuse its clarification order, execution sequencing, and deliverable structure before inventing a generic path.
+- When a similar successful run exists, reuse its decision pattern and output framing before improvising.
+- If you output multiple skillCalls, order them according to the execution recipe and assume later steps may depend on earlier context.
+- When the user request is underspecified, ask from the reusable clarify questions first, then continue with the execution outline.
+- When execution starts, preserve the selected skill's output blueprint and tool policy unless the user explicitly overrides them.
+- Do not flatten this selected skill into a generic answer when the preset already defines a sharper workflow.
+`;
+};
+
+const buildAutonomousSkillBiasSection = (
+  metadata?: Record<string, any>,
+): string => {
   const skillData =
     metadata?.skillData && typeof metadata.skillData === 'object'
       ? (metadata.skillData as Record<string, any>)
@@ -390,11 +480,17 @@ ${truncateText(metadata.topicPinnedContext, MAX_TOPIC_CONTEXT_CHARS)}
         .map((a: string) =>
           /^data:/.test(a) ? '[已上传图片]' : a.length > 120 ? '[URL]' : a,
         );
+      const historyImageUrlsAll = extractReferenceImageUrlsFromMessage(msg);
+      const historyImageUrls = historyImageUrlsAll.slice(0, 3);
+      const historyImagesText =
+        historyImageUrls.length > 0
+          ? ` [history images: ${historyImageUrls.join(', ')}${historyImageUrlsAll.length > 3 ? ', ...' : ''}]`
+          : '';
       const attachmentsText =
         cleanAttachments.length > 0
           ? ` [附件: ${cleanAttachments.join(', ')}${(msg.attachments?.length || 0) > 3 ? ', ...' : ''}]`
           : '';
-      return `${roleName}: ${cleanText}${attachmentsText}`;
+      return `${roleName}: ${cleanText}${attachmentsText}${historyImagesText}`;
     })
     .join('\n');
 
@@ -594,7 +690,7 @@ ${(attachedResearch.citations || [])
   const capabilitySummary = buildMainBrainCapabilityPromptSummary({
     preferredSkills: effectivePreferredSkills,
     includeInternalModules: allowAutonomousRouting,
-    includeSpecialists: allowAutonomousRouting,
+    includeSpecialists: allowAutonomousRouting && !unifiedSidebarAgent,
     networkResearchEnabled,
     hasResearchContext,
   });
@@ -622,7 +718,17 @@ ${(attachedResearch.citations || [])
   const runtimeRoleMetadata = unifiedSidebarAgent
     ? undefined
     : metadata;
+  const singleAgentExecutionSection = unifiedSidebarAgent
+    ? `
+[Single-Agent Execution Rules]
+- This sidebar currently runs in single-agent mode.
+- You are executing as Coco directly; do not describe the task as being handed off, routed, delegated, or transferred to Cameron, Poster, Vireo, Motion, Package, Campaign, or any other specialist agent.
+- If photography, storyboard, brand, packaging, motion, or campaign expertise is relevant, absorb that know-how silently and express it as your own execution plan.
+- In user-visible fields such as analysis, message, preGenerationMessage, and postGenerationSummary, use first-person single-agent wording like "我将直接处理" or "我会直接调用相应工具".
+`
+    : '';
   const customSkillContextSection = buildCustomSkillContextSection(metadata);
+  const frontstageSkillWorkflowSection = buildFrontstageSkillWorkflowSection(metadata);
   const autonomousSkillBiasSection = buildAutonomousSkillBiasSection(metadata);
   const fullPrompt = `${buildRuntimeRolePrompt(systemPrompt, runtimeRoleMetadata)}
 
@@ -637,6 +743,12 @@ ${(attachedResearch.citations || [])
 
 [Attachments]
 ${detailedAttachmentSection || attachmentSection || '- none'}
+
+[History Image Awareness]
+- Each prior assistant or user turn may list '[history images: ...]' URLs in [Conversation Context].
+- Treat those URLs as images that already exist in this conversation; do not claim there is no image when the most recent turns expose them.
+- For follow-up edit intents (e.g. "remove the bag", "change the dress to red"), prefer reusing the most recent history image as the edit target instead of asking the user to upload again.
+- Only ask the user to re-upload when no '[history images: ...]' marker and no current attachments are available.
 
 [Conversation Context]
 ${compactConversationHistory || '无'}
@@ -656,7 +768,7 @@ ${capabilityTruthSnapshot}
 ${message}
 ${inlinePartsDescription ? `\n[Request Structure]\n${inlinePartsDescription}` : ''}
 
-${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}${visualQaIsolationSection}${visualQaJsonContract}${customSkillContextSection}${autonomousSkillBiasSection}${autonomousDecisionContract}${capabilityBoundaryAnsweringSection}${roleGovernanceSection}
+${productSection}${quantitySection}${multiImageSection}${forcedToolSection}${multimodalSection}${topicPinnedContext}${designSessionSection}${visualQaIsolationSection}${visualQaJsonContract}${singleAgentExecutionSection}${customSkillContextSection}${frontstageSkillWorkflowSection}${autonomousSkillBiasSection}${autonomousDecisionContract}${capabilityBoundaryAnsweringSection}${roleGovernanceSection}
 [Response Contract]
 - Return executable JSON directly.
 - Do not ask the user to click again for confirmation unless confirmation is truly necessary.

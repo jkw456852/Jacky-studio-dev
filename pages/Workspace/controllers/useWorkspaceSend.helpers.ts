@@ -1,4 +1,4 @@
-import type { AgentTask } from "../../../types/agent.types";
+import type { AgentTask } from "../../../types/agent.types.ts";
 import type { CanvasElement, ChatMessage, InputBlock } from "../../../types";
 import { extractImageUrlsFromResult } from "../../../services/agents/image-result-extractor";
 import {
@@ -7,7 +7,7 @@ import {
   rehostImageUrl,
   runResearchSearch,
   type SearchResponse,
-} from "../../../services/research/search.service";
+} from "../../../services/research/search.service.ts";
 
 export type WorkspaceSendCreationMode = "agent" | "image" | "video";
 export type WorkspaceSendResearchMode = "off" | "images" | "web+images";

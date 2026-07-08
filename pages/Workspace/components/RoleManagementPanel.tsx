@@ -5,12 +5,12 @@ import type {
   RoleGovernanceMode,
   StudioRoleEntity,
   StudioRoleVersionRecord,
-} from '../../../types/agent.types';
+} from '../../../types/agent.types.ts';
 import type { AgentRoleProfile } from '../../../services/agents/role-catalog';
 import type {
   StudioStoredRoleDraft,
   StudioUserAssetAuditEntry,
-} from '../../../services/runtime-assets/user-asset-types';
+} from '../../../services/runtime-assets/user-asset-types.ts';
 import { buildUserCustomRoleAddonBlock } from '../../../services/agents/role-config';
 import { getAgentInfo } from '../../../services/agents';
 import {
@@ -19,7 +19,7 @@ import {
 } from '../../../services/provider-settings';
 import { generateImageWithProvider } from '../../../services/providers';
 import { useImageHostStore } from '../../../stores/imageHost.store';
-import { uploadImage } from '../../../utils/uploader';
+import { uploadImage } from '../../../utils/uploader.ts';
 
 type RoleEntityEditorDraft = {
   title: string;
@@ -601,7 +601,7 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
                   <SectionCard title="3. 长期规则" description="这里写长期有效的做事方式，不写这一次任务的临时要求。">
                     <FieldBlock
                       label="长期规则内容"
-                      hint="例如：先确认是否保留旧链路；能删旧实现就删，不能删就说明原因。"
+                      hint="例如：先确认是否符合 assistant-ui / AI SDK 官方接法；偏离官方路径时必须说明原因。"
                     >
                       <textarea
                         value={roleEntityDraft.durableRoleAddon}
@@ -727,7 +727,7 @@ export const RoleManagementPanel: React.FC<RoleManagementPanelProps> = ({
                     <textarea
                       value={roleInspectorDraft}
                       onChange={(event) => onDraftChange(event.target.value)}
-                      placeholder="例如：改动前先确认是否保留旧链路；需要结论先行；不轻易回退到旧方案。"
+                      placeholder="例如：改动前先确认是否符合 assistant-ui / AI SDK 官方接法；需要结论先行；不轻易自造非官方链路。"
                       className="min-h-[180px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
                     />
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

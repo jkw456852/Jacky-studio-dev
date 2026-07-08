@@ -2,7 +2,7 @@ import type {
   EcommerceLayoutIntent,
   EcommercePlanItem,
   EcommerceRecommendedType,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 
 export type LegacyPromptProfileId =
   | "hero"

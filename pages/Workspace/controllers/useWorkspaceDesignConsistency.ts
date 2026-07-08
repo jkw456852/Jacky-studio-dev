@@ -1,5 +1,5 @@
 ﻿import { useCallback } from "react";
-import { validateApprovedAnchorConsistency } from "../../../services/validators";
+import { validateApprovedAnchorConsistency } from "../../../services/validators.ts";
 import {
   addTopicMemoryItem,
   extractConstraintHints,
@@ -10,7 +10,7 @@ import {
 } from "../../../services/topic-memory";
 import { useProjectStore } from "../../../stores/project.store";
 import type { CanvasElement, ChatMessage } from "../../../types";
-import type { DesignTaskMode } from "../../../types/common";
+import type { DesignTaskMode } from "../../../types/common.ts";
 
 type UseWorkspaceDesignConsistencyArgs = {
   ensureTopicId: () => string;

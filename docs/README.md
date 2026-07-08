@@ -12,8 +12,10 @@ This repository keeps non-runtime documents under `docs/` to avoid cluttering th
   - PRDs, feature specs, implementation plans, and workflow notes.
 - `docs/references/`
   - external references, research notes, and supporting material.
-- `docs/changelog/`
-  - project change logs and historical update notes.
+- Historical changelogs that referenced removed assistant-sidebar entry points
+  have been deleted. Current assistant/sidebar guidance lives in
+  `docs/architecture/PROJECT_MODULE_MAP.md` and
+  `docs/architecture/WORKSPACE_REFACTOR_MAP.md`.
 - `docs/templates/`
   - reusable handoff and task templates for Roo Code / AI-assisted collaboration.
 
@@ -32,19 +34,15 @@ This repository keeps non-runtime documents under `docs/` to avoid cluttering th
   - live refactor progress map for `pages/Workspace.tsx`.
 - `docs/architecture/ROOT_DIRECTORY_POLICY.md`
   - rules for what is allowed to stay in the repository root.
-- `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md`
-  - internal contract for the unified sidebar main brain, routing policy, and multimodal execution handoff.
+- `docs/architecture/PROJECT_MODULE_MAP.md`
+  - current module authority map for assistant-ui sidebar, canvas controllers, providers, storage, and removed legacy entry points.
 
 ### Product
 
 - `docs/product/PRODUCT_SWAP_SPEC.md`
   - product-swap feature specification and implementation reference.
-- `docs/product/MULTI_AGENT_INTEGRATION_PRD.md`
-  - multi-agent integration PRD.
 - `docs/product/CHIP_MARKER_EDIT_WORKFLOW_PLAN.md`
   - marker editing workflow optimization plan.
-- `docs/product/WORKSPACE_PROJECT_REHOST_AND_ACCOUNT_SYNC_PRODUCT_PLAN_20260515.md`
-  - full product-grade plan for project image rehosting, old-project migration, sidebar compatibility, and account-level project sync.
 - `docs/roo-code-workflow.md`
   - project-level Roo Code modes, rules, and collaboration workflow.
 
@@ -70,10 +68,15 @@ This repository keeps non-runtime documents under `docs/` to avoid cluttering th
 - `docs/references/Lovart-AI-Design-Platform.txt`
   - external reference notes related to Lovart.
 
-### Changelog
+### Removed Historical Notes
 
-- `docs/changelog/PROJECT_CHANGELOG.md`
-  - historical project update notes.
+- Obsolete assistant-sidebar runtime logs, changelogs, and pre-assistant-ui
+  implementation plans that referenced deleted `AssistantSidebar*.tsx`,
+  `AgentMessage`, `useWorkspaceSend`, or `useWorkspaceSmartGenerate` entry
+  points have been removed.
+- Current sidebar work should follow
+  `docs/architecture/PROJECT_MODULE_MAP.md` and
+  `docs/architecture/WORKSPACE_REFACTOR_MAP.md`.
 
 ## Suggested Reading Order
 
@@ -83,7 +86,7 @@ For a new AI agent entering this repo, the recommended reading order is:
 2. `docs/architecture/ROOT_DIRECTORY_POLICY.md`
 3. `docs/architecture/PROJECT_MODULE_MAP.md`
 4. `docs/architecture/WORKSPACE_REFACTOR_MAP.md` if touching `Workspace.tsx`
-5. `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md` if touching agent orchestration or sidebar intelligence
+5. `docs/architecture/PROJECT_MODULE_MAP.md` if touching sidebar intelligence, tool routing, or assistant-ui integration
 6. `docs/roo-code-workflow.md` if using Roo Code / multi-role collaboration
 7. product or reference documents relevant to the current task
 

@@ -1,11 +1,11 @@
-import { normalizeReferenceToDataUrl } from "../services/image-reference-resolver";
+import { normalizeReferenceToDataUrl } from "../services/image-reference-resolver.ts";
 import type {
   EcommerceLayoutSnapshot,
   EcommerceOverlayBulletStyle,
   EcommerceOverlayTemplateId,
   EcommerceOverlayTextAlign,
   EcommerceOverlayTone,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 import { getOverlayPanelBox } from "./ecommerce-overlay-layout";
 
 type OverlaySamplePixel = {

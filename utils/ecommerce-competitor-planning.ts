@@ -3,7 +3,7 @@ import type {
   EcommerceCompetitorDeckInput,
   EcommerceCompetitorImageAnalysisItem,
   EcommerceCompetitorPlanningContext,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 
 const dedupeTextList = (items: Array<string | null | undefined>): string[] =>
   Array.from(

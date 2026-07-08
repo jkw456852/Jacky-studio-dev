@@ -58,9 +58,9 @@ export const INTERNAL_MODULE_CAPABILITIES: MainBrainCapabilityDefinition[] = [
     kind: 'internal-module',
     label: 'Resolve Routing Decision',
     purpose:
-      'Choose whether the turn should respond directly, stay autonomous, or hand off to a specialist agent.',
+      'Choose whether the turn should respond directly, stay autonomous, or continue into a downstream execution path.',
     plannerSummary:
-      'Awareness-only routing module that resolves direct response, autonomous continuation, or specialist handoff.',
+      'Awareness-only routing module that resolves direct response, autonomous continuation, or downstream execution path selection.',
     useWhen: ['After context preparation and before building an execution task.'],
     inputs: [
       { name: 'message', description: 'Current user request.', required: true },
@@ -88,7 +88,7 @@ export const INTERNAL_MODULE_CAPABILITIES: MainBrainCapabilityDefinition[] = [
     plannerSummary:
       'Awareness-only metadata module that normalizes multimodal references, uploaded URLs, and topic context for downstream execution.',
     useWhen: [
-      'When execution or specialist handoff needs clean multimodal metadata.',
+      'When execution or downstream role selection needs clean multimodal metadata.',
     ],
     inputs: [
       { name: 'message', description: 'Current user request.', required: true },
@@ -208,16 +208,24 @@ export const SKILL_CAPABILITIES: MainBrainCapabilityDefinition[] = [
     id: 'generateImage',
     kind: 'skill',
     label: 'Generate Image',
-    purpose: 'Create new images from prompt and optional references.',
+    purpose: 'Create or edit images through an explicit tool contract with model, size, ratio, quality, reference, and output controls.',
     plannerSummary:
-      'Executable visual generation skill for creating new images from prompt and optional references.',
+      'Executable visual generation skill with a normalized request contract, capability negotiation, and provider-aware output controls.',
     useWhen: ['The user explicitly wants a new image, visual direction, or generated variant.'],
     avoidWhen: ['The user is only asking what an image is or how something works.'],
     inputs: [
       { name: 'prompt', description: 'Image generation prompt.', required: true },
+      { name: 'providerId', description: 'Provider profile that resolves endpoint and API key.' },
+      { name: 'operation', description: 'generate or edit, depending on whether references and mask are used.' },
       { name: 'referenceImage', description: 'Single reference image URL or attachment marker.' },
       { name: 'referenceImages', description: 'Multiple reference images for subject consistency.' },
+      { name: 'maskImage', description: 'Optional mask for edit workflows.' },
       { name: 'aspectRatio', description: 'Target aspect ratio such as 1:1 or 4:5.' },
+      { name: 'imageSize', description: 'Preset resolution tier such as 1K, 2K, or 4K.' },
+      { name: 'exactSize', description: 'Exact WxH output when the chosen model supports it.' },
+      { name: 'imageQuality', description: 'Normalized quality tier for the output.' },
+      { name: 'background', description: 'transparent, opaque, or auto.' },
+      { name: 'outputFormat', description: 'png, jpeg, or webp.' },
       { name: 'model', description: 'Chosen image model.' },
     ],
     outputs: ['imageUrls', 'assets'],

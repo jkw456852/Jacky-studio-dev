@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Download, PlusCircle, Shirt, UserRound, Sparkles, Play, XCircle, RefreshCw, Eye, MousePointer2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'framer-motion';
-import type { WorkflowUiMessage, Requirements, ModelGenOptions } from '../../../../types/workflow.types';
+import type { WorkflowUiMessage, Requirements, ModelGenOptions } from '../../../../types/workflow.types.ts';
 import { useClothingState, useClothingStudioChatStore } from '../../../../stores/clothingStudioChat.store';
 import { PLATFORM_OPTIONS, LANGUAGE_OPTIONS, COUNT_OPTIONS, REQUIREMENT_TEMPLATES, REQUIREMENT_TAGS } from '../../../../constants/clothing-requirements';
 
@@ -257,7 +257,7 @@ export const ClothingStudioCards: React.FC<ClothingStudioCardsProps> = ({
           <ProSelect label="Ethnicity" value={modelForm.skinTone || '亚洲人'} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setModelForm((s) => ({ ...s, skinTone: e.target.value }))} options={['不限', '白人', '亚洲人', '黑人', '拉丁裔']} />
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-0.5">Quantity</label>
-            <input className="rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2 text-xs font-medium outline-none focus:border-blue-500" type="number" min={1} max={4} value={modelForm.count || 1} onChange={(e) => setModelForm((s) => ({ ...s, count: Math.max(1, Math.min(4, Number(e.target.value) || 1)) }))} />
+            <input className="rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2 text-xs font-medium outline-none focus:border-blue-500" type="number" min={1} step={1} value={modelForm.count || 1} onChange={(e) => setModelForm((s) => ({ ...s, count: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))} />
           </div>
           <ProSelect label="Pose" className="col-span-2" value={modelForm.pose || '站立正面'} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setModelForm((s) => ({ ...s, pose: e.target.value }))} options={['站立正面', '站立45°侧身', '走路抓拍', '坐姿']} />
         </div>
@@ -349,7 +349,7 @@ export const ClothingStudioCards: React.FC<ClothingStudioCardsProps> = ({
           <ProSelect
             label="Count"
             value={form.count}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setForm((s) => ({ ...s, count: Math.max(1, Math.min(10, Number(e.target.value) || 1)) }))}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setForm((s) => ({ ...s, count: Math.max(1, Math.floor(Number(e.target.value) || 1)) }))}
             options={COUNT_OPTIONS}
           />
         </div>
@@ -396,7 +396,7 @@ export const ClothingStudioCards: React.FC<ClothingStudioCardsProps> = ({
            <textarea className="w-full rounded-2xl border border-gray-100 bg-gray-50/50 px-4 py-3 text-xs leading-relaxed outline-none focus:border-blue-500 focus:bg-white transition-all shadow-inner" rows={3} placeholder="详细描述..." value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} />
         </div>
 
-        <ProButton onClick={() => onSubmitRequirements({ ...form, count: Math.max(1, Math.min(10, form.count || 1)) })} icon={Play} className="mt-6 w-full py-3.5 !text-sm">启动生产引擎</ProButton>
+        <ProButton onClick={() => onSubmitRequirements({ ...form, count: Math.max(1, Math.floor(Number(form.count) || 1)) })} icon={Play} className="mt-6 w-full py-3.5 !text-sm">启动生产引擎</ProButton>
       </ProCard>
     );
   }

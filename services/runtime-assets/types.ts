@@ -1,6 +1,6 @@
-import type { AgentInfo, AgentType } from "../../types/agent.types";
-import type { WorkspaceBuiltInStyleLibraryMode } from "../vision-orchestrator/style-library";
-import type { WorkspaceStyleLibrary } from "../../types/common";
+import type { AgentInfo, AgentType } from "../../types/agent.types.ts";
+import type { WorkspaceBuiltInStyleLibraryMode } from "../vision-orchestrator/style-library.ts";
+import type { WorkspaceStyleLibrary } from "../../types/common.ts";
 
 export interface StudioAgentRoleProfile {
   agentId: AgentType;
@@ -52,6 +52,65 @@ export interface StudioPluginAsset {
   tags?: string[];
 }
 
+export type StudioFrontstageSkillPresetCategory =
+  | "workflow"
+  | "agent"
+  | "edit"
+  | "research";
+
+export type StudioFrontstageSkillPresetExecutionType =
+  | "agent"
+  | "workflow"
+  | "skill";
+
+export type StudioFrontstageSkillPresetTab =
+  | "video"
+  | "social"
+  | "commerce"
+  | "branding";
+
+export type StudioFrontstageSkillPresetFollowUpMode =
+  | "auto-clarify"
+  | "direct-run";
+
+export interface StudioFrontstageSkillPresetAsset {
+  id: string;
+  name: string;
+  description: string;
+  category: StudioFrontstageSkillPresetCategory;
+  tab: StudioFrontstageSkillPresetTab;
+  frontstagePriority: "primary" | "secondary";
+  executionType: StudioFrontstageSkillPresetExecutionType;
+  activationHint: string;
+  iconName: string;
+  order: number;
+  skillDataId: string;
+  skillDataName?: string;
+  pluginId?: string;
+  requiresAttachments?: boolean;
+  followUpMode?: StudioFrontstageSkillPresetFollowUpMode;
+  allowAutonomousRouting?: boolean;
+  mode?: string;
+  frontstageSkillId?: string;
+  routeIntent?: string;
+  routeLabel?: string;
+  routeSummary?: string;
+  preferredSkills?: string[];
+  suggestedTaskMode?: string;
+  clarifyChecklist?: string[];
+  outputBlueprint?: string[];
+  reusableQuestions?: string[];
+  executionOutline?: string[];
+  executionRecipe?: string[];
+  toolPolicy?: string[];
+  instruction?: string;
+  examplePrompt?: string;
+  notes?: string;
+  research?: string;
+  tags?: string[];
+  sources?: string[];
+}
+
 export interface StudioRouteRule {
   agent: AgentType;
   keywords: string[];
@@ -96,5 +155,6 @@ export interface StudioRegistryManifest {
   specializations: Record<string, StudioSpecializationAsset>;
   styleLibraries: Record<WorkspaceBuiltInStyleLibraryMode, StudioStyleLibraryAsset>;
   plugins: Record<string, StudioPluginAsset>;
+  skillPresets: Record<string, StudioFrontstageSkillPresetAsset>;
   systems: Record<string, StudioSystemAsset>;
 }

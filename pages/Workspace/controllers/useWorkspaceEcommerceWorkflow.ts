@@ -32,9 +32,10 @@ import type {
   EcommerceWorkflowImage,
   EcommerceWorkflowMode,
   WorkflowUiMessage,
-} from "../../../types/workflow.types";
-import type { EcommerceOneClickSessionState } from "../../../stores/ecommerceOneClick.store";
-import { executeSkill } from "../../../services/skills";
+} from "../../../types/workflow.types.ts";
+import type { EcommerceOneClickSessionState } from "../../../stores/ecommerceOneClick.store.ts";
+import { executeSkill } from "../../../services/skills/index.ts";
+import { recordCustomSkillSuccessfulRun } from "../../../services/runtime-assets/preferences";
 import { generateJsonResponse } from "../../../services/gemini";
 import {
   analyzeCompetitorDeckImageRaw,
@@ -48,13 +49,13 @@ import {
   type ExtractedCompetitorDeck,
 } from "../../../services/ecommerce-competitor-import";
 import { getPersonalCompetitorBrowserClientId } from "../../../services/competitor-browser-personal-auth";
-import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
+import { smartEditSkill } from "../../../services/skills/smart-edit.skill.ts";
 import {
   buildTopicAssetUrl,
   resolveTopicAssetRefUrl,
   saveTopicAssetFromFile,
 } from "../../../services/topic-memory";
-import { splitEcommerceImageAnalysisTextFieldList } from "../../../utils/ecommerce-image-analysis";
+import { splitEcommerceImageAnalysisTextFieldList } from "../../../utils/ecommerce-image-analysis.ts";
 import {
   getOrderedOverlayLayers,
   getOverlayLayerVisibilityMap,
@@ -69,7 +70,7 @@ import {
   exportOverlayImagesZip,
   OVERLAY_PLATFORM_PRESET_OPTIONS,
 } from "../../../utils/ecommerce-overlay-production";
-import { getDefaultEcommercePlanRatio } from "../../../utils/ecommerce-plan-ratio";
+import { getDefaultEcommercePlanRatio } from "../../../utils/ecommerce-plan-ratio.ts";
 import {
   buildEcommerceTextLayerPlan,
   type EcommerceTextAnchorHint,
@@ -80,7 +81,7 @@ import {
   buildOldFlowPromptPolishLines,
   buildOldFlowSingleImagePrincipleLines,
 } from "../../../utils/ecommerce-old-flow-prompt";
-import { buildCompetitorPlanningContextFromRawImageAnalyses } from "../../../utils/ecommerce-competitor-planning";
+import { buildCompetitorPlanningContextFromRawImageAnalyses } from "../../../utils/ecommerce-competitor-planning.ts";
 import {
   buildLegacyLayoutIntentDefaults,
   buildLegacyPromptExecutionLines,
@@ -92,7 +93,7 @@ import {
   type LegacyPromptProfile,
   type LegacyPromptProfileId,
 } from "../../../utils/ecommerce-old-flow-template-library";
-import { uploadImage } from "../../../utils/uploader";
+import { uploadImage } from "../../../utils/uploader.ts";
 
 type EcommerceActions = {
   getSession: (sessionId: string) => EcommerceOneClickSessionState;
@@ -198,6 +199,20 @@ type UseWorkspaceEcommerceWorkflowOptions = {
 const EMPTY_INPUT_BLOCKS: InputBlock[] = [
   { id: "init", type: "text", text: "" },
 ];
+const ECOM_WORKFLOW_SKILL: ChatMessage["skillData"] = {
+  id: "ecom-oneclick-workflow",
+  name: "电商一键工作流",
+  iconName: "Library",
+  config: {
+    frontstageSkillId: "ecom-oneclick-workflow",
+    allowAutonomousRouting: true,
+    followUpMode: "auto-clarify",
+    requiresAttachments: true,
+    mode: "workflow",
+    routeIntent: "commerce",
+    routeLabel: "E-Commerce",
+  },
+};
 
 const createWorkflowMessageId = (prefix: string): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -244,6 +259,43 @@ const inferGeneratedImageExtension = (mimeType: string): string => {
   return "png";
 };
 
+const buildEcommerceSkillSuccessSummary = ({
+  session,
+  resultImages,
+}: {
+  session: EcommerceOneClickSessionState;
+  resultImages: EcommerceResultItem[];
+}) => {
+  const selectedTypes = session.recommendedTypes
+    .filter((item) => item.selected)
+    .map((item) => item.title)
+    .slice(0, 3);
+  const summaryParts = [
+    session.platformMode ? `平台：${session.platformMode}` : "",
+    selectedTypes.length > 0 ? `类型：${selectedTypes.join(" / ")}` : "",
+    resultImages.length > 0 ? `产出 ${resultImages.length} 张结果` : "",
+  ].filter(Boolean);
+  return (
+    summaryParts.join("，") ||
+    "已完成电商工作流并输出可继续筛选的结果。"
+  );
+};
+
+const buildEcommerceSkillSuccessPrompt = (
+  session: EcommerceOneClickSessionState,
+): string =>
+  [
+    session.description,
+    session.recommendedTypes
+      .filter((item) => item.selected)
+      .map((item) => item.title)
+      .join(" / "),
+    summarizeSupplementFields(session.supplementFields),
+  ]
+    .filter((item) => String(item || "").trim())
+    .join("；")
+    .slice(0, 800);
+
 const persistGeneratedResultAsset = async (
   sessionId: string,
   imageUrl: string,
@@ -272,15 +324,13 @@ const PLAN_ITEMS_MIN_BY_MODE: Record<EcommerceWorkflowMode, number> = {
   quick: 3,
 };
 
-const PLAN_ITEMS_MAX_PER_GROUP = 8;
-
 const getTargetPlanItemCount = (
   imageCount: number | null | undefined,
   workflowMode: EcommerceWorkflowMode,
 ): number => {
   const min = PLAN_ITEMS_MIN_BY_MODE[workflowMode] || 3;
   const safeCount = Number.isFinite(imageCount) ? Number(imageCount) : min;
-  return Math.max(min, Math.min(PLAN_ITEMS_MAX_PER_GROUP, Math.round(safeCount)));
+  return Math.max(min, Math.round(safeCount));
 };
 
 const normalizeRecommendedTypes = (
@@ -9272,6 +9322,21 @@ export function useWorkspaceEcommerceWorkflow(
             },
             `已更新单条生成结果，当前共有 ${resultImages.length} 张图像可继续筛选。`,
           );
+          if (resultImages.length > 0) {
+            const latestSession = ecommerceActions.getSession(sessionId);
+            await recordCustomSkillSuccessfulRun({
+              skill: ECOM_WORKFLOW_SKILL,
+              prompt: buildEcommerceSkillSuccessPrompt(latestSession),
+              summary: buildEcommerceSkillSuccessSummary({
+                session: latestSession,
+                resultImages,
+              }),
+              outputText: resultImages
+                .slice(0, 3)
+                .map((item, index) => `${index + 1}. ${item.label || item.url}`)
+                .join("\n"),
+            });
+          }
         } else {
           ecommerceActions.setStep("DONE", sessionId);
           pushWorkflowUiMessage(
@@ -9281,6 +9346,21 @@ export function useWorkspaceEcommerceWorkflow(
             },
             `批量生成完成，当前共有 ${resultImages.length} 张结果可用。`,
           );
+          if (resultImages.length > 0) {
+            const latestSession = ecommerceActions.getSession(sessionId);
+            await recordCustomSkillSuccessfulRun({
+              skill: ECOM_WORKFLOW_SKILL,
+              prompt: buildEcommerceSkillSuccessPrompt(latestSession),
+              summary: buildEcommerceSkillSuccessSummary({
+                session: latestSession,
+                resultImages,
+              }),
+              outputText: resultImages
+                .slice(0, 3)
+                .map((item, index) => `${index + 1}. ${item.label || item.url}`)
+                .join("\n"),
+            });
+          }
         }
       } catch (error) {
         logStep7Trace("batch.failed", {

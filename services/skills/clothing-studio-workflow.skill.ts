@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { imageGenSkill } from './image-gen.skill';
+import { imageGenSkill } from './image-gen.skill.ts';
 import { generateJsonResponse, getBestModelId } from '../gemini';
-import type { Requirements, WorkflowUiMessage, ClothingAnalysis } from '../../types/workflow.types';
+import type { Requirements, WorkflowUiMessage, ClothingAnalysis } from '../../types/workflow.types.ts';
 import type { ImageModel } from '../../types';
-import { buildRequirementsText } from '../../utils/clothing-prompt';
-import { AMAZON_SHOTS } from '../../knowledge/amazonShots';
-import { ensureWhiteBackground } from '../image-postprocess';
-import { validateModelIdentity, validateProductConsistency } from '../validators';
+import { buildRequirementsText } from '../../utils/clothing-prompt.ts';
+import { AMAZON_SHOTS } from '../../knowledge/amazonShots.ts';
+import { ensureWhiteBackground } from '../image-postprocess.ts';
+import { validateModelIdentity, validateProductConsistency } from '../validators.ts';
 
 const requirementsSchema = z.object({
   platform: z.string().min(1),
@@ -14,7 +14,7 @@ const requirementsSchema = z.object({
   targetLanguage: z.string().min(1),
   aspectRatio: z.string().min(1),
   clarity: z.enum(['1K', '2K', '4K']).default('2K'),
-  count: z.number().int().min(1).max(10),
+  count: z.number().int().min(1),
   templateId: z.string().optional(),
   styleTags: z.array(z.string()).optional(),
   backgroundTags: z.array(z.string()).optional(),
@@ -55,8 +55,14 @@ function extractJsonObject(text: string): any {
   }
 }
 
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
+};
+
 const toPlanItems = async (requirements: Requirements, analysis?: ClothingAnalysis | null) => {
-  const count = Math.max(1, Math.min(10, requirements.count || 6));
+  const count = normalizePositiveInteger(requirements.count, 6);
   const pType = analysis?.productType || 'unknown';
   const shotCandidates = AMAZON_SHOTS.filter((s) => s.when.includes(pType as any) || pType === 'unknown')
     .sort((a, b) => a.priority - b.priority)
@@ -77,7 +83,7 @@ const toPlanItems = async (requirements: Requirements, analysis?: ClothingAnalys
       shotKey: z.string(),
       shotSpec: z.string().optional(),
       prompt: z.string().optional(),
-      count: z.number().int().min(1).max(10).default(1),
+      count: z.number().int().min(1).default(1),
     })).min(1),
   });
 
@@ -97,7 +103,7 @@ const toPlanItems = async (requirements: Requirements, analysis?: ClothingAnalys
     for (const item of items) {
       const shot = shotMap.get(String(item.shotKey || '').trim());
       if (!shot) continue;
-      const repeats = Math.max(1, Math.min(10, Number(item.count || 1)));
+      const repeats = normalizePositiveInteger(item.count, 1);
       const shotSpec = String(item.shotSpec || item.prompt || shot.promptHint || '').trim();
       const prompt = shotSpec || shot.promptHint;
       for (let i = 0; i < repeats; i += 1) {

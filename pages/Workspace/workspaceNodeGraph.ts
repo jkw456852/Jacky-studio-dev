@@ -1,7 +1,7 @@
 import type { CanvasElement, WorkspaceNodeLinkKind } from "../../types";
 import { getAllNodeParentIds } from "./workspaceTreeNode";
 
-const GENERATION_VERTICAL_GAP = 160;
+const GENERATION_VERTICAL_GAP = 80;
 const GENERATION_HORIZONTAL_GAP = 36;
 const TREE_GENERATION_MAX_COLUMNS = 4;
 const TREE_GENERATION_ROW_GAP = 36;

@@ -1,8 +1,5 @@
 
-export * from './common';
-export * from './agent.types';
-export * from './skill.types';
-export * from './workflow.types';
-export * from './workflow-recipe.types';
-export * from './workflow-node.types';
-export * from './capability-catalog.types';
+export * from './common.ts';
+export * from './agent.types.ts';
+export * from './skill.types.ts';
+export * from './workflow.types.ts';

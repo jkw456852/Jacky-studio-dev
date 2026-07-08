@@ -13,7 +13,7 @@ import type {
   ImageUserRequestSnapshot,
 } from "../../../types/image-generation.types";
 import type { CanvasElement } from "../../../types";
-import type { DesignTaskMode } from "../../../types/common";
+import type { DesignTaskMode } from "../../../types/common.ts";
 
 type PersistEditDetails = {
   instruction: string;

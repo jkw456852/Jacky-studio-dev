@@ -36,6 +36,13 @@ test('buildOpenAIImageGenerationBody only includes optional fields when present'
     prompt: 'generate a poster',
     size: '1536x1024',
     quality: 'medium',
+    background: 'transparent',
+    outputFormat: 'webp',
+    outputCompression: 85,
+    moderation: 'low',
+    n: 1,
+    partialImages: 1,
+    stream: true,
     normalizedAspectRatio: '3:2',
   })
 
@@ -44,6 +51,13 @@ test('buildOpenAIImageGenerationBody only includes optional fields when present'
     prompt: 'generate a poster',
     size: '1536x1024',
     quality: 'medium',
+    background: 'transparent',
+    output_format: 'webp',
+    output_compression: 85,
+    moderation: 'low',
+    n: 1,
+    partial_images: 1,
+    stream: true,
     aspect_ratio: '3:2',
   })
 
@@ -97,6 +111,9 @@ test('buildOpenAIImageEditFormData appends references and mask in stable order',
       ['prompt', 'edit image'],
       ['size', '1024x1024'],
       ['quality', 'low'],
+      ['output_format', 'png'],
+      ['n', '1'],
+      ['response_format', 'b64_json'],
       ['image[]', 'image-1.png'],
       ['image[]', 'image-2.jpg'],
       ['mask', 'mask.png'],
@@ -117,4 +134,25 @@ test('buildOpenAIImageEditFormData appends references and mask in stable order',
     { name: 'image-1.png', type: 'image/png', text: 'image-1' },
     { name: 'image-2.jpg', type: 'image/jpeg', text: 'image-2' },
   ])
+})
+
+test('buildOpenAIImageEditFormData skips invalid data urls instead of throwing', () => {
+  const result = buildOpenAIImageEditFormData({
+    model: 'gpt-image-2',
+    prompt: 'edit image',
+    size: '1024x1024',
+    referenceImages: ['data:image/png;base64,%%%not-valid%%%'],
+    maskImage: 'data:image/png;base64,a Gk',
+    dataUrlToFilePayload: (dataUrl, baseName) => {
+      if (baseName === 'image-1') return null
+      return {
+        blob: new Blob(['ok'], { type: 'image/png' }),
+        filename: `${baseName}.png`,
+      }
+    },
+  })
+
+  const entries = Array.from(result.formData.entries())
+  assert.equal(entries.filter(([key]) => key === 'image[]').length, 0)
+  assert.equal(entries.filter(([key]) => key === 'mask').length, 1)
 })

@@ -1,7 +1,7 @@
 import React from "react";
 import { Package2, Sparkles } from "lucide-react";
-import { useEcommerceOneClickState } from "../../../../stores/ecommerceOneClick.store";
-import { getEcommerceWorkflowSummary } from "./ecommerceWorkflowUi";
+import { useEcommerceOneClickState } from "../../../../stores/ecommerceOneClick.store.ts";
+import { getEcommerceWorkflowSummary } from "./ecommerceWorkflowUi.ts";
 
 type EcommerceCanvasQuickCardProps = {
   visible: boolean;

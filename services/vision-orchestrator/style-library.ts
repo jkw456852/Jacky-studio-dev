@@ -100,6 +100,10 @@ const normalizeStyleLibraryTestCases = (
     const imageCount = Number(raw.imageCount);
     const model = String(raw.model || "").trim().slice(0, 120);
     const expectedFocus = String(raw.expectedFocus || "").trim().slice(0, 220);
+    const normalizedImageCount =
+      Number.isFinite(imageCount) && imageCount > 0
+        ? Math.floor(imageCount)
+        : undefined;
     normalized.push({
       id,
       title,
@@ -107,10 +111,7 @@ const normalizeStyleLibraryTestCases = (
       referenceImageUrls:
         referenceImageUrls.length > 0 ? referenceImageUrls : undefined,
       aspectRatio: aspectRatio || undefined,
-      imageCount:
-        imageCount === 1 || imageCount === 2 || imageCount === 3 || imageCount === 4
-          ? (imageCount as 1 | 2 | 3 | 4)
-          : undefined,
+      imageCount: normalizedImageCount,
       model: model || undefined,
       expectedFocus: expectedFocus || undefined,
     });
@@ -135,16 +136,17 @@ const normalizeStyleLibraryTestResults = (
     const model = String(raw.model || "").trim().slice(0, 120);
     const note = String(raw.note || "").trim().slice(0, 280);
     const libraryVersion = Number(raw.libraryVersion);
+    const normalizedImageCount =
+      Number.isFinite(imageCount) && imageCount > 0
+        ? Math.floor(imageCount)
+        : undefined;
     normalized.push({
       caseId,
       outputImageUrls,
       createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
       model: model || undefined,
       aspectRatio: aspectRatio || undefined,
-      imageCount:
-        imageCount === 1 || imageCount === 2 || imageCount === 3 || imageCount === 4
-          ? (imageCount as 1 | 2 | 3 | 4)
-          : undefined,
+      imageCount: normalizedImageCount,
       passed: typeof raw.passed === "boolean" ? raw.passed : undefined,
       note: note || undefined,
       libraryVersion:

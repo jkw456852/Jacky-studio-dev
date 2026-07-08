@@ -8,9 +8,9 @@ import type {
   ImageResultSnapshot,
   ImageTransportRequestSnapshot,
 } from "../../../types/image-generation.types";
-import { imageGenSkill } from "../../../services/skills/image-gen.skill";
+import { imageGenSkill } from "../../../services/skills/image-gen.skill.ts";
 import { pollOpenAICompatibleImageResult } from "../../../services/gemini";
-import { getApiKeyByProviderId } from "../../../services/provider-config";
+import { getApiKeyByProviderId } from "../../../services/provider-config.ts";
 import { getVisualOrchestratorModelConfig } from "../../../services/provider-settings";
 import {
   planVisualGenerationWithModel,
@@ -38,14 +38,14 @@ import {
   type WorkspaceGenerationTraceDiagnostic,
 } from "../browserAgentGenerationTrace";
 import { resolveWorkspaceTreeNodeKind } from "../workspaceTreeNode";
-import { normalizeReferenceToDataUrl } from "../../../services/image-reference-resolver";
+import { normalizeReferenceToDataUrl } from "../../../services/image-reference-resolver.ts";
 import {
   getClosestWorkspaceImageResolutionPresetForSize,
   getDefaultWorkspaceImageSizeForAspectRatio,
   normalizeWorkspaceImageSize,
   type WorkspaceImageSizeMode,
-} from "../../../services/openai-image-presets";
-import { getEffectiveStyleLibrary } from "../../../services/vision-orchestrator/style-library";
+} from "../../../services/openai-image-presets.ts";
+import { getEffectiveStyleLibrary } from "../../../services/vision-orchestrator/style-library.ts";
 import {
   executeWorkspaceResearchContext,
   type WorkspaceSendReferenceWebPage,
@@ -1472,7 +1472,7 @@ export function useWorkspaceElementImageGeneration(
         const currentSizeMode =
           (sourceElement.genSizeMode || "preset") as WorkspaceImageSizeMode;
         const requestedImageCount = isTreePromptNode
-          ? Math.max(1, Math.min(4, sourceElement.genImageCount || 1))
+          ? Math.max(1, Math.floor(Number(sourceElement.genImageCount) || 1))
           : 1;
         const rawManualReferenceImages =
           sourceElement.genRefImages ||

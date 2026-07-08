@@ -17,7 +17,7 @@ import type {
   EcommerceOverlayStat,
   EcommerceOverlayTextAlign,
   EcommerceTextContainerIntent,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 
 export type EcommerceTextAnchorHint = {
   text?: string;

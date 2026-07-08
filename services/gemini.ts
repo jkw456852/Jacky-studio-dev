@@ -1,10 +1,10 @@
 
 import { GoogleGenAI, Chat, GenerateContentResponse, Part, Content, Type } from "@google/genai";
 import type { ImageTextBlock } from '../types';
-import { ProviderError } from '../utils/provider-error';
-import { fetchWithResilience } from './http/api-client';
+import { ProviderError } from '../utils/provider-error.ts';
+import { fetchWithResilience } from './http/api-client.ts';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
-import { getApiKey, getApiKeyByProviderId, getProviderConfig, getProviderConfigById } from './provider-config';
+import { getApiKey, getApiKeyByProviderId, getProviderConfig, getProviderConfigById } from './provider-config.ts';
 import {
     buildOpenAIFormHeaders,
     buildOpenAIHeaders,
@@ -22,17 +22,17 @@ import {
     shouldTryAlternateAuth,
     type OpenAIAuthMode,
     type OpenAIAuthStrategy,
-} from './openai-transport/auth';
+} from './openai-transport/auth.ts';
 import {
     createImageRequestWarning,
     type ImageTransportRequestSnapshot,
     type ImageUserRequestSnapshot,
-} from '../types/image-generation.types';
+} from '../types/image-generation.types.ts';
 import {
     normalizeReferenceToDataUrl,
     normalizeReferenceToModelInputDataUrl,
-} from './image-reference-resolver';
-import { parseMappedModelStorageEntry, resolveImageModelPostPath } from './provider-settings';
+} from './image-reference-resolver.ts';
+import { parseMappedModelStorageEntry, resolveImageModelPostPath } from './provider-settings.ts';
 import { getStudioUserAssetApi } from './runtime-assets/api.ts';
 import {
     getOfficialGptImage2Size,
@@ -40,7 +40,7 @@ import {
     isGptImage2FamilyModel,
     normalizeWorkspaceImageSize,
     parseImageSizeString,
-} from './openai-image-presets';
+} from './openai-image-presets.ts';
 import {
     dataUrlToFilePayload,
     estimateDataUrlBytes,
@@ -50,31 +50,31 @@ import {
     normalizeOpenAIImageAspectRatio,
     resolveOpenAIImageSize,
     type OpenAIImageRequestMode,
-} from './image-generation/core/openai-image-spec';
+} from './image-generation/core/openai-image-spec.ts';
 import {
     buildBaseImagePrompt as composeBaseImagePrompt,
     buildReferenceInjectionPlan as planReferenceInjection,
     buildTextPolicySuffix as buildImageTextPolicySuffix,
-} from './image-generation/core/prompt-composer';
+} from './image-generation/core/prompt-composer.ts';
 import {
     buildOpenAIImageEditFormData,
     buildOpenAIImageEditJsonPayload,
     buildOpenAIImageGenerationBody,
-} from './image-generation/core/request-builder';
+} from './image-generation/core/request-builder.ts';
 import {
     extractOpenAIImageResult,
     extractOpenAIImageTaskSubmission,
     parseOpenAIImageResponse,
-} from './image-generation/core/response-parser';
+} from './image-generation/core/response-parser.ts';
 import {
     pollOpenAICompatibleImageResult as pollOpenAICompatibleImageResultViaTransport,
     runOpenAITransportWithFallback,
-} from './image-generation/core/transport-runner';
+} from './image-generation/core/transport-runner.ts';
 import {
     decideOpenAIImageRoute,
     isOfficialOpenAIBaseUrl,
-} from './image-generation/core/request-router';
-import { getImageProviderById } from './providers';
+} from './image-generation/core/request-router.ts';
+import { getImageProviderById } from './providers/index.ts';
 
 const isNetworkFetchError = (error: unknown): boolean => {
     const msg = ((error as any)?.message || '').toLowerCase();
@@ -588,12 +588,13 @@ const fetchOpenAIJsonWithFallback = async <T>(
             const shouldUseBrowserProxy = typeof window !== 'undefined';
             const browserProxyUrl = '/api/openai-proxy';
             const requestTarget = shouldUseBrowserProxy
-                ? {
+                ? buildBrowserOpenAIProxyRequest({
                     targetUrl: url,
                     method: 'POST',
                     headers,
                     body,
-                }
+                    requestTuning,
+                })
                 : null;
             if (requestTarget) {
                 return fetchWithResilience(browserProxyUrl, {
@@ -646,6 +647,41 @@ const resolveProviderImageTransportProfile = (providerId?: string | null) => {
     return getImageProviderById(providerId)?.capability.imageTransportProfile || null;
 };
 
+const resolveProxyRequestTimeoutMs = (requestTuning?: {
+    timeoutMs?: number;
+    idleTimeoutMs?: number;
+}) => {
+    const timeoutCandidates = [
+        Number(requestTuning?.idleTimeoutMs),
+        Number(requestTuning?.timeoutMs),
+    ].filter((value) => Number.isFinite(value) && value > 0) as number[];
+
+    if (timeoutCandidates.length === 0) {
+        return undefined;
+    }
+
+    return Math.max(...timeoutCandidates);
+};
+
+const buildBrowserOpenAIProxyRequest = (args: {
+    targetUrl: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    requestTuning?: {
+        timeoutMs?: number;
+        idleTimeoutMs?: number;
+    };
+    stream?: boolean;
+}) => ({
+    targetUrl: args.targetUrl,
+    method: args.method || 'POST',
+    headers: args.headers || {},
+    ...(args.body !== undefined ? { body: args.body } : {}),
+    timeoutMs: resolveProxyRequestTimeoutMs(args.requestTuning),
+    ...(args.stream ? { stream: true } : {}),
+});
+
 const fetchOpenAIStreamingJsonWithFallback = async <T>(
     baseUrl: string,
     path: string,
@@ -690,20 +726,48 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
 
             let res: Response;
             try {
-                res = await fetchWithResilience(url, {
-                    method: 'POST',
-                    signal: requestTuning?.signal,
-                    headers,
-                    body: JSON.stringify(body),
-                }, {
-                    operation: `${contextTag}.openaiPost`,
-                    retries: requestTuning?.retries ?? 3,
-                    baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
-                    maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
-                    timeoutMs: requestTuning?.timeoutMs ?? 120000,
-                    idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
-                    requestFingerprint: requestTuning?.requestFingerprint,
-                });
+                if (typeof window !== 'undefined') {
+                    res = await fetchWithResilience('/api/openai-proxy', {
+                        method: 'POST',
+                        signal: requestTuning?.signal,
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(
+                            buildBrowserOpenAIProxyRequest({
+                                targetUrl: url,
+                                method: 'POST',
+                                headers,
+                                body,
+                                requestTuning,
+                                stream: true,
+                            }),
+                        ),
+                    }, {
+                        operation: `${contextTag}.openaiProxyPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                } else {
+                    res = await fetchWithResilience(url, {
+                        method: 'POST',
+                        signal: requestTuning?.signal,
+                        headers,
+                        body: JSON.stringify(body),
+                    }, {
+                        operation: `${contextTag}.openaiPost`,
+                        retries: requestTuning?.retries ?? 3,
+                        baseDelayMs: requestTuning?.baseDelayMs ?? 1000,
+                        maxDelayMs: requestTuning?.maxDelayMs ?? 15000,
+                        timeoutMs: requestTuning?.timeoutMs ?? 120000,
+                        idleTimeoutMs: requestTuning?.idleTimeoutMs ?? 300000,
+                        requestFingerprint: requestTuning?.requestFingerprint,
+                    });
+                }
             } catch (error) {
                 const isTimeoutError = isTimeoutException(error);
                 if (isTimeoutError) {
@@ -735,11 +799,15 @@ const fetchOpenAIStreamingJsonWithFallback = async <T>(
             const errBody = await res.text().catch(() => '');
             const isRateLimitError = isRateLimited(res.status);
             const isServerErr = isServerError(res.status);
+            const proxyTargetHeader = res.headers.get('x-proxy-target') || '';
             const err: any = new Error(`${contextTag} API error: ${res.status} [${authMode}] ${isRateLimitError ? 'Rate limited' : isServerErr ? 'Server error' : errBody}`);
             err.status = res.status;
             err.authMode = authMode;
             err.keyIndex = keyIndex;
             err.retryable = isRateLimitError || isServerErr;
+            if (proxyTargetHeader) {
+                err.proxyTarget = proxyTargetHeader;
+            }
             lastError = err;
 
             if (shouldTryAlternateAuth(res.status)) {
@@ -869,12 +937,15 @@ const fetchOpenAIFormWithFallback = async <T>(
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        targetUrl: url,
-                        method: 'POST',
-                        headers,
-                        body: serializedFormData,
-                    }),
+                    body: JSON.stringify(
+                        buildBrowserOpenAIProxyRequest({
+                            targetUrl: url,
+                            method: 'POST',
+                            headers,
+                            body: serializedFormData,
+                            requestTuning,
+                        }),
+                    ),
                 }, {
                     operation: `${contextTag}.openaiProxyPost`,
                     retries: requestTuning?.retries ?? 3,
@@ -967,12 +1038,14 @@ const fetchOpenAIGetWithFallback = async <T>(
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        targetUrl: url,
-                        method: 'GET',
-                        headers,
-                        timeoutMs: requestTuning?.idleTimeoutMs ?? requestTuning?.timeoutMs ?? 300000,
-                    }),
+                    body: JSON.stringify(
+                        buildBrowserOpenAIProxyRequest({
+                            targetUrl: url,
+                            method: 'GET',
+                            headers,
+                            requestTuning,
+                        }),
+                    ),
                 }, {
                     operation: `${contextTag}.openaiProxyGet`,
                     retries: requestTuning?.retries ?? 1,
@@ -1032,6 +1105,7 @@ type UnifiedJsonGenerationOptions = {
         maxDelayMs?: number;
         authStrategy?: OpenAIAuthStrategy;
         requestFingerprint?: string;
+        signal?: AbortSignal;
     };
 };
 
@@ -1517,17 +1591,49 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
             if (!key) return;
 
             try {
-                const plans = isGoogle
+                const browserProxyPlans = typeof window !== 'undefined'
+                  ? [
+                      {
+                        url: '/api/openai-proxy',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: {
+                          targetUrl: modelsPath,
+                          method: 'GET',
+                          headers: {
+                            Authorization: `Bearer ${key}`,
+                            'Content-Type': 'application/json',
+                          },
+                          timeoutMs: 45000,
+                        },
+                      },
+                      {
+                        url: '/api/openai-proxy',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: {
+                          targetUrl: `${modelsPath}?key=${encodeURIComponent(key)}`,
+                          method: 'GET',
+                          headers: { 'Content-Type': 'application/json' },
+                          timeoutMs: 45000,
+                        },
+                      },
+                    ]
+                  : [];
+                const plans: Array<{
+                    url: string;
+                    headers: Record<string, string>;
+                    body?: unknown;
+                }> = isGoogle
                     ? [{
                         url: getGoogleUrl(key),
                         headers: {}
                     }]
                     : [
+                        ...browserProxyPlans,
                         {
                             url: modelsPath,
                             headers: {
-                                'Authorization': `Bearer ${key}`,
-                                'Content-Type': 'application/json'
+                              'Authorization': `Bearer ${key}`,
+                              'Content-Type': 'application/json'
                             }
                         },
                         {
@@ -1538,9 +1644,19 @@ export const fetchAvailableModels = async (provider: string, keys: string[], bas
 
                 let keySucceeded = false;
                 for (const plan of plans) {
+                    const useProxyPost =
+                      typeof plan.body !== 'undefined';
                     const res = await fetchWithResilience(
                         plan.url,
-                        { headers: plan.headers as Record<string, string> },
+                        {
+                          headers: plan.headers as Record<string, string>,
+                          ...(useProxyPost
+                            ? {
+                                method: 'POST',
+                                body: JSON.stringify(plan.body),
+                              }
+                            : {}),
+                        },
                         { operation: 'fetchAvailableModels.modelList', retries: 0 },
                     );
 
@@ -2438,6 +2554,16 @@ export interface ImageGenerationConfig {
     imageSize?: '1K' | '2K' | '4K';
     exactSize?: string;
     imageQuality?: 'low' | 'medium' | 'high';
+    background?: 'transparent' | 'opaque' | 'auto';
+    outputFormat?: 'png' | 'jpeg' | 'webp';
+    outputCompression?: number;
+    moderation?: 'low' | 'auto';
+    n?: number;
+    partialImages?: number;
+    stream?: boolean;
+    style?: 'vivid' | 'natural';
+    responseFormat?: 'url' | 'b64_json';
+    inputFidelity?: 'high' | 'low';
     providerId?: string | null;
     disableTransportRetries?: boolean;
     referenceImage?: string; // base64 (legacy)
@@ -2661,6 +2787,7 @@ const getOpenAIImageRequestTuning = (
         disableTransportRetries?: boolean;
     },
 ) => {
+    const IMAGE_REQUEST_TIMEOUT_MS = 600000;
     const disableTransportRetries = options?.disableTransportRetries === true;
     const applyRetryMode = <T extends {
         retries: number;
@@ -2683,8 +2810,8 @@ const getOpenAIImageRequestTuning = (
         if (requestMode === 'official-transfer') {
             return applyRetryMode({
                 authStrategy: 'bearer-only' as const,
-                timeoutMs: 480000,
-                idleTimeoutMs: 480000,
+                timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+                idleTimeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
                 retries: 5,
                 baseDelayMs: 750,
                 maxDelayMs: 12500,
@@ -2692,8 +2819,8 @@ const getOpenAIImageRequestTuning = (
         }
         return applyRetryMode({
             authStrategy: 'bearer-only' as const,
-            timeoutMs: 420000,
-            idleTimeoutMs: 420000,
+            timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+            idleTimeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
             retries: 4,
             baseDelayMs: 600,
             maxDelayMs: 10000,
@@ -2703,8 +2830,8 @@ const getOpenAIImageRequestTuning = (
     if (requestMode === 'official-transfer') {
         return applyRetryMode({
             authStrategy: 'bearer-only' as const,
-            timeoutMs: 300000,
-            idleTimeoutMs: 300000,
+            timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+            idleTimeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
             retries: 4,
             baseDelayMs: 600,
             maxDelayMs: 10000,
@@ -2713,8 +2840,8 @@ const getOpenAIImageRequestTuning = (
 
     return applyRetryMode({
         authStrategy: 'bearer-only' as const,
-        timeoutMs: 240000,
-        idleTimeoutMs: 240000,
+        timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+        idleTimeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
         retries: 3,
         baseDelayMs: 500,
         maxDelayMs: 7500,
@@ -2783,6 +2910,13 @@ const requestOpenAICompatibleImage = async (opts: {
     maskImage?: string | null;
     background?: 'transparent' | 'opaque' | 'auto';
     outputFormat?: 'png' | 'jpeg' | 'webp';
+    outputCompression?: number;
+    moderation?: 'low' | 'auto';
+    n?: number;
+    partialImages?: number;
+    stream?: boolean;
+    style?: 'vivid' | 'natural';
+    responseFormat?: 'url' | 'b64_json';
     providerId?: string | null;
     contextTag: string;
     onSubmitted?: (payload: {
@@ -3112,6 +3246,15 @@ const requestOpenAICompatibleImage = async (opts: {
             prompt: opts.prompt,
             size,
             quality: opts.imageQuality,
+            background: opts.background,
+            outputFormat: opts.outputFormat,
+            outputCompression: opts.outputCompression,
+            moderation: opts.moderation,
+            n: opts.n,
+            partialImages: opts.partialImages,
+            stream: opts.stream,
+            style: opts.style,
+            responseFormat: opts.responseFormat,
             normalizedAspectRatio,
         }),
         opts.contextTag,

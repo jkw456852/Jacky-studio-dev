@@ -4,14 +4,18 @@
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { createChatSession, getBestModelSelection } from "../../../services/gemini";
-import { formatDate, getProject, saveProject } from "../../../services/storage";
-import { createInputBlockId, useAgentStore } from "../../../stores/agent.store";
-import { getStudioUserAssetApi } from "../../../services/runtime-assets/api";
-import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences";
+import {
+  formatDate,
+  getProject,
+  mergeLoadedProjectConversationsForHydration,
+  rememberLoadedProjectConversationsForPersistence,
+  saveProject,
+} from "../../../services/storage.ts";
+import { createInputBlockId, useAgentStore } from "../../../stores/agent.store.ts";
+import { getStudioUserAssetApi } from "../../../services/runtime-assets/api.ts";
+import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences.ts";
 import type {
   CanvasElement,
-  ChatSendOptions,
   ChatMessage,
   ConversationSession,
   InputBlock,
@@ -21,19 +25,24 @@ import type {
 
 import {
   compactElementsForHistory,
+  sanitizeQuickSkillForPersistence,
   trimConversationsForPersist,
   type HistoryState,
-} from './workspacePersistence';
+} from './workspacePersistence.ts';
+import {
+  sliceConversationAssistantThreadToHead,
+} from "./assistantThreadRepository.ts";
+import { getConversationVisibleMessages } from "./assistantThreadLegacyProjection.ts";
 import {
   isConversationArchived,
   sortConversationsForSidebar,
-} from "../conversationMeta";
+} from "../conversationMeta.ts";
 import {
   listTopicAssetsByTopicId,
   resolveStoredTopicAssetUrl,
   resolveTopicAssetRefUrl,
-} from "../../../services/topic-memory";
-import { getMemoryKey } from "../../../services/topicMemory/key";
+} from "../../../services/topic-memory.ts";
+import { getMemoryKey } from "../../../services/topicMemory/key.ts";
 import {
   createImagePreviewDataUrl,
   estimateDataUrlBytes,
@@ -41,9 +50,12 @@ import {
   getRenderableImageAssetUrl,
   getElementSourceUrl,
   normalizeNestedImageDataUrl,
+  resolveWorkspaceCanvasViewportSize,
   sanitizePersistableAttachmentPreviewUrl,
 } from "../workspaceShared";
-import { getGeneratedConversationFilesFromAgentData } from "../components/generatedFiles";
+import {
+  getGeneratedConversationImageUrls,
+} from "../components/generatedFiles.ts";
 import {
   getAllNodeParentIds,
   resolveWorkspaceTreeNodeKind,
@@ -68,7 +80,6 @@ type UseWorkspaceProjectLoaderArgs = {
   isLoadingRecordRef: MutableRefObject<boolean>;
   suspendAutoSaveUntilRef: MutableRefObject<number>;
   initialPromptProcessedRef: MutableRefObject<boolean>;
-  chatSessionRef: MutableRefObject<ReturnType<typeof createChatSession> | null>;
   createConversationId: () => string;
   setElementsSynced: (elements: CanvasElement[]) => void;
   setMarkersSynced: Dispatch<SetStateAction<Marker[]>>;
@@ -79,6 +90,7 @@ type UseWorkspaceProjectLoaderArgs = {
   setSelectedElementId: Dispatch<SetStateAction<string | null>>;
   setSelectedElementIds: Dispatch<SetStateAction<string[]>>;
   setActiveConversationId: Dispatch<SetStateAction<string>>;
+  setProjectHydrated?: Dispatch<SetStateAction<boolean>>;
   setZoom: Dispatch<SetStateAction<number>>;
   setPan: Dispatch<SetStateAction<{ x: number; y: number }>>;
   setInputBlocks: (
@@ -93,20 +105,17 @@ type UseWorkspaceProjectLoaderArgs = {
   setWebEnabled: (enabled: boolean) => void;
   setImageModelEnabled: (enabled: boolean) => void;
   setCreationMode?: (mode: "agent" | "image" | "video") => void;
-  handleSend: (
-    overridePrompt?: string,
-    overrideAttachments?: File[],
-    overrideWeb?: boolean,
-    skillData?: ConversationSession["messages"][number]["skillData"],
-    sendOptions?: ChatSendOptions,
-  ) => Promise<void>;
+  setAssistantBootstrapRequest?: (request: {
+    id: number;
+    prompt?: string;
+    attachments?: File[];
+  }) => void;
   setElements: Dispatch<SetStateAction<CanvasElement[]>>;
 };
 
 const LOADED_IMAGE_DATA_URL_MAX_BYTES = 900 * 1024;
 const LOADED_IMAGE_PREVIEW_MAX_DIM = 1600;
 const LOADED_REF_DATA_URL_MAX_BYTES = 512 * 1024;
-const SAFE_LOAD_CONVERSATION_LIMIT = 6;
 const SAFE_LOAD_ACTIVE_MESSAGE_LIMIT = 24;
 const SAFE_LOAD_TEXT_LIMIT = 4000;
 const SAFE_LOAD_SUSPEND_AUTOSAVE_MS = 5000;
@@ -188,13 +197,11 @@ const collectConversationImageUrls = (
   );
 
   for (const conversation of orderedConversations) {
-    for (const message of conversation.messages || []) {
-      for (const url of message.agentData?.imageUrls || []) {
-        const normalized = String(url || "").trim();
-        if (!normalized || seen.has(normalized)) continue;
-        seen.add(normalized);
-        urls.push(normalized);
-      }
+    for (const url of getGeneratedConversationImageUrls(conversation)) {
+      const normalized = String(url || "").trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      urls.push(normalized);
     }
   }
 
@@ -463,32 +470,6 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
         })
         .filter(Boolean) as NonNullable<ChatMessage["inlineParts"]>
     : undefined;
-  const generatedFiles = getGeneratedConversationFilesFromAgentData(
-    message.agentData,
-    message.timestamp,
-  );
-  const imageUrls = generatedFiles
-    .filter((file) => file.type === "image")
-    .map((file) => getRenderableImageAssetUrl(file.url))
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    .slice(0, 12);
-  const videoUrls = generatedFiles
-    .filter((file) => file.type === "video")
-    .map((file) => file.url)
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    .slice(0, 8);
-  const assets = generatedFiles
-    .map((file, index) => ({
-      id: `loaded-asset-${message.id}-${index}`,
-      type: file.type,
-      url: file.url,
-      metadata: {
-        model: file.model,
-        agentId: "coco",
-      },
-    }))
-    .slice(0, 16);
-
   return {
     ...message,
     text: trimLoadText(message.text, SAFE_LOAD_TEXT_LIMIT),
@@ -499,6 +480,13 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
     feedbackUpdatedAt:
       typeof message.feedbackUpdatedAt === "number"
         ? message.feedbackUpdatedAt
+        : undefined,
+    quote:
+      message.quote && typeof message.quote === "object"
+        ? {
+            text: trimLoadText(message.quote.text, SAFE_LOAD_TEXT_LIMIT),
+            messageId: trimLoadText(message.quote.messageId, 120),
+          }
         : undefined,
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
     attachmentMetadata:
@@ -511,9 +499,6 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
           model: message.agentData.model,
           title: trimLoadText(message.agentData.title, 120) || undefined,
           description: trimLoadText(message.agentData.description, 240) || undefined,
-          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-          videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
-          assets: assets.length > 0 ? assets : undefined,
           proposals: Array.isArray(message.agentData.proposals)
             ? message.agentData.proposals.slice(0, 8)
             : undefined,
@@ -580,6 +565,14 @@ const sanitizeLoadedMessage = (message: ChatMessage): ChatMessage => {
                         .filter((item): item is string => typeof item === "string")
                         .slice(-24)
                         .map((item) => trimLoadText(item, 240))
+                    : undefined,
+                  thoughtTrace: Array.isArray(
+                    (message.agentData.executionTrace as any).thoughtTrace,
+                  )
+                    ? (message.agentData.executionTrace as any).thoughtTrace
+                        .filter((item: unknown): item is string => typeof item === "string")
+                        .slice(-24)
+                        .map((item: string) => trimLoadText(item, 240))
                     : undefined,
                   errorMessage: trimLoadText(
                     message.agentData.executionTrace.errorMessage,
@@ -714,23 +707,7 @@ const sanitizeLoadedConversationDraft = (
     draft.creationMode === "agent"
       ? draft.creationMode
       : undefined;
-  const quickSkill =
-    draft.quickSkill &&
-    typeof draft.quickSkill === "object" &&
-    trimLoadText(draft.quickSkill.id, 120) &&
-    trimLoadText(draft.quickSkill.name, 120) &&
-    trimLoadText(draft.quickSkill.iconName, 120)
-      ? {
-          id: trimLoadText(draft.quickSkill.id, 120),
-          pluginId: trimLoadText(draft.quickSkill.pluginId, 120) || undefined,
-          name: trimLoadText(draft.quickSkill.name, 120),
-          iconName: trimLoadText(draft.quickSkill.iconName, 120),
-          config:
-            draft.quickSkill.config && typeof draft.quickSkill.config === "object"
-              ? draft.quickSkill.config
-              : undefined,
-        }
-      : undefined;
+  const quickSkill = sanitizeQuickSkillForPersistence(draft.quickSkill);
 
   if (!inputBlocks && !creationMode && !quickSkill) {
     return undefined;
@@ -971,28 +948,65 @@ const buildLoadedConversations = (
       : fallbackArchivedConversations;
   const activeConversationId = selectableConversations[0]?.id || null;
 
+  const sanitizeLoadedAssistantThread = (
+    conversation: ConversationSession,
+    visibleMessages: ChatMessage[],
+  ) => {
+    // assistantThread is the authoritative assistant-ui source.
+    // Legacy conversation.messages is display-only fallback data.
+    const thread = conversation.assistantThread;
+
+    if (!safeMode) {
+      return thread;
+    }
+
+    const fallbackHeadId =
+      String(thread?.headId || "").trim() ||
+      String(visibleMessages.at(-1)?.id || "").trim();
+
+    return fallbackHeadId
+      ? sliceConversationAssistantThreadToHead(
+          thread,
+          fallbackHeadId,
+        )
+      : undefined;
+  };
+
   if (!safeMode) {
     return {
-      conversations: trimmedConversations.map((conversation) => ({
-        ...conversation,
-        draft: sanitizeLoadedConversationDraft(conversation.draft),
-        messages: (conversation.messages || []).map(
+      conversations: trimmedConversations.map((conversation) => {
+        const visibleMessages = getConversationVisibleMessages(conversation).map(
           clearLoadedMessageGeneratingState,
-        ),
-      })),
+        );
+        return {
+          ...conversation,
+          draft: sanitizeLoadedConversationDraft(conversation.draft),
+          assistantThread: sanitizeLoadedAssistantThread(
+            conversation,
+            visibleMessages,
+          ),
+          messages: visibleMessages,
+        };
+      }),
       activeConversationId,
     };
   }
 
-  const safeConversations = selectableConversations
-    .slice(0, SAFE_LOAD_CONVERSATION_LIMIT)
-    .map((conversation) => ({
-      ...conversation,
-      draft: sanitizeLoadedConversationDraft(conversation.draft),
-      messages: (conversation.messages || [])
+  const safeConversations = trimmedConversations
+    .map((conversation) => {
+      const visibleMessages = getConversationVisibleMessages(conversation)
         .slice(-SAFE_LOAD_ACTIVE_MESSAGE_LIMIT)
-        .map(sanitizeLoadedMessage),
-    }));
+        .map(sanitizeLoadedMessage);
+      return {
+        ...conversation,
+        draft: sanitizeLoadedConversationDraft(conversation.draft),
+        assistantThread: sanitizeLoadedAssistantThread(
+          conversation,
+          visibleMessages,
+        ),
+        messages: visibleMessages,
+      };
+    });
 
   return {
     conversations: safeConversations,
@@ -1184,7 +1198,6 @@ export const useWorkspaceProjectLoader = ({
   isLoadingRecordRef,
   suspendAutoSaveUntilRef,
   initialPromptProcessedRef,
-  chatSessionRef,
   createConversationId,
   setElementsSynced,
   setMarkersSynced,
@@ -1195,6 +1208,7 @@ export const useWorkspaceProjectLoader = ({
   setSelectedElementId,
   setSelectedElementIds,
   setActiveConversationId,
+  setProjectHydrated,
   setZoom,
   setPan,
   setInputBlocks,
@@ -1202,7 +1216,7 @@ export const useWorkspaceProjectLoader = ({
   setWebEnabled,
   setImageModelEnabled,
   setCreationMode,
-  handleSend,
+  setAssistantBootstrapRequest,
   setElements,
 }: UseWorkspaceProjectLoaderArgs) => {
   useEffect(() => {
@@ -1211,13 +1225,17 @@ export const useWorkspaceProjectLoader = ({
     if (id) {
       const loadProject = async () => {
         isLoadingRecordRef.current = true;
+        setProjectHydrated?.(false);
         suspendAutoSaveUntilRef.current =
           Date.now() + SAFE_LOAD_SUSPEND_AUTOSAVE_MS;
         console.log("[Workspace] Loading project:", id);
 
         setElementsSynced([]);
         setMarkersSynced([]);
-        setConversations([]);
+        // Do not clear conversations before the project payload is restored.
+        // The assistant-ui thread list and autosave pipeline are both async; a
+        // transient empty list can otherwise become the snapshot that overwrites
+        // historical topics during refresh or project switching.
         setProjectTitle("未命名项目");
         setHistory([{ elements: [], markers: [] }]);
         setHistoryStep(0);
@@ -1254,7 +1272,11 @@ export const useWorkspaceProjectLoader = ({
           } else {
             setWebEnabled(false);
           }
-          const project = await getProject(id);
+          const loadedProject = await getProject(id);
+          rememberLoadedProjectConversationsForPersistence(loadedProject);
+          const project =
+            mergeLoadedProjectConversationsForHydration(loadedProject) ||
+            loadedProject;
           if (cancelled) {
             return;
           }
@@ -1302,9 +1324,6 @@ export const useWorkspaceProjectLoader = ({
               );
               if (activeConversation) {
                 setActiveConversationId(activeConversation.id);
-                useAgentStore
-                  .getState()
-                  .actions.setMessages(activeConversation.messages || []);
                 setInputBlocks(
                   activeConversation.draft?.inputBlocks?.length
                     ? activeConversation.draft.inputBlocks
@@ -1359,6 +1378,7 @@ export const useWorkspaceProjectLoader = ({
               return;
             }
             isLoadingRecordRef.current = false;
+            setProjectHydrated?.(true);
             suspendAutoSaveUntilRef.current =
               Date.now() + SAFE_LOAD_SUSPEND_AUTOSAVE_MS;
             console.log("[Workspace] Load complete, persistence enabled");
@@ -1428,12 +1448,11 @@ export const useWorkspaceProjectLoader = ({
           setActiveQuickSkillPreference(locationState.initialSkillData);
         }
 
-        void handleSend(
-          locationState.initialPrompt,
-          locationState.initialAttachments,
-          locationState.initialWebEnabled,
-          locationState.initialSkillData,
-        );
+        setAssistantBootstrapRequest?.({
+          id: Date.now(),
+          prompt: locationState.initialPrompt,
+          attachments: locationState.initialAttachments,
+        });
       }
     }
 
@@ -1441,8 +1460,9 @@ export const useWorkspaceProjectLoader = ({
       const type =
         locationState.backgroundType === "video" ? "video" : "image";
       const url = locationState.backgroundUrl;
-      const containerWidth = window.innerWidth - 400;
-      const containerHeight = window.innerHeight;
+      const viewport = resolveWorkspaceCanvasViewportSize();
+      const containerWidth = viewport?.width ?? window.innerWidth;
+      const containerHeight = viewport?.height ?? window.innerHeight;
       const newElement: CanvasElement = {
         id: Date.now().toString(),
         type,
@@ -1459,16 +1479,6 @@ export const useWorkspaceProjectLoader = ({
         setHistory([{ elements: next, markers: [] }]);
         return next;
       });
-    }
-
-    if (!chatSessionRef.current) {
-      const selectedModel = getBestModelSelection("text");
-      chatSessionRef.current = createChatSession(
-        selectedModel.modelId,
-        [],
-        undefined,
-        selectedModel.providerId,
-      );
     }
 
     return () => {

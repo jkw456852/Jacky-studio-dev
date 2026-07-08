@@ -28,8 +28,26 @@ const FALLBACK_PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
 };
 
+const safeStorageGetItem = (key: string): string | null => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeProviderId = (providerId?: string | null): string | null => {
+  const normalized = String(providerId || '').trim();
+  if (!normalized) return null;
+  if (normalized.toLowerCase() === 'default' || normalized.toLowerCase() === 'auto') {
+    return null;
+  }
+  return normalized;
+};
+
 const getStoredProviders = (): any[] => {
-  const providersRaw = localStorage.getItem('api_providers');
+  const providersRaw = safeStorageGetItem('api_providers');
   if (!providersRaw) return [];
   try {
     const providers = JSON.parse(providersRaw);
@@ -41,7 +59,10 @@ const getStoredProviders = (): any[] => {
 };
 
 export const getProviderConfigById = (providerId?: string | null): ProviderConfig => {
-  const resolvedId = String(providerId || localStorage.getItem('api_provider') || 'yunwu').trim() || 'yunwu';
+  const resolvedId =
+    normalizeProviderId(providerId) ||
+    normalizeProviderId(safeStorageGetItem('api_provider')) ||
+    'yunwu';
   const storedProviders = getStoredProviders();
   const found = storedProviders.find((provider: any) => provider?.id === resolvedId);
   if (found) {
@@ -54,9 +75,9 @@ export const getProviderConfigById = (providerId?: string | null): ProviderConfi
       ...fallback,
       apiKey:
         fallback.id === 'yunwu'
-          ? localStorage.getItem('yunwu_api_key') || ''
+          ? safeStorageGetItem('yunwu_api_key') || ''
           : fallback.id === 'gemini'
-            ? localStorage.getItem('gemini_api_key') || ''
+            ? safeStorageGetItem('gemini_api_key') || ''
             : fallback.apiKey || '',
     };
   }
@@ -66,6 +87,28 @@ export const getProviderConfigById = (providerId?: string | null): ProviderConfi
 
 export const getProviderConfig = (): ProviderConfig => {
   return getProviderConfigById();
+};
+
+export const hasUsableApiKeyForProviderId = (providerId?: string | null): boolean => {
+  const normalizedProviderId = normalizeProviderId(providerId);
+  if (!normalizedProviderId) return false;
+  const keys = getApiKey(true, normalizedProviderId);
+  return Array.isArray(keys)
+    ? keys.length > 0
+    : Boolean(String(keys || '').trim());
+};
+
+export const resolveFirstUsableProviderId = (
+  providerIds: Array<string | null | undefined>,
+): string | null => {
+  for (const candidate of providerIds) {
+    const normalized = normalizeProviderId(candidate);
+    if (!normalized) continue;
+    if (hasUsableApiKeyForProviderId(normalized)) {
+      return normalized;
+    }
+  }
+  return null;
 };
 
 export const getApiKey = (all: boolean = false, providerId?: string | null): string | string[] => {
@@ -89,7 +132,7 @@ export const getApiKey = (all: boolean = false, providerId?: string | null): str
       if (all) return keys;
 
       const storageKey = `api_poll_index_${config.id}`;
-      let currentIndex = parseInt(localStorage.getItem(storageKey) || '0', 10);
+      let currentIndex = parseInt(safeStorageGetItem(storageKey) || '0', 10);
       if (currentIndex >= keys.length) currentIndex = 0;
       const selectedKey = keys[currentIndex];
       safeLocalStorageSetItem(storageKey, ((currentIndex + 1) % keys.length).toString());

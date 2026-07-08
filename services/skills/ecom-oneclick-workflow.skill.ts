@@ -6,8 +6,8 @@ import {
   getMappedModelConfigs,
   getMappedPrimaryModelConfig,
 } from "../provider-settings";
-import { persistEcommerceProductAnalysisDebugSnapshot } from "../ecommerce-product-analysis-debug";
-import { persistEcommerceSupplementDebugSnapshot } from "../ecommerce-supplement-debug";
+import { persistEcommerceProductAnalysisDebugSnapshot } from "../ecommerce-product-analysis-debug.ts";
+import { persistEcommerceSupplementDebugSnapshot } from "../ecommerce-supplement-debug.ts";
 import { useImageHostStore } from "../../stores/imageHost.store";
 import type {
   EcommerceAnalysisReview,
@@ -25,13 +25,13 @@ import type {
   EcommerceStageReview,
   EcommerceSupplementField,
   EcommerceWorkflowMode,
-} from "../../types/workflow.types";
-import { splitEcommerceImageAnalysisTextFieldList } from "../../utils/ecommerce-image-analysis";
+} from "../../types/workflow.types.ts";
+import { splitEcommerceImageAnalysisTextFieldList } from "../../utils/ecommerce-image-analysis.ts";
 import {
   normalizePlannedEcommercePlanRatio,
   resolveEcommercePlanRatio,
-} from "../../utils/ecommerce-plan-ratio";
-import { uploadImage } from "../../utils/uploader";
+} from "../../utils/ecommerce-plan-ratio.ts";
+import { uploadImage } from "../../utils/uploader.ts";
 
 const platformModeSchema = z.enum([
   "general",
@@ -96,7 +96,7 @@ const generatePlansSchema = z.object({
     z.object({
       id: z.string(),
       title: z.string(),
-      imageCount: z.number().int().min(1).max(12),
+      imageCount: z.number().int().min(1),
     }),
   ),
   imageAnalyses: z.array(
@@ -151,7 +151,7 @@ const recommendedTypeSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string(),
-  imageCount: z.number().int().min(1).max(12),
+  imageCount: z.number().int().min(1),
   priority: z.enum(["high", "medium", "low"]).default("medium"),
   platformTags: z.array(z.string()).default([]),
   selected: z.boolean().default(true),
@@ -658,7 +658,7 @@ const autofillPlansSchema = z.object({
     z.object({
       id: z.string(),
       title: z.string(),
-      imageCount: z.number().int().min(1).max(12),
+      imageCount: z.number().int().min(1),
     }),
   ),
   imageAnalyses: z.array(
@@ -4432,7 +4432,7 @@ const parseRecommendedTypeResult = (
     description,
     imageCount:
       Number.isFinite(imageCount) && imageCount > 0
-        ? Math.min(Math.max(imageCount, 1), 12)
+        ? Math.max(imageCount, 1)
         : 3,
     priority: parsePriorityValue(record.priority) || "medium",
     platformTags: toStringList(

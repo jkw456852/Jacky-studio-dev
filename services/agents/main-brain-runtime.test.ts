@@ -68,6 +68,33 @@ test('buildRuntimeMessage includes snapshot, observations, and latest turn hints
   assert.match(message, /\[Decision Instruction\]/);
 });
 
+test('buildRuntimeMessage summarizes inline image assets instead of embedding base64 payloads', () => {
+  const dataUrl = `data:image/png;base64,${'A'.repeat(240000)}`;
+  const turns = [
+    {
+      turn: 1,
+      inputMessage: '生成一张图',
+      plan: { message: '先生成图片' },
+      decision: {
+        turn: 1,
+        action: 'execute-skills',
+        summary: 'Planner returned a decision. Next action: execute 1 skill call(s).',
+        skillCallCount: 1,
+        messagePreview: '先生成图片',
+      },
+      skillCalls: [{ skillName: 'generateImage', params: { prompt: 'x' } }],
+      skillResults: [{ success: true, result: dataUrl }],
+      assets: [{ id: 'asset-inline', type: 'image', url: dataUrl, metadata: {} }],
+    },
+  ] as any;
+
+  const snapshot = buildRuntimeSnapshot(turns, baseObservations, 1);
+  const message = buildRuntimeMessage('生成一张4K竖图', turns, baseObservations, snapshot);
+
+  assert.doesNotMatch(message, /data:image\/png;base64,/);
+  assert.match(message, /latestAssetUrls=\[inline image image\/png, base64 240000 chars\]/);
+});
+
 test('buildRuntimeMessage surfaces workspaceSearch evidence for replanning', () => {
   const searchTurns = [
     {
@@ -120,6 +147,31 @@ test('collectExecutableSkillCalls returns only populated skill call arrays', () 
   assert.deepEqual(collectExecutableSkillCalls({ skillCalls: [{ skillName: 'generateImage' }] }), [
     { skillName: 'generateImage' },
   ]);
+});
+
+test('collectExecutableSkillCalls suppresses frontstage skill meta questions', () => {
+  const metadata = {
+    allowAutonomousRouting: true,
+    skillData: {
+      id: 'custom-skill-ugc',
+      config: {
+        followUpMode: 'direct-run',
+        preferredSkills: ['generateImage'],
+        isCustomSkill: true,
+      },
+    },
+  } as any;
+
+  assert.deepEqual(
+    collectExecutableSkillCalls(
+      { skillCalls: [{ skillName: 'generateImage', params: { prompt: 'x' } }] },
+      {
+        originalMessage: '\u4f60\u80fd\u770b\u5230\u6211\u95ee\u7684\u662f\u54ea\u4e2askill\u5417',
+        metadata,
+      },
+    ),
+    [],
+  );
 });
 
 test('buildDecision infers execution intent from plan skill calls', () => {

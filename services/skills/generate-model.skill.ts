@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { imageGenSkill } from './image-gen.skill';
-import type { ModelGenOptions } from '../../types/workflow.types';
+import { imageGenSkill } from './image-gen.skill.ts';
+import type { ModelGenOptions } from '../../types/workflow.types.ts';
 import type { ImageModel } from '../../types';
 import { loadProviderSettings } from '../provider-settings';
-import { buildModelConstraintsText } from '../../utils/clothing-prompt';
-import { ensureWhiteBackground } from '../image-postprocess';
-import { composeFourViews } from '../four-views';
+import { buildModelConstraintsText } from '../../utils/clothing-prompt.ts';
+import { ensureWhiteBackground } from '../image-postprocess.ts';
+import { composeFourViews } from '../four-views.ts';
 
 const schema = z.object({
   options: z.object({
@@ -17,13 +17,19 @@ const schema = z.object({
     hairstyle: z.string().optional(),
     makeup: z.string().optional(),
     extra: z.string().optional(),
-    count: z.number().int().min(1).max(4).default(4),
+    count: z.number().int().min(1).default(4),
   }),
 });
 
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
+};
+
 export async function generateModelSkill(params: { options: ModelGenOptions; preferredImageModel?: ImageModel }): Promise<{ images: Array<{ url: string }>; anchorSheetUrl: string }> {
   const parsed = schema.parse(params);
-  const count = Math.max(1, Math.min(4, parsed.options.count || 4));
+  const count = normalizePositiveInteger(parsed.options.count, 4);
   const providerSettings = loadProviderSettings();
   const activeProvider = providerSettings.providers.find(p => p.id === providerSettings.activeProviderId);
   const hasKey = !!activeProvider?.apiKey?.trim();
@@ -46,7 +52,13 @@ export async function generateModelSkill(params: { options: ModelGenOptions; pre
   const outputs: Array<{ url: string }> = [];
 
   for (let i = 0; i < count; i += 1) {
-    const prompt = `Generate a studio model identity anchor image, ${views[i]}. gender: ${gender}; age: ${ageRange}; skin tone: ${skinTone}; pose: ${pose}; expression: ${expression}; hairstyle: ${hairstyle}; makeup: ${makeup}; ${extra}.\nSTRICT OUTFIT: plain white top and plain white long pants only, no logo, no prints, no jewelry, no bag, no hat, no extra accessories.\nSTRICT BACKGROUND: pure white background #FFFFFF, no props, no scene, no gradient.\nPOSE: full body in frame, natural standing, arms down, consistent identity.\n${modelConstraints}`;
+    const view = views[i % views.length];
+    const cycle = Math.floor(i / views.length) + 1;
+    const variationText =
+      cycle > 1
+        ? ` Alternate set ${cycle}: keep the same identity and constraints, but vary micro-pose and framing subtly.`
+        : "";
+    const prompt = `Generate a studio model identity anchor image, ${view}.${variationText} gender: ${gender}; age: ${ageRange}; skin tone: ${skinTone}; pose: ${pose}; expression: ${expression}; hairstyle: ${hairstyle}; makeup: ${makeup}; ${extra}.\nSTRICT OUTFIT: plain white top and plain white long pants only, no logo, no prints, no jewelry, no bag, no hat, no extra accessories.\nSTRICT BACKGROUND: pure white background #FFFFFF, no props, no scene, no gradient.\nPOSE: full body in frame, natural standing, arms down, consistent identity.\n${modelConstraints}`;
     const rawUrl = await imageGenSkill({
       prompt,
       model: params.preferredImageModel || 'NanoBanana2',

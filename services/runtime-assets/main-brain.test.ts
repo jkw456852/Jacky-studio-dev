@@ -190,6 +190,9 @@ test("getEffectiveAgentPrompt injects structured main-brain summary into agent p
     assert.equal(prompt.includes("# Main Brain Soul Summary"), true);
     assert.equal(prompt.includes("长期产品工程助手"), true);
     assert.equal(prompt.includes("Goals: 优先做真闭环"), true);
+    assert.equal(prompt.includes("# 单智能体执行约定"), true);
+    assert.equal(prompt.includes("当前产品默认采用单智能体执行模式"), true);
+    assert.equal(prompt.includes("# 专家智能体名册"), false);
   });
 });
 

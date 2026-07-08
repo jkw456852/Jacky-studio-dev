@@ -1,5 +1,5 @@
-import { normalizeResearchApiError, normalizeUnknownResearchError } from './research-errors';
-import { logResearchTelemetry } from './research-telemetry';
+import { normalizeResearchApiError, normalizeUnknownResearchError } from './research-errors.ts';
+import { logResearchTelemetry } from './research-telemetry.ts';
 import {
   getActiveSearchProvider,
   loadSearchSettings,

@@ -1,8 +1,8 @@
 import { Type } from "@google/genai";
 import { generateJsonResponse } from "../gemini";
-import { normalizeReferenceToModelInputDataUrl } from "../image-reference-resolver";
+import { normalizeReferenceToModelInputDataUrl } from "../image-reference-resolver.ts";
 import { getVisualOrchestratorInputPolicy } from "../provider-settings";
-import { getMainBrainPreferenceLines } from "../runtime-assets/main-brain";
+import { getMainBrainPreferenceLines } from "../runtime-assets/main-brain.ts";
 import {
   buildPromptListSection,
   buildVisualPlaybookSections,
@@ -18,7 +18,7 @@ import {
   buildBuiltInStyleLibrarySummary,
   buildUserStyleLibrarySummary,
   normalizeWorkspaceStyleLibrary,
-} from "./style-library";
+} from "./style-library.ts";
 import type {
   PlanVisualTaskInput,
   PlannerConsistencyContext,

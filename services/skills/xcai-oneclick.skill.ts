@@ -1,5 +1,5 @@
 ﻿import { getClient } from '../gemini';
-import { AgentRegistry, JkaiPackName } from '../agents/registry';
+import { AgentRegistry, JkaiPackName } from '../agents/registry.ts';
 
 type OneclickOutputsConfig = {
   startup_pack?: boolean;

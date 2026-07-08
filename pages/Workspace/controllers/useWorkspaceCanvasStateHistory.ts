@@ -5,7 +5,7 @@ import {
   capHistoryLength,
   compactHistoryState,
   type HistoryState,
-} from './workspacePersistence';
+} from './workspacePersistence.ts';
 
 type UseWorkspaceCanvasStateHistoryOptions = {
   history: HistoryState[];

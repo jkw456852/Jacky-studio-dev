@@ -1,4 +1,4 @@
-import type { EcommerceImageAnalysis } from "../types/workflow.types";
+import type { EcommerceImageAnalysis } from "../types/workflow.types.ts";
 
 const DESCRIPTION_LABEL_PATTERN =
   /^(?:产品详描|产品描述|图片描述|图像描述|描述|description)\s*[:：-]\s*/i;

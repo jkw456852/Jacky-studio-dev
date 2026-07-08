@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { imageGenSkill } from './image-gen.skill';
-import { ensureWhiteBackground } from '../image-postprocess';
-import { analyzeListingProductSkill, type ListingProductAnalysis } from './analyze-listing-product.skill';
+import { imageGenSkill } from './image-gen.skill.ts';
+import { ensureWhiteBackground } from '../image-postprocess.ts';
+import { analyzeListingProductSkill, type ListingProductAnalysis } from './analyze-listing-product.skill.ts';
 
 const schema = z.object({
   productImages: z.array(z.string()).min(1).max(6),
@@ -9,7 +9,7 @@ const schema = z.object({
   analysis: z.any().optional(),
   // Optional shot plan override (e.g. resume from remaining shots)
   shots: z.array(z.any()).optional(),
-  count: z.number().int().min(1).max(8).optional(),
+  count: z.number().int().min(1).optional(),
   aspectRatio: z.string().optional(),
   imageSize: z.enum(['1K', '2K', '4K']).optional(),
   model: z.string().optional(),
@@ -68,6 +68,17 @@ const normalizeAnalysis = (input: any): ListingProductAnalysis => {
     recommendedShotPlan: Array.isArray(a.recommendedShotPlan) ? (a.recommendedShotPlan as any[]) : [],
     assumptions: Array.isArray(a.assumptions) ? a.assumptions.map((x) => String(x)).filter(Boolean).slice(0, 12) : [],
   };
+};
+
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
+};
+
+const expandShotsToCount = (shots: any[], count: number): any[] => {
+  if (!Array.isArray(shots) || shots.length === 0) return [];
+  return Array.from({ length: count }, (_, index) => shots[index % shots.length]);
 };
 
 const buildPrompt = (analysis: ListingProductAnalysis, shot: any, brief: string) => {
@@ -158,7 +169,7 @@ export async function amazonListingSkill(raw: unknown): Promise<AmazonListingRes
   const params = schema.parse(raw);
   const productImages = params.productImages.slice(0, 6);
   const brief = String(params.brief || '').trim();
-  const count = Math.max(1, Math.min(8, Number(params.count ?? 3)));
+  const count = normalizePositiveInteger(params.count, 3);
   const aspectRatio = String(params.aspectRatio || '3:4');
   const imageSize = (params.imageSize || '2K') as '1K' | '2K' | '4K';
   const model = String(params.model || 'nanobanana2');
@@ -196,7 +207,10 @@ export async function amazonListingSkill(raw: unknown): Promise<AmazonListingRes
       ];
 
   const overrideShots = Array.isArray((params as any).shots) ? (params as any).shots : [];
-  const shotPool = (overrideShots.length > 0 ? overrideShots : (plan.length > 0 ? plan : fallbackPlan)).slice(0, count);
+  const shotPool = expandShotsToCount(
+    overrideShots.length > 0 ? overrideShots : (plan.length > 0 ? plan : fallbackPlan),
+    count,
+  );
   const images: Array<{ url: string; title: string; shotId?: string }> = [];
   const producedShotIds = new Set<string>();
 

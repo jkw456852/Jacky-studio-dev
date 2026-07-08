@@ -1,18 +1,26 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { ChatMessage, ConversationSession, InputBlock } from "../../../types";
 
 import {
+  sanitizeQuickSkillForPersistence,
   trimConversationMessages,
   trimConversationsForPersist,
-} from "./workspacePersistence";
+} from "./workspacePersistence.ts";
+import { resolveLegacyConversationMessagesForPersistence } from "./conversationMessagePersistence.ts";
 import {
   DEFAULT_CONVERSATION_TITLE,
   deriveConversationTitle,
   deriveDraftPreview,
-} from "../conversationMeta";
+} from "../conversationMeta.ts";
 
 type UseWorkspaceConversationPersistenceArgs = {
-  messages: ChatMessage[];
+  legacyMessages?: ChatMessage[];
   workspaceId: string | undefined;
   activeConversationId: string;
   projectTitle: string;
@@ -21,11 +29,88 @@ type UseWorkspaceConversationPersistenceArgs = {
   activeQuickSkill?: ChatMessage["skillData"];
   modelMode: "thinking" | "fast";
   webEnabled: boolean;
+  isLoadingRecordRef?: MutableRefObject<boolean>;
+  suspendAutoSaveUntilRef?: MutableRefObject<number>;
   setConversations: Dispatch<SetStateAction<ConversationSession[]>>;
 };
 
+const EMPTY_LEGACY_MESSAGES: ChatMessage[] = [];
+
+const normalizeInputBlocksForSignature = (blocks: InputBlock[] | undefined) =>
+  Array.isArray(blocks)
+    ? blocks.map((block) => {
+        if (block.type === "text") {
+          return {
+            type: "text" as const,
+            text: String(block.text || ""),
+          };
+        }
+
+        const file = block.file;
+        return {
+          type: "file" as const,
+          file: file
+            ? {
+                name: String(file.name || ""),
+                type: String(file.type || ""),
+                lastModified: Number(file.lastModified || 0),
+                markerId: String(file.markerId || ""),
+                markerName: String(file.markerName || ""),
+                attachmentId: String(file._attachmentId || ""),
+                canvasElId: String(file._canvasElId || ""),
+                chipPreviewUrl: String(file._chipPreviewUrl || ""),
+                autoInsert: file._canvasAutoInsert === true,
+              }
+            : null,
+        };
+      })
+    : [];
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const sortForStableSignature = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(sortForStableSignature);
+  }
+
+  if (isPlainObject(value)) {
+    return Object.keys(value)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = sortForStableSignature(value[key]);
+        return acc;
+      }, {});
+  }
+
+  return value;
+};
+
+const buildConversationPersistenceSignature = (args: {
+  title: string;
+  autoTitle?: boolean;
+  messages: ChatMessage[];
+  draft?: ConversationSession["draft"];
+}) =>
+  JSON.stringify(
+    sortForStableSignature({
+      title: String(args.title || ""),
+      autoTitle: args.autoTitle !== false,
+      messages: trimConversationMessages(args.messages || []),
+      draft: args.draft
+        ? {
+            creationMode: args.draft.creationMode,
+            modelMode: args.draft.modelMode,
+            webEnabled: args.draft.webEnabled === true,
+            quickSkill: sanitizeQuickSkillForPersistence(args.draft.quickSkill),
+            inputBlocks: normalizeInputBlocksForSignature(args.draft.inputBlocks),
+          }
+        : null,
+    }),
+  );
+
 export const useWorkspaceConversationPersistence = ({
-  messages,
+  legacyMessages: providedLegacyMessages,
   workspaceId,
   activeConversationId,
   projectTitle,
@@ -34,8 +119,12 @@ export const useWorkspaceConversationPersistence = ({
   activeQuickSkill,
   modelMode,
   webEnabled,
+  isLoadingRecordRef,
+  suspendAutoSaveUntilRef,
   setConversations,
 }: UseWorkspaceConversationPersistenceArgs) => {
+  const legacyMessages = providedLegacyMessages ?? EMPTY_LEGACY_MESSAGES;
+
   const derivePersistedConversationTitle = (
     nextMessages: ChatMessage[],
     nextProjectTitle: string,
@@ -56,83 +145,167 @@ export const useWorkspaceConversationPersistence = ({
     return title === "未命名项目" ? DEFAULT_CONVERSATION_TITLE : title;
   };
 
+  const persistFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLegacyMessagesRef = useRef(legacyMessages);
+  const lastActiveConversationIdRef = useRef(activeConversationId);
+
+  useEffect(() => {
+    return () => {
+      if (persistFlushTimerRef.current) {
+        clearTimeout(persistFlushTimerRef.current);
+        persistFlushTimerRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!workspaceId) return;
+    if (isLoadingRecordRef?.current) return;
+    if (
+      suspendAutoSaveUntilRef?.current &&
+      Date.now() < suspendAutoSaveUntilRef.current
+    ) {
+      return;
+    }
 
-    setConversations((previous) => {
-      const conversationId = String(activeConversationId || "").trim();
-      if (!conversationId) return previous;
+    const legacyMessagesChanged = lastLegacyMessagesRef.current !== legacyMessages;
+    const conversationChanged =
+      lastActiveConversationIdRef.current !== activeConversationId;
 
-      const updated = [...previous];
-      const existingIndex = updated.findIndex(
-        (conversation) => conversation.id === conversationId,
-      );
-      const trimmedMessages = trimConversationMessages(messages);
-      const draftInputBlocks = Array.isArray(currentInputBlocks)
-        ? currentInputBlocks.map((block) => ({ ...block }))
-        : [];
-      const hasDraftContent =
-        draftInputBlocks.length > 0 &&
-        draftInputBlocks.some((block) =>
-          block.type === "text"
-            ? Boolean(String(block.text || "").trim())
-            : Boolean(block.file),
+    const runPersist = () => {
+      persistFlushTimerRef.current = null;
+      lastLegacyMessagesRef.current = legacyMessages;
+      lastActiveConversationIdRef.current = activeConversationId;
+
+      const sanitizedActiveQuickSkill =
+        sanitizeQuickSkillForPersistence(activeQuickSkill);
+
+      setConversations((previous) => {
+        const conversationId = String(activeConversationId || "").trim();
+        if (!conversationId) return previous;
+        if (previous.length === 0 && legacyMessages.length === 0) {
+          return previous;
+        }
+
+        const updated = [...previous];
+        const existingIndex = updated.findIndex(
+          (conversation) => conversation.id === conversationId,
         );
-      const hasNonDefaultPreferences =
-        modelMode !== "fast" || webEnabled || Boolean(activeQuickSkill);
-      const hasDraft = hasDraftContent || hasNonDefaultPreferences;
-      const nextDraft = hasDraft
-        ? {
-            inputBlocks: draftInputBlocks,
-            creationMode,
-            quickSkill: activeQuickSkill,
-            modelMode,
-            webEnabled,
-          }
-        : undefined;
-
-      if (existingIndex === -1) {
-        updated.push({
-          id: conversationId,
-          title: derivePersistedConversationTitle(
-            messages,
-            projectTitle,
-            nextDraft,
-          ),
-          messages: trimmedMessages,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          autoTitle: true,
-          draft: nextDraft,
+        const draftInputBlocks = Array.isArray(currentInputBlocks)
+          ? currentInputBlocks.map((block) => ({ ...block }))
+          : [];
+        const hasDraftContent =
+          draftInputBlocks.length > 0 &&
+          draftInputBlocks.some((block) =>
+            block.type === "text"
+              ? Boolean(String(block.text || "").trim())
+              : Boolean(block.file),
+          );
+        const hasNonDefaultPreferences =
+          modelMode !== "fast" || webEnabled || Boolean(sanitizedActiveQuickSkill);
+        const hasDraft = hasDraftContent || hasNonDefaultPreferences;
+        const nextDraft = hasDraft
+          ? {
+              inputBlocks: draftInputBlocks,
+              creationMode,
+              quickSkill: sanitizedActiveQuickSkill,
+              modelMode,
+              webEnabled,
+            }
+          : undefined;
+        const existingConversation =
+          existingIndex >= 0 ? updated[existingIndex] : undefined;
+        const nextStoredMessages = resolveLegacyConversationMessagesForPersistence({
+          existingConversation,
+          nextLegacyMessages: legacyMessages,
+          legacyMessagesChanged,
+          conversationChanged,
         });
-      } else {
-        const existingConversation = updated[existingIndex];
         const shouldRefreshTitle =
-          existingConversation.autoTitle !== false ||
-          !String(existingConversation.title || "").trim();
+          existingConversation?.assistantThread?.messages?.length
+            ? !String(existingConversation.title || "").trim()
+            : existingConversation?.autoTitle !== false ||
+              !String(existingConversation?.title || "").trim();
 
-        updated[existingIndex] = {
-          ...existingConversation,
-          ...(shouldRefreshTitle
-            ? {
-                title: derivePersistedConversationTitle(
-                  messages,
-                  projectTitle,
-                  nextDraft,
-                ),
-                autoTitle: true,
-              }
-            : {}),
-          messages: trimmedMessages,
-          draft: nextDraft,
-          updatedAt: Date.now(),
-        };
+        if (existingIndex === -1) {
+          updated.push({
+            id: conversationId,
+            title: derivePersistedConversationTitle(
+              nextStoredMessages,
+              projectTitle,
+              nextDraft,
+            ),
+            messages: nextStoredMessages,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            autoTitle: true,
+            draft: nextDraft,
+          });
+        } else {
+          const nextTitle = shouldRefreshTitle
+            ? derivePersistedConversationTitle(
+                nextStoredMessages,
+                projectTitle,
+                nextDraft,
+              )
+            : existingConversation.title;
+          const nextAutoTitle = shouldRefreshTitle
+            ? true
+            : existingConversation.autoTitle;
+          const existingSignature = buildConversationPersistenceSignature({
+            title: existingConversation.title,
+            autoTitle: existingConversation.autoTitle,
+            messages: existingConversation.messages || [],
+            draft: existingConversation.draft,
+          });
+          const nextSignature = buildConversationPersistenceSignature({
+            title: nextTitle,
+            autoTitle: nextAutoTitle,
+            messages: nextStoredMessages,
+            draft: nextDraft,
+          });
+
+          if (existingSignature === nextSignature) {
+            return previous;
+          }
+
+          updated[existingIndex] = {
+            ...existingConversation,
+            ...(shouldRefreshTitle
+              ? {
+                  title: nextTitle,
+                  autoTitle: true,
+                }
+              : {}),
+            messages: nextStoredMessages,
+            draft: nextDraft,
+            updatedAt: Date.now(),
+          };
+        }
+
+        return trimConversationsForPersist(updated);
+      });
+    };
+
+    if (legacyMessagesChanged || conversationChanged) {
+      if (persistFlushTimerRef.current) {
+        clearTimeout(persistFlushTimerRef.current);
+        persistFlushTimerRef.current = null;
       }
+      runPersist();
+      return;
+    }
 
-      return trimConversationsForPersist(updated);
-    });
+    if (persistFlushTimerRef.current) {
+      clearTimeout(persistFlushTimerRef.current);
+    }
+    persistFlushTimerRef.current = setTimeout(runPersist, 300);
+
+    return () => {
+      // keep pending timer; we want the latest snapshot to flush eventually
+    };
   }, [
-    messages,
+    legacyMessages,
     workspaceId,
     activeConversationId,
     projectTitle,
@@ -141,6 +314,8 @@ export const useWorkspaceConversationPersistence = ({
     activeQuickSkill,
     modelMode,
     webEnabled,
+    isLoadingRecordRef,
+    suspendAutoSaveUntilRef,
     setConversations,
   ]);
 };

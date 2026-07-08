@@ -82,7 +82,7 @@ When editing this repo, AI must follow these rules in order:
    - the orchestrator must pass the user's original text and fresh attachments forward before narrowing the workflow
    - workflow selection must remain a decision layer, not a hardcoded keyword gate
    - screenshot Q&A, research, planning, and execution must stay separable capabilities
-15. Main-brain capability wiring must follow the internal interface contract documented in `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md`.
+15. Sidebar intelligence and tool wiring must follow the assistant-ui / AI SDK boundary documented in `docs/architecture/WORKSPACE_REFACTOR_MAP.md` and `docs/architecture/PROJECT_MODULE_MAP.md`.
 
 If a generic best practice conflicts with the actual repo structure, prefer the repo structure unless there is a clear maintenance or correctness problem.
 
@@ -106,7 +106,7 @@ Before editing:
   - prefer mechanism over phrase-matching
   - write the mechanism so future examples of the same class work without adding another special case
 - If drift is detected, stop and realign to the plan before adding more code.
-- If editing unified-agent orchestration, re-open `docs/architecture/MAIN_BRAIN_INTERNAL_INTERFACE.md` before changing routing, attachment policy, or downstream execution metadata.
+- If editing sidebar intelligence, tool routing, attachment policy, or downstream execution metadata, re-open `docs/architecture/WORKSPACE_REFACTOR_MAP.md`, `docs/architecture/PROJECT_MODULE_MAP.md`, and the relevant local assistant-ui / AI SDK source before changing code.
 
 During editing:
 - Keep changes local to the requested task.
@@ -165,7 +165,7 @@ Examples from this repo:
 - `pages/Workspace/components/WorkspaceCanvasStage.tsx`
 - `pages/Workspace/controllers/useWorkspaceCanvasLayerProps.ts`
 - `stores/canvas.store.ts`
-- `hooks/useAgentOrchestrator.ts`
+- `pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx`
 
 ## 6. React Component Standards
 
@@ -319,7 +319,9 @@ For `Workspace.tsx`, prefer this sequence:
 3. Wire the extracted module into the live page.
 4. Remove dead inline code only after the new path is live.
 5. Run `tsc --noEmit`.
-6. Update `docs/architecture/WORKSPACE_REFACTOR_MAP.md`.
+6. Update `docs/architecture/WORKSPACE_REFACTOR_MAP.md` only with current
+   architecture facts. Do not add instructions based on removed
+   `AssistantSidebar*.tsx` or `useAssistantSidebar*.ts` paths.
 
 ### 12.3 Approved extraction targets
 
@@ -466,7 +468,8 @@ Default done criteria:
 
 For `Workspace.tsx` refactor phases, done also includes:
 - backup created before the phase
-- `docs/architecture/WORKSPACE_REFACTOR_MAP.md` updated after the phase
+- `docs/architecture/WORKSPACE_REFACTOR_MAP.md` updated after the phase, if the
+  current architecture map actually changed
 
 ## 18. Recommended Decision Heuristics
 

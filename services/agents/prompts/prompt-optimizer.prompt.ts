@@ -1,5 +1,5 @@
 import type { AgentInfo } from "../../../types/agent.types";
-import { getRegistryAgentInfo, getRegistryAgentPrompt } from "./registry";
+import { getRegistryAgentInfo, getRegistryAgentPrompt } from "./registry.ts";
 
 export const PROMPT_OPTIMIZER_SYSTEM_PROMPT =
   getRegistryAgentPrompt("prompt-optimizer");

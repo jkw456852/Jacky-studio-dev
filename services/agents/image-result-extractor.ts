@@ -32,8 +32,10 @@ export const extractImageUrlsFromResult = (result: unknown): string[] => {
 
   pushUniqueUrl(urls, seen, record.url);
   pushUniqueUrl(urls, seen, record.imageUrl);
+  pushUniqueUrl(urls, seen, record.anchorUrl);
   pushUniqueUrl(urls, seen, record.editedImage);
   pushUniqueUrl(urls, seen, record.resultImage);
+  pushUniqueUrl(urls, seen, record.anchorSheetUrl);
 
   if (Array.isArray(record.imageUrls)) {
     for (const item of record.imageUrls) {

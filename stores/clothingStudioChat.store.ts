@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ClothingStep, Requirements, ModelGenOptions, ClothingAnalysis } from '../types/workflow.types';
+import type { ClothingStep, Requirements, ModelGenOptions, ClothingAnalysis } from '../types/workflow.types.ts';
 
 export type WorkflowImageItem = {
   id: string;

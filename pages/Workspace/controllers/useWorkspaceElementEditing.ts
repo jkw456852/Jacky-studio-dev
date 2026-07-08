@@ -1,7 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { CanvasElement } from "../../../types";
-import type { DesignTaskMode } from "../../../types/common";
-import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
+import type { DesignTaskMode } from "../../../types/common.ts";
+import { smartEditSkill } from "../../../services/skills/smart-edit.skill.ts";
 
 type PersistEditDetails = {
   instruction: string;

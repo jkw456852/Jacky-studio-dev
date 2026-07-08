@@ -1,5 +1,5 @@
 import { extractTextFromImage } from '../gemini';
-import { TextExtractSkillParams } from '../../types/skill.types';
+import { TextExtractSkillParams } from '../../types/skill.types.ts';
  
 export async function textExtractSkill(params: TextExtractSkillParams): Promise<string | null> {
   try {

@@ -57,8 +57,8 @@
 ### 3. Agent System
 
 - `services/agents/`
-- `hooks/useAgentOrchestrator.ts`
-- `pages/Workspace/components/AssistantSidebar.tsx`
+- `pages/Workspace/components/WorkspaceSidebarLayer.tsx`
+- `pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx`
 
 这里负责侧边栏 Agent、路由、技能调用、结构化输出解析，以及逐步扩展中的 browser-agent 能力。
 
@@ -145,11 +145,11 @@ npm run test:optimizer
 3. `docs/standards/工程协作规范.md`
 4. `docs/product/UNIVERSAL_VISUAL_ORCHESTRATOR_AGENT_PLAN_20260427.md`
 5. `pages/Workspace.tsx`
-6. `pages/Workspace/controllers/useWorkspaceSend.ts`
-7. `pages/Workspace/controllers/useWorkspaceElementImageGeneration.ts`
-8. `services/vision-orchestrator/`
-9. `services/gemini.ts`
-10. `services/agents/`
+6. `pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx`
+7. `api/assistant-chat.ts`
+8. `pages/Workspace/controllers/useWorkspaceElementImageGeneration.ts`
+9. `services/vision-orchestrator/`
+10. `services/gemini.ts`
 
 ## Contributors
 

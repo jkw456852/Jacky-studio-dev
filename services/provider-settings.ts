@@ -1,7 +1,7 @@
 ﻿import { fetchAvailableModels } from './gemini.ts';
 import { safeLocalStorageSetItem } from '../utils/safe-storage.ts';
 import { getStudioUserAssetApi } from './runtime-assets/api.ts';
-import { resolveCanonicalImageModelId } from './image-generation/core/openai-image-spec';
+import { resolveCanonicalImageModelId } from './image-generation/core/openai-image-spec.ts';
 
 export type ModelCategory = 'script' | 'image' | 'video';
 export type ModelBrand =
@@ -817,6 +817,9 @@ export const refreshProviderModels = async (
 ): Promise<ModelInfo[]> => {
   const provider = providers.find((item) => item.id === providerId);
   if (!provider) return [];
+  if (!Array.isArray((provider as any).supports) || !(provider as any).supports.includes('modelList')) {
+    return [];
+  }
   const keys = provider.apiKey.split('\n').map((item) => item.trim()).filter(Boolean);
   if (keys.length === 0) return [];
   const models = await fetchAvailableModels(providerId, keys, provider.baseUrl);

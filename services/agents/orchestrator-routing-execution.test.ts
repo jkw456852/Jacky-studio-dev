@@ -151,20 +151,20 @@ test('buildUnifiedSidebarRoutingDecision never degrades into direct response act
   assert.equal(result.taskType, 'unified-sidebar-agent');
 });
 
-test('shouldUseImmediateResponseShortcut is disabled for autonomous routing requests', () => {
+test('shouldUseImmediateResponseShortcut always preserves direct chat responses', () => {
   assert.equal(
     shouldUseImmediateResponseShortcut(
       { action: 'respond' } as any,
       { allowAutonomousRouting: true } as any,
     ),
-    false,
+    true,
   );
   assert.equal(
     shouldUseImmediateResponseShortcut(
       { action: 'clarify' } as any,
       { allowAutonomousRouting: true } as any,
     ),
-    false,
+    true,
   );
   assert.equal(
     shouldUseImmediateResponseShortcut(

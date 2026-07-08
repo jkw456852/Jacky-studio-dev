@@ -1,7 +1,7 @@
 import type {
   EcommerceCompetitorDeckAnalysis,
   EcommercePlanGroup,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 
 const normalizeCompetitorHintText = (value: string): string =>
   String(value || "")

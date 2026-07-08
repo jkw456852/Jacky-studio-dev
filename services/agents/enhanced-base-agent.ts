@@ -11,28 +11,33 @@ import {
   ProjectContext,
   GeneratedAsset,
 } from "../../types/agent.types";
-import { executeSkill, AVAILABLE_SKILLS } from "../skills";
+import { executeSkill, AVAILABLE_SKILLS } from "../skills/index.ts";
 import {
   isAssetProducingSkillName,
   isImageGenerationSkillName,
   isVideoGenerationSkillName,
-} from "../skills/skill-manifest";
+} from "../skills/skill-manifest.ts";
 import { buildImageAssetsFromSkillResults } from "./image-result-extractor";
 import { errorHandler, ErrorType, AppError } from "../../utils/error-handler";
 import { buildEcommerceProposals } from "./shared/ecommerce-variants";
 import { useAgentStore } from "../../stores/agent.store";
 import { buildRuntimeRolePrompt } from "./runtime-role";
+import { normalizeImageDataUrlString } from "./data-url-helpers.ts";
 import { runMainBrainRuntime } from "./main-brain-runtime";
 import { buildMainBrainTaskProgressUpdate } from "./main-brain-progress-state";
 import { buildAnalyzePlanPrompt } from "./analyze-plan-prompt";
 import { normalizePlannedMarkerSmartEditCalls } from "./planned-marker-smart-edit-normalizer.ts";
 import { resolveMainBrainOutput } from "./main-brain-output";
 import { prepareSkillExecutionCall } from "./skill-execution-preprocessor";
-import { normalizeAgentJsonResponse } from "./agent-response-normalizer";
+import {
+  extractVisibleThoughtTrace,
+  normalizeAgentJsonResponse,
+} from "./agent-response-normalizer";
 import {
   buildForcedGenerateImageCall,
   ensureForcedImagePlan,
 } from "./forced-image-guard";
+import { negotiateImageToolRequest } from "../image-generation/request-negotiator.ts";
 import { retryMainBrainOperation } from "./main-brain-failure-policy";
 import {
   buildAgentTaskOutput,
@@ -45,6 +50,14 @@ import {
 } from "./skill-call-normalizer";
 import { buildImageAttachmentTokens } from "./environment-input-protocol";
 import {
+  hydrateSkillCallWithFrontstageProfile,
+  mergePreferredSkillsWithFrontstageProfile,
+  prioritizeSkillCallsForFrontstageProfile,
+  repairAutonomousSkillPlan,
+  shouldBypassAutonomousChatSuppression,
+  shouldExecuteFrontstageSkillSequentially,
+} from "./frontstage-skill-execution.ts";
+import {
   buildFailedSkillExecutionResult,
   buildReferenceInjectionTelemetry,
   buildSuccessfulSkillExecutionResult,
@@ -54,6 +67,31 @@ import {
 } from "./skill-execution-runtime";
 import { runWithTimeout, withTimeout } from "./timeout-utils";
 import { resolveAnalyzePlanSystemPrompt } from "./analyze-plan-system-prompt.ts";
+import {
+  beginSkillRunForAgentTask,
+  failSkillRunForAgentTask,
+  finishSkillRunForAgentTask,
+  recordClarifyEventForAgentTask,
+  type ActiveAgentTaskRun,
+} from "../skills/runtime/agent-task-skill-run-bridge.ts";
+import { evaluateSkillClarifyGate } from "./skill-clarify-gate.ts";
+
+const isWorkspaceChatDebugEnabled = (): boolean => {
+  const env = (import.meta as unknown as {
+    env?: Record<string, string | boolean | undefined>;
+  }).env;
+  if (!env?.DEV || typeof window === "undefined") return false;
+  const toggle = window.localStorage.getItem("debug_workspace_chat");
+  if (!toggle) return false;
+  const normalized = toggle.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "on";
+};
+
+const workspaceChatDebugLog = (...args: unknown[]) => {
+  if (isWorkspaceChatDebugEnabled()) {
+    console.log(...args);
+  }
+};
 
 // 闄愭祦骞跺彂鎵ц鍣細闄愬埗鏈€澶?concurrency 涓换鍔″悓鏃舵墽琛?
 const runWithConcurrency = async <T>(
@@ -88,6 +126,99 @@ const SKILL_EXECUTION_PROGRESS_STEPS = [
   "正在执行最后的细节精修...",
   "正在把结果同步到画布...",
 ];
+
+const buildImageExecutionTrace = (params: Record<string, any> | undefined) => ({
+  model: params?.model || null,
+  providerId: params?.providerId || null,
+  aspectRatio: params?.aspectRatio || null,
+  imageSize: params?.imageSize || null,
+  exactSize: params?.exactSize || null,
+  imageQuality: params?.imageQuality || params?.quality || null,
+  promptLanguagePolicy: params?.promptLanguagePolicy || null,
+  referenceCount: Array.isArray(params?.referenceImages)
+    ? params.referenceImages.length
+    : params?.referenceImage
+      ? 1
+      : 0,
+  hasMask: Boolean(params?.maskImage),
+});
+
+// Pull upstream diagnostics off an underlying error so the brain's failure
+// summary can name the upstream provider / HTTP status instead of the
+// generic "AI 服务调用失败" friendly text.
+const extractSkillErrorDetail = (raw: unknown) => {
+  if (!raw) return undefined;
+  const original =
+    (raw as any)?.originalError instanceof Error
+      ? (raw as any).originalError
+      : raw instanceof Error
+        ? raw
+        : null;
+  if (!original) return undefined;
+  const message = String(original.message || '');
+  const httpStatus = (() => {
+    const status = (original as any)?.status;
+    if (typeof status === 'number' && Number.isFinite(status)) return status;
+    const match = message.match(/\b(4\d{2}|5\d{2})\b/);
+    return match ? Number(match[1]) : undefined;
+  })();
+  const proxyTarget = (() => {
+    const direct = (original as any)?.proxyTarget;
+    if (typeof direct === 'string' && direct) return direct;
+    const ctx = (raw as any)?.context;
+    if (ctx && typeof ctx.proxyTarget === 'string' && ctx.proxyTarget) {
+      return ctx.proxyTarget;
+    }
+    return undefined;
+  })();
+  const detail: { rawMessage?: string; httpStatus?: number; proxyTarget?: string } = {};
+  if (message) detail.rawMessage = message.length > 320 ? message.slice(0, 320) : message;
+  if (typeof httpStatus === 'number') detail.httpStatus = httpStatus;
+  if (proxyTarget) detail.proxyTarget = proxyTarget;
+  return Object.keys(detail).length > 0 ? detail : undefined;
+};
+
+const buildNegotiatedImageExecutionTrace = (params: Record<string, any> | undefined) => {
+  const requested = buildImageExecutionTrace(params);
+
+  // If model/providerId are not yet set on the skill call, the negotiator
+  // would synthesize a default placeholder (e.g. Auto -> NanoBanana2 @
+  // api3.wlai.vip). That fake "resolved" block has caused real confusion in
+  // logs ("why did my request go to wlai.vip?"). Only show the resolved view
+  // when we actually have a concrete model to negotiate against.
+  const hasModel = Boolean(params && String((params as any).model || '').trim());
+
+  if (!hasModel) {
+    return {
+      phase: "pending-preferences",
+      requested,
+    };
+  }
+
+  try {
+    const negotiated = negotiateImageToolRequest((params || {}) as any);
+    return {
+      phase: "resolved",
+      requested,
+      resolved: {
+        ...buildImageExecutionTrace(negotiated.normalized as Record<string, any>),
+        canonicalModel: negotiated.contractSummary.canonicalModel,
+        selectedModel: negotiated.contractSummary.selectedModel,
+        endpointBaseUrl: negotiated.contractSummary.endpointBaseUrl,
+      },
+      warnings: negotiated.warnings.map((item) => ({
+        code: item.code,
+        message: item.message,
+      })),
+    };
+  } catch (error: any) {
+    return {
+      phase: "requested",
+      requested,
+      resolveError: error instanceof Error ? error.message : String(error || "unknown"),
+    };
+  }
+};
 
 /**
  * 浠诲姟鎵ц閰嶇疆
@@ -174,8 +305,12 @@ const fileToInlinePart = async (file: File): Promise<InlineImagePart | null> => 
 const urlToInlinePart = async (url: string): Promise<InlineImagePart | null> => {
   try {
     const normalizedUrl = String(url || "").trim();
-    if (!/^https?:\/\//i.test(normalizedUrl)) {
+    if (!/^https?:\/\//i.test(normalizedUrl) && !normalizeImageDataUrlString(normalizedUrl)) {
       return null;
+    }
+    const normalizedDataUrl = normalizeImageDataUrlString(normalizedUrl);
+    if (normalizedDataUrl) {
+      return dataUrlToInlinePart(normalizedDataUrl);
     }
     const response = await fetch(normalizedUrl);
     if (!response.ok) {
@@ -252,6 +387,10 @@ export abstract class EnhancedBaseAgent {
       return false;
     }
 
+    if (shouldBypassAutonomousChatSuppression(metadata, task.input.message)) {
+      return false;
+    }
+
     const taskMode = String(metadata?.taskMode || "").trim().toLowerCase();
     return taskMode === "chat" || taskMode === "research";
   }
@@ -261,9 +400,6 @@ export abstract class EnhancedBaseAgent {
     message: string,
     metadata?: Record<string, any>,
   ): boolean {
-    if (metadata?.allowAutonomousRouting === true) {
-      return false;
-    }
     // 涓婃父鍙樉寮忓己鍒?
     if (
       metadata?.forceToolCall === true ||
@@ -285,7 +421,9 @@ export abstract class EnhancedBaseAgent {
 
     const result = imageIntent && !consultOnly;
     if (result) {
-      console.log(`[${this.agentInfo.id}] Detect Image Intent: Forced tool call activated.`);
+      workspaceChatDebugLog(
+        `[${this.agentInfo.id}] Detect Image Intent: Forced tool call activated.`,
+      );
     }
     return result;
   }
@@ -327,7 +465,11 @@ export abstract class EnhancedBaseAgent {
     attachments?: File[],
     metadata?: Record<string, any>,
   ): any[] {
-    const safeCount = Math.max(1, Math.min(count || 5, 8));
+    const numericCount = Number(count);
+    const safeCount = Math.max(
+      1,
+      Number.isFinite(numericCount) ? Math.floor(numericCount) : 5,
+    );
     const aspectRatio = (metadata?.preferredAspectRatio as string) || "1:1";
     const model = "Nano Banana Pro";
     const variants = [
@@ -374,10 +516,11 @@ export abstract class EnhancedBaseAgent {
     ];
 
     return Array.from({ length: safeCount }).map((_, index) => {
-      const variant = variants[index] || variants[variants.length - 1];
+      const variant = variants[index % variants.length];
+      const cycle = Math.floor(index / variants.length) + 1;
       const params: Record<string, any> = {
         prompt: this.sanitizeSingleFramePrompt(
-          `${variant.prompt}. Product requirement: ${message}`,
+          `${variant.prompt}. ${cycle > 1 ? `Alternate set ${cycle}. ` : ""}Product requirement: ${message}`,
         ),
         aspectRatio: aspectRatio,
         model: model,
@@ -396,7 +539,7 @@ export abstract class EnhancedBaseAgent {
       return {
         skillName: "generateImage",
         params,
-        description: `第 ${index + 1} 张（${variant.title}）`,
+        description: `第 ${index + 1} 张（${variant.title}${cycle > 1 ? ` ${cycle}` : ""}）`,
       };
     });
   }
@@ -411,7 +554,7 @@ export abstract class EnhancedBaseAgent {
       return 1;
     }
 
-    return Math.min(4, Math.max(1, rawValue));
+    return Math.max(1, rawValue);
   }
 
   private decoratePreferredImageVariantPrompt(
@@ -492,7 +635,7 @@ export abstract class EnhancedBaseAgent {
         [],
         this.systemPrompt,
       );
-      console.log(`[${this.agentInfo.id}] Initialized successfully`);
+      workspaceChatDebugLog(`[${this.agentInfo.id}] Initialized successfully`);
     } catch (error) {
       throw errorHandler.handleError(error, {
         agent: this.agentInfo.id,
@@ -510,9 +653,17 @@ export abstract class EnhancedBaseAgent {
   ): Promise<AgentTask> {
     const finalConfig = { ...DEFAULT_EXECUTION_CONFIG, ...config };
     const taskId = task.id;
+    // Phase 2 read-side double-write: record a SkillRun for any task carrying skillData.
+    // This does not change execution behavior; failures here must never break the agent.
+    let __skillRun: ActiveAgentTaskRun | null = null;
+    try {
+      __skillRun = beginSkillRunForAgentTask(task, { messageId: taskId });
+    } catch {
+      __skillRun = null;
+    }
 
     try {
-      console.log(`[${this.agentInfo.id}] Starting task execution:`, taskId);
+      workspaceChatDebugLog(`[${this.agentInfo.id}] Starting task execution:`, taskId);
 
       // 鏇存柊浠诲姟鐘舵€?
       task = this.updateTaskStatus(task, "analyzing");
@@ -524,7 +675,7 @@ export abstract class EnhancedBaseAgent {
       if (finalConfig.enableCache) {
         const cached = this.getCachedResult(task);
         if (cached) {
-          console.log(`[${this.agentInfo.id}] Using cached result`);
+          workspaceChatDebugLog(`[${this.agentInfo.id}] Using cached result`);
           return this.updateTaskStatus(cached, "completed");
         }
       }
@@ -549,11 +700,25 @@ export abstract class EnhancedBaseAgent {
         this.cacheResult(task, result);
       }
 
-      console.log(`[${this.agentInfo.id}] Task completed:`, taskId);
+      workspaceChatDebugLog(`[${this.agentInfo.id}] Task completed:`, taskId);
+      try {
+        finishSkillRunForAgentTask(__skillRun, result);
+      } catch {
+        // best effort: never block agent task completion on run recording.
+      }
       return result;
     } catch (error) {
       const appError = error as AppError;
       console.error(`[${this.agentInfo.id}] Task failed:`, appError.message);
+      try {
+        failSkillRunForAgentTask(__skillRun, {
+          message: appError?.message,
+          code: (appError as { code?: string } | undefined)?.code,
+          stage: "execute",
+        });
+      } catch {
+        // best effort.
+      }
 
       return {
         ...task,
@@ -877,13 +1042,11 @@ export abstract class EnhancedBaseAgent {
     let plan: any;
     const workflowMode =
       task.input.metadata?.workflowMode === "fast" ? "fast" : "designer";
-    const isThinkingMode = useAgentStore.getState().modelMode === "thinking";
     const requestedCount = this.parseRequestedImageCount(message);
     const bypassFastPath = this.shouldBypassFastPath(message);
     const shouldUseFastPath =
       workflowMode === "fast" &&
       forceImageToolCall &&
-      !isThinkingMode &&
       !bypassFastPath;
 
     store.actions.setCurrentTask({
@@ -921,6 +1084,7 @@ export abstract class EnhancedBaseAgent {
           task.input.uploadedAttachments,
           {
             ...(task.input.metadata || {}),
+            taskId: task.id,
             forceImageToolCall,
           },
         );
@@ -1126,11 +1290,21 @@ export abstract class EnhancedBaseAgent {
         ? effectivePlan.roleGovernanceAudit
         : undefined;
 
+    const currentProgressTask = useAgentStore.getState().currentTask;
+    const finalProgressTask =
+      currentProgressTask?.id === task.id ? currentProgressTask : null;
     store.actions.setCurrentTask(null);
 
     return {
       ...task,
       status: "completed",
+      progressMessage: finalProgressTask?.progressMessage,
+      progressStep: finalProgressTask?.progressStep,
+      totalSteps: finalProgressTask?.totalSteps,
+      progressLog: finalProgressTask?.progressLog,
+      thoughtTrace: finalProgressTask?.thoughtTrace,
+      streamingText: finalProgressTask?.streamingText,
+      reasoningText: finalProgressTask?.reasoningText,
       output: buildAgentTaskOutput({
         message: finalMessage,
         analysis: effectivePlan.analysis,
@@ -1204,11 +1378,21 @@ export abstract class EnhancedBaseAgent {
         this.composePostGenerationSummary(currentTask, plan, assetCount),
     });
 
+    const currentProgressTask = useAgentStore.getState().currentTask;
+    const finalProgressTask =
+      currentProgressTask?.id === task.id ? currentProgressTask : null;
     store.actions.setCurrentTask(null);
 
     return {
       ...task,
       status: "completed",
+      progressMessage: finalProgressTask?.progressMessage,
+      progressStep: finalProgressTask?.progressStep,
+      totalSteps: finalProgressTask?.totalSteps,
+      progressLog: finalProgressTask?.progressLog,
+      thoughtTrace: finalProgressTask?.thoughtTrace,
+      streamingText: finalProgressTask?.streamingText,
+      reasoningText: finalProgressTask?.reasoningText,
       output: buildMainBrainTaskOutput({
         finalPlan: effectiveFinalPlan,
         assets,
@@ -1231,23 +1415,29 @@ export abstract class EnhancedBaseAgent {
   ): Promise<any> {
     try {
       const allowAutonomousRouting = metadata?.allowAutonomousRouting === true;
+      const repairMessageId =
+        String(metadata?.messageId || metadata?.taskId || "").trim() ||
+        undefined;
       const forceImageToolCall = this.shouldForceImageToolCall(
         message,
         metadata,
       );
 
-      const promptBuild = buildAnalyzePlanPrompt({
-        agentId: this.agentInfo.id,
-        systemPrompt: resolveAnalyzePlanSystemPrompt({
+        const promptBuild = buildAnalyzePlanPrompt({
           agentId: this.agentInfo.id,
-          fallbackSystemPrompt: this.systemPrompt,
-          metadata,
-        }),
-        preferredSkills: this.preferredSkills,
-        message,
-        context,
-        attachments,
-        uploadedAttachments,
+          systemPrompt: resolveAnalyzePlanSystemPrompt({
+            agentId: this.agentInfo.id,
+            fallbackSystemPrompt: this.systemPrompt,
+            metadata,
+          }),
+          preferredSkills: mergePreferredSkillsWithFrontstageProfile(
+            this.preferredSkills,
+            metadata,
+          ),
+          message,
+          context,
+          attachments,
+          uploadedAttachments,
         metadata,
         forceImageToolCall,
         allowAutonomousRouting,
@@ -1269,7 +1459,10 @@ export abstract class EnhancedBaseAgent {
           ? (
               await Promise.all(
                 (metadata?.multimodalContext?.referenceImageUrls || [])
-                  .filter((url: string) => /^https?:\/\//i.test(String(url || "")))
+                  .filter((url: string) =>
+                    /^https?:\/\//i.test(String(url || "")) ||
+                    Boolean(normalizeImageDataUrlString(String(url || "")))
+                  )
                   .filter(
                     (url: string, index: number, list: string[]) =>
                       list.indexOf(url) === index &&
@@ -1286,7 +1479,8 @@ export abstract class EnhancedBaseAgent {
         ...inheritedReferenceInlineParts,
       ];
 
-      const selectedMode = useAgentStore.getState().modelMode || 'fast';
+      const selectedMode =
+        metadata?.workflowMode === 'fast' ? 'fast' : 'thinking';
       const bestModel = getBestModelSelection(
         selectedMode === 'thinking' ? 'thinking' : 'text',
       );
@@ -1304,7 +1498,10 @@ export abstract class EnhancedBaseAgent {
         model: bestModel.modelId,
         providerId: bestModel.providerId || null,
       };
-      console.log(`[${this.agentInfo.id}] [analyzeAndPlan] payload diagnostics`, payloadDiagnostics);
+      workspaceChatDebugLog(
+        `[${this.agentInfo.id}] [analyzeAndPlan] payload diagnostics`,
+        payloadDiagnostics,
+      );
 
       const toolConfig: any = {};
       if (metadata?.enableWebSearch) {
@@ -1385,8 +1582,8 @@ export abstract class EnhancedBaseAgent {
           operation: async () => {
             let streamedText = "";
             let streamedReasoning = "";
-            console.log(
-              `[analyzeAndPlan] [${selectedMode}] ???????????: ${bestModel.modelId} @ ${bestModel.providerId || 'default'}`,
+            workspaceChatDebugLog(
+              `[analyzeAndPlan] [${selectedMode}] requesting model: ${bestModel.modelId} @ ${bestModel.providerId || 'default'}`,
             );
             return generateJsonResponse({
               model: bestModel.modelId,
@@ -1400,22 +1597,32 @@ export abstract class EnhancedBaseAgent {
                 streamedText += String(delta || "");
                 const currentTask = useAgentStore.getState().currentTask;
                 if (!currentTask) return;
+                const visibleThoughtTrace = extractVisibleThoughtTrace(streamedText);
                 useAgentStore.getState().actions.setCurrentTask({
                   ...currentTask,
                   streamingText: streamedText,
                   reasoningText: streamedReasoning,
+                  thoughtTrace:
+                    visibleThoughtTrace.length > 0
+                      ? visibleThoughtTrace
+                      : currentTask.thoughtTrace || [],
                   progressMessage:
-                    streamedText.trim() || currentTask.progressMessage || "正在生成回复...",
+                    currentTask.progressMessage || "正在生成回复...",
                 });
               },
               onReasoningDelta: (delta) => {
                 streamedReasoning += String(delta || "");
                 const currentTask = useAgentStore.getState().currentTask;
                 if (!currentTask) return;
+                const visibleThoughtTrace = extractVisibleThoughtTrace(streamedReasoning);
                 useAgentStore.getState().actions.setCurrentTask({
                   ...currentTask,
                   streamingText: streamedText,
                   reasoningText: streamedReasoning,
+                  thoughtTrace:
+                    visibleThoughtTrace.length > 0
+                      ? visibleThoughtTrace
+                      : currentTask.thoughtTrace || [],
                 });
               },
             });
@@ -1424,25 +1631,82 @@ export abstract class EnhancedBaseAgent {
           maxRetries: 3,
         }),
         120000,
-        'analyzeAndPlan ??',
+        'analyzeAndPlan timeout',
       ) as any;
-      console.log(`[${this.agentInfo.id}] [analyzeAndPlan] ??????`);
+      workspaceChatDebugLog(
+        `[${this.agentInfo.id}] [analyzeAndPlan] response received`,
+        {
+          textLength: response?.text ? String(response.text).length : 0,
+          textPreview:
+            response?.text
+              ? String(response.text).slice(0, 200)
+              : null,
+        },
+      );
 
       const parsedPlan = normalizeAgentJsonResponse(response.text || '{}');
-      normalizePlannedMarkerSmartEditCalls({
-        parsedPlan,
-        attachments,
-        uploadedAttachments,
-      });
-
-      if (forceImageToolCall && !allowAutonomousRouting) {
-        ensureForcedImagePlan({
+        const normalizedThoughtTrace = Array.isArray(parsedPlan?.thoughtTrace)
+          ? parsedPlan.thoughtTrace
+              .map((item: unknown) => String(item || "").trim())
+              .filter(Boolean)
+          : [];
+        if (normalizedThoughtTrace.length > 0) {
+          const currentTask = useAgentStore.getState().currentTask;
+          if (currentTask) {
+            useAgentStore.getState().actions.setCurrentTask({
+              ...currentTask,
+              thoughtTrace: normalizedThoughtTrace,
+            });
+          }
+        }
+        normalizePlannedMarkerSmartEditCalls({
           parsedPlan,
-          message,
+          attachments,
+          uploadedAttachments,
+        });
+        const repairedPlan = repairAutonomousSkillPlan({
+          plan: parsedPlan,
+          originalMessage: message,
           attachments,
           metadata,
+          conversationHistory: context?.conversationHistory,
+          onRepair: async (event) => {
+            try {
+              const mod = await import('../skills/runtime/agent-task-skill-run-bridge.ts');
+              mod.recordRepairEventByMessageId({
+                messageId: repairMessageId,
+                conversationId: (metadata as any)?.conversationId,
+                event: {
+                  reason:
+                    event.kind === 'backfill'
+                      ? 'backfill: ' + event.injectedSkillNames.join(',')
+                      : 'fallback: ' + event.reason,
+                  injectedSkillNames:
+                    event.kind === 'backfill'
+                      ? event.injectedSkillNames
+                      : event.firstSkillName
+                      ? [event.firstSkillName]
+                      : undefined,
+                  skillCallsBefore:
+                    event.kind === 'backfill' ? event.skillCallsBefore : undefined,
+                  skillCallsAfter: event.skillCallsAfter,
+                  fallbackUsed: event.kind === 'fallback',
+                },
+              });
+            } catch {
+              // best effort: repair recording must never block execution
+            }
+          },
         });
-      }
+
+        if (forceImageToolCall) {
+          ensureForcedImagePlan({
+            parsedPlan: repairedPlan,
+            message,
+            attachments,
+            metadata,
+          });
+        }
 
       const groundingChunks =
         response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -1456,20 +1720,20 @@ export abstract class EnhancedBaseAgent {
           })
           .filter((s: any) => s) as string[];
 
-        if (sources.length > 0) {
-          const sourceText = `\n\n**参考来源**\n${sources
-            .map((s: string) => `- ${s}`)
-            .join("\n")}`;
-          if (parsedPlan.message) {
-            parsedPlan.message += sourceText;
-          }
-          if (parsedPlan.analysis) {
-            parsedPlan.analysis += sourceText;
+          if (sources.length > 0) {
+            const sourceText = `\n\n**参考来源**\n${sources
+              .map((s: string) => `- ${s}`)
+              .join("\n")}`;
+            if (repairedPlan.message) {
+              repairedPlan.message += sourceText;
+            }
+            if (repairedPlan.analysis) {
+              repairedPlan.analysis += sourceText;
+            }
           }
         }
-      }
 
-      return parsedPlan;
+        return repairedPlan;
     } catch (error) {
       throw errorHandler.handleError(error, {
         agent: this.agentInfo.id,
@@ -1482,24 +1746,74 @@ export abstract class EnhancedBaseAgent {
     skillCalls: any[],
     task: AgentTask,
   ): Promise<any[]> {
-    const normalizedCalls = normalizeSkillCalls(skillCalls || []);
+    const normalizedCalls = prioritizeSkillCallsForFrontstageProfile(
+      normalizeSkillCalls(skillCalls || []),
+      task.input.metadata,
+    );
     const stopProgress = this.startSkillExecutionProgress(task, normalizedCalls);
 
     try {
+      if (
+        shouldExecuteFrontstageSkillSequentially({
+          skillCalls: normalizedCalls,
+          metadata: task.input.metadata,
+        })
+      ) {
+        const results: any[] = [];
+        for (const call of normalizedCalls) {
+          const hydratedCall = hydrateSkillCallWithFrontstageProfile({
+            call,
+            metadata: task.input.metadata,
+            originalMessage: task.input.message,
+            priorResults: results,
+          });
+          try {
+            const result = await this.executeSingleSkillCall(
+              hydratedCall,
+              results.length,
+              task,
+            );
+            results.push(buildSuccessfulSkillExecutionResult(hydratedCall, result));
+          } catch (error) {
+            const appError = errorHandler.handleError(error, {
+              skill: hydratedCall?.skillName,
+              agent: this.agentInfo.id,
+            });
+            results.push(
+              buildFailedSkillExecutionResult(
+                hydratedCall,
+                appError.message,
+                extractSkillErrorDetail(appError) || extractSkillErrorDetail(error),
+              ),
+            );
+          }
+        }
+        return results;
+      }
+
       const jobs = normalizedCalls.map((call, callIndex) => async () => {
+        const hydratedCall = hydrateSkillCallWithFrontstageProfile({
+          call,
+          metadata: task.input.metadata,
+          originalMessage: task.input.message,
+        });
         try {
           const result = await this.executeSingleSkillCall(
-            call,
+            hydratedCall,
             callIndex,
             task,
           );
-          return buildSuccessfulSkillExecutionResult(call, result);
+          return buildSuccessfulSkillExecutionResult(hydratedCall, result);
         } catch (error) {
           const appError = errorHandler.handleError(error, {
-            skill: call?.skillName,
+            skill: hydratedCall?.skillName,
             agent: this.agentInfo.id,
           });
-          return buildFailedSkillExecutionResult(call, appError.message);
+          return buildFailedSkillExecutionResult(
+            hydratedCall,
+            appError.message,
+            extractSkillErrorDetail(appError) || extractSkillErrorDetail(error),
+          );
         }
       });
 
@@ -1520,6 +1834,12 @@ export abstract class EnhancedBaseAgent {
       `[${this.agentInfo.id}] [executeSkills] 解析技能参数: ${call.skillName}`,
       { params: call.params, editType: call.params?.editType, prompt: call.params?.prompt?.slice(0, 200), model: call.params?.model },
     );
+    if (call.skillName === "generateImage") {
+      console.info(
+        `[${this.agentInfo.id}] [imggen] planner-request`,
+        buildNegotiatedImageExecutionTrace(call.params),
+      );
+    }
 
     const prepared = await prepareSkillExecutionCall({
       call,
@@ -1544,6 +1864,82 @@ export abstract class EnhancedBaseAgent {
         `[${this.agentInfo.id}] reference injection stats`,
         telemetry.stats,
       );
+    }
+
+    if (call.skillName === "generateImage") {
+      const preparedParams = {
+        ...(call.params || {}),
+        signal: task.input.metadata?.signal,
+      };
+      console.info(
+        `[${this.agentInfo.id}] [imggen] prepared-request`,
+        buildNegotiatedImageExecutionTrace(preparedParams),
+      );
+      preparedParams.onTransportPrepared = (snapshot: any) => {
+        console.info(
+          `[${this.agentInfo.id}] [imggen] transport-prepared`,
+          {
+            requested: buildNegotiatedImageExecutionTrace(preparedParams),
+            resolvedModel: snapshot?.resolvedModel || null,
+            resolvedAspectRatio: snapshot?.resolvedAspectRatio || null,
+            resolvedSize: snapshot?.resolvedSize || null,
+            providerId: snapshot?.providerId || null,
+            route: snapshot?.effectiveRoute || snapshot?.route || null,
+            requestMode: snapshot?.requestMode || null,
+            payloadMode: snapshot?.payloadMode || null,
+            warnings: Array.isArray(snapshot?.warnings)
+              ? snapshot.warnings.map((item: any) => ({
+                  code: item?.code || null,
+                  message: item?.message || null,
+                }))
+              : [],
+          },
+        );
+      };
+      preparedParams.onSubmitted = (payload: any) => {
+        console.info(
+          `[${this.agentInfo.id}] [imggen] submitted`,
+          {
+            taskId: payload?.taskId || null,
+            providerId: payload?.providerId || null,
+            model: payload?.model || null,
+            route: payload?.route || null,
+            transport: payload?.transportRequestSnapshot
+              ? {
+                  resolvedModel:
+                    payload.transportRequestSnapshot.resolvedModel || null,
+                  resolvedAspectRatio:
+                    payload.transportRequestSnapshot.resolvedAspectRatio || null,
+                  resolvedSize:
+                    payload.transportRequestSnapshot.resolvedSize || null,
+                  effectiveRoute:
+                    payload.transportRequestSnapshot.effectiveRoute || null,
+                  requestMode:
+                    payload.transportRequestSnapshot.requestMode || null,
+                  payloadMode:
+                    payload.transportRequestSnapshot.payloadMode || null,
+                  warnings: Array.isArray(
+                    payload.transportRequestSnapshot.warnings,
+                  )
+                    ? payload.transportRequestSnapshot.warnings.map(
+                        (item: any) => ({
+                          code: item?.code || null,
+                          message: item?.message || null,
+                        }),
+                      )
+                    : [],
+                }
+              : null,
+          },
+        );
+      };
+
+      return executeSkillWithTimeout({
+        skillName: call.skillName,
+        params: preparedParams,
+        timeoutMs: resolveSkillTimeoutMs(call.skillName),
+        executeSkillFn: executeSkill,
+      });
     }
 
     return executeSkillWithTimeout({
@@ -1752,7 +2148,20 @@ export abstract class EnhancedBaseAgent {
       return `nocache-${Date.now()}-${Math.random()}`;
     }
     const meta = task.input.metadata || {};
-    const metaKey = `web:${!!meta.enableWebSearch}|force:${!!meta.forceSkills}`;
+    const skillId =
+      typeof meta.skillData?.id === "string" && meta.skillData.id.trim()
+        ? meta.skillData.id.trim()
+        : typeof meta.skillData?.name === "string"
+          ? meta.skillData.name.trim()
+          : "";
+    const metaKey = [
+      `web:${!!meta.enableWebSearch}`,
+      `force:${!!meta.forceSkills}`,
+      `workflow:${meta.workflowMode === "fast" ? "fast" : "designer"}`,
+      `task:${typeof meta.taskMode === "string" ? meta.taskMode : ""}`,
+      `creation:${typeof meta.creationMode === "string" ? meta.creationMode : ""}`,
+      `skill:${skillId}`,
+    ].join("|");
     const contextHash = task.input.context?.projectTitle || "";
     return `${this.agentInfo.id}:${task.input.message}:${contextHash}:${metaKey}`;
   }
@@ -1765,4 +2174,3 @@ export abstract class EnhancedBaseAgent {
     this.executionCache.clear();
   }
 }
-

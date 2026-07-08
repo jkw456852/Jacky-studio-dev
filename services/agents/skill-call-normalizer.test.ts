@@ -147,6 +147,36 @@ test('injectExecutionPreferences scopes aspect ratio to matching creation mode',
   assert.equal(call.params.providerId, undefined);
 });
 
+test('injectExecutionPreferences does not override agent-mode generateImage params with sidebar defaults', () => {
+  const call = {
+    skillName: 'generateImage',
+    params: {
+      aspectRatio: '9:16',
+      imageSize: '4K',
+    },
+  } as any;
+
+  injectExecutionPreferences(
+    call,
+    {
+      input: {
+        metadata: {
+          creationMode: 'agent',
+          preferredAspectRatio: '1:1',
+          preferredImageModel: 'GPT Image 2',
+          preferredImageProviderId: 'openai-like',
+          preferredImageSize: '1K',
+        },
+      },
+    } as any,
+  );
+
+  assert.equal(call.params.aspectRatio, '9:16');
+  assert.equal(call.params.imageSize, '4K');
+  assert.equal(call.params.model, 'GPT Image 2');
+  assert.equal(call.params.providerId, 'openai-like');
+});
+
 test('skill registry helpers expose expected canonical coverage', () => {
   assert.equal(SKILL_ALIASES.imageGenSkill, 'generateImage');
   assert.equal(SUPPORTED_SKILL_NAMES.has('generateImage'), true);

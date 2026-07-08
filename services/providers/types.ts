@@ -1,4 +1,4 @@
-import type { ImageTransportRequestSnapshot } from '../../types/image-generation.types';
+import type { ImageTransportRequestSnapshot } from '../../types/image-generation.types.ts';
 
 export type PromptLanguagePolicy = 'original-zh' | 'translate-en';
 export type ImageReferenceRoleMode =
@@ -20,6 +20,16 @@ export interface ImageGenerationRequest {
   imageSize?: '1K' | '2K' | '4K';
   exactSize?: string;
   imageQuality?: 'low' | 'medium' | 'high';
+  background?: 'transparent' | 'opaque' | 'auto';
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  outputCompression?: number;
+  moderation?: 'low' | 'auto';
+  n?: number;
+  partialImages?: number;
+  stream?: boolean;
+  style?: 'vivid' | 'natural';
+  responseFormat?: 'url' | 'b64_json';
+  inputFidelity?: 'high' | 'low';
   disableTransportRetries?: boolean;
   referenceImage?: string; // base64
   referenceImages?: string[];

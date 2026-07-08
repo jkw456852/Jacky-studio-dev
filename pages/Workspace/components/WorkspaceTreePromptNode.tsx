@@ -4,7 +4,6 @@ import {
   Check,
   Box,
   ChevronDown,
-  ChevronUp,
   Copy,
   Plus,
   Search,
@@ -19,7 +18,7 @@ import type {
   WorkspaceStyleLibrary,
   WorkspaceStyleLibraryRuntimeOverlay,
 } from "../../../types";
-import { uploadImage } from "../../../utils/uploader";
+import { uploadImage } from "../../../utils/uploader.ts";
 import {
   WORKSPACE_NODE_BERSERK_SHADOW,
   WORKSPACE_NODE_RADIUS,
@@ -40,7 +39,7 @@ import {
   type WorkspaceImageResolutionPreset,
   type WorkspaceImageSizeMode,
   type WorkspaceImageSupportStatus,
-} from "../../../services/openai-image-presets";
+} from "../../../services/openai-image-presets.ts";
 import {
   STYLE_LIBRARY_MODE_META,
   createStyleLibraryDraftFromMode,
@@ -50,7 +49,7 @@ import {
   listBuiltInStyleLibraries,
   listUserStyleLibraries,
   normalizeWorkspaceStyleLibrary,
-} from "../../../services/vision-orchestrator/style-library";
+} from "../../../services/vision-orchestrator/style-library.ts";
 import {
   buildStyleLibraryDraft,
   buildStyleLibraryFromDraft,
@@ -66,8 +65,6 @@ const LABEL_COPY = "\u590d\u5236\u5185\u5bb9";
 const LABEL_DELETE = "\u5220\u9664\u8282\u70b9";
 const LABEL_UPLOAD = "\u4e0a\u4f20\u53c2\u8003\u56fe";
 const LABEL_GENERATE = "\u751f\u6210";
-const LABEL_EXPAND = "\u5c55\u5f00\u5b50\u8282\u70b9";
-const LABEL_COLLAPSE = "\u6536\u8d77\u5b50\u8282\u70b9";
 const LABEL_GENERATING = "Generating";
 const LABEL_BERSERK_RETRY = "\u72c2\u66b4\u91cd\u8bd5";
 const LABEL_BERSERK_SHORT = "\u72c2\u66b4";
@@ -112,7 +109,13 @@ const IMAGE_QUALITY_SHORT_LABEL: Record<
   medium: "M",
   low: "L",
 };
-const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+const IMAGE_COUNT_QUICK_OPTIONS = [1, 2, 4, 8, 16, 32] as const;
+
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
+};
 
 const getSupportPillClass = (
   status: WorkspaceImageSupportStatus,
@@ -1426,7 +1429,10 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                                 <div className="grid gap-3">
                                   <label className="block">
                                     <div className="mb-2 text-[12px] font-medium text-[#6b7280]">张数</div>
-                                    <select
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      step={1}
                                       value={item.imageCount}
                                       className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
                                       onChange={(event) =>
@@ -1442,13 +1448,8 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                                           ),
                                         }))
                                       }
-                                    >
-                                      <option value="">默认</option>
-                                      <option value="1">1</option>
-                                      <option value="2">2</option>
-                                      <option value="3">3</option>
-                                      <option value="4">4</option>
-                                    </select>
+                                      placeholder="默认"
+                                    />
                                   </label>
 
                                   <label className="block">
@@ -1643,7 +1644,10 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
 
                                 <label className="block">
                                   <div className="mb-2 text-[12px] font-medium text-[#6b7280]">张数</div>
-                                  <select
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    step={1}
                                     value={item.imageCount}
                                     className="h-10 w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-[#111827] outline-none transition focus:border-[#111827]"
                                     onChange={(event) =>
@@ -1660,13 +1664,8 @@ const TreePromptStyleLibraryModalV2: React.FC<TreePromptStyleLibraryModalProps> 
                                         ),
                                       }))
                                     }
-                                  >
-                                    <option value="">默认</option>
-                                    <option value="1">1</option>
-                                    <option value="2">2</option>
-                                    <option value="3">3</option>
-                                    <option value="4">4</option>
-                                  </select>
+                                    placeholder="默认"
+                                  />
                                 </label>
                               </div>
 
@@ -2770,8 +2769,9 @@ const TreePromptSettingsModal: React.FC<{
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#98a2b3]">
                   张数
                 </div>
-                <div className="grid grid-cols-4 gap-2 rounded-[18px] bg-[#f4f6fa] p-1.5">
-                  {IMAGE_COUNT_OPTIONS.map((count) => {
+                <div className="rounded-[18px] bg-[#f4f6fa] p-1.5">
+                  <div className="grid grid-cols-5 gap-2">
+                  {IMAGE_COUNT_QUICK_OPTIONS.map((count) => {
                     const active = currentImageCount === count;
                     return (
                       <button
@@ -2788,6 +2788,26 @@ const TreePromptSettingsModal: React.FC<{
                       </button>
                     );
                   })}
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={normalizePositiveInteger(currentImageCount)}
+                    onChange={(event) =>
+                      onSelectImageCount(
+                        normalizePositiveInteger(
+                          event.currentTarget.value,
+                          currentImageCount,
+                        ),
+                      )
+                    }
+                    className="mt-2 h-9 w-full rounded-[14px] border border-transparent bg-white px-3 text-center text-[13px] font-semibold text-[#111827] outline-none focus:border-[#d7dde7]"
+                    aria-label="图片生成张数"
+                  />
+                  <div className="mt-1 px-1 text-[10px] leading-4 text-[#98a2b3]">
+                    常用预设只是快捷按钮；项目不设最大张数，实际由供应商决定。
+                  </div>
                 </div>
               </section>
 
@@ -2878,7 +2898,7 @@ const TreePromptGenerateControls: React.FC<{
     };
   const normalizedCurrentProviderId = currentModelOption.providerId || null;
   const hasPrompt = Boolean(String(element.genPrompt || "").trim());
-  const imageCount = element.genImageCount || 1;
+  const imageCount = normalizePositiveInteger(element.genImageCount);
   const imageQuality = element.genImageQuality || "medium";
   const currentModelLabel = getModelControlLabel(currentModelOption);
   const currentResolution = (element.genResolution || "1K") as WorkspaceImageResolutionPreset;
@@ -3059,7 +3079,7 @@ const TreePromptGenerateControls: React.FC<{
                 });
               }}
               onSelectImageCount={(value) =>
-                updateSelectedElement({ genImageCount: value as CanvasElement["genImageCount"] })
+                updateSelectedElement({ genImageCount: normalizePositiveInteger(value) })
               }
               onSelectQuality={(value) => updateSelectedElement({ genImageQuality: value })}
               onSelectResolution={(value) => {
@@ -3162,7 +3182,6 @@ export const WorkspaceTreePromptNode: React.FC<
   const activeTone =
     TREE_PROMPT_TONES.find((tone) => tone.id === activeToneId) ||
     TREE_PROMPT_TONES[0];
-  const isCollapsed = Boolean(element.treeChildrenCollapsed);
   const normalizedPrompt = (promptValue || "").trim();
   const promptText =
     normalizedPrompt ||
@@ -3400,25 +3419,6 @@ export const WorkspaceTreePromptNode: React.FC<
               style={{ borderRadius: WORKSPACE_NODE_RADIUS }}
             />
           ) : null}
-
-          <button
-            type="button"
-            aria-label={isCollapsed ? LABEL_EXPAND : LABEL_COLLAPSE}
-            className="absolute left-1/2 top-full z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#d8d6df] bg-[#f8f8fb] text-[#7b8090] shadow-[0_6px_14px_rgba(15,23,42,0.10)] transition hover:text-[#111827]"
-            onMouseDown={(event) => {
-              activateNode();
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              activateNode();
-              event.stopPropagation();
-              updateSelectedElement({
-                treeChildrenCollapsed: !isCollapsed,
-              });
-            }}
-          >
-            {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          </button>
         </div>
       </div>
     </div>

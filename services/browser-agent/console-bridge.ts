@@ -32,8 +32,40 @@ const redactSensitiveText = (value: string): string => {
     .replace(/AIza[0-9A-Za-z\-_]+/g, "AIza[REDACTED]");
 };
 
+const tryFormatInspectableObject = (value: unknown): string | null => {
+  if (!value || typeof value !== "object") return null;
+  try {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(
+      value,
+      (_key, current) => {
+        if (typeof current === "object" && current !== null) {
+          if (seen.has(current)) return "[Circular]";
+          seen.add(current);
+        }
+        if (typeof current === "function") {
+          return `[Function ${current.name || "anonymous"}]`;
+        }
+        if (current instanceof Error) {
+          return {
+            name: current.name,
+            message: current.message,
+            stack: current.stack || null,
+          };
+        }
+        return current;
+      },
+      2,
+    );
+  } catch {
+    return null;
+  }
+};
+
 const safeStringify = (value: unknown): string => {
   if (typeof value === "string") return redactSensitiveText(value);
+  const formattedObject = tryFormatInspectableObject(value);
+  if (formattedObject) return redactSensitiveText(formattedObject);
   try {
     return redactSensitiveText(JSON.stringify(value));
   } catch {

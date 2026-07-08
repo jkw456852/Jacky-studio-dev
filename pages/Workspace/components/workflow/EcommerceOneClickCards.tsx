@@ -27,9 +27,9 @@ import type {
   EcommerceSupplementField,
   EcommerceWorkflowMode,
   WorkflowUiMessage,
-} from "../../../../types/workflow.types";
-import { useEcommerceOneClickState } from "../../../../stores/ecommerceOneClick.store";
-import { executeSkill } from "../../../../services/skills";
+} from "../../../../types/workflow.types.ts";
+import { useEcommerceOneClickState } from "../../../../stores/ecommerceOneClick.store.ts";
+import { executeSkill } from "../../../../services/skills/index.ts";
 import { getMappedModelDisplaySummary } from "../../../../services/provider-settings";
 import {
   applyOverlayLayerArrangement,
@@ -63,11 +63,11 @@ import {
   OVERLAY_PLATFORM_PRESET_OPTIONS,
   upsertOverlayBrandPreset,
 } from "../../../../utils/ecommerce-overlay-production";
-import { splitEcommerceImageAnalysisTextFieldList } from "../../../../utils/ecommerce-image-analysis";
+import { splitEcommerceImageAnalysisTextFieldList } from "../../../../utils/ecommerce-image-analysis.ts";
 import {
   ECOMMERCE_PLAN_RATIO_OPTIONS,
   getDefaultEcommercePlanRatio,
-} from "../../../../utils/ecommerce-plan-ratio";
+} from "../../../../utils/ecommerce-plan-ratio.ts";
 import {
   sanitizeDownloadName,
 } from "./EcommerceWorkflowResultReview";
@@ -81,7 +81,7 @@ import {
   ECOMMERCE_PUBLIC_STAGE_META,
   ECOMMERCE_PUBLIC_STAGE_ORDER,
   getEcommercePublicStageId,
-} from "./ecommerceWorkflowUi";
+} from "./ecommerceWorkflowUi.ts";
 
 const Card = ({
   children,
@@ -10651,5 +10651,4 @@ export const EcommerceOneClickCards: React.FC<Props> = ({
 
   return null;
 };
-
 

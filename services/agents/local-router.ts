@@ -1,7 +1,7 @@
 /**
  * 本地关键词预路由
- * 不依赖API，0延迟，作为API路由的降级方案
- * 当Gemini API不可用时，仍能将用户请求路由到正确的智能体
+ * 不依赖 API，0 延迟，作为远端路由失败时的降级方案。
+ * 当前产品默认单智能体模式：设计类请求统一先进 Coco，再由 Coco 决定 skill 和工作流。
  */
 
 import { AgentType } from '../../types/agent.types';
@@ -13,12 +13,12 @@ import { AGENT_ROUTE_RULES, CHAT_PATTERNS, EDIT_KEYWORDS, VAGUE_PATTERNS } from 
  */
 export function isEditRequest(message: string): boolean {
   const lower = message.toLowerCase();
-  return EDIT_KEYWORDS.some(k => lower.includes(k));
+  return EDIT_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
 
 /**
  * 本地关键词路由
- * 注意：修改/编辑类请求不走本地路由，返回 null 让 API 路由处理
+ * 除纯闲聊外，其余正常设计/执行请求默认统一进入 coco。
  * @returns 匹配到的智能体类型，未匹配返回 null
  */
 export function localPreRoute(message: string): AgentType | null {
@@ -26,57 +26,37 @@ export function localPreRoute(message: string): AgentType | null {
     return 'prompt-optimizer';
   }
 
-  // 修改/编辑类请求需要更精确的意图分析，不走本地路由
-  if (isEditRequest(message)) {
-    return null;
-  }
-
-  // 闲聊类消息也不走本地路由
+  // 纯闲聊类消息不走设计执行路径
   if (isChatMessage(message)) {
     return null;
   }
 
   const lower = message.toLowerCase();
+  const matchedRule = AGENT_ROUTE_RULES.find((rule) =>
+    rule.keywords.some((keyword) => lower.includes(keyword)),
+  );
 
-  // 复合意图检测（优先于通用关键词匹配）
-  const hasVideoKeyword = /视频|video|动画|animation|片头|转场/.test(lower);
-  const hasStoryboardKeyword = /分镜|故事板|九宫格|storyboard|镜头|shot list/.test(lower);
-  const hasEcommerceKeyword = /电商|亚马逊|amazon|listing|副图|主图|详情图|shopify|淘宝|天猫/.test(lower);
-  const hasClothingKeyword = /服装|衣服|上衣|裤子|裙|棚拍|模特/.test(lower);
-
-  if (hasVideoKeyword && hasStoryboardKeyword) return 'cameron';
-  if (hasVideoKeyword && hasEcommerceKeyword) return 'campaign';
-  // Clothing studio: route to campaign agent (specialized prompt may be pinned)
-  if (hasEcommerceKeyword && hasClothingKeyword) return 'campaign';
-
-  let bestMatch: { agent: AgentType; priority: number; matchCount: number } | null = null;
-
-  for (const rule of AGENT_ROUTE_RULES) {
-    const matchCount = rule.keywords.filter(k => lower.includes(k)).length;
-    if (matchCount > 0) {
-      // 优先选择优先级高的（数字越小越高），同优先级再比匹配数量
-      if (!bestMatch || rule.priority < bestMatch.priority ||
-        (rule.priority === bestMatch.priority && matchCount > bestMatch.matchCount)) {
-        bestMatch = { agent: rule.agent, priority: rule.priority, matchCount };
-      }
-    }
+  if (matchedRule) {
+    return 'coco';
   }
 
-  // 未匹配到任何规则时返回 null，让消息流入 LLM 路由做语义分析
-  // poster fallback 仅在 Hook 层作为最终兜底
-  return bestMatch?.agent || null;
+  if (isEditRequest(message) || isVagueRequest(message) || message.trim().length > 0) {
+    return 'coco';
+  }
+
+  return null;
 }
 
 /**
- * 检测是否为闲聊/问候类消息（不需要路由到设计智能体）
+ * 检测是否为闲聊/问候类消息（不需要走设计执行路径）
  */
 export function isChatMessage(message: string): boolean {
-  return CHAT_PATTERNS.some(p => p.test(message.trim()));
+  return CHAT_PATTERNS.some((pattern) => pattern.test(message.trim()));
 }
 
 /**
  * 检测是否为模糊/不明确的请求
  */
 export function isVagueRequest(message: string): boolean {
-  return VAGUE_PATTERNS.some(p => p.test(message.trim()));
+  return VAGUE_PATTERNS.some((pattern) => pattern.test(message.trim()));
 }

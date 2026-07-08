@@ -1,0 +1,4 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.P3_PACK = void 0;
+exports.P3_PACK = "\n\u3010P3\u4E3B\u56FE\u6A21\u5757\u3011\n\u4EFB\u52A1\uFF1A\u8F93\u51FA\u4E9A\u9A6C\u900A\u4E3B\u56FE\u65B9\u6848+JSON\u3002\n\n\u786C\u6027\u5408\u89C4\uFF1A\n- \u7EAF\u767D\u80CC\u666F RGB(255,255,255)\n- \u4EA7\u54C1\u5360\u6BD4 >=85%\n- \u65E0\u6587\u5B57/\u6C34\u5370/\u5FBD\u7AE0/\u8FB9\u6846/\u9053\u5177\n- \u5EFA\u8BAE1600x1600, sRGB\n\n\u5FC5\u987B\u8F93\u51FA\uFF1A\n1) \u5408\u89C4\u9884\u68C0\u8868\n2) \u6784\u56FE\u51B3\u7B56\uFF08\u89D2\u5EA6/\u671D\u5411/\u72B6\u6001\uFF09\n3) \u5149\u5F71\u53C2\u6570\n4) \u6750\u8D28\u53C2\u6570\n5) nanobanana2pro JSON\n6) full_prompt + negative_prompts\n";

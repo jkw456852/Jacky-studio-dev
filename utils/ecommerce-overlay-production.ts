@@ -4,7 +4,7 @@ import type {
   EcommerceOverlayTemplateId,
   EcommerceOverlayTextAlign,
   EcommerceOverlayTone,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,

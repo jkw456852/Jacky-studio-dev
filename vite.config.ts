@@ -1,11 +1,15 @@
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { aui } from "@assistant-ui/vite";
 import type { Plugin } from "vite";
-import accountSyncHandler from "./api/account-sync";
-import accountSecretsHandler from "./api/account-secrets";
-import openAIProxyHandler from "./api/openai-proxy";
-import searchHandler from "./api/search";
+import accountSyncHandler from "./api/account-sync.ts";
+import accountSecretsHandler from "./api/account-secrets.ts";
+import assistantChatHandler from "./api/assistant-chat.ts";
+import assistantChatResumeHandler from "./api/assistant-chat/resume/[streamId].ts";
+import mcpAppsHandler from "./api/mcp-apps.ts";
+import openAIProxyHandler from "./api/openai-proxy.ts";
+import searchHandler from "./api/search.ts";
 import {
   clearPersonalBrowserAuthSession,
   finalizePersonalBrowserAuthSession,
@@ -13,18 +17,19 @@ import {
   getPersonalBrowserAuthPaths,
   getPersonalCompetitorBrowserAuthStatus,
   registerPersonalBrowserAuthSession,
-} from "./services/dev/competitor-browser-auth-personal";
+} from "./services/dev/competitor-browser-auth-personal.ts";
 import {
   resolveBrowserExecutablePath,
   tryExtractCompetitorDeckWithBrowser,
   validateTaobaoDetailAccessWithContext,
-} from "./services/dev/competitor-browser-extract";
-import { apiCompetitorAnalysisDebugPlugin } from "./services/dev/competitor-analysis-debug";
-import { apiCompetitorVisionSmokeDebugPlugin } from "./services/dev/competitor-vision-smoke-debug";
-import { apiEcommerceProductAnalysisDebugPlugin } from "./services/dev/ecommerce-product-analysis-debug";
-import { apiEcommerceSupplementDebugPlugin } from "./services/dev/ecommerce-supplement-debug";
-import { apiEcommerceWorkflowDebugPlugin } from "./services/dev/ecommerce-workflow-debug";
-import { apiCompetitorPageImportPlugin } from "./services/dev/competitor-page-import";
+} from "./services/dev/competitor-browser-extract.ts";
+import { apiCompetitorAnalysisDebugPlugin } from "./services/dev/competitor-analysis-debug.ts";
+import { apiCompetitorVisionSmokeDebugPlugin } from "./services/dev/competitor-vision-smoke-debug.ts";
+import { apiEcommerceProductAnalysisDebugPlugin } from "./services/dev/ecommerce-product-analysis-debug.ts";
+import { apiEcommerceSupplementDebugPlugin } from "./services/dev/ecommerce-supplement-debug.ts";
+import { apiEcommerceWorkflowDebugPlugin } from "./services/dev/ecommerce-workflow-debug.ts";
+import { apiCompetitorPageImportPlugin } from "./services/dev/competitor-page-import.ts";
+import { apiCustomSkillFilesPlugin } from "./services/dev/custom-skill-files.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /api/openai-proxy 本地代理：让前端同源转发 OpenAI 兼容请求
@@ -63,6 +68,88 @@ function apiOpenAIProxyPlugin(): Plugin {
 // 本地开发时把 /api/fetch-image 挂在 Vite dev server 上
 // 等同于 Vercel Serverless Function，解决 ImgBB 等外部图片 CORS 问题
 // ─────────────────────────────────────────────────────────────────────────────
+function apiAssistantChatPlugin(): Plugin {
+  return {
+    name: "vite-plugin-api-assistant-chat",
+    configureServer(server) {
+      server.middlewares.use("/api/assistant-chat/resume", async (req, res) => {
+        const adaptedRes = createAdaptedApiResponse(res);
+        const originalUrl = req.url || "/";
+
+        try {
+          const url = new URL(originalUrl, "http://localhost");
+          const pathnameParts = url.pathname.split("/").filter(Boolean);
+          const streamId = pathnameParts.at(-1);
+          req.query = {
+            ...(req.query || {}),
+            ...(streamId ? { streamId } : {}),
+          };
+          await assistantChatResumeHandler(req as any, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_assistant_chat_resume_failed",
+            });
+          }
+        }
+      });
+
+      server.middlewares.use("/api/assistant-chat", async (req, res) => {
+        if (req.method !== "POST") {
+          const adaptedRes = createAdaptedApiResponse(res);
+          adaptedRes.status(405).json({ error: "Method not allowed" });
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        (req as any).body = Buffer.concat(chunks).toString("utf-8");
+
+        const adaptedRes = createAdaptedApiResponse(res);
+        try {
+          await assistantChatHandler(req as any, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_assistant_chat_failed",
+            });
+          }
+        }
+      });
+    },
+  };
+}
+
+function apiMcpAppsPlugin(): Plugin {
+  return {
+    name: "vite-plugin-api-mcp-apps",
+    configureServer(server) {
+      server.middlewares.use("/api/mcp-apps", async (req, res) => {
+        if (req.method !== "POST") {
+          const adaptedRes = createAdaptedApiResponse(res);
+          adaptedRes.status(405).json({ error: "Method not allowed" });
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        (req as any).body = Buffer.concat(chunks).toString("utf-8");
+
+        const adaptedRes = createAdaptedApiResponse(res);
+        try {
+          await mcpAppsHandler(req as any, adaptedRes);
+        } catch (error: any) {
+          if (!adaptedRes.writableEnded) {
+            adaptedRes.status(500).json({
+              error: error?.message || "local_mcp_apps_failed",
+            });
+          }
+        }
+      });
+    },
+  };
+}
+
 function apiFetchImagePlugin(): Plugin {
   const REQUEST_TIMEOUT_MS = 15000;
   const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -268,17 +355,25 @@ function createAdaptedApiResponse(res: any) {
     return adaptedRes;
   };
   adaptedRes.json = (payload: unknown) => {
-    if (!adaptedRes.headersSent) {
-      adaptedRes.setHeader("Content-Type", "application/json; charset=utf-8");
+    const body = JSON.stringify(payload);
+    if (!res.headersSent) {
+      res.statusCode = adaptedRes.statusCode || res.statusCode || 200;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Length", Buffer.byteLength(body));
     }
-    adaptedRes.end(JSON.stringify(payload));
+    res.end(body);
     return adaptedRes;
   };
   adaptedRes.send = (payload: unknown) => {
     if (typeof payload === "object" && payload !== null) {
       return adaptedRes.json(payload);
     }
-    adaptedRes.end(String(payload ?? ""));
+    const body = String(payload ?? "");
+    if (!res.headersSent) {
+      res.statusCode = adaptedRes.statusCode || res.statusCode || 200;
+      res.setHeader("Content-Length", Buffer.byteLength(body));
+    }
+    res.end(body);
     return adaptedRes;
   };
   return adaptedRes;
@@ -348,6 +443,19 @@ function apiExtractPlugin(): Plugin {
   const MAX_HTML_BYTES = 1_500_000;
   const ALLOWED_CT = ["text/html", "application/xhtml+xml", "text/plain"];
 
+  type ExtractRequestBody = {
+    url?: unknown;
+    query?: unknown;
+    provider?: {
+      providerType?: unknown;
+      apiKey?: unknown;
+      baseUrl?: unknown;
+    };
+  };
+
+  const normalizeBaseUrl = (rawUrl: unknown): string =>
+    String(rawUrl || "").trim().replace(/\/+$/, "");
+
   function isPrivate(host: string): boolean {
     const h = host.toLowerCase();
     return !h || h === "localhost" || h === "::1" || h.endsWith(".local") ||
@@ -363,6 +471,121 @@ function apiExtractPlugin(): Plugin {
       .replace(/\s+/g, " ").trim();
   }
 
+  const normalizeExtractPayload = (payload: any, fallbackUrl: string) => {
+    const cleanedText = stripHtml(
+      String(
+        payload?.raw_content ||
+        payload?.content ||
+        payload?.text ||
+        payload?.cleanedText ||
+        "",
+      ),
+    );
+    const excerpt = stripHtml(
+      String(payload?.excerpt || payload?.summary || cleanedText.slice(0, 1200) || ""),
+    );
+    return {
+      url: String(payload?.url || fallbackUrl),
+      title: stripHtml(String(payload?.title || "")),
+      cleanedText,
+      excerpt: excerpt || cleanedText.slice(0, 1200),
+      length: cleanedText.length,
+    };
+  };
+
+  const tryTavilyExtract = async (
+    targetUrl: string,
+    query: string,
+    provider: NonNullable<ExtractRequestBody["provider"]>,
+  ) => {
+    const apiKey = String(provider.apiKey || "").trim();
+    if (!apiKey) {
+      throw new Error("missing_search_api_key");
+    }
+    const rootUrl = normalizeBaseUrl(provider.baseUrl) || "https://api.tavily.com";
+    const response = await fetch(
+      `${rootUrl}${rootUrl.endsWith("/extract") ? "" : "/extract"}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          urls: [targetUrl],
+          include_images: false,
+          extract_depth: "advanced",
+          format: "markdown",
+          ...(query ? { query } : {}),
+        }),
+      },
+    );
+
+    let payload: any = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+
+    if (!response.ok) {
+      const message = String(payload?.error || payload?.message || "").trim();
+      throw new Error(message || `extract_failed_${response.status}`);
+    }
+
+    const item = Array.isArray(payload?.results)
+      ? payload.results[0]
+      : Array.isArray(payload?.data)
+        ? payload.data[0]
+        : payload?.result || payload;
+    const normalized = normalizeExtractPayload(item, targetUrl);
+    if (!normalized.cleanedText) {
+      throw new Error("extract_failed_empty_content");
+    }
+    return normalized;
+  };
+
+  const tryDirectFetchExtract = async (targetUrl: string) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    const response = await fetch(targetUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Jacky-Studio-ResearchBot/1.0)" },
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
+
+    if (!response.ok) {
+      const upstreamStatus = response.status >= 400 ? response.status : 502;
+      const error = new Error(`fetch_failed_${response.status}`) as Error & { status?: number; url?: string };
+      error.status = upstreamStatus;
+      error.url = targetUrl;
+      throw error;
+    }
+    const ct = response.headers.get("content-type") || "";
+    if (!ALLOWED_CT.some(t => ct.toLowerCase().includes(t))) {
+      const error = new Error("unsupported_content_type") as Error & { status?: number; contentType?: string };
+      error.status = 415;
+      error.contentType = ct;
+      throw error;
+    }
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > MAX_HTML_BYTES) {
+      const error = new Error("content_too_large") as Error & { status?: number };
+      error.status = 413;
+      throw error;
+    }
+    const html = new TextDecoder().decode(bytes);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? stripHtml(titleMatch[1] || "") : "";
+    const cleanedText = stripHtml(html);
+    return {
+      url: response.url || targetUrl,
+      title,
+      cleanedText,
+      excerpt: cleanedText.slice(0, 1200),
+      length: cleanedText.length,
+    };
+  };
+
   return {
     name: "vite-plugin-api-extract",
     configureServer(server) {
@@ -374,10 +597,13 @@ function apiExtractPlugin(): Plugin {
         }
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
-        let body: any = {};
+        let body: ExtractRequestBody = {};
         try { body = JSON.parse(Buffer.concat(chunks).toString("utf-8")); } catch { /* ignore */ }
 
         const targetUrl = String(body.url || "").trim();
+        const provider = body.provider || {};
+        const providerType = String(provider.providerType || "").trim().toLowerCase();
+        const query = String(body.query || "").trim();
         if (!/^https?:\/\//i.test(targetUrl)) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "url must be a valid http(s) url" }));
@@ -397,47 +623,45 @@ function apiExtractPlugin(): Plugin {
         }
 
         try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 12000);
-          const response = await fetch(targetUrl, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; Jacky-Studio-ResearchBot/1.0)" },
-            signal: ctrl.signal,
-          }).finally(() => clearTimeout(t));
+          let extracted: {
+            url: string;
+            title: string;
+            cleanedText: string;
+            excerpt: string;
+            length: number;
+          } | null = null;
 
-          if (!response.ok) {
-            const upstreamStatus = response.status >= 400 ? response.status : 502;
-            res.writeHead(upstreamStatus, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                error: `fetch_failed_${response.status}`,
-                status: response.status,
-                url: targetUrl,
-              }),
-            );
-            return;
+          let fallbackReason = "";
+          if (providerType === "tavily") {
+            try {
+              extracted = await tryTavilyExtract(targetUrl, query, provider);
+            } catch (error: any) {
+              fallbackReason = String(error?.message || "provider_extract_failed");
+            }
           }
-          const ct = response.headers.get("content-type") || "";
-          if (!ALLOWED_CT.some(t => ct.toLowerCase().includes(t))) {
-            res.writeHead(415, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "unsupported_content_type", contentType: ct }));
-            return;
+
+          if (!extracted) {
+            extracted = await tryDirectFetchExtract(targetUrl);
           }
-          const bytes = await response.arrayBuffer();
-          if (bytes.byteLength > MAX_HTML_BYTES) {
-            res.writeHead(413, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "content_too_large" }));
-            return;
-          }
-          const html = new TextDecoder().decode(bytes);
-          const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-          const title = titleMatch ? stripHtml(titleMatch[1] || "") : "";
-          const cleanedText = stripHtml(html);
+
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ url: response.url || targetUrl, title, cleanedText, excerpt: cleanedText.slice(0, 1200), length: cleanedText.length }));
+          res.end(JSON.stringify({
+            ...extracted,
+            providerExtractUsed: providerType === "tavily" && !fallbackReason,
+            fallbackReason: fallbackReason || undefined,
+          }));
         } catch (error: any) {
           if (error?.name === "AbortError") {
             res.writeHead(504, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "extract_timeout" }));
+          } else if (typeof error?.status === "number") {
+            res.writeHead(error.status, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              error: error?.message || "extract_failed",
+              status: error.status,
+              url: error?.url || targetUrl,
+              contentType: error?.contentType,
+            }));
           } else {
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: error?.message || "extract_failed" }));
@@ -1265,8 +1489,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3001,
       host: "0.0.0.0",
+      strictPort: true,
       watch: {
         ignored: [
+          "**/.codex-tmp/**",
+          "**/.codex-temp/**",
           "**/.jk-studio-runtime/**",
           "**/.xc-studio-runtime/**",
         ],
@@ -1278,8 +1505,30 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    optimizeDeps: {
+      include: [
+        "@assistant-ui/core",
+        "@assistant-ui/react",
+        "@assistant-ui/react-ai-sdk",
+        "@assistant-ui/react-devtools",
+        "@assistant-ui/react-markdown",
+        "@assistant-ui/react-lexical",
+        "@assistant-ui/store",
+        "@lexical/react/LexicalComposer",
+        "@lexical/react/LexicalComposerContext",
+        "@lexical/react/LexicalContentEditable",
+        "@lexical/react/LexicalErrorBoundary",
+        "@lexical/react/LexicalHistoryPlugin",
+        "@lexical/react/LexicalPlainTextPlugin",
+        "@lexical/utils",
+        "lexical",
+      ],
+    },
     plugins: [
+      aui(),
       react(),
+      apiAssistantChatPlugin(),
+      apiMcpAppsPlugin(),
       apiOpenAIProxyPlugin(),
       apiFetchImagePlugin(),
       apiSearchPlugin(),
@@ -1295,6 +1544,7 @@ export default defineConfig(({ mode }) => {
       apiEcommerceSupplementDebugPlugin(),
       apiEcommerceWorkflowDebugPlugin(),
       apiCompetitorPageImportPlugin(),
+      apiCustomSkillFilesPlugin(),
     ],
     build: {
       outDir: "dist",

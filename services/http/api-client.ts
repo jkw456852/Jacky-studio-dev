@@ -16,6 +16,31 @@ const DEFAULT_RETRYABLE_STATUSES = [408, 409, 425, 429, 500, 502, 503, 504];
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const sleepWithAbort = (ms: number, signal?: AbortSignal) => {
+  if (!signal) {
+    return sleep(ms);
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal.removeEventListener('abort', onAbort);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+};
+
 const createTraceId = (): string => {
   const random = Math.random().toString(36).slice(2, 10);
   return `xc_${Date.now().toString(36)}_${random}`;
@@ -215,12 +240,33 @@ export async function fetchWithResilience(
       const isTimeoutStatus = isTimeoutStatusError(response.status);
       const delay = computeBackoff(attempt, baseDelayMs, maxDelayMs, isRateLimit || isTimeoutStatus);
       const statusMsg = isRateLimit ? '(rate limited)' : isTimeoutStatus ? '(upstream timeout)' : '';
+      // Peek at the upstream diagnostic info so console readers don't have
+      // to dig into the Network tab to know which provider returned the
+      // error. We clone() so the response is still consumable by the caller
+      // on the final attempt (when we return without retrying).
+      const proxyTarget = response.headers.get('x-proxy-target');
+      const proxyUpstreamStatus = response.headers.get('x-proxy-upstream-status');
+      let upstreamBodyPreview: string | null = null;
+      try {
+        const cloned = response.clone();
+        const text = await cloned.text();
+        if (text) {
+          upstreamBodyPreview = text.length > 240 ? `${text.slice(0, 240)}...` : text;
+        }
+      } catch {
+        // body unreadable (already consumed or stream); ignore
+      }
       console.warn(
         `[${operation}] retrying status=${response.status} ${statusMsg}, attempt=${attempt + 1}/${retries + 1}, wait=${delay}ms${
           requestFingerprint ? `, requestId=${requestFingerprint}` : ''
         }`,
+        {
+          proxyTarget: proxyTarget || null,
+          proxyUpstreamStatus: proxyUpstreamStatus || null,
+          upstreamBodyPreview,
+        },
       );
-      await sleep(delay);
+      await sleepWithAbort(delay, externalSignal);
     } catch (error) {
       if (totalTimeoutId) clearTimeout(totalTimeoutId);
       if (idleTimeoutId) clearTimeout(idleTimeoutId);
@@ -254,7 +300,7 @@ export async function fetchWithResilience(
               requestFingerprint ? `, requestId=${requestFingerprint}` : ''
             }`,
           );
-          await sleep(delay);
+          await sleepWithAbort(delay, externalSignal);
           continue;
         }
       }
@@ -284,7 +330,7 @@ export async function fetchWithResilience(
           requestFingerprint ? `, requestId=${requestFingerprint}` : ''
         }`,
       );
-      await sleep(delay);
+      await sleepWithAbort(delay, externalSignal);
     }
   }
 

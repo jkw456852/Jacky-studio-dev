@@ -4,8 +4,8 @@ import type {
   StudioRoleEntity,
   StudioRoleVersionRecord,
   StudioTemporaryRoleDraft,
-} from "../../types/agent.types";
-import type { ChatMessage, WorkspaceStyleLibrary } from "../../types/common";
+} from "../../types/agent.types.ts";
+import type { ChatMessage, WorkspaceStyleLibrary } from "../../types/common.ts";
 import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,
@@ -61,6 +61,10 @@ import {
   STUDIO_USER_ASSET_STATE_VERSION as USER_ASSET_STATE_VERSION,
   STUDIO_WORKSPACE_PREFERENCES_ASSET_VERSION as WORKSPACE_PREFERENCES_VERSION,
 } from "./user-asset-types.ts";
+import {
+  normalizeFrontstageSkillPresentation,
+  sanitizeFrontstageSkillName,
+} from "./skill-identity.ts";
 import { normalizeMainBrainPreferences } from "./main-brain-shared.ts";
 import { normalizeWorkspaceStyleLibrary } from "../vision-orchestrator/style-library.ts";
 
@@ -626,22 +630,18 @@ const normalizeSkillPreferenceSnapshot = (
     value.config && typeof value.config === "object"
       ? (value.config as Record<string, unknown>)
       : undefined;
-  const frontstageId = String(config?.frontstageSkillId || "").trim();
-  const frontstagePresentation: Record<string, { name: string; iconName: string }> = {
-    "autonomous-video-director": { name: "\u89c6\u9891\u521b\u4f5c", iconName: "Video" },
-    "autonomous-social-campaign": { name: "\u793e\u5a92\u5185\u5bb9", iconName: "Hash" },
-    "autonomous-brand-system": { name: "\u54c1\u724c\u89c6\u89c9", iconName: "Lightbulb" },
-    "ecom-oneclick-workflow": { name: "\u7535\u5546\u4e00\u952e\u5de5\u4f5c\u6d41", iconName: "Library" },
-    "clothing-studio-workflow": { name: "\u670d\u9970\u5de5\u4f5c\u6d41", iconName: "ImageIcon" },
-    "cn-detail-page": { name: "\u4e2d\u6587\u8be6\u60c5\u9875\u5957\u56fe", iconName: "Box" },
-    "jkai-oneclick": { name: "JKAI One-Click", iconName: "Zap" },
-  };
-  const presentation = frontstagePresentation[frontstageId];
-  return {
+  const normalized = normalizeFrontstageSkillPresentation({
     id,
-    name: presentation?.name || name,
-    iconName: presentation?.iconName || iconName,
+    name,
+    iconName,
     ...(config ? { config } : {}),
+  });
+  if (!normalized) return null;
+  return {
+    id: String(normalized.id || "").trim(),
+    name: sanitizeFrontstageSkillName(normalized.name),
+    iconName: String(normalized.iconName || "").trim(),
+    ...(normalized.config ? { config: normalized.config as Record<string, unknown> } : {}),
   };
 };
 
@@ -659,7 +659,32 @@ const normalizeSkillPreferences = (
           if (!item || typeof item !== "object") return acc;
           const normalizedKey = String(key || "").trim();
           if (!normalizedKey) return acc;
-          acc[normalizedKey] = item as Record<string, unknown>;
+          const normalizedItem = {
+            ...(item as Record<string, unknown>),
+          };
+          if (typeof normalizedItem.name === "string") {
+            normalizedItem.name = sanitizeFrontstageSkillName(normalizedItem.name);
+          }
+          acc[normalizedKey] = normalizedItem;
+          return acc;
+        }, {})
+      : {};
+  const frontstageRuntimeConfigs =
+    value.frontstageSkillRuntimeConfigs &&
+    typeof value.frontstageSkillRuntimeConfigs === "object"
+      ? Object.entries(
+          value.frontstageSkillRuntimeConfigs as Record<string, unknown>,
+        ).reduce<Record<string, Record<string, unknown>>>((acc, [key, item]) => {
+          if (!item || typeof item !== "object") return acc;
+          const normalizedKey = String(key || "").trim();
+          if (!normalizedKey) return acc;
+          const normalizedItem = {
+            ...(item as Record<string, unknown>),
+          };
+          if (typeof normalizedItem.name === "string") {
+            normalizedItem.name = sanitizeFrontstageSkillName(normalizedItem.name);
+          }
+          acc[normalizedKey] = normalizedItem;
           return acc;
         }, {})
       : {};
@@ -670,6 +695,7 @@ const normalizeSkillPreferences = (
     recentSkillIds: normalizeStringArray(value.recentSkillIds, 24, 80),
     pinnedSkillIds: normalizeStringArray(value.pinnedSkillIds, 24, 80),
     customSkillConfigs: customConfigs,
+    frontstageSkillRuntimeConfigs: frontstageRuntimeConfigs,
   };
 };
 
@@ -1642,6 +1668,10 @@ const mergeSkillPreferences = (
       ...(fallback.customSkillConfigs || {}),
       ...(base.customSkillConfigs || {}),
     },
+    frontstageSkillRuntimeConfigs: {
+      ...(fallback.frontstageSkillRuntimeConfigs || {}),
+      ...(base.frontstageSkillRuntimeConfigs || {}),
+    },
     activeQuickSkill: base.activeQuickSkill || fallback.activeQuickSkill || null,
   });
 
@@ -1708,6 +1738,7 @@ const hasAnyStateValue = (state: StudioUserAssetState): boolean =>
   state.skillPreferences.recentSkillIds.length > 0 ||
   state.skillPreferences.pinnedSkillIds.length > 0 ||
   Object.keys(state.skillPreferences.customSkillConfigs).length > 0 ||
+  Object.keys(state.skillPreferences.frontstageSkillRuntimeConfigs || {}).length > 0 ||
   Object.keys(state.pluginPreferences.records).length > 0 ||
   Object.keys(state.agentPromptAddons).length > 0 ||
   Object.keys(state.latestRoleDrafts).length > 0 ||

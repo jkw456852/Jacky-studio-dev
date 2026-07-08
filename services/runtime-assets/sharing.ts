@@ -1,4 +1,4 @@
-import type { AgentType } from "../../types/agent.types";
+import type { AgentType } from "../../types/agent.types.ts";
 import { getAgentRoleProfile } from "../agents/role-catalog";
 import {
   getAgentPromptAddon,

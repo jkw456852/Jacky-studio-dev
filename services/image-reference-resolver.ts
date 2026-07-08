@@ -1,7 +1,14 @@
-import { ProviderError } from '../utils/provider-error';
-import { fetchWithResilience } from './http/api-client';
-import { getProviderConfig } from './provider-config';
-import { useImageHostStore } from '../stores/imageHost.store';
+import { ProviderError } from '../utils/provider-error.ts';
+import { fetchWithResilience } from './http/api-client.ts';
+import { getProviderConfig } from './provider-config.ts';
+import { useImageHostStore } from '../stores/imageHost.store.ts';
+import {
+  normalizeImageDataUrlString as normalizeImageDataUrlStringImpl,
+  isNormalizedImageDataUrl as isNormalizedImageDataUrlImpl,
+} from './agents/data-url-helpers.ts';
+
+export const normalizeImageDataUrlString = normalizeImageDataUrlStringImpl;
+export const isNormalizedImageDataUrl = isNormalizedImageDataUrlImpl;
 
 type ReferenceDataUrlCacheValue =
   | Promise<string | null>
@@ -13,6 +20,7 @@ type ReferenceDataUrlCacheValue =
     };
 
 const referenceDataUrlCache = new Map<string, ReferenceDataUrlCacheValue>();
+
 
 const isNetworkFetchError = (error: unknown): boolean => {
   const msg = ((error as any)?.message || '').toLowerCase();
@@ -156,7 +164,8 @@ const fetchReferenceViaServer = async (imageUrl: string): Promise<string | null>
 
 export const normalizeReferenceToDataUrl = async (input: string): Promise<string | null> => {
   if (!input || typeof input !== 'string') return null;
-  if (/^data:image\/.+;base64,/.test(input)) return input;
+  const normalizedDataUrl = normalizeImageDataUrlString(input);
+  if (normalizedDataUrl) return normalizedDataUrl;
   const normalizedInput = String(input || '').trim();
   if (!normalizedInput) return null;
   const cached = referenceDataUrlCache.get(normalizedInput);

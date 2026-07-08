@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { analyzeListingProductSkill, type ListingProductAnalysis } from './analyze-listing-product.skill';
-import { imageGenSkill } from './image-gen.skill';
+import { analyzeListingProductSkill, type ListingProductAnalysis } from './analyze-listing-product.skill.ts';
+import { imageGenSkill } from './image-gen.skill.ts';
 
 const schema = z.object({
   productImages: z.array(z.string()).min(1).max(6),
   brief: z.string().optional(),
   analysis: z.any().optional(),
   shots: z.array(z.any()).optional(),
-  count: z.number().int().min(1).max(8).optional(),
+  count: z.number().int().min(1).optional(),
   aspectRatio: z.string().optional(),
   imageSize: z.enum(['1K', '2K', '4K']).optional(),
   model: z.string().optional(),
@@ -47,6 +47,12 @@ type QualityScore = {
   shotId: string;
   title: string;
   score: number;
+};
+
+const normalizePositiveInteger = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1, Math.floor(numeric));
 };
 
 export type CnDetailPageResult = {
@@ -344,8 +350,14 @@ const dedupeShots = (shots: any[]): any[] => {
 const diversifyShots = (shots: any[], count: number): any[] => {
   const picked: any[] = [];
   const usedViewpoints = new Set<string>();
-  const pool = [...shots];
-  while (picked.length < count && pool.length > 0) {
+  const source = Array.isArray(shots) ? shots.filter(Boolean) : [];
+  if (source.length === 0) return picked;
+  let pool = [...source];
+  while (picked.length < count) {
+    if (pool.length === 0) {
+      pool = [...source];
+      usedViewpoints.clear();
+    }
     const idx = pool.findIndex((shot) => !usedViewpoints.has(classifyViewpoint(shot)));
     const targetIndex = idx >= 0 ? idx : 0;
     const [shot] = pool.splice(targetIndex, 1);
@@ -418,7 +430,7 @@ export async function cnDetailPageSkill(raw: unknown): Promise<CnDetailPageResul
   const params = schema.parse(raw);
   const productImages = params.productImages.slice(0, 6);
   const brief = String(params.brief || '').trim();
-  const count = Math.max(1, Math.min(8, Number(params.count ?? 6)));
+  const count = normalizePositiveInteger(params.count, 6);
   const aspectRatio = String(params.aspectRatio || '3:4');
   const imageSize = (params.imageSize || '2K') as '1K' | '2K' | '4K';
   const model = String(params.model || 'nanobanana2');

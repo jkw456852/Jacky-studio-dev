@@ -6,6 +6,7 @@ import {
   fileToDataUrl,
   getCanvasCenterPoint,
   getCanvasViewportSize,
+  makeImageProxyFromUrl,
   makeImageProxyDataUrl,
 } from "../workspaceShared";
 import {
@@ -15,6 +16,13 @@ import {
 type PlacementPoint = {
   x: number;
   y: number;
+};
+
+type UrlAssetImportInput = {
+  url: string;
+  type: "image" | "video" | "file";
+  title?: string;
+  mediaType?: string;
 };
 
 type UseWorkspaceCanvasAssetImportOptions = {
@@ -150,6 +158,89 @@ export function useWorkspaceCanvasAssetImport(
     [],
   );
 
+  const importUrlAssetToCanvas = useCallback(
+    async (asset: UrlAssetImportInput): Promise<string | null> => {
+      const url = String(asset.url || "").trim();
+      if (!url || asset.type === "file") return null;
+
+      const index = 0;
+      const baseZIndex =
+        elementsRef.current.reduce(
+          (max, element) => Math.max(max, element.zIndex || 0),
+          0,
+        ) + 1;
+      const viewport = getCanvasViewportSize(showAssistant);
+      const canvasCenter = getCanvasCenterPoint({
+        showAssistant,
+        pan,
+        zoom,
+        viewport,
+      });
+      const id = `${asset.type}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+
+      if (asset.type === "video") {
+        const nextElement: CanvasElement = {
+          id,
+          type: "video",
+          url,
+          originalUrl: url,
+          x: canvasCenter.x - VIDEO_DEFAULT_WIDTH / 2,
+          y: canvasCenter.y - VIDEO_DEFAULT_HEIGHT / 2,
+          width: VIDEO_DEFAULT_WIDTH,
+          height: VIDEO_DEFAULT_HEIGHT,
+          zIndex: baseZIndex,
+          genPrompt: asset.title,
+          nodeInteractionMode:
+            nodeInteractionMode === "branch" ? "branch" : undefined,
+        };
+        appendElementsAndSaveHistory([nextElement]);
+        return id;
+      }
+
+      const proxied = await makeImageProxyFromUrl(
+        url,
+        DEFAULT_PROXY_MAX_DIM,
+        viewport,
+      );
+      const imageDisplaySize = getWorkspaceImageNodeDisplaySize(
+        proxied.originalWidth,
+        proxied.originalHeight,
+      );
+      const nextElement: CanvasElement = {
+        id,
+        type: "image",
+        url: proxied.displayUrl,
+        originalUrl: proxied.originalUrl,
+        proxyUrl:
+          proxied.displayUrl !== proxied.originalUrl
+            ? proxied.displayUrl
+            : undefined,
+        x: canvasCenter.x - imageDisplaySize.width / 2,
+        y: canvasCenter.y - imageDisplaySize.height / 2,
+        width: imageDisplaySize.width,
+        height: imageDisplaySize.height,
+        zIndex: baseZIndex + index,
+        genPrompt: asset.title,
+        genAspectRatio: `${proxied.originalWidth}:${proxied.originalHeight}`,
+        nodeInteractionMode:
+          nodeInteractionMode === "branch" ? "branch" : undefined,
+        treeNodeKind: nodeInteractionMode === "branch" ? "image" : undefined,
+      };
+      appendElementsAndSaveHistory([nextElement]);
+      return id;
+    },
+    [
+      appendElementsAndSaveHistory,
+      elementsRef,
+      nodeInteractionMode,
+      pan,
+      showAssistant,
+      zoom,
+    ],
+  );
+
   const importFilesToCanvas = useCallback(
     (
       files: File[],
@@ -245,5 +336,6 @@ export function useWorkspaceCanvasAssetImport(
   return {
     handleFileUpload,
     handleCanvasDrop,
+    importUrlAssetToCanvas,
   };
 }

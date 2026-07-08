@@ -1,41 +1,154 @@
 import type { AgentTask } from '../../types/agent.types';
 import {
+  getImageModelSupportState,
+  getNormalizedAspectRatioForImageModel,
+  isGptImage2FamilyModel,
+} from '../openai-image-presets.ts';
+import {
   isImageGenerationSkillName,
   isVisualReferenceResolutionSkillName,
 } from '../skills/skill-manifest.ts';
-import { buildImageAttachmentTokens } from './environment-input-protocol';
+import { buildImageAttachmentTokens } from './environment-input-protocol.ts';
+
+export const extractOriginalUserRequestFromRuntimeMessage = (message: string): string => {
+  const normalized = String(message || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const runtimeMatch = normalized.match(
+    /\[Original User Request\]\s*([\s\S]*?)\s*\[Runtime State Snapshot\]/i,
+  );
+
+  return runtimeMatch?.[1]?.trim() || normalized;
+};
+
+const extractAspectRatioFromMessage = (message: string): string | null => {
+  const normalized = String(message || "");
+  if (/(横版|横屏|宽屏|16\s*[:：]\s*9|landscape)/i.test(normalized)) return '16:9';
+  if (/(竖版|竖屏|手机屏|9\s*[:：]\s*16|portrait)/i.test(normalized)) return '9:16';
+  if (/(方图|正方形|1\s*[:：]\s*1|square)/i.test(normalized)) return '1:1';
+  if (/(3\s*[:：]\s*4)/i.test(normalized)) return '3:4';
+  if (/(4\s*[:：]\s*3)/i.test(normalized)) return '4:3';
+  return null;
+};
+
+const extractImageSizeFromMessage = (
+  message: string,
+): '1K' | '2K' | '4K' | null => {
+  const normalized = String(message || "");
+  if (/(4K|4096|3840|超清|超高分辨率)/i.test(normalized)) return '4K';
+  if (/(2K|2048|高清|高分辨率)/i.test(normalized)) return '2K';
+  if (/(1K|1024)/i.test(normalized)) return '1K';
+  return null;
+};
+
+const buildLayoutDescriptor = (
+  aspectRatio: string,
+  imageSize: '1K' | '2K' | '4K',
+) => {
+  const sizeDescriptor =
+    imageSize === '4K'
+      ? 'ultra-detailed 4k quality'
+      : imageSize === '2K'
+        ? 'high-resolution 2k quality'
+        : 'clean 1k quality';
+
+  if (aspectRatio === '16:9') {
+    return `ultra-wide cinematic composition, 16:9 landscape orientation, ${sizeDescriptor}, expansive detailed view, `;
+  }
+  if (aspectRatio === '9:16') {
+    return `vertical smartphone wallpaper composition, 9:16 portrait orientation, ${sizeDescriptor}, vertical detailed framing, `;
+  }
+  if (aspectRatio === '4:3') {
+    return `${sizeDescriptor}, professional 4:3 presentation layout, `;
+  }
+  if (aspectRatio === '3:4') {
+    return `${sizeDescriptor}, 3:4 portrait photography framing, `;
+  }
+  if (aspectRatio === '1:1') {
+    return `${sizeDescriptor}, square 1:1 composition, `;
+  }
+  return `${sizeDescriptor}, `;
+};
+
+const resolvePreferredImageModel = (metadata?: Record<string, any>): string => {
+  const preferred = String(metadata?.preferredImageModel || '').trim();
+  return preferred || 'Nano Banana Pro';
+};
+
+const resolveNegotiatedImageConfig = ({
+  requestedAspectRatio,
+  requestedImageSize,
+  model,
+}: {
+  requestedAspectRatio: string;
+  requestedImageSize: '1K' | '2K' | '4K';
+  model: string;
+}) => {
+  const normalizedAspectRatio = getNormalizedAspectRatioForImageModel(
+    model,
+    requestedAspectRatio,
+  );
+  const support = getImageModelSupportState({
+    model,
+    aspectRatio: normalizedAspectRatio,
+    resolution: requestedImageSize,
+  });
+
+  return {
+    aspectRatio: normalizedAspectRatio || requestedAspectRatio,
+    imageSize: requestedImageSize,
+    exactSize:
+      isGptImage2FamilyModel(model) && support.actualSize
+        ? support.actualSize
+        : undefined,
+  };
+};
 
 export const buildForcedGenerateImageCall = (
   message: string,
   attachments?: File[],
   metadata?: Record<string, any>,
 ) => {
-  let aspectRatio = (metadata?.preferredAspectRatio as string) || '3:4';
-  if (/(横版|横屏|宽屏|16:9|landscape)/i.test(message)) {
-    aspectRatio = '16:9';
-  } else if (/(竖版|竖屏|手机屏|9:16|portrait)/i.test(message)) {
-    aspectRatio = '9:16';
-  } else if (/(方图|正方形|1:1|square)/i.test(message)) {
-    aspectRatio = '1:1';
-  } else if (/(4:3)/i.test(message)) {
-    aspectRatio = '4:3';
-  }
-
-  let layoutDescriptor = '';
-  if (aspectRatio === '16:9') layoutDescriptor = 'ultra-wide cinematic 2k masterpiece, 16:9 landscape orientation, expansive detailed view, ';
-  else if (aspectRatio === '9:16') layoutDescriptor = 'vertical smartphone 2k wallpaper, 9:16 portrait orientation, vertical detailed composition, ';
-  else if (aspectRatio === '4:3') layoutDescriptor = 'high-resolution 2k professional 4:3 presentation layout, ';
-  else if (aspectRatio === '3:4') layoutDescriptor = 'high-definition 2k portrait photography, 3:4 orientation, ';
-  else if (aspectRatio === '1:1') layoutDescriptor = 'hi-res 2k square format, 1:1 ratio, ';
+  const actionableMessage =
+    extractOriginalUserRequestFromRuntimeMessage(message) || String(message || '');
+  const model = resolvePreferredImageModel(metadata);
+  const providerId =
+    typeof metadata?.preferredImageProviderId === 'string' &&
+      metadata.preferredImageProviderId.trim()
+      ? metadata.preferredImageProviderId.trim()
+      : undefined;
+  const messageAspectRatio = extractAspectRatioFromMessage(actionableMessage);
+  const requestedAspectRatio =
+    messageAspectRatio ||
+    (typeof metadata?.preferredAspectRatio === 'string'
+      ? metadata.preferredAspectRatio
+      : '') ||
+    '3:4';
+  const requestedImageSize =
+    extractImageSizeFromMessage(actionableMessage) ||
+    (metadata?.preferredImageSize as '1K' | '2K' | '4K' | undefined) ||
+    '2K';
+  const negotiated = resolveNegotiatedImageConfig({
+    requestedAspectRatio,
+    requestedImageSize,
+    model,
+  });
+  const aspectRatio = negotiated.aspectRatio;
+  const imageSize = negotiated.imageSize;
+  const layoutDescriptor = buildLayoutDescriptor(aspectRatio, imageSize);
 
   const forcedCall: any = {
     skillName: 'generateImage',
     params: {
-      prompt: `${layoutDescriptor}${message}, high-impact visual design, clean composition, studio lighting, professional 2k digital art, 8k resolution details`,
+      prompt: `${layoutDescriptor}${actionableMessage}, high-impact visual design, clean composition, studio lighting, premium digital art, crisp realistic detail`,
       aspectRatio,
+      imageSize,
       quality: 'hd',
-      resolution: '2048x2048',
-      model: 'Nano Banana Pro',
+      model,
+      ...(providerId ? { providerId } : {}),
+      ...(negotiated.exactSize ? { exactSize: negotiated.exactSize } : {}),
     },
   };
 

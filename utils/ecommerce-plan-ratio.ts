@@ -1,4 +1,4 @@
-import type { EcommercePlatformMode } from "../types/workflow.types";
+import type { EcommercePlatformMode } from "../types/workflow.types.ts";
 
 export const ECOMMERCE_PLAN_RATIO_OPTIONS = [
   "1:1",

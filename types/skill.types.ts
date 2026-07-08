@@ -1,5 +1,5 @@
-import { ImageModel, VideoModel } from './common';
-import type { ImageTransportRequestSnapshot } from './image-generation.types';
+import type { ImageModel, VideoModel } from './common.ts';
+import type { ImageTransportRequestSnapshot } from './image-generation.types.ts';
 
 export interface ImageTextPolicy {
   enforceChinese?: boolean;
@@ -22,6 +22,16 @@ export interface ImageGenSkillParams {
   imageSize?: '1K' | '2K' | '4K';
   exactSize?: string;
   imageQuality?: 'low' | 'medium' | 'high';
+  quality?: 'low' | 'medium' | 'high' | 'auto' | 'standard' | 'hd';
+  background?: 'transparent' | 'opaque' | 'auto';
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  outputCompression?: number;
+  moderation?: 'low' | 'auto';
+  n?: number;
+  partialImages?: number;
+  stream?: boolean;
+  style?: 'vivid' | 'natural';
+  responseFormat?: 'url' | 'b64_json';
   disableTransportRetries?: boolean;
   referenceImage?: string;
   referenceImageUrl?: string;
@@ -29,6 +39,7 @@ export interface ImageGenSkillParams {
   initImage?: string;
   init_image?: string;
   referenceImages?: string[];
+  inputFidelity?: 'high' | 'low';
   referenceStrength?: number;
   referencePriority?: 'first' | 'all';
   referenceMode?: 'style' | 'product';

@@ -1,7 +1,7 @@
 import type {
   EcommerceCopyPlan,
   EcommercePlatformMode,
-} from "../types/workflow.types";
+} from "../types/workflow.types.ts";
 
 type OldFlowArchetype =
   | "digital-gadget"

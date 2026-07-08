@@ -27,6 +27,7 @@ import {
 } from "../services/storage";
 import {
   getActiveQuickSkillPreference,
+  SKILL_PREFERENCES_UPDATED_EVENT,
 } from "../services/runtime-assets/preferences";
 import {
   getFrontstageSkillLabelKind,
@@ -514,6 +515,7 @@ const HomeModelPreferencePopover: React.FC<{
 interface ProjectCardProps {
   project?: Project;
   isNew?: boolean;
+  featured?: boolean;
   onDelete?: (
     project: Project,
     e: React.MouseEvent<HTMLButtonElement>,
@@ -523,6 +525,7 @@ interface ProjectCardProps {
 const ProjectCard: React.FC<ProjectCardProps> = ({
   project,
   isNew = false,
+  featured = false,
   onDelete,
 }) => {
   const navigate = useNavigate();
@@ -581,10 +584,83 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
   );
 };
 
+interface WideProjectCardProps {
+  project?: Project;
+  isNew?: boolean;
+  onDelete?: (
+    project: Project,
+    e: React.MouseEvent<HTMLButtonElement>,
+  ) => void;
+}
+
+const WideProjectCard: React.FC<WideProjectCardProps> = ({
+  project,
+  isNew = false,
+  onDelete,
+}) => {
+  const navigate = useNavigate();
+
+  if (isNew) {
+    return (
+      <div
+        onClick={() => navigate(createNewWorkspacePath())}
+        className="group grid aspect-[4/3] cursor-pointer rounded-[18px] bg-white p-2 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_-38px_rgba(15,23,42,0.22)]"
+      >
+        <div className="flex h-full min-h-0 flex-col items-center justify-center rounded-[14px] bg-[#f3f3f1] text-slate-900">
+          <Plus size={28} className="mb-3 transition duration-300 group-hover:scale-110" />
+          <span className="text-base font-semibold tracking-tight">新建项目</span>
+        </div>
+      </div>
+    );
+  }
+
+  const title = project?.title || "未命名项目";
+  const updatedAt = project?.updatedAt || "";
+
+  return (
+    <div
+      onClick={() => {
+        if (project?.id) navigate(workspacePath(project.id));
+      }}
+      className="group grid aspect-[4/3] cursor-pointer grid-rows-[minmax(0,1fr)_28%] rounded-[18px] bg-white p-2 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_-38px_rgba(15,23,42,0.22)]"
+    >
+      <div className="relative min-h-0 overflow-hidden rounded-[14px] bg-[#f3f3f1]">
+        {project?.thumbnail ? (
+          <img
+            src={project.thumbnail}
+            alt={title}
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,#f7f7f6,#efefec)] text-slate-300">
+            <Box size={44} />
+          </div>
+        )}
+        {project && onDelete ? (
+          <button
+            onClick={(e) => onDelete(project, e)}
+            className="absolute right-3 top-3 rounded-lg border border-white/40 bg-white/90 p-1.5 text-red-500 opacity-0 shadow-sm backdrop-blur-sm transition hover:border-red-200 hover:bg-red-50 group-hover:opacity-100"
+            title="删除项目"
+          >
+            <Trash2 size={14} />
+          </button>
+        ) : null}
+      </div>
+      <div className="flex min-h-0 flex-col justify-center px-2 py-2">
+        <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-900">
+          {title}
+        </h3>
+        <p className="mt-0.5 text-xs text-slate-400">更新于 {updatedAt}</p>
+      </div>
+    </div>
+  );
+};
+
 const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
+  const recentProjectsPreview = recentProjects.slice(0, 20);
 
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -700,6 +776,25 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     setActiveQuickSkill(
       normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
     );
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSkillPreferencesUpdated = () => {
+      setActiveQuickSkill(
+        normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
+      );
+    };
+    window.addEventListener(
+      SKILL_PREFERENCES_UPDATED_EVENT,
+      handleSkillPreferencesUpdated as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        SKILL_PREFERENCES_UPDATED_EVENT,
+        handleSkillPreferencesUpdated as EventListener,
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -904,7 +999,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         </button>
       )}
 
-      <main className="pt-20 lg:pt-24 px-4 sm:px-10 lg:px-[10%] max-w-7xl mx-auto flex flex-col items-center pb-32 lg:pb-10">
+      <main className="flex w-full flex-col items-center px-4 pb-32 pt-20 sm:px-8 lg:px-10 lg:pb-10 lg:pt-24 xl:px-12">
         <div className="h-8"></div>
 
         <motion.div
@@ -927,7 +1022,7 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.2 }}
-          className="w-full max-w-4xl relative mb-16"
+          className="w-full max-w-5xl relative mb-16"
         >
           <div
             className={`group relative flex flex-col overflow-visible rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(249,250,251,0.97))] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.16)] transition-all duration-200 focus-within:border-slate-300/80 focus-within:shadow-[0_22px_48px_-34px_rgba(15,23,42,0.2)] ${
@@ -1204,8 +1299,8 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           </div>
         </motion.div>
 
-        <div className="w-full">
-          <div className="flex justify-between items-center mb-6">
+        <div className="w-[calc(100vw-2rem)] max-w-none overflow-x-clip lg:w-[calc(100vw-12rem)]">
+          <div className="mb-6 flex items-center justify-between">
             <h2 className="text-lg font-medium">最近项目</h2>
             <button
               onClick={() => navigate(ROUTES.projects)}
@@ -1214,15 +1309,15 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               查看全部 <span className="text-xs">{">"}</span>
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-            <ProjectCard isNew />
-            {recentProjects.map((p) => (
-              <ProjectCard
-                key={p.id}
-                project={p}
-                onDelete={handleDeleteProject}
-              />
-            ))}
+          <div className="grid justify-center gap-5 [grid-template-columns:repeat(auto-fill,minmax(260px,320px))]">
+              <WideProjectCard isNew />
+              {recentProjectsPreview.map((p) => (
+                <WideProjectCard
+                  key={p.id}
+                  project={p}
+                  onDelete={handleDeleteProject}
+                />
+              ))}
           </div>
         </div>
       </main>

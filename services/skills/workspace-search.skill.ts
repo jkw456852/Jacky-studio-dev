@@ -3,7 +3,7 @@ import {
   type ResearchSearchMode,
   runResearchSearch,
   shouldForceDetailedExtract,
-} from '../research/search.service';
+} from '../research/search.service.ts';
 
 export interface WorkspaceSearchSkillParams {
   query: string;
@@ -23,6 +23,7 @@ export interface WorkspaceSearchExtract {
   excerpt: string;
   cleanedTextExcerpt: string;
   length: number;
+  source?: 'page_extract' | 'search_snippet';
   error?: string;
 }
 
@@ -116,6 +117,9 @@ const buildSearchSummary = ({
   extractedPages: WorkspaceSearchExtract[];
 }): string => {
   const successfulExtracts = extractedPages.filter((item) => !item.error && item.cleanedTextExcerpt);
+  const snippetFallbacks = extractedPages.filter(
+    (item) => item.source === 'search_snippet' && item.cleanedTextExcerpt,
+  );
   const leadingFacts = successfulExtracts.length > 0
     ? successfulExtracts
         .slice(0, 2)
@@ -129,7 +133,7 @@ const buildSearchSummary = ({
   return [
     `已完成针对“${query}”的联网搜索。`,
     `来源：${providerLabel}${fallback ? '（回退模式）' : ''}。`,
-    `网页结果 ${webResults.length} 条，图片结果 ${imageResults.length} 条，正文提取 ${successfulExtracts.length} 页。`,
+    `网页结果 ${webResults.length} 条，图片结果 ${imageResults.length} 条，正文提取 ${successfulExtracts.filter((item) => item.source !== 'search_snippet').length} 页，摘要兼容 ${snippetFallbacks.length} 页。`,
     leadingFacts ? `优先线索：${leadingFacts}` : '',
   ]
     .filter(Boolean)
@@ -177,11 +181,16 @@ export async function workspaceSearchSkill(
       : webResults
           .slice(0, maxExtractPages)
           .map((item) => readDirectExtractFromResult(item))
-          .filter((item): item is WorkspaceSearchExtract => Boolean(item));
+          .filter((item): item is WorkspaceSearchExtract => Boolean(item))
+          .map((item) => ({
+            ...item,
+            source: 'page_extract' as const,
+          }));
+    const candidateTargets = webResults.slice(0, Math.min(webResults.length, Math.max(maxExtractPages, 4)));
     const fallbackTargets = shouldPreferRealExtract
-      ? webResults.slice(0, maxExtractPages)
+      ? candidateTargets
       : webResults
-          .slice(0, maxExtractPages)
+          .slice(0, Math.min(webResults.length, Math.max(maxExtractPages, 4)))
           .filter((item) => !String(item.cleanedTextExcerpt || '').trim());
     const fallbackExtractedPages = await Promise.all(
       fallbackTargets.map(async (item) => {
@@ -196,20 +205,36 @@ export async function workspaceSearchSkill(
             excerpt: truncateText(page.excerpt || item.snippet || '', 240),
             cleanedTextExcerpt: truncateText(page.cleanedText || '', 1200),
             length: Number(page.length || 0),
+            source: 'page_extract' as const,
           };
         } catch (error) {
+          const snippetFallbackText = truncateText(
+            item.cleanedTextExcerpt || item.excerpt || item.snippet || '',
+            1200,
+          );
           return {
             title: item.title,
             url: item.url,
             excerpt: truncateText(item.snippet || '', 240),
-            cleanedTextExcerpt: '',
-            length: 0,
+            cleanedTextExcerpt: snippetFallbackText,
+            length: snippetFallbackText.length,
+            source: snippetFallbackText ? 'search_snippet' as const : undefined,
             error: truncateText((error as Error)?.message || error, 180) || 'extract_failed',
           };
         }
       }),
     );
-    extractedPages = [...directExtractedPages, ...fallbackExtractedPages];
+    const deduped = new Map<string, WorkspaceSearchExtract>();
+    for (const item of [...directExtractedPages, ...fallbackExtractedPages]) {
+      const key = `${item.url}::${item.source || 'unknown'}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, item);
+      }
+      if ([...deduped.values()].filter((entry) => entry.source === 'page_extract' && !entry.error).length >= maxExtractPages) {
+        break;
+      }
+    }
+    extractedPages = [...deduped.values()].slice(0, Math.max(maxExtractPages, 4));
   }
 
   const providerLabel = [searchResult.provider?.web, searchResult.provider?.images]

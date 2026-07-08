@@ -1,5 +1,5 @@
 import { editImage, getClient } from '../gemini';
-import { TouchEditSkillParams } from '../../types/skill.types';
+import { TouchEditSkillParams } from '../../types/skill.types.ts';
 
 export async function touchEditSkill(params: TouchEditSkillParams): Promise<{
   analysis: string;

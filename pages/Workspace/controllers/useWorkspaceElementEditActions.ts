@@ -5,7 +5,7 @@ import {
   validateTransparentCutoutResult,
 } from "../../../services/gemini";
 import type { ImageGenerationConfig } from "../../../services/gemini";
-import { smartEditSkill } from "../../../services/skills/smart-edit.skill";
+import { smartEditSkill } from "../../../services/skills/smart-edit.skill.ts";
 import type { CanvasElement, ImageTextBlock, ImageTextEditBlock } from "../../../types";
 import {
   patchWorkspaceGenerationTrace,

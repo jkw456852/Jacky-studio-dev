@@ -1,5 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { touchEditSkill } from "../../../services/skills/touch-edit.skill";
+import { touchEditSkill } from "../../../services/skills/touch-edit.skill.ts";
 import type { CanvasElement } from "../../../types";
 
 type TouchEditPopup = {

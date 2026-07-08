@@ -1,5 +1,5 @@
 import { AgentType } from '../../types/agent.types';
-import { getStudioRoutingAsset } from '../runtime-assets/studio-registry';
+import { getStudioRoutingAsset } from '../runtime-assets/studio-registry.ts';
 
 export interface RouteRule {
   keywords: string[];

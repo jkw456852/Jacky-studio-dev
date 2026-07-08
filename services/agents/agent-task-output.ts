@@ -6,6 +6,7 @@ import type {
   SkillCall,
 } from '../../types/agent.types';
 import type { MainBrainRuntimeResult } from './main-brain-runtime';
+import { sanitizeSingleAgentVisibleText } from './single-agent-wording.ts';
 
 export interface BuildAgentTaskOutputOptions {
   message: string;
@@ -141,6 +142,7 @@ export const buildAgentTaskOutput = ({
   runtime,
   roleGovernanceAudit,
 }: BuildAgentTaskOutputOptions) => {
+  const shouldSanitizeSingleAgentWording = runtime?.mode === 'autonomous-main-brain';
   const normalizedProposals = Array.isArray(proposals) ? proposals : [];
   const normalizedSkillCalls = Array.isArray(skillCalls) ? skillCalls : [];
   const normalizedAssets = Array.isArray(assets) ? assets : [];
@@ -149,7 +151,11 @@ export const buildAgentTaskOutput = ({
         .map((item) =>
           item && typeof item === 'object'
             ? {
-                text: String(item.text || '').trim(),
+                text: String(
+                  shouldSanitizeSingleAgentWording
+                    ? sanitizeSingleAgentVisibleText(item.text || '')
+                    : item.text || '',
+                ).trim(),
                 citationOrdinals: Array.isArray(item.citationOrdinals)
                   ? item.citationOrdinals
                       .map((value) => Number(value))
@@ -164,6 +170,18 @@ export const buildAgentTaskOutput = ({
   const normalizedQuestions = Array.isArray(questions) ? questions : undefined;
   const normalizedSuggestions = Array.isArray(suggestions) ? suggestions : undefined;
   const normalizedAdjustments = Array.isArray(adjustments) ? adjustments : [];
+  const normalizedMessage = shouldSanitizeSingleAgentWording
+    ? sanitizeSingleAgentVisibleText(message) || message
+    : message;
+  const normalizedAnalysis = shouldSanitizeSingleAgentWording
+    ? sanitizeSingleAgentVisibleText(analysis)
+    : analysis;
+  const normalizedPreGenerationMessage = shouldSanitizeSingleAgentWording
+    ? sanitizeSingleAgentVisibleText(preGenerationMessage)
+    : preGenerationMessage;
+  const normalizedPostGenerationSummary = shouldSanitizeSingleAgentWording
+    ? sanitizeSingleAgentVisibleText(postGenerationSummary)
+    : postGenerationSummary;
   const imageUrls = normalizedAssets
     .filter(
       (asset): asset is GeneratedAsset & { type: 'image'; url: string } =>
@@ -178,14 +196,14 @@ export const buildAgentTaskOutput = ({
     .map((asset) => asset.url);
 
   return {
-    message,
-    analysis,
+    message: normalizedMessage,
+    analysis: normalizedAnalysis,
     answerSegments:
       normalizedAnswerSegments && normalizedAnswerSegments.length > 0
         ? normalizedAnswerSegments
         : undefined,
-    preGenerationMessage,
-    postGenerationSummary,
+    preGenerationMessage: normalizedPreGenerationMessage,
+    postGenerationSummary: normalizedPostGenerationSummary,
     questions: normalizedQuestions,
     suggestions: normalizedSuggestions,
     proposals: normalizedProposals,

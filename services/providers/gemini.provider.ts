@@ -1,5 +1,5 @@
-import { ImageProvider, VideoProvider, ImageGenerationRequest, VideoGenerationRequest } from './types';
-import { generateImage, generateVideo } from '../gemini';
+import { ImageProvider, VideoProvider, ImageGenerationRequest, VideoGenerationRequest } from './types.ts';
+import { generateImage, generateVideo } from '../gemini.ts';
 
 export const geminiImageProvider: ImageProvider = {
   id: 'gemini',
@@ -41,6 +41,16 @@ export const geminiImageProvider: ImageProvider = {
       imageSize: request.imageSize,
       exactSize: request.exactSize,
       imageQuality: request.imageQuality,
+      background: request.background,
+      outputFormat: request.outputFormat,
+      outputCompression: request.outputCompression,
+      moderation: request.moderation,
+      n: request.n,
+      partialImages: request.partialImages,
+      stream: request.stream,
+      style: request.style,
+      responseFormat: request.responseFormat,
+      inputFidelity: request.inputFidelity,
       disableTransportRetries: request.disableTransportRetries,
       referenceImage: request.referenceImage,
       referenceImages: request.referenceImages,

@@ -1,6 +1,6 @@
 import type { AgentType } from "../../types/agent.types";
 import { getStudioUserAssetApi } from "../runtime-assets/api";
-import { listStudioAgentAssets } from "../runtime-assets/studio-registry";
+import { listStudioAgentAssets } from "../runtime-assets/studio-registry.ts";
 
 export type AgentRoleStrategy = "reuse" | "augment" | "create";
 

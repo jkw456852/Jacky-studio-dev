@@ -1,5 +1,5 @@
-import { ImageProvider, ImageGenerationRequest } from './types';
-import { fetchWithResilience } from '../http/api-client';
+import { ImageProvider, ImageGenerationRequest } from './types.ts';
+import { fetchWithResilience } from '../http/api-client.ts';
 
 const getReplicateKey = (): string => {
   return localStorage.getItem('replicate_api_key') || '';
