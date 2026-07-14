@@ -361,11 +361,11 @@ test("assistant createImage schema exposes official AI SDK image edit fields onl
     "utf8",
   );
   const imageTools = readFileSync(
-    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-image-tools.ts"),
     "utf8",
   );
   const studioSkills = readFileSync(
-    join(repoRoot, "api/assistant-chat-studio-skills.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-studio-skills.ts"),
     "utf8",
   );
 
@@ -1261,7 +1261,7 @@ test("assistant chat stream errors include provider model and tool context", () 
 
 test("assistant image tools fail visibly without blind AI SDK retries", () => {
   const imageTools = readFileSync(
-    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-image-tools.ts"),
     "utf8",
   );
   const toolUis = readFileSync(
@@ -1291,10 +1291,13 @@ test("assistant chat does not force specific tool_choice objects through custom 
 
 test("assistant chat provider selection follows official modelName before legacy fields", () => {
   const provider = readFileSync(
-    join(repoRoot, "api/assistant-chat-provider.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-provider.ts"),
     "utf8",
   );
-  const apiTest = readFileSync(join(repoRoot, "api/assistant-chat.test.ts"), "utf8");
+  const apiTest = readFileSync(
+    join(repoRoot, "services/assistant-ui/assistant-chat.test.ts"),
+    "utf8",
+  );
   const providerIdStart = provider.indexOf("const providerId =");
   const providerIdEnd = provider.indexOf("const googleLike", providerIdStart);
   const providerIdBlock = provider.slice(providerIdStart, providerIdEnd);
@@ -1317,7 +1320,7 @@ test("assistant chat gates OpenAI native image_generation to safe provider-tool 
     "utf8",
   );
   const provider = readFileSync(
-    join(repoRoot, "api/assistant-chat-provider.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-provider.ts"),
     "utf8",
   );
 
@@ -1760,7 +1763,7 @@ test("assistant sidebar supports official AI SDK tool approval continuation", ()
     "utf8",
   );
   const imageTools = readFileSync(
-    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-image-tools.ts"),
     "utf8",
   );
   const runtime = readFileSync(
@@ -1805,7 +1808,7 @@ test("assistant sidebar supports official AI SDK tool approval continuation", ()
 
 test("assistant image generation keeps UI images out of language-model tool output", () => {
   const imageTools = readFileSync(
-    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-image-tools.ts"),
     "utf8",
   );
   const serverToolkit = readFileSync(
@@ -2362,11 +2365,11 @@ test("assistant multi-image product detail-page requests stay on official create
     "utf8",
   );
   const apiTest = readFileSync(
-    join(repoRoot, "api/assistant-chat.test.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat.test.ts"),
     "utf8",
   );
   const imageTools = readFileSync(
-    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-image-tools.ts"),
     "utf8",
   );
   const toolSchemas = readFileSync(
@@ -2648,7 +2651,7 @@ test("assistant Studio skills catalog is a read-only official tool, not the lega
     "utf8",
   );
   const studioSkills = readFileSync(
-    join(repoRoot, "api/assistant-chat-studio-skills.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-studio-skills.ts"),
     "utf8",
   );
   const frontendToolkit = readFileSync(
@@ -2705,7 +2708,7 @@ test("assistant workspace knowledge search is a read-only AI SDK tool, not legac
     "utf8",
   );
   const knowledgeTool = readFileSync(
-    join(repoRoot, "api/assistant-chat-workspace-knowledge.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-workspace-knowledge.ts"),
     "utf8",
   );
   const frontendToolkit = readFileSync(
@@ -2784,7 +2787,7 @@ test("assistant chat web search citations use official AI SDK source parts", () 
 
 test("assistant chat Tavily research tools use official AI SDK package and assistant-ui toolkit path", () => {
   const webSearch = readFileSync(
-    join(repoRoot, "api/assistant-chat-web-search.ts"),
+    join(repoRoot, "services/assistant-ui/assistant-chat-web-search.ts"),
     "utf8",
   );
   const frontendToolkit = readFileSync(
@@ -2935,4 +2938,33 @@ test("inspiration pages reshuffle per page load and refresh their synced data", 
     ),
     true,
   );
+});
+
+test("Vercel api directory stays within the Hobby function limit", () => {
+  const collectApiEntrypoints = (directory: string): string[] =>
+    readdirSync(directory).flatMap((entry) => {
+      const fullPath = join(directory, entry);
+      return statSync(fullPath).isDirectory()
+        ? collectApiEntrypoints(fullPath)
+        : hasSourceExtension(fullPath)
+          ? [fullPath]
+          : [];
+    });
+
+  const apiEntrypoints = collectApiEntrypoints(join(repoRoot, "api"));
+
+  assert.ok(
+    apiEntrypoints.length <= 12,
+    `Vercel Hobby supports at most 12 functions, found ${apiEntrypoints.length}: ${apiEntrypoints
+      .map((path) => relative(repoRoot, path).split(sep).join("/"))
+      .join(", ")}`,
+  );
+
+  for (const entrypoint of apiEntrypoints) {
+    assert.match(
+      readFileSync(entrypoint, "utf8"),
+      /export\s+default\s+async\s+function\s+handler\b/,
+      `${relative(repoRoot, entrypoint)} is not a Vercel function entrypoint`,
+    );
+  }
 });

@@ -4,12 +4,12 @@ import type {
   PrecipitationLevel,
   WeatherConditionCode,
   WeatherWidgetPayload,
-} from "../components/assistant-ui/tool-ui/weather-widget/runtime.ts";
+} from "../../components/assistant-ui/tool-ui/weather-widget/runtime.ts";
 
 import {
   assistantSidebarGetWeatherParameters,
   type AssistantSidebarGetWeatherArgs,
-} from "../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
+} from "./assistant-sidebar-tool-schemas.ts";
 
 export type AssistantChatWeatherToolsConfig = {
   enabled?: boolean;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { convertToModelMessages } from "ai";
 
 import { createAssistantChatImageTools } from "./assistant-chat-image-tools.ts";
-import { resolveOpenAIImageSize } from "../services/image-generation/core/openai-image-spec.ts";
+import { resolveOpenAIImageSize } from "../image-generation/core/openai-image-spec.ts";
 
 const createGeneratedImageResult = (base64 = "aW1hZ2U=") =>
   ({

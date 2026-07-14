@@ -42,30 +42,30 @@ import {
   shouldRequestOpenAIReasoningSummary,
   type AssistantChatProviderConfig,
   type AssistantChatProviderRequest,
-} from "./assistant-chat-provider.ts";
+} from "../services/assistant-ui/assistant-chat-provider.ts";
 import {
   createAssistantChatImageTools,
   type AssistantChatImageGenerationConfig,
   type AssistantChatImageMarkContext,
   type AssistantChatImageReferenceContext,
-} from "./assistant-chat-image-tools.ts";
+} from "../services/assistant-ui/assistant-chat-image-tools.ts";
 import {
   createAssistantChatWebSearchTools,
   extractAssistantChatWebSearchSources,
   type AssistantChatWebSearchConfig,
-} from "./assistant-chat-web-search.ts";
+} from "../services/assistant-ui/assistant-chat-web-search.ts";
 import {
   createAssistantChatWeatherTools,
   shouldRegisterAssistantChatWeatherTools,
   type AssistantChatWeatherToolsConfig,
-} from "./assistant-chat-weather-tools.ts";
+} from "../services/assistant-ui/assistant-chat-weather-tools.ts";
 import {
   createAssistantChatStudioSkillTools,
-} from "./assistant-chat-studio-skills.ts";
+} from "../services/assistant-ui/assistant-chat-studio-skills.ts";
 import {
   createAssistantChatWorkspaceKnowledgeTools,
   extractAssistantChatWorkspaceKnowledgeSources,
-} from "./assistant-chat-workspace-knowledge.ts";
+} from "../services/assistant-ui/assistant-chat-workspace-knowledge.ts";
 
 export type AssistantChatToolChoiceRequest =
   | "auto"

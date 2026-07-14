@@ -8,7 +8,7 @@ import { tool, type ToolSet } from "ai";
 import {
   assistantSidebarSearchWorkspaceKnowledgeParameters,
   type AssistantSidebarSearchWorkspaceKnowledgeArgs,
-} from "../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
+} from "./assistant-sidebar-tool-schemas.ts";
 
 type WorkspaceKnowledgeSource =
   | "studio-assets"
@@ -43,7 +43,7 @@ export type AssistantChatWorkspaceKnowledgeSource = {
   excerpt: string;
 };
 
-const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MAX_FILE_BYTES = 80_000;
 const MAX_EXCERPT_LENGTH = 720;
 

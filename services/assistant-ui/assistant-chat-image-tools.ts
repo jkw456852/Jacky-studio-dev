@@ -20,13 +20,13 @@ import {
 import {
   resolveCanonicalImageModelId,
   resolveOpenAIImageSize,
-} from "../services/image-generation/core/openai-image-spec.ts";
+} from "../image-generation/core/openai-image-spec.ts";
 import {
   assistantSidebarCreateImageParameters,
   assistantSidebarUpscaleImageParameters,
   type AssistantSidebarCreateImageArgs,
   type AssistantSidebarUpscaleImageArgs,
-} from "../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
+} from "./assistant-sidebar-tool-schemas.ts";
 
 export type AssistantChatImageGenerationConfig = {
   enabled?: boolean;

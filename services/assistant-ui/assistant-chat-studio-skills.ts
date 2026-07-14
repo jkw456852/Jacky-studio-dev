@@ -8,7 +8,7 @@ import {
   assistantSidebarPlanStudioWorkflowParameters,
   type AssistantSidebarListStudioSkillsArgs,
   type AssistantSidebarPlanStudioWorkflowArgs,
-} from "../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
+} from "./assistant-sidebar-tool-schemas.ts";
 
 type StudioSkillPreset = {
   name?: unknown;
@@ -87,7 +87,7 @@ export type AssistantChatStudioWorkflowPlanResult = {
 };
 
 const STUDIO_REGISTRY_URL = new URL(
-  "../public/runtime-assets/studio-registry.json",
+  "../../public/runtime-assets/studio-registry.json",
   import.meta.url,
 );
 

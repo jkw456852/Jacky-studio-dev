@@ -37,7 +37,7 @@ import {
   sanitizeAssistantChatFrontendTools,
   shouldEnableAssistantChatNativeWebSearch,
   stripOversizedImageFilePartsForModelMessages,
-} from "./assistant-chat.ts";
+} from "../../api/assistant-chat.ts";
 import {
   createLanguageModelBundle,
   isOfficialOpenAIProvider,
