@@ -271,16 +271,16 @@ const ThreadRoot: FC<{ isEmpty: boolean; showReasoning: boolean }> = ({
 
   return (
     <ThreadPrimitive.Root
-      className="relative flex h-full flex-col overflow-hidden bg-[#fdfcfc] text-[#1f1f1f] @container dark:bg-[#0c0c0c] dark:text-[#e3e3e3]"
+      className="relative flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-[#fdfcfc] text-[#1f1f1f] @container dark:bg-[#0c0c0c] dark:text-[#e3e3e3]"
       style={{
         ["--thread-max-width" as string]: "48rem",
         ["--composer-radius" as string]: "32px",
       }}
     >
       <AuiIf condition={isNewChatView}>
-        <div className="relative flex grow flex-col">
-          <div className="flex grow flex-col items-center justify-center px-4">
-            <div className="flex w-full max-w-3xl flex-col">
+        <div className="relative flex min-w-0 grow flex-col overflow-x-clip">
+          <div className="flex min-w-0 grow flex-col items-center justify-center px-4">
+            <div className="flex w-full min-w-0 max-w-3xl flex-col">
               <Welcome />
             </div>
           </div>
@@ -472,17 +472,17 @@ const ThreadScrollToBottom: FC = () => {
 
 const ThreadWelcome: FC = () => {
   return (
-    <div className="relative flex grow flex-col">
-      <div className="flex w-full flex-col">
-        <h1 className="fade-in slide-in-from-bottom-3 motion-safe:animate-in fill-mode-both relative z-10 mb-6 text-center text-4xl font-normal text-[#1f1f1f] delay-500 duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] dark:text-white">
+    <div className="relative flex w-full min-w-0 max-w-full grow flex-col">
+      <div className="flex w-full min-w-0 max-w-full flex-col">
+        <h1 className="fade-in slide-in-from-bottom-3 motion-safe:animate-in fill-mode-both relative z-10 mb-6 max-w-full text-center text-3xl leading-tight font-normal text-balance text-[#1f1f1f] delay-500 duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] dark:text-white">
           How can I help you today?
         </h1>
-        <div className="relative">
+        <div className="relative w-full min-w-0 max-w-full">
           <div
             aria-hidden="true"
             className="fade-in zoom-in-40 blur-in-[90px] motion-safe:animate-in fill-mode-both pointer-events-none absolute top-1/2 left-1/2 h-[260px] w-[680px] max-w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-[140px] bg-[#a9d1fb]/60 blur-[90px] duration-1000 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-[#1b2f9c]/50"
           />
-          <div className="relative z-10">
+          <div className="relative z-10 w-full min-w-0 max-w-full">
             <Composer />
           </div>
         </div>
@@ -504,8 +504,8 @@ const ThreadSuggestions: FC = () => {
   }
 
   return (
-    <div className="mt-4 flex w-full justify-center px-4">
-      <div className="grid w-full max-w-2xl gap-2 pb-4 @md:grid-cols-2">
+    <div className="mt-4 flex w-full min-w-0 max-w-full justify-center px-4">
+      <div className="grid w-full min-w-0 max-w-2xl grid-cols-1 gap-2 pb-4 @lg:grid-cols-2">
         <ThreadPrimitive.Suggestions>
           {() => <ThreadSuggestionItem />}
         </ThreadPrimitive.Suggestions>
@@ -516,14 +516,14 @@ const ThreadSuggestions: FC = () => {
 
 const ThreadSuggestionItem: FC = () => {
   return (
-    <div className="fade-in slide-in-from-bottom-2 motion-safe:animate-in fill-mode-both duration-200 nth-[n+3]:hidden @md:nth-[n+3]:block">
+    <div className="fade-in slide-in-from-bottom-2 motion-safe:animate-in fill-mode-both min-w-0 max-w-full duration-200">
       <SuggestionPrimitive.Trigger clearComposer asChild>
         <Button
           variant="ghost"
-          className="h-auto w-full items-start justify-start gap-1 rounded-3xl border border-[#dadce0] bg-white/78 px-4 py-3 text-left text-sm transition-colors hover:bg-white hover:text-[#1f1f1f] @md:flex-col dark:border-[#3c4043] dark:bg-[#1e1f20]/78 dark:text-[#c4c7c5] dark:hover:bg-[#232427] dark:hover:text-[#e3e3e3]"
+          className="h-auto w-full min-w-0 max-w-full shrink flex-col items-start justify-start gap-1 whitespace-normal rounded-3xl border border-[#dadce0] bg-white/78 px-4 py-3 text-left text-sm transition-colors hover:bg-white hover:text-[#1f1f1f] dark:border-[#3c4043] dark:bg-[#1e1f20]/78 dark:text-[#c4c7c5] dark:hover:bg-[#232427] dark:hover:text-[#e3e3e3]"
         >
-          <SuggestionPrimitive.Title className="font-medium text-[#1f1f1f] dark:text-[#f1f3f4]" />
-          <SuggestionPrimitive.Description className="text-xs text-[#5f6368] empty:hidden dark:text-[#9aa0a6]" />
+          <SuggestionPrimitive.Title className="min-w-0 max-w-full wrap-break-word font-medium text-[#1f1f1f] dark:text-[#f1f3f4]" />
+          <SuggestionPrimitive.Description className="min-w-0 max-w-full wrap-break-word text-xs text-[#5f6368] empty:hidden dark:text-[#9aa0a6]" />
         </Button>
       </SuggestionPrimitive.Trigger>
     </div>
@@ -894,7 +894,7 @@ const Composer: FC = () => {
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
       <ComposerPrimitive.Root
-        className="relative mx-auto flex w-full max-w-2xl flex-col rounded-[2rem] bg-white p-3 shadow-[0_2px_10px_-2px_rgba(0,0,0,0.18)] dark:bg-[#1e1f20] dark:shadow-[0_2px_12px_-2px_rgba(0,0,0,0.6)]"
+        className="relative mx-auto flex w-full min-w-0 max-w-2xl flex-col overflow-hidden rounded-[2rem] bg-white p-3 shadow-[0_2px_10px_-2px_rgba(0,0,0,0.18)] dark:bg-[#1e1f20] dark:shadow-[0_2px_12px_-2px_rgba(0,0,0,0.6)]"
       >
         <ComposerQuotePreview />
         <ComposerQueue />

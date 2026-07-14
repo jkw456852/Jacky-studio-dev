@@ -3510,7 +3510,7 @@ const AssistantComposerModelSelector: React.FC<{
   >
     <ModelSelector.ModelContext />
     <ModelSelector.Trigger
-      className="h-8 max-w-[9.5rem] shrink rounded-full border-transparent bg-transparent px-2 text-xs font-medium text-[#444746] shadow-none hover:bg-[#444746]/8 hover:text-[#1f1f1f] dark:text-[#c4c7c5] dark:hover:bg-[#c4c7c5]/10 dark:hover:text-[#e3e3e3] @max-sm:max-w-[7.5rem]"
+      className="h-8 min-w-0 max-w-[9.5rem] shrink rounded-full border-transparent bg-transparent px-2 text-xs font-medium text-[#444746] shadow-none hover:bg-[#444746]/8 hover:text-[#1f1f1f] dark:text-[#c4c7c5] dark:hover:bg-[#c4c7c5]/10 dark:hover:text-[#e3e3e3] @max-sm:max-w-[7.5rem]"
       size="sm"
       variant="ghost"
     >
@@ -4903,7 +4903,7 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
   }, []);
   const ComposerInlineControls = React.useCallback(
     () => (
-      <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+      <div className="flex w-full min-w-0 max-w-full flex-1 items-center justify-between gap-1 overflow-hidden">
         <AssistantComposerImageModeControls
           imageGenerationUi={imageGenerationUiRef.current}
           imageModeEnabled={imageModeEnabled}
