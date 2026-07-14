@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Type } from "@google/genai";
 import styleDescriptionAiPrompt from "../agents/风格库风格描述ai.md?raw";
 import {
@@ -164,18 +164,18 @@ const EXTERNAL_GALLERY_SOURCES: GalleryPreviewCard[] = [
     ],
   },
   {
-    key: "source-evolinkai-awesome-gpt-image-2-api-and-prompts",
+    key: "source-basketikun-infinite-canvas",
     type: "source",
-    title: "Awesome GPT Image 2 API and Prompts",
-    repository: "EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
+    title: "Infinite Canvas",
+    repository: "basketikun/infinite-canvas",
     cover: "",
-    description: "补充 GPT Image 2 的 API 用法、提示词样例和实践整理。",
-    prompt: "GPT Image 2 API prompts examples workflows",
-    chips: ["GPT Image 2", "API", "提示词样例"],
-    externalUrl: "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
+    description: "补充无限画布和节点画板方向的交互灵感，方便和当前工作台体验对照参考。",
+    prompt: "infinite canvas interactions node board references",
+    chips: ["Infinite Canvas", "画布交互", "节点体验"],
+    externalUrl: "https://github.com/basketikun/infinite-canvas",
     highlights: [
-      "更偏向 GPT Image 2 的使用方法和 prompt 示例。",
-      "适合给画廊补充技术型和工作流型素材来源。",
+      "更适合补齐画板、拖拽、缩放和空间组织的体验参考。",
+      "可以作为提示词画廊之外的交互灵感来源。",
     ],
   },
   {
@@ -239,15 +239,15 @@ const EXTERNAL_GALLERY_SOURCES: GalleryPreviewCard[] = [
     ],
   },
   {
-    key: "source-davidwu0811-boop-awesome-gpt-image2-prompts",
+    key: "source-davidwuw0811-boop-awesome-gpt-image2-prompts",
     type: "source",
     title: "Awesome GPT Image2 Prompts",
-    repository: "davidwu0811-boop/awesome-gpt-image2-prompts",
+    repository: "davidwuw0811-boop/awesome-gpt-image2-prompts",
     cover: "",
     description: "补充 GPT Image2 提示词集合，增加卡片池的变化感。",
     prompt: "GPT Image2 prompt collection visual inspiration",
     chips: ["GPT Image2", "Prompt Collection", "灵感补充"],
-    externalUrl: "https://github.com/davidwu0811-boop/awesome-gpt-image2-prompts",
+    externalUrl: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts",
     highlights: [
       "适合作为画廊里的附加来源入口。",
       "可以增强整体数据池的丰富度和多样性。",
@@ -823,6 +823,16 @@ const removeSelectedStyleCards = (selectedKeys: string[]) => {
 
 const StyleLibraryCenter: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const galleryImportTarget = React.useMemo(() => {
+    const raw = String(searchParams.get("importGallery") || "").trim();
+    const separatorIndex = raw.indexOf(":");
+    if (separatorIndex <= 0) return null;
+    const type = raw.slice(0, separatorIndex);
+    const id = raw.slice(separatorIndex + 1).trim();
+    if ((type !== "case" && type !== "template") || !id) return null;
+    return { type, id } as const;
+  }, [searchParams]);
   const [revision, setRevision] = React.useState(0);
   const [query, setQuery] = React.useState("");
   const [notice, setNotice] = React.useState<NoticeState | null>(null);
@@ -846,6 +856,7 @@ const StyleLibraryCenter: React.FC = () => {
   const [isSelectionMode, setIsSelectionMode] = React.useState(false);
   const [selectedCardKeys, setSelectedCardKeys] = React.useState<string[]>([]);
   const galleryImportRequestRef = React.useRef(0);
+  const galleryDeepLinkHandledRef = React.useRef("");
 
   const builtInLibraries = React.useMemo(() => [], []);
   const userLibraries = React.useMemo(() => {
@@ -948,7 +959,7 @@ const StyleLibraryCenter: React.FC = () => {
   }, [manageableCards]);
 
   React.useEffect(() => {
-    if (!showGalleryPicker) return;
+    if (!showGalleryPicker && !galleryImportTarget) return;
     if (galleryPayload) {
       setGalleryStatus("ready");
       return;
@@ -972,7 +983,7 @@ const StyleLibraryCenter: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [galleryPayload, showGalleryPicker]);
+  }, [galleryImportTarget, galleryPayload, showGalleryPicker]);
 
   const currentImages = React.useMemo(() => {
     if (!editor) return [];
@@ -1261,55 +1272,6 @@ const StyleLibraryCenter: React.FC = () => {
     window.open(item.externalUrl, "_blank", "noopener,noreferrer");
   }, []);
 
-  const handleImportFromGalleryLegacy = React.useCallback(
-    async (preview: SmartImportPreview) => {
-      const nextEditor = buildGalleryEditor(preview, galleryPayload);
-      const cachedCoverImageUrl = await normalizeReferenceToDataUrl(nextEditor.coverImageUrl);
-      const hydratedEditor = cachedCoverImageUrl
-        ? {
-            ...nextEditor,
-            coverImageUrl: cachedCoverImageUrl,
-          }
-        : nextEditor;
-      setShowGalleryPicker(false);
-      setEditor(hydratedEditor);
-      try {
-        const result = await analyzeStyleCardDraft({
-          imageUrls: dedupeUrls([hydratedEditor.coverImageUrl, ...hydratedEditor.sampleImageUrls]),
-          existingPromptText: hydratedEditor.promptText,
-          existingTags: splitTextToLines(hydratedEditor.tagsText),
-          task: "description",
-        });
-        setEditor((current) => {
-          if (!current || current.sourcePreviewKey !== hydratedEditor.sourcePreviewKey) {
-            return current;
-          }
-          return {
-            ...current,
-            title: String(current.title || "").trim() || result.title || current.title,
-            promptText: current.promptText || result.promptText,
-            tagsText: current.tagsText || (result.tags.length > 0 ? result.tags.join("\n") : ""),
-            description: result.description || current.description,
-          };
-        });
-        setNotice({
-          tone: "success",
-          text: result.description ? "已沿用画廊现成 Prompt 和标签，并补齐风格说明。" : "已沿用画廊现成 Prompt 和标签。",
-        });
-      } catch (error) {
-        setNotice({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? `画廊风格说明生成失败：${error.message}`
-              : "画廊风格说明生成失败。",
-        });
-      } finally {
-      }
-    },
-    [galleryPayload],
-  );
-
   const handleImportFromGallery = React.useCallback(
     async (preview: SmartImportPreview) => {
       const nextEditor = buildGalleryEditor(preview, galleryPayload);
@@ -1403,6 +1365,46 @@ const StyleLibraryCenter: React.FC = () => {
     },
     [galleryPayload],
   );
+
+  React.useEffect(() => {
+    if (!galleryImportTarget || !galleryPayload) return;
+
+    const targetKey = `${galleryImportTarget.type}:${galleryImportTarget.id}`;
+    if (galleryDeepLinkHandledRef.current === targetKey) return;
+    galleryDeepLinkHandledRef.current = targetKey;
+
+    const preview: SmartImportPreview | null =
+      galleryImportTarget.type === "case"
+        ? (() => {
+            const item = (galleryPayload.cases || []).find(
+              (candidate) => String(candidate.id) === galleryImportTarget.id,
+            );
+            return item ? { type: "case", item } : null;
+          })()
+        : (() => {
+            const item = (galleryPayload.templates || []).find(
+              (candidate) => String(candidate.id) === galleryImportTarget.id,
+            );
+            return item ? { type: "template", item } : null;
+          })();
+
+    setSearchParams({}, { replace: true });
+    if (!preview) {
+      setShowGalleryPicker(true);
+      setNotice({
+        tone: "error",
+        text: "没有找到要导入的画廊条目，请重新选择。",
+      });
+      return;
+    }
+
+    void handleImportFromGallery(preview);
+  }, [
+    galleryImportTarget,
+    galleryPayload,
+    handleImportFromGallery,
+    setSearchParams,
+  ]);
 
   const handleSaveEditor = React.useCallback(() => {
     if (!editor) return;

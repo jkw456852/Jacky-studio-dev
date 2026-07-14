@@ -244,14 +244,22 @@ const AttachmentUI: FC<{
   );
 };
 
+const isAssistantReferenceAttachment = (attachment: { id?: unknown }): boolean =>
+  /^(?:canvas|mark)-/.test(String(attachment.id || ""));
+
 const renderUserMessageAttachment = ({
   attachment,
 }: {
   attachment: CompleteAttachment;
-}) => <AttachmentUI attachment={attachment} isComposer={false} />;
+}) =>
+  isAssistantReferenceAttachment(attachment) ? null : (
+    <AttachmentUI attachment={attachment} isComposer={false} />
+  );
 
 const renderComposerAttachment = ({ attachment }: { attachment: Attachment }) => (
-  <AttachmentUI attachment={attachment} isComposer />
+  isAssistantReferenceAttachment(attachment) ? null : (
+    <AttachmentUI attachment={attachment} isComposer />
+  )
 );
 
 const AttachmentRemove: FC = () => {

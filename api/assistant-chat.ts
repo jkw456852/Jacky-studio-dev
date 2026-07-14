@@ -46,6 +46,8 @@ import {
 import {
   createAssistantChatImageTools,
   type AssistantChatImageGenerationConfig,
+  type AssistantChatImageMarkContext,
+  type AssistantChatImageReferenceContext,
 } from "./assistant-chat-image-tools.ts";
 import {
   createAssistantChatWebSearchTools,
@@ -213,6 +215,8 @@ const ASSISTANT_CHAT_IMAGE_MODE_SYSTEM_HINT =
   "and only call the available image generation tool when the user clearly wants you to create or edit an image now.";
 const ASSISTANT_CHAT_MULTI_IMAGE_SYSTEM_HINT =
   "When the user asks for multiple separate images, an image set, or a product-detail-page set, use the image tool's count/n parameter for separate outputs instead of asking the image model to compose a single collage, grid, or contact sheet. If the user specifies an exact count, pass that count through to the image tool. If no exact count is specified, create 4 separate images. Preserve available product/reference images through the image tool's images input when relevant.";
+const ASSISTANT_CHAT_UPSCALE_SYSTEM_HINT =
+  "When the user asks to upscale, enlarge to 2K/4K/8K, make an existing image higher-resolution, sharpen, enhance clarity, or perform super-resolution while preserving the same image, call upscaleImage instead of createImage. Do not redesign, rewrite text, change composition, or generate a related new image for pure upscale requests.";
 const ASSISTANT_CHAT_MULTI_IMAGE_PLANNING_SYSTEM_HINT =
   "For product-detail-page sets or other multi-image creative asset requests, do not jump straight to the image tool. First write a concise user-visible plan in the user's language: identify the product/reference constraints, define the separate image/page roles, and state that the outputs should be separate images rather than one collage. Then call createImage only after that brief plan when the user is asking to generate now.";
 const ASSISTANT_CHAT_STUDIO_SKILLS_SYSTEM_HINT =
@@ -386,10 +390,24 @@ const summarizeRequestBodyShape = (value: unknown) => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const HIDDEN_ASSISTANT_REFERENCE_RE = /(^|\n)\[Canvas (?:mark )?reference\]/u;
+
+export const stripHiddenAssistantReferenceText = (text: string): string => {
+  const match = HIDDEN_ASSISTANT_REFERENCE_RE.exec(text);
+  if (!match) return text;
+
+  const markerStart = match.index + (match[1] === "\n" ? 1 : 0);
+  return text.slice(0, markerStart).trimEnd();
+};
+
 const getUiMessageText = (message: UIMessage | undefined): string => {
   if (!message) return "";
   return message.parts
-    .flatMap((part) => (part.type === "text" ? [String(part.text || "")] : []))
+    .flatMap((part) =>
+      part.type === "text"
+        ? [stripHiddenAssistantReferenceText(String(part.text || ""))]
+        : [],
+    )
     .join("\n")
     .trim();
 };
@@ -402,7 +420,7 @@ const getUiMessageTextWithoutDirectiveMentions = (
   return message.parts
     .flatMap((part) => {
       if (part.type !== "text") return [];
-      const text = String(part.text || "");
+      const text = stripHiddenAssistantReferenceText(String(part.text || ""));
       if (!text.trim()) return [];
 
       return unstable_defaultDirectiveFormatter
@@ -480,6 +498,9 @@ const isAssistantChatImageReferenceUrl = (value: unknown): boolean =>
     String(value || "").trim(),
   );
 
+const isAssistantChatHttpImageReferenceUrl = (value: unknown): boolean =>
+  /^https?:\/\//i.test(String(value || "").trim());
+
 const isAssistantChatOversizedModelImageDataUrl = (
   value: unknown,
   maxDataUrlChars: number,
@@ -556,6 +577,105 @@ type AssistantChatImagePartReference = {
   url: string;
   mediaType: string;
   filename?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  aspectRatio?: string;
+  markContext?: AssistantChatImageMarkContext;
+};
+
+const getAssistantChatFiniteNumber = (value: unknown): number | null => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const getAssistantChatMarkerLabelFromPart = (
+  part: Record<string, unknown>,
+): string => {
+  const explicitLabel = String(part.markerLabel || "").trim();
+  if (explicitLabel) return explicitLabel;
+
+  const filename = String(part.filename || "").trim();
+  const filenameMatch = /^(mark\d+)/i.exec(filename);
+  return filenameMatch?.[1] || "";
+};
+
+const getAssistantChatMarkerContextFromPart = (
+  part: Record<string, unknown>,
+  imageUrl: string,
+): AssistantChatImageMarkContext | undefined => {
+  const label = getAssistantChatMarkerLabelFromPart(part);
+  const normalizedX = getAssistantChatFiniteNumber(part.markerNormalizedX);
+  const normalizedY = getAssistantChatFiniteNumber(part.markerNormalizedY);
+  if (!label || normalizedX == null || normalizedY == null) return undefined;
+
+  const imageWidth = getAssistantChatFiniteNumber(part.markerImageWidth);
+  const imageHeight = getAssistantChatFiniteNumber(part.markerImageHeight);
+  const markerId = String(part.markerId || "").trim();
+
+  return {
+    label,
+    imageUrl,
+    normalizedX,
+    normalizedY,
+    ...(markerId ? { markerId } : {}),
+    ...(imageWidth != null ? { imageWidth } : {}),
+    ...(imageHeight != null ? { imageHeight } : {}),
+  };
+};
+
+const getAssistantChatImageReferenceDimensionsFromPart = (
+  part: Record<string, unknown>,
+): { imageWidth?: number; imageHeight?: number } => {
+  const width =
+    getAssistantChatFiniteNumber(part.canvasImageWidth) ??
+    getAssistantChatFiniteNumber(part.markerImageWidth) ??
+    getAssistantChatFiniteNumber(part.imageWidth);
+  const height =
+    getAssistantChatFiniteNumber(part.canvasImageHeight) ??
+    getAssistantChatFiniteNumber(part.markerImageHeight) ??
+    getAssistantChatFiniteNumber(part.imageHeight);
+
+  return {
+    ...(width != null && width > 0 ? { imageWidth: width } : {}),
+    ...(height != null && height > 0 ? { imageHeight: height } : {}),
+  };
+};
+
+const getAssistantChatImageReferenceContext = (
+  imageReference: AssistantChatImagePartReference,
+): AssistantChatImageReferenceContext | null => {
+  const context: AssistantChatImageReferenceContext = {
+    imageUrl: imageReference.url,
+    ...(imageReference.imageWidth ? { imageWidth: imageReference.imageWidth } : {}),
+    ...(imageReference.imageHeight ? { imageHeight: imageReference.imageHeight } : {}),
+    ...(imageReference.aspectRatio ? { aspectRatio: imageReference.aspectRatio } : {}),
+  };
+  if (!context.imageWidth && !context.imageHeight && !context.aspectRatio) {
+    return null;
+  }
+  return context;
+};
+
+const getAssistantChatPreferredImageReferenceUrl = (
+  part: Record<string, unknown>,
+  fallbackUrl: string,
+): string => {
+  const metadataKeys = ["originalUrl", "sourceUrl", "fullImageUrl"] as const;
+
+  for (const key of metadataKeys) {
+    const value = String(part[key] || "").trim();
+    if (isAssistantChatHttpImageReferenceUrl(value)) {
+      return value;
+    }
+  }
+
+  for (const key of metadataKeys) {
+    const value = String(part[key] || "").trim();
+    if (isAssistantChatImageReferenceUrl(value)) {
+      return value;
+    }
+  }
+  return fallbackUrl;
 };
 
 const getAssistantChatImagePartReference = (
@@ -570,14 +690,22 @@ const getAssistantChatImagePartReference = (
       : undefined;
 
   if (type === "file") {
-    const url = String(part.url || part.data || "").trim();
+    const fallbackUrl = String(part.url || part.data || "").trim();
+    const url = getAssistantChatPreferredImageReferenceUrl(part, fallbackUrl);
     const mediaType = inferAssistantChatFilePartMediaType(part, url);
     if (!url || !mediaType.startsWith("image/")) return null;
-    return { url, mediaType, filename };
+    return {
+      url,
+      mediaType,
+      filename,
+      ...getAssistantChatImageReferenceDimensionsFromPart(part),
+      markContext: getAssistantChatMarkerContextFromPart(part, url),
+    };
   }
 
   if (type === "image") {
-    const url = String(part.image || part.url || part.data || "").trim();
+    const fallbackUrl = String(part.image || part.url || part.data || "").trim();
+    const url = getAssistantChatPreferredImageReferenceUrl(part, fallbackUrl);
     const mediaType = String(
       part.mediaType ||
         part.mimeType ||
@@ -586,10 +714,69 @@ const getAssistantChatImagePartReference = (
         "image/png",
     ).trim();
     if (!url || !mediaType.startsWith("image/")) return null;
-    return { url, mediaType, filename };
+    return {
+      url,
+      mediaType,
+      filename,
+      ...getAssistantChatImageReferenceDimensionsFromPart(part),
+      markContext: getAssistantChatMarkerContextFromPart(part, url),
+    };
   }
 
   return null;
+};
+
+const normalizeAssistantChatImagePartForModel = (
+  part: UIMessage["parts"][number],
+): { part: UIMessage["parts"][number]; replaced: boolean } => {
+  if (!isRecord(part)) return { part, replaced: false };
+
+  const type = String(part.type || "").trim();
+  if (type !== "file" && type !== "image") {
+    return { part, replaced: false };
+  }
+
+  const record = part as Record<string, unknown>;
+  const fallbackUrl =
+    type === "file"
+      ? String(record.url || record.data || "").trim()
+      : String(record.image || record.url || record.data || "").trim();
+  const preferredUrl = getAssistantChatPreferredImageReferenceUrl(record, fallbackUrl);
+
+  if (
+    !preferredUrl ||
+    preferredUrl === fallbackUrl ||
+    !isAssistantChatImageReferenceUrl(preferredUrl)
+  ) {
+    return { part, replaced: false };
+  }
+
+  if (type === "file") {
+    const nextPart: Record<string, unknown> = {
+      ...part,
+      url: preferredUrl,
+    };
+    if (typeof nextPart.data === "string" && isAssistantChatImageDataUrl(nextPart.data)) {
+      delete nextPart.data;
+    }
+    return {
+      part: nextPart as UIMessage["parts"][number],
+      replaced: true,
+    };
+  }
+
+  const nextPart: Record<string, unknown> = {
+      ...record,
+      image: preferredUrl,
+      ...(typeof record.url === "string" ? { url: preferredUrl } : {}),
+    };
+  if (typeof nextPart.data === "string" && isAssistantChatImageDataUrl(nextPart.data)) {
+    delete nextPart.data;
+  }
+  return {
+    part: nextPart as unknown as UIMessage["parts"][number],
+    replaced: true,
+  };
 };
 
 const truncateAssistantChatImageMemoryText = (value: unknown): string => {
@@ -688,6 +875,7 @@ export const stripOversizedImageFilePartsForModelMessages = (
   strippedBinaryPayloadCount: number;
   strippedBinaryPayloadChars: number;
   strippedUnsupportedFilePartCount: number;
+  modelImageUrlReplacementCount: number;
 } => {
   const maxDataUrlChars =
     options.maxDataUrlChars ?? MAX_ASSISTANT_CHAT_MODEL_IMAGE_DATA_URL_CHARS;
@@ -698,6 +886,7 @@ export const stripOversizedImageFilePartsForModelMessages = (
   let strippedBinaryPayloadCount = 0;
   let strippedBinaryPayloadChars = 0;
   let strippedUnsupportedFilePartCount = 0;
+  let modelImageUrlReplacementCount = 0;
   const preserveLatestUserImages = options.preserveLatestUserImages !== false;
   let latestUserMessageIndex = -1;
   if (preserveLatestUserImages) {
@@ -772,8 +961,25 @@ export const stripOversizedImageFilePartsForModelMessages = (
     const shouldPreserveMessageImages =
       preserveLatestUserImages && messageIndex === latestUserMessageIndex;
     const nextParts = message.parts.flatMap((part) => {
+      if (part.type === "text") {
+        const visibleText = stripHiddenAssistantReferenceText(
+          String(part.text || ""),
+        );
+        if (!visibleText.trim()) return [];
+        return [
+          visibleText === part.text
+            ? part
+            : ({ ...part, text: visibleText } as UIMessage["parts"][number]),
+        ];
+      }
+
       if (part.type !== "file") {
-        const imageReference = getAssistantChatImagePartReference(part);
+        const normalizedPart = normalizeAssistantChatImagePartForModel(part);
+        if (normalizedPart.replaced) {
+          modelImageUrlReplacementCount += 1;
+        }
+        const effectivePart = normalizedPart.part;
+        const imageReference = getAssistantChatImagePartReference(effectivePart);
         if (
           shouldPreserveMessageImages &&
           imageReference &&
@@ -782,7 +988,16 @@ export const stripOversizedImageFilePartsForModelMessages = (
             maxDataUrlChars,
           )
         ) {
-          return [part];
+          return [effectivePart];
+        }
+        if (
+          imageReference &&
+          !isAssistantChatOversizedModelImageDataUrl(
+            imageReference.url,
+            maxDataUrlChars,
+          )
+        ) {
+          return [effectivePart];
         }
         if (
           imageReference &&
@@ -795,41 +1010,37 @@ export const stripOversizedImageFilePartsForModelMessages = (
           strippedChars += imageReference.url.length;
           strippedImageFilePartCount += 1;
           strippedImageFilePartChars += imageReference.url.length;
-
-          const filename = imageReference.filename
-            ? ` "${imageReference.filename}"`
-            : "";
-
-          return [
-            {
-              type: "text" as const,
-              text:
-                `[Attached image${filename} omitted from the language-model prompt ` +
-                `to avoid oversized base64 context. The image remains available ` +
-                `to the image-generation tool as a reference.]`,
-            },
-          ];
+          return [effectivePart];
         }
 
-        const result = stripModelPayloadValue(part);
-        return [result.changed ? result.value as UIMessage["parts"][number] : part];
+        const result = stripModelPayloadValue(effectivePart);
+        return [
+          result.changed
+            ? result.value as UIMessage["parts"][number]
+            : effectivePart,
+        ];
       }
 
-      const imageReference = getAssistantChatImagePartReference(part);
+      const normalizedPart = normalizeAssistantChatImagePartForModel(part);
+      if (normalizedPart.replaced) {
+        modelImageUrlReplacementCount += 1;
+      }
+      const effectivePart = normalizedPart.part;
+      const imageReference = getAssistantChatImagePartReference(effectivePart);
       const url = imageReference?.url || "";
       if (
         shouldPreserveMessageImages &&
         imageReference &&
         !isAssistantChatOversizedModelImageDataUrl(url, maxDataUrlChars)
       ) {
-        return [part];
+        return [effectivePart];
       }
       if (
         !imageReference &&
-        !isAssistantChatFilePartSupportedByModel(part, options)
+        !isAssistantChatFilePartSupportedByModel(effectivePart, options)
       ) {
         strippedUnsupportedFilePartCount += 1;
-        return [createUnsupportedAssistantChatFilePartPlaceholder(part)];
+        return [createUnsupportedAssistantChatFilePartPlaceholder(effectivePart)];
       }
 
       if (
@@ -837,28 +1048,14 @@ export const stripOversizedImageFilePartsForModelMessages = (
         !isAssistantChatImageDataUrl(url) ||
         !isAssistantChatOversizedModelImageDataUrl(url, maxDataUrlChars)
       ) {
-        return [part];
+        return [effectivePart];
       }
 
       strippedCount += 1;
       strippedChars += url.length;
       strippedImageFilePartCount += 1;
       strippedImageFilePartChars += url.length;
-
-      const filename =
-        imageReference.filename
-          ? ` "${imageReference.filename}"`
-          : "";
-
-      return [
-        {
-          type: "text" as const,
-          text:
-            `[Attached image${filename} omitted from the language-model prompt ` +
-            `to avoid oversized base64 context. The image remains available ` +
-            `to the image-generation tool as a reference.]`,
-        },
-      ];
+      return [effectivePart];
     });
 
     return nextParts === message.parts
@@ -878,6 +1075,7 @@ export const stripOversizedImageFilePartsForModelMessages = (
     strippedBinaryPayloadCount,
     strippedBinaryPayloadChars,
     strippedUnsupportedFilePartCount,
+    modelImageUrlReplacementCount,
   };
 };
 
@@ -885,6 +1083,7 @@ export const buildAssistantChatSystemPrompt = (options: {
   system: string | undefined;
   imageModeEnabled: boolean;
   imageToolAvailable: boolean;
+  upscaleToolAvailable?: boolean;
   studioSkillsToolAvailable?: boolean;
   studioWorkflowPlanToolAvailable?: boolean;
   latestUserText?: string | undefined;
@@ -895,6 +1094,12 @@ export const buildAssistantChatSystemPrompt = (options: {
   ].filter(Boolean);
   if (options.imageModeEnabled && options.imageToolAvailable) {
     parts.push(ASSISTANT_CHAT_IMAGE_MODE_SYSTEM_HINT);
+  }
+  if (
+    options.upscaleToolAvailable &&
+    isAssistantChatUpscaleImageRequest(options.latestUserText || "")
+  ) {
+    parts.push(ASSISTANT_CHAT_UPSCALE_SYSTEM_HINT);
   }
   if (
     options.imageToolAvailable &&
@@ -1013,6 +1218,15 @@ const MULTI_IMAGE_ASSET_REQUEST_PATTERN =
 const PRODUCT_REFERENCE_ASSET_REQUEST_PATTERN =
   /(?:\u8fd9\u6b3e|\u8fd9\u4e2a\u4ea7\u54c1|\u5546\u54c1|\u4ea7\u54c1|\u8be6\u60c5\u9875|\u5957\u56fe|\u4e3b\u56fe|\u5356\u70b9|\u7535\u5546|product|sku|listing|detail\s+page|pdp|e[-\s]?commerce)/i;
 
+const UPSCALE_IMAGE_REQUEST_PATTERN =
+  /(?:\u7b49\u6bd4)?(?:\u653e\u5927|\u653e\u5927\u5230|\u653e\u81f3|\u9ad8\u6e05\u653e\u5927|\u8d85\u5206|\u8d85\u5206\u8fa8\u7387|\u63d0\u9ad8\u5206\u8fa8\u7387|\u589e\u5f3a\u6e05\u6670\u5ea6|\u53d8\u6e05\u6670|\u4fee\u590d\u753b\u8d28)|(?:upscale|super[-\s]?resolution|hi[-\s]?res|high[-\s]?resolution|enhance\s+(?:resolution|clarity)|increase\s+resolution|make\s+it\s+sharper)/i;
+
+const UPSCALE_EXISTING_IMAGE_HINT_PATTERN =
+  /(?:\u8fd9\u5f20|\u539f\u56fe|\u53c2\u8003\u56fe|\u56fe\u4e00|\u56fe\u4e8c|\u56fe\d+|image\s*#?\d*|this\s+image|attached\s+image|source\s+image|same\s+image|\u4e0d\u8981\u6539|\u4fdd\u6301|\u7b49\u6bd4)/i;
+
+const UPSCALE_RESOLUTION_HINT_PATTERN =
+  /(?:\b[248]k\b|\b[248]K\b|2K|4K|8K|\d{3,5}\s*x\s*\d{3,5}|\u5206\u8fa8\u7387|\u50cf\u7d20|\u9ad8\u6e05)/;
+
 const CHINESE_IMAGE_COUNT_WORDS: Record<string, number> = {
   "\u96f6": 0,
   "\u3007": 0,
@@ -1103,6 +1317,16 @@ const parseAssistantChatChineseImageCount = (value: string): number | undefined 
 export const isAssistantChatMultiImageAssetRequest = (text: string): boolean =>
   MULTI_IMAGE_ASSET_REQUEST_PATTERN.test(String(text || ""));
 
+export const isAssistantChatUpscaleImageRequest = (text: string): boolean => {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  if (!UPSCALE_IMAGE_REQUEST_PATTERN.test(normalized)) return false;
+  return (
+    UPSCALE_EXISTING_IMAGE_HINT_PATTERN.test(normalized) ||
+    UPSCALE_RESOLUTION_HINT_PATTERN.test(normalized)
+  );
+};
+
 export const shouldUseRecentUserImagesForImageAssetRequest = (
   messages: UIMessage[],
 ): boolean => {
@@ -1180,6 +1404,9 @@ export const deriveAssistantChatDirectiveRequestOverrides = (
     isExplicitAssistantChatImageGenerationRequest(
       latestUserTextWithoutDirectiveMentions,
     );
+  const explicitUpscaleRequested = isAssistantChatUpscaleImageRequest(
+    latestUserTextWithoutDirectiveMentions,
+  );
   const multiImageAssetRequested = isAssistantChatMultiImageAssetRequest(
     latestUserTextWithoutDirectiveMentions,
   );
@@ -1196,7 +1423,9 @@ export const deriveAssistantChatDirectiveRequestOverrides = (
   const canPromoteWeatherToolChoice =
     requestedToolChoice === undefined || requestedToolChoice === "auto";
   const promotedActiveTools =
-    multiImageAssetRequested && !hasExplicitActiveTools
+    explicitUpscaleRequested && !hasExplicitActiveTools
+      ? ["upscaleImage"]
+      : multiImageAssetRequested && !hasExplicitActiveTools
       ? ["listStudioSkills", "planStudioWorkflow", "createImage"]
       : (explicitImageGenerationRequested ||
             imageReferenceContinuationRequested) &&
@@ -1743,6 +1972,57 @@ export const getLatestUserImageFilePartUrls = (messages: UIMessage[]): string[] 
     .filter(Boolean);
 };
 
+export const getLatestUserImageMarkContexts = (
+  messages: UIMessage[],
+): AssistantChatImageMarkContext[] => {
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user");
+  if (!latestUserMessage) return [];
+
+  const contexts: AssistantChatImageMarkContext[] = [];
+  const seen = new Set<string>();
+  for (const part of latestUserMessage.parts) {
+    const imageReference = getAssistantChatImagePartReference(part);
+    const markContext = imageReference?.markContext;
+    if (!markContext) continue;
+
+    const key = [
+      markContext.label,
+      markContext.markerId || "",
+      markContext.imageUrl,
+      markContext.normalizedX,
+      markContext.normalizedY,
+    ].join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contexts.push(markContext);
+  }
+  return contexts;
+};
+
+export const getLatestUserImageReferenceContexts = (
+  messages: UIMessage[],
+): AssistantChatImageReferenceContext[] => {
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user");
+  if (!latestUserMessage) return [];
+
+  const contexts: AssistantChatImageReferenceContext[] = [];
+  const seen = new Set<string>();
+  for (const part of latestUserMessage.parts) {
+    const imageReference = getAssistantChatImagePartReference(part);
+    if (!imageReference) continue;
+
+    const context = getAssistantChatImageReferenceContext(imageReference);
+    if (!context || seen.has(context.imageUrl)) continue;
+    seen.add(context.imageUrl);
+    contexts.push(context);
+  }
+  return contexts;
+};
+
 const getLatestUserText = (messages: UIMessage[]): string =>
   getUiMessageText([...messages].reverse().find((message) => message.role === "user"));
 
@@ -2264,7 +2544,8 @@ const enrichAssistantChatUiErrorChunk = <
       ...details,
     },
     {
-      includeResponseDetails: isAssistantChatDebugEnabled(),
+      includeResponseDetails:
+        chunk.type === "tool-output-error" || isAssistantChatDebugEnabled(),
     },
   );
 
@@ -2541,14 +2822,17 @@ export default async function handler(req: any, res: any) {
 
   const directiveRequestOverrides =
     deriveAssistantChatDirectiveRequestOverrides(body, messages);
-  logAssistantChat(requestId, "directive_overrides_ready", {
-    directiveMentions: directiveRequestOverrides.directiveMentions,
-    explicitWebSearchRequested:
-      directiveRequestOverrides.explicitWebSearchRequested,
-    explicitWeatherRequested:
-      directiveRequestOverrides.explicitWeatherRequested,
-    elapsedMs: Date.now() - startedAt,
-  });
+    logAssistantChat(requestId, "directive_overrides_ready", {
+      directiveMentions: directiveRequestOverrides.directiveMentions,
+      explicitWebSearchRequested:
+        directiveRequestOverrides.explicitWebSearchRequested,
+      explicitWeatherRequested:
+        directiveRequestOverrides.explicitWeatherRequested,
+      explicitUpscaleRequested: isAssistantChatUpscaleImageRequest(
+        getLatestUserText(messages),
+      ),
+      elapsedMs: Date.now() - startedAt,
+    });
 
   stage = "resolve_provider";
   const provider = resolveProviderConfig(body);
@@ -2618,6 +2902,9 @@ export default async function handler(req: any, res: any) {
     });
     stage = "create_image_tools";
     const latestUserImageReferences = getLatestUserImageFilePartUrls(messages);
+    const latestUserImageReferenceContexts =
+      getLatestUserImageReferenceContexts(messages);
+    const latestUserImageMarkContexts = getLatestUserImageMarkContexts(messages);
     const recentGeneratedImageReferences =
       getRecentGeneratedImageReferenceUrls(messages);
     const defaultImageReferences = getDefaultImageReferenceUrls(messages);
@@ -2637,6 +2924,8 @@ export default async function handler(req: any, res: any) {
       ...(body.imageGeneration || {}),
       minimumCount: requestedImageCountFromText,
       referenceImages: defaultImageReferences,
+      referenceImageContexts: latestUserImageReferenceContexts,
+      markContexts: latestUserImageMarkContexts,
     });
     logAssistantChat(requestId, "image_tools_ready", {
       reason: imageTools.reason,
@@ -2659,6 +2948,8 @@ export default async function handler(req: any, res: any) {
       defaultReferenceImageCount: latestUserImageReferences.length,
       recentGeneratedReferenceImageCount: recentGeneratedImageReferences.length,
       effectiveDefaultReferenceImageCount: defaultImageReferences.length,
+      latestUserReferenceContextCount: latestUserImageReferenceContexts.length,
+      latestUserMarkContextCount: latestUserImageMarkContexts.length,
       recentGeneratedReferencesEnabled:
         latestUserImageReferences.length === 0 &&
         shouldUseRecentGeneratedImagesAsReferences(messages),
@@ -2850,6 +3141,8 @@ export default async function handler(req: any, res: any) {
       strippedBinaryPayloadChars: modelMessageSource.strippedBinaryPayloadChars,
       strippedUnsupportedFilePartCount:
         modelMessageSource.strippedUnsupportedFilePartCount,
+      modelImageUrlReplacementCount:
+        modelMessageSource.modelImageUrlReplacementCount,
       elapsedMs: Date.now() - startedAt,
     });
 
@@ -2869,6 +3162,10 @@ export default async function handler(req: any, res: any) {
         aiSdkTools,
         "createImage",
       ) || Object.prototype.hasOwnProperty.call(aiSdkTools, "image_generation"),
+      upscaleToolAvailable: Object.prototype.hasOwnProperty.call(
+        aiSdkTools,
+        "upscaleImage",
+      ),
       studioSkillsToolAvailable: Object.prototype.hasOwnProperty.call(
         aiSdkTools,
         "listStudioSkills",

@@ -23,7 +23,9 @@ import {
 } from "../services/image-generation/core/openai-image-spec.ts";
 import {
   assistantSidebarCreateImageParameters,
+  assistantSidebarUpscaleImageParameters,
   type AssistantSidebarCreateImageArgs,
+  type AssistantSidebarUpscaleImageArgs,
 } from "../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
 
 export type AssistantChatImageGenerationConfig = {
@@ -35,6 +37,8 @@ export type AssistantChatImageGenerationConfig = {
   count?: number | null;
   minimumCount?: number | null;
   referenceImages?: string[] | null;
+  referenceImageContexts?: AssistantChatImageReferenceContext[] | null;
+  markContexts?: AssistantChatImageMarkContext[] | null;
   enforceSettings?: boolean;
   requiresApproval?: boolean | null;
 };
@@ -66,6 +70,28 @@ type AssistantChatGeneratedImagePart = {
 type AssistantChatCreateImageExecutionInput = AssistantSidebarCreateImageArgs & {
   referenceImages?: string[] | null;
   maskImage?: string | null;
+};
+
+type AssistantChatUpscaleImageExecutionInput = AssistantSidebarUpscaleImageArgs & {
+  sourceImage?: string | null;
+  referenceImages?: string[] | null;
+};
+
+export type AssistantChatImageMarkContext = {
+  label: string;
+  imageUrl: string;
+  markerId?: string;
+  normalizedX: number;
+  normalizedY: number;
+  imageWidth?: number;
+  imageHeight?: number;
+};
+
+export type AssistantChatImageReferenceContext = {
+  imageUrl: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  aspectRatio?: string;
 };
 
 const normalizeString = (value: unknown): string => String(value ?? "").trim();
@@ -116,6 +142,209 @@ const normalizeImageCount = (value: unknown, fallback = 1): number => {
   return Math.max(1, Math.floor(numeric));
 };
 
+const normalizeCoordinate = (value: unknown): number | null => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(1, numeric));
+};
+
+const normalizePositiveInteger = (value: unknown): number | undefined => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  return Math.round(numeric);
+};
+
+const getGreatestCommonDivisor = (left: number, right: number): number => {
+  let a = Math.abs(Math.round(left));
+  let b = Math.abs(Math.round(right));
+  while (b > 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+};
+
+const resolveMarkContextAspectRatio = (
+  context: AssistantChatImageMarkContext,
+): string | undefined => {
+  const width = normalizePositiveInteger(context.imageWidth);
+  const height = normalizePositiveInteger(context.imageHeight);
+  if (!width || !height) return undefined;
+
+  const divisor = getGreatestCommonDivisor(width, height);
+  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`;
+};
+
+const normalizeAspectRatioString = (value: unknown): string | undefined => {
+  const normalized = normalizeString(value);
+  if (!/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(normalized)) return undefined;
+  const [widthText, heightText] = normalized.split(":");
+  const width = Number(widthText);
+  const height = Number(heightText);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return normalized;
+};
+
+const resolveReferenceContextAspectRatio = (
+  context: AssistantChatImageReferenceContext,
+): string | undefined => {
+  const explicit = normalizeAspectRatioString(context.aspectRatio);
+  if (explicit) return explicit;
+
+  const width = normalizePositiveInteger(context.imageWidth);
+  const height = normalizePositiveInteger(context.imageHeight);
+  if (!width || !height) return undefined;
+
+  const divisor = getGreatestCommonDivisor(width, height);
+  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`;
+};
+
+const resolveInheritedReferenceAspectRatio = (
+  args: {
+    referenceContexts: AssistantChatImageReferenceContext[];
+    markContexts: AssistantChatImageMarkContext[];
+  },
+): string | undefined => {
+  for (const context of args.referenceContexts) {
+    const aspectRatio = resolveReferenceContextAspectRatio(context);
+    if (aspectRatio) return aspectRatio;
+  }
+  for (const context of args.markContexts) {
+    const aspectRatio = resolveMarkContextAspectRatio(context);
+    if (aspectRatio) return aspectRatio;
+  }
+  return undefined;
+};
+
+const normalizeMarkContexts = (
+  value: AssistantChatImageMarkContext[] | null | undefined,
+): AssistantChatImageMarkContext[] => {
+  if (!Array.isArray(value)) return [];
+  const contexts: AssistantChatImageMarkContext[] = [];
+  for (const item of value) {
+    const label = normalizeString(item?.label);
+    const imageUrl = normalizeString(item?.imageUrl);
+    const normalizedX = normalizeCoordinate(item?.normalizedX);
+    const normalizedY = normalizeCoordinate(item?.normalizedY);
+    if (
+      !label ||
+      !isValidAssistantImageReference(imageUrl) ||
+      normalizedX == null ||
+      normalizedY == null
+    ) {
+      continue;
+    }
+    const imageWidth = normalizePositiveInteger(item.imageWidth);
+    const imageHeight = normalizePositiveInteger(item.imageHeight);
+    contexts.push({
+      label,
+      imageUrl,
+      normalizedX,
+      normalizedY,
+      ...(normalizeString(item.markerId)
+        ? { markerId: normalizeString(item.markerId) }
+        : {}),
+      ...(imageWidth ? { imageWidth } : {}),
+      ...(imageHeight ? { imageHeight } : {}),
+    });
+  }
+  return contexts;
+};
+
+const normalizeReferenceImageContexts = (
+  value: AssistantChatImageReferenceContext[] | null | undefined,
+): AssistantChatImageReferenceContext[] => {
+  if (!Array.isArray(value)) return [];
+  const contexts: AssistantChatImageReferenceContext[] = [];
+  for (const item of value) {
+    const imageUrl = normalizeString(item?.imageUrl);
+    if (!isValidAssistantImageReference(imageUrl)) continue;
+
+    const imageWidth = normalizePositiveInteger(item.imageWidth);
+    const imageHeight = normalizePositiveInteger(item.imageHeight);
+    const aspectRatio = normalizeAspectRatioString(item.aspectRatio);
+    contexts.push({
+      imageUrl,
+      ...(imageWidth ? { imageWidth } : {}),
+      ...(imageHeight ? { imageHeight } : {}),
+      ...(aspectRatio ? { aspectRatio } : {}),
+    });
+  }
+  return contexts;
+};
+
+const resolveApplicableMarkContexts = (args: {
+  markContexts: AssistantChatImageMarkContext[];
+  promptText: string;
+  resolvedReferenceImages: string[];
+}): AssistantChatImageMarkContext[] => {
+  if (args.markContexts.length === 0) return [];
+  const referenceSet = new Set(args.resolvedReferenceImages.map(normalizeString));
+  const promptText = normalizeString(args.promptText).toLowerCase();
+
+  return args.markContexts.filter((context) => {
+    if (referenceSet.has(context.imageUrl)) return true;
+    return promptText.includes(context.label.toLowerCase());
+  });
+};
+
+const resolveApplicableReferenceContexts = (args: {
+  referenceContexts: AssistantChatImageReferenceContext[];
+  resolvedReferenceImages: string[];
+}): AssistantChatImageReferenceContext[] => {
+  if (args.referenceContexts.length === 0) return [];
+  const referenceSet = new Set(args.resolvedReferenceImages.map(normalizeString));
+  return args.referenceContexts.filter((context) =>
+    referenceSet.has(context.imageUrl),
+  );
+};
+
+const mergeMarkContextReferenceImages = (
+  referenceImages: string[],
+  markContexts: AssistantChatImageMarkContext[],
+): string[] => {
+  const merged = [...referenceImages];
+  for (const context of markContexts) {
+    if (!merged.includes(context.imageUrl)) {
+      merged.push(context.imageUrl);
+    }
+  }
+  return merged;
+};
+
+const appendMarkContextsToPrompt = (
+  promptText: string,
+  markContexts: AssistantChatImageMarkContext[],
+): string => {
+  const text = normalizeString(promptText);
+  if (markContexts.length === 0) return text;
+
+  const lines = markContexts.map((context, index) => {
+    const imageSize =
+      context.imageWidth && context.imageHeight
+        ? `; source image size ${context.imageWidth}x${context.imageHeight}px`
+        : "";
+    const markerId = context.markerId ? `; markerId ${context.markerId}` : "";
+    return (
+      `${index + 1}. ${context.label}: exact user-selected canvas mark at ` +
+      `normalized coordinates x=${context.normalizedX.toFixed(4)}, ` +
+      `y=${context.normalizedY.toFixed(4)} on the matching reference image` +
+      `${imageSize}${markerId}. Treat this as the spatial anchor for any edit ` +
+      `or generation instruction that mentions ${context.label}; preserve ` +
+      `unmentioned areas unless the user asks otherwise.`
+    );
+  });
+
+  return [
+    text,
+    "[Canvas mark contexts for image tool]",
+    ...lines,
+  ].join("\n\n");
+};
+
 const resolveRequestedImageCount = (input: {
   count?: number | null;
 }): number | undefined => {
@@ -133,6 +362,20 @@ const normalizeResolution = (
   }
   return undefined;
 };
+
+const normalizeUpscaleResolution = (
+  value: unknown,
+): "2K" | "4K" | "8K" => {
+  const normalized = normalizeString(value).toUpperCase();
+  if (normalized === "2K" || normalized === "4K" || normalized === "8K") {
+    return normalized;
+  }
+  return "4K";
+};
+
+const toImageGenerationResolution = (
+  value: "2K" | "4K" | "8K",
+): "2K" | "4K" => (value === "2K" ? "2K" : "4K");
 
 const toGoogleImageProviderOptions = (args: {
   aspectRatio?: string;
@@ -270,6 +513,7 @@ const toImageToolOutput = (
     resolution?: "1K" | "2K" | "4K";
     count?: number;
     settingsLocked?: boolean;
+    operation?: string;
   },
 ) => {
   const revisedPrompt = extractRevisedPrompt(result);
@@ -285,6 +529,7 @@ const toImageToolOutput = (
     resolution: context.resolution,
     count: context.count,
     settingsLocked: context.settingsLocked === true,
+    ...(context.operation ? { operation: context.operation } : {}),
     images: result.images.map(
       (image, index): AssistantChatGeneratedImagePart => ({
         type: "image",
@@ -298,6 +543,21 @@ const toImageToolOutput = (
     usage: result.usage,
   };
 };
+
+const buildUpscalePrompt = (args: {
+  resolution: "2K" | "4K" | "8K";
+  extraPrompt?: string;
+}): string =>
+  [
+    `Content-preserving AI super-resolution upscale to ${args.resolution}.`,
+    "Use the attached image as the exact source image.",
+    "Preserve the original composition, crop, aspect ratio, subject identity, product shape, typography, Chinese text, logos, colors, lighting, background, and all layout positions.",
+    "Do not redesign, recompose, replace text, add new promotional blocks, change objects, or generate a related new poster.",
+    "Only improve apparent resolution, edge clarity, fine detail, texture fidelity, and compression artifacts while keeping the image visually the same.",
+    args.extraPrompt ? `Extra user instruction: ${args.extraPrompt}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 export const createAssistantChatImageTools = (
   config: AssistantChatImageGenerationConfig | null | undefined,
@@ -363,6 +623,10 @@ export const createAssistantChatImageTools = (
     : [])
     .map(normalizeString)
     .filter(isValidAssistantImageReference);
+  const defaultReferenceImageContexts = normalizeReferenceImageContexts(
+    config.referenceImageContexts,
+  );
+  const defaultMarkContexts = normalizeMarkContexts(config.markContexts);
   const runGenerateImage = dependencies.generateImageFn || generateImage;
   const needsImageApproval =
     config.requiresApproval === true
@@ -395,7 +659,7 @@ export const createAssistantChatImageTools = (
           "Generate or edit images using the configured AI SDK image model. Use this for visual creation, reference-image edits, and image variations.",
         inputSchema: assistantSidebarCreateImageParameters,
         needsApproval: needsImageApproval,
-        async execute(input) {
+        async execute(input, options) {
           const executionInput = input as AssistantChatCreateImageExecutionInput;
           const referenceImages = [
             ...(executionInput.images || []),
@@ -403,41 +667,69 @@ export const createAssistantChatImageTools = (
           ]
             .map(normalizeString)
             .filter(isValidAssistantImageReference);
-          const resolvedReferenceImages =
+          const baseReferenceImages =
             referenceImages.length > 0 ? referenceImages : defaultReferenceImages;
           const mask =
             normalizeString(executionInput.mask) ||
             normalizeString(executionInput.maskImage);
-          const aspectRatio = settingsLocked
-            ? defaultAspectRatio
-            : normalizeString(input.aspectRatio) || defaultAspectRatio;
           const imageCount = settingsLocked
             ? defaultCount
             : Math.max(minimumCount, normalizeImageCount(input.count, defaultCount));
+          const promptText = normalizeString(input.text) || input.prompt;
+          const applicableMarkContexts = resolveApplicableMarkContexts({
+            markContexts: defaultMarkContexts,
+            promptText,
+            resolvedReferenceImages: baseReferenceImages,
+          });
+          const resolvedReferenceImages = mergeMarkContextReferenceImages(
+            baseReferenceImages,
+            applicableMarkContexts,
+          );
+          const applicableReferenceContexts = resolveApplicableReferenceContexts({
+            referenceContexts: defaultReferenceImageContexts,
+            resolvedReferenceImages,
+          });
+          const finalPromptText = appendMarkContextsToPrompt(
+            promptText,
+            applicableMarkContexts,
+          );
+          const explicitAspectRatio = normalizeString(input.aspectRatio);
+          const explicitSize = normalizeString(input.size);
+          const inheritedAspectRatio =
+            !settingsLocked && !explicitAspectRatio && !explicitSize
+              ? resolveInheritedReferenceAspectRatio({
+                  referenceContexts: applicableReferenceContexts,
+                  markContexts: applicableMarkContexts,
+                })
+              : undefined;
+          const aspectRatio = settingsLocked
+            ? defaultAspectRatio
+            : explicitAspectRatio || inheritedAspectRatio || defaultAspectRatio;
           const size = !googleImageModel
             ? toOpenAICompatibleSize(
                 canonicalModelId,
                 aspectRatio,
                 defaultResolution,
-                settingsLocked
-                  ? undefined
-                  : normalizeString(input.size) || undefined,
+                settingsLocked ? undefined : explicitSize || undefined,
               )
             : undefined;
-          const promptText = normalizeString(input.text) || input.prompt;
           const prompt =
             resolvedReferenceImages.length > 0 || mask
               ? {
-                  text: promptText,
+                  text: finalPromptText,
                   images: resolvedReferenceImages,
                   ...(mask ? { mask } : {}),
                 }
-              : promptText;
+              : finalPromptText;
 
           const generateOptions = {
             model: imageModel as any,
             prompt,
             n: imageCount,
+            maxRetries: 0,
+            ...(options?.abortSignal
+              ? { abortSignal: options.abortSignal }
+              : {}),
             ...(size ? { size } : {}),
             ...(!size && aspectRatio
               ? { aspectRatio: aspectRatio as `${number}:${number}` }
@@ -468,7 +760,7 @@ export const createAssistantChatImageTools = (
               "The selected image provider rejected the attached reference image input, so this result was generated from the finalized text prompt only.";
             result = await runGenerateImage({
               ...generateOptions,
-              prompt: promptText,
+              prompt: finalPromptText,
             });
           }
 
@@ -476,7 +768,7 @@ export const createAssistantChatImageTools = (
             providerId: resolvedProvider.id,
             providerName: resolvedProvider.name,
             modelId: canonicalModelId,
-            prompt: promptText,
+            prompt: finalPromptText,
             referenceCount: referenceFallbackWarning
               ? 0
               : resolvedReferenceImages.length,
@@ -512,6 +804,128 @@ export const createAssistantChatImageTools = (
                 output.resolution ? `Resolution: ${output.resolution}.` : "",
                 "Images were returned to the UI as tool output and remain available to future createImage calls as references; image bytes are intentionally not included in the language-model tool result.",
                 output.prompt ? `Prompt: ${output.prompt}` : "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+            },
+          ],
+        }),
+      }),
+      upscaleImage: tool({
+        description:
+          "Content-preserving AI super-resolution / upscale for an existing source image. Use this for requests like upscale, enlarge to 4K, make higher-resolution, sharpen, or improve clarity while keeping the image the same. Do not use createImage for pure upscaling.",
+        inputSchema: assistantSidebarUpscaleImageParameters,
+        needsApproval: true,
+        async execute(input, options) {
+          const executionInput = input as AssistantChatUpscaleImageExecutionInput;
+          const sourceImage = [
+            executionInput.image,
+            executionInput.sourceImage,
+            ...(executionInput.images || []),
+            ...(executionInput.referenceImages || []),
+            ...defaultReferenceImages,
+          ]
+            .map(normalizeString)
+            .find(isValidAssistantImageReference);
+
+          if (!sourceImage) {
+            throw new Error(
+              "upscaleImage requires an image reference. Attach or reference an image before asking for AI upscale.",
+            );
+          }
+
+          const requestedUpscaleResolution = normalizeUpscaleResolution(
+            executionInput.resolution,
+          );
+          const generationResolution = toImageGenerationResolution(
+            requestedUpscaleResolution,
+          );
+          const referenceContexts = resolveApplicableReferenceContexts({
+            referenceContexts: defaultReferenceImageContexts,
+            resolvedReferenceImages: [sourceImage],
+          });
+          const inheritedAspectRatio =
+            resolveInheritedReferenceAspectRatio({
+              referenceContexts,
+              markContexts: [],
+            }) || defaultAspectRatio;
+          const size = !googleImageModel
+            ? toOpenAICompatibleSize(
+                canonicalModelId,
+                inheritedAspectRatio,
+                generationResolution,
+                undefined,
+              )
+            : undefined;
+          const promptText = buildUpscalePrompt({
+            resolution: requestedUpscaleResolution,
+            extraPrompt: executionInput.prompt,
+          });
+          const result = await runGenerateImage({
+            model: imageModel as any,
+            prompt: {
+              text: promptText,
+              images: [sourceImage],
+            },
+            n: 1,
+            maxRetries: 0,
+            ...(options?.abortSignal
+              ? { abortSignal: options.abortSignal }
+              : {}),
+            ...(size ? { size } : {}),
+            ...(!size && inheritedAspectRatio
+              ? { aspectRatio: inheritedAspectRatio as `${number}:${number}` }
+              : {}),
+            ...(googleImageModel
+              ? {
+                  providerOptions: toGoogleImageProviderOptions({
+                    aspectRatio: inheritedAspectRatio,
+                    resolution: generationResolution,
+                  }),
+                }
+              : {}),
+          });
+
+          const output = toImageToolOutput(result, {
+            providerId: resolvedProvider.id,
+            providerName: resolvedProvider.name,
+            modelId: canonicalModelId,
+            prompt: promptText,
+            referenceCount: 1,
+            size,
+            aspectRatio: inheritedAspectRatio,
+            resolution: generationResolution,
+            count: 1,
+            settingsLocked: false,
+            operation: "upscale",
+          });
+
+          return requestedUpscaleResolution === "8K"
+            ? {
+                ...output,
+                requestedResolution: requestedUpscaleResolution,
+                warnings: [
+                  ...(Array.isArray(output.warnings) ? output.warnings : []),
+                  "The configured AI SDK image provider only exposes up to 4K through this route, so the upscale was requested at 4K instead of 8K.",
+                ],
+              }
+            : output;
+        },
+        toModelOutput: ({ output }) => ({
+          type: "content",
+          value: [
+            {
+              type: "text",
+              text: [
+                `Upscaled ${output.images.length} image${output.images.length === 1 ? "" : "s"}.`,
+                output.providerName || output.providerId
+                  ? `Provider: ${output.providerName || output.providerId}.`
+                  : "",
+                output.modelId ? `Model: ${output.modelId}.` : "",
+                output.size ? `Size: ${output.size}.` : "",
+                output.aspectRatio ? `Aspect ratio: ${output.aspectRatio}.` : "",
+                output.resolution ? `Resolution: ${output.resolution}.` : "",
+                "The result was produced from the attached source image for content-preserving upscale; no text-only fallback was used.",
               ]
                 .filter(Boolean)
                 .join(" "),

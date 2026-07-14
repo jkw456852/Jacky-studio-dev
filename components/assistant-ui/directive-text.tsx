@@ -14,6 +14,16 @@ type CreateDirectiveTextOptions = {
   fallbackIcon?: IconComponent;
 };
 
+const HIDDEN_ASSISTANT_REFERENCE_RE = /(^|\n)\[Canvas (?:mark )?reference\]/u;
+
+export const stripHiddenAssistantReferenceText = (text: string): string => {
+  const match = HIDDEN_ASSISTANT_REFERENCE_RE.exec(text);
+  if (!match) return text;
+
+  const markerStart = match.index + (match[1] === "\n" ? 1 : 0);
+  return text.slice(0, markerStart).trimEnd();
+};
+
 const renderChip = (
   text: string,
   type: string | undefined,
@@ -42,7 +52,10 @@ export const createDirectiveText = (
   options: CreateDirectiveTextOptions = {},
 ): TextMessagePartComponent => {
   const DirectiveTextImpl: TextMessagePartComponent = ({ text }) => {
-    const segments = formatter.parse(text);
+    const visibleText = stripHiddenAssistantReferenceText(text);
+    if (!visibleText) return null;
+
+    const segments = formatter.parse(visibleText);
     return (
       <p className="m-0 whitespace-pre-wrap break-words leading-6">
         {segments.map((segment, index) => {

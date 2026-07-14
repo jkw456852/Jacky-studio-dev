@@ -22,7 +22,7 @@ import { errorHandler, ErrorType, AppError } from "../../utils/error-handler";
 import { buildEcommerceProposals } from "./shared/ecommerce-variants";
 import { useAgentStore } from "../../stores/agent.store";
 import { buildRuntimeRolePrompt } from "./runtime-role";
-import { normalizeImageDataUrlString } from "./data-url-helpers.ts";
+import { normalizeImageDataUrlString } from "../image-generation/core/image-data-url.ts";
 import { runMainBrainRuntime } from "./main-brain-runtime";
 import { buildMainBrainTaskProgressUpdate } from "./main-brain-progress-state";
 import { buildAnalyzePlanPrompt } from "./analyze-plan-prompt";

@@ -86,17 +86,23 @@ test("assistant chat image tools register OpenAI-compatible AI SDK createImage t
   assert.equal(result.reason, "registered");
   assert.equal(result.providerId, "plato");
   assert.equal(result.modelId, "gpt-image-2");
-  assert.deepEqual(Object.keys(result.tools), ["createImage"]);
+  assert.deepEqual(Object.keys(result.tools), ["createImage", "upscaleImage"]);
 
-  const output = await (result.tools.createImage as any).execute({
-    prompt: "Create a premium product poster",
-    referenceImages: ["data:image/png;base64,cmVm"],
-    count: 3,
-  });
+  const abortController = new AbortController();
+  const output = await (result.tools.createImage as any).execute(
+    {
+      prompt: "Create a premium product poster",
+      referenceImages: ["data:image/png;base64,cmVm"],
+      count: 3,
+    },
+    { abortSignal: abortController.signal },
+  );
 
   assert.equal(capturedOptions.model.provider, "plato.image");
   assert.equal(capturedOptions.model.modelId, "gpt-image-2");
   assert.equal(capturedOptions.n, 3);
+  assert.equal(capturedOptions.maxRetries, 0);
+  assert.equal(capturedOptions.abortSignal, abortController.signal);
   assert.equal("maxImagesPerCall" in capturedOptions, false);
   assert.equal(capturedOptions.size, "768x1024");
   assert.deepEqual(capturedOptions.prompt, {
@@ -303,6 +309,7 @@ test("assistant chat image tools lock ratio, resolution, and count to the image 
   );
   assert.equal(capturedOptions.aspectRatio, undefined);
   assert.equal(capturedOptions.n, 1);
+  assert.equal(capturedOptions.maxRetries, 0);
   assert.equal(output.providerName, "Plato");
   assert.equal(output.aspectRatio, "16:9");
   assert.equal(output.resolution, "2K");
@@ -563,6 +570,374 @@ test("assistant chat image tools prefer official AI SDK image edit fields", asyn
   assert.equal(output.prompt, "Use these references to create a cohesive campaign key visual");
 });
 
+test("assistant chat image tools inject canvas mark contexts into createImage prompts", async () => {
+  let capturedOptions: any = null;
+  const markImageUrl = "https://cdn.example.test/source-product.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "openai",
+        name: "OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-1",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      markContexts: [
+        {
+          label: "mark01",
+          imageUrl: markImageUrl,
+          markerId: "marker-abc",
+          normalizedX: 0.42,
+          normalizedY: 0.67,
+          imageWidth: 1200,
+          imageHeight: 1800,
+        },
+      ],
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("bWFyay1lZGl0");
+      },
+    },
+  );
+
+  const output = await (result.tools.createImage as any).execute({
+    prompt: "Add a butterfly at mark01.",
+  });
+
+  assert.deepEqual(capturedOptions.prompt.images, [markImageUrl]);
+  assert.match(capturedOptions.prompt.text, /Add a butterfly at mark01\./);
+  assert.match(capturedOptions.prompt.text, /Canvas mark contexts for image tool/);
+  assert.match(capturedOptions.prompt.text, /mark01: exact user-selected canvas mark/);
+  assert.match(capturedOptions.prompt.text, /x=0\.4200/);
+  assert.match(capturedOptions.prompt.text, /y=0\.6700/);
+  assert.match(capturedOptions.prompt.text, /source image size 1200x1800px/);
+  assert.match(capturedOptions.prompt.text, /markerId marker-abc/);
+  assert.equal(output.referenceCount, 1);
+  assert.match(output.prompt, /Canvas mark contexts for image tool/);
+});
+
+test("assistant chat image tools inherit unlocked canvas reference aspect ratio", async () => {
+  let capturedOptions: any = null;
+  const referenceImageUrl = "https://cdn.example.test/portrait-product.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      referenceImages: [referenceImageUrl],
+      referenceImageContexts: [
+        {
+          imageUrl: referenceImageUrl,
+          imageWidth: 1000,
+          imageHeight: 1500,
+        },
+      ],
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("cG9ydHJhaXQ=");
+      },
+    },
+  );
+
+  const output = await (result.tools.createImage as any).execute({
+    prompt: "Edit this product image into a more premium background",
+  });
+
+  assert.equal(
+    capturedOptions.size,
+    resolveOpenAIImageSize("gpt-image-2", "2:3", "1K"),
+  );
+  assert.equal(capturedOptions.aspectRatio, undefined);
+  assert.deepEqual(capturedOptions.prompt, {
+    text: "Edit this product image into a more premium background",
+    images: [referenceImageUrl],
+  });
+  assert.equal(output.aspectRatio, "2:3");
+  assert.equal(output.size, "1024x1536");
+  assert.equal(output.settingsLocked, false);
+});
+
+test("assistant chat image tools inherit unlocked mark reference aspect ratio", async () => {
+  let capturedOptions: any = null;
+  const markImageUrl = "https://cdn.example.test/marked-product.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      markContexts: [
+        {
+          label: "mark01",
+          imageUrl: markImageUrl,
+          normalizedX: 0.5,
+          normalizedY: 0.4,
+          imageWidth: 1080,
+          imageHeight: 1920,
+        },
+      ],
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("bWFyay1wb3J0cmFpdA==");
+      },
+    },
+  );
+
+  const output = await (result.tools.createImage as any).execute({
+    prompt: "Add a butterfly at mark01",
+  });
+
+  assert.equal(
+    capturedOptions.size,
+    resolveOpenAIImageSize("gpt-image-2", "9:16", "1K"),
+  );
+  assert.equal(output.aspectRatio, "9:16");
+  assert.equal(output.size, "864x1536");
+  assert.match(capturedOptions.prompt.text, /source image size 1080x1920px/);
+});
+
+test("assistant chat image tools keep locked panel aspect ratio over reference ratio", async () => {
+  let capturedOptions: any = null;
+  const referenceImageUrl = "https://cdn.example.test/portrait-product.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      referenceImages: [referenceImageUrl],
+      referenceImageContexts: [
+        {
+          imageUrl: referenceImageUrl,
+          imageWidth: 1000,
+          imageHeight: 1500,
+        },
+      ],
+      enforceSettings: true,
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("bG9ja2VkLXNxdWFyZQ==");
+      },
+    },
+  );
+
+  const output = await (result.tools.createImage as any).execute({
+    prompt: "Edit this product image into a more premium background",
+  });
+
+  assert.equal(
+    capturedOptions.size,
+    resolveOpenAIImageSize("gpt-image-2", "1:1", "1K"),
+  );
+  assert.equal(output.aspectRatio, "1:1");
+  assert.equal(output.settingsLocked, true);
+});
+
+test("assistant chat image tools prefer explicit aspect ratio over reference ratio", async () => {
+  let capturedOptions: any = null;
+  const referenceImageUrl = "https://cdn.example.test/portrait-product.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      referenceImages: [referenceImageUrl],
+      referenceImageContexts: [
+        {
+          imageUrl: referenceImageUrl,
+          imageWidth: 1000,
+          imageHeight: 1500,
+        },
+      ],
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("d2lkZQ==");
+      },
+    },
+  );
+
+  const output = await (result.tools.createImage as any).execute({
+    prompt: "Edit this product image into a wide poster",
+    aspectRatio: "16:9",
+  });
+
+  assert.equal(
+    capturedOptions.size,
+    resolveOpenAIImageSize("gpt-image-2", "16:9", "1K"),
+  );
+  assert.equal(output.aspectRatio, "16:9");
+});
+
+test("assistant chat image tools upscale existing images with source URL, inherited ratio, and no redesign prompt", async () => {
+  let capturedOptions: any = null;
+  const referenceImageUrl = "https://cdn.example.test/source-poster.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      referenceImages: [referenceImageUrl],
+      referenceImageContexts: [
+        {
+          imageUrl: referenceImageUrl,
+          imageWidth: 1000,
+          imageHeight: 1500,
+        },
+      ],
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async (options: any) => {
+        capturedOptions = options;
+        return createGeneratedImageResult("dXBzY2FsZWQ=");
+      },
+    },
+  );
+
+  const output = await (result.tools.upscaleImage as any).execute({
+    resolution: "4K",
+    prompt: "Keep all Chinese text exactly the same.",
+  });
+
+  assert.equal(capturedOptions.n, 1);
+  assert.equal(
+    capturedOptions.size,
+    resolveOpenAIImageSize("gpt-image-2", "2:3", "4K"),
+  );
+  assert.deepEqual(capturedOptions.prompt.images, [referenceImageUrl]);
+  assert.match(capturedOptions.prompt.text, /Content-preserving AI super-resolution/);
+  assert.match(capturedOptions.prompt.text, /Do not redesign/);
+  assert.match(capturedOptions.prompt.text, /Keep all Chinese text exactly the same/);
+  assert.equal(output.operation, "upscale");
+  assert.equal(output.referenceCount, 1);
+  assert.equal(output.aspectRatio, "2:3");
+  assert.equal(output.size, resolveOpenAIImageSize("gpt-image-2", "2:3", "4K"));
+  assert.equal(output.resolution, "4K");
+  assert.equal(output.count, 1);
+  assert.equal(output.settingsLocked, false);
+});
+
+test("assistant chat image tools reject upscale without a source image", async () => {
+  let generateCalled = false;
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async () => {
+        generateCalled = true;
+        return createGeneratedImageResult("c2hvdWxkLW5vdC1ydW4=");
+      },
+    },
+  );
+
+  await assert.rejects(
+    () => (result.tools.upscaleImage as any).execute({ resolution: "4K" }),
+    /requires an image reference/,
+  );
+  assert.equal(generateCalled, false);
+});
+
+test("assistant chat image tools do not fallback to text-only generation when upscale reference input fails", async () => {
+  let callCount = 0;
+  const referenceImageUrl = "https://cdn.example.test/source-poster.png";
+  const result = createAssistantChatImageTools(
+    {
+      enabled: true,
+      provider: {
+        id: "plato",
+        name: "Plato",
+        baseUrl: "https://api.example.test",
+        apiKey: "test-key",
+      },
+      modelId: "gpt-image-2",
+      aspectRatio: "1:1",
+      resolution: "1K",
+      count: 1,
+      referenceImages: [referenceImageUrl],
+      enforceSettings: false,
+    },
+    {
+      generateImageFn: async () => {
+        callCount += 1;
+        throw new Error("provider rejected reference image");
+      },
+    },
+  );
+
+  await assert.rejects(
+    () => (result.tools.upscaleImage as any).execute({ resolution: "4K" }),
+    /provider rejected reference image/,
+  );
+  assert.equal(callCount, 1);
+});
+
 test("assistant chat image tools register Google AI SDK image tool with aspect ratio", async () => {
   let capturedOptions: any = null;
   const result = createAssistantChatImageTools(
@@ -589,7 +964,7 @@ test("assistant chat image tools register Google AI SDK image tool with aspect r
 
   assert.equal(result.reason, "registered");
   assert.equal(result.modelId, "gemini-3-pro-image-preview");
-  assert.deepEqual(Object.keys(result.tools), ["createImage"]);
+  assert.deepEqual(Object.keys(result.tools), ["createImage", "upscaleImage"]);
 
   const output = await (result.tools.createImage as any).execute({
     prompt: "Generate a cinematic hero image",

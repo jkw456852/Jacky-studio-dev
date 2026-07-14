@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Image as ImageIcon, MapPin, X } from "lucide-react";
-import type { CanvasElement, InputBlock, Marker } from "../../../types";
+import type { CanvasElement, Marker } from "../../../types";
 
 type MarkerDragOffsetsRef = React.MutableRefObject<
   Record<string, { x: number; y: number }>
@@ -13,8 +13,6 @@ type WorkspaceCanvasMarkersLayerProps = {
   isDraggingElement: boolean;
   dragOffsetsRef: MarkerDragOffsetsRef;
   zoom: number;
-  hoveredChipId: string | null;
-  inputBlocks: InputBlock[];
   editingMarkerId: string | null;
   setEditingMarkerId: React.Dispatch<React.SetStateAction<string | null>>;
   editingMarkerLabel: string;
@@ -22,6 +20,9 @@ type WorkspaceCanvasMarkersLayerProps = {
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   onSaveMarkerLabel: (markerId: string, label: string) => void;
 };
+
+const formatMarkerFallbackLabel = (index: number): string =>
+  `标记 ${String(index + 1).padStart(2, "0")}`;
 
 export const WorkspaceCanvasMarkersLayer: React.FC<
   WorkspaceCanvasMarkersLayerProps
@@ -31,8 +32,6 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
   isDraggingElement,
   dragOffsetsRef,
   zoom,
-  hoveredChipId,
-  inputBlocks,
   editingMarkerId,
   setEditingMarkerId,
   editingMarkerLabel,
@@ -56,18 +55,9 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
         const pixelX = baseX + (element.width * marker.x) / 100;
         const pixelY = baseY + (element.height * marker.y) / 100;
 
-        const isMarkerFileBlock = (block: InputBlock) =>
-          block.type === "file" &&
-          block.file &&
-          (block.file as File & { markerId?: string }).markerId === marker.id;
-
-        const isHoveredInChat =
-          hoveredChipId &&
-          inputBlocks.some(
-            (block) => block.id === hoveredChipId && isMarkerFileBlock(block),
-          );
-
         const inverseScale = 100 / zoom;
+        const markerDisplayLabel =
+          String(marker.label || "").trim() || formatMarkerFallbackLabel(index);
 
         return (
           <div
@@ -79,9 +69,7 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
               zIndex:
                 editingMarkerId === marker.id
                   ? 2000
-                  : isHoveredInChat
-                    ? 600
-                    : 500,
+                  : 500,
               transform: `translate(-50%, -100%) scale(${inverseScale})`,
               transformOrigin: "bottom center",
               pointerEvents: "auto",
@@ -97,7 +85,7 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
             <motion.div
               initial={{ scale: 3, opacity: 0 }}
               animate={{
-                scale: isHoveredInChat ? 1.2 : 1,
+                scale: 1,
                 opacity: 1,
               }}
               exit={{ scale: 0, opacity: 0 }}
@@ -111,16 +99,16 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
               className="relative flex flex-col items-center"
             >
               <div
-                className={`w-[28px] h-[28px] rounded-full bg-[#3B82F6] border-2 border-white flex items-center justify-center text-white font-bold text-[12px] relative z-10 transition-shadow duration-300 ${isHoveredInChat ? "shadow-[0_0_0_5px_rgba(59,130,246,0.35)]" : "shadow-lg"}`}
+                className="w-[28px] h-[28px] rounded-full bg-[#3B82F6] border-2 border-white flex items-center justify-center text-white font-bold text-[12px] relative z-10 transition-shadow duration-300 shadow-lg"
               >
                 {index + 1}
               </div>
-              <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-[#3B82F6] -mt-[1px]"></div>
+              <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-[#3B82F6] -mt-[1px]" />
             </motion.div>
 
             <div className="absolute left-1/2 bottom-[110%] -translate-x-1/2 mb-1 bg-gray-900/90 backdrop-blur-sm px-2.5 py-1.5 rounded-xl shadow-2xl border border-white/10 opacity-0 group-hover/marker:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-[60] scale-90 group-hover/marker:scale-100 origin-bottom">
               <span className="text-[12px] font-bold text-white tracking-wide">
-                {marker.label || marker.analysis || "璇嗗埆涓?.."}
+                {markerDisplayLabel}
               </span>
             </div>
 
@@ -137,14 +125,16 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
                   <div className="bg-white rounded-[24px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.2)] border border-gray-100 p-4 min-w-[260px] flex flex-col gap-3.5">
                     <div className="flex items-center justify-between px-1">
                       <span className="text-[12px] font-bold text-gray-400/80 tracking-tight">
-                        Object Marked
+                        画布标记
                       </span>
                       <button
+                        type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           setEditingMarkerId(null);
                         }}
                         className="text-gray-300 hover:text-gray-500 transition p-1 hover:bg-gray-100 rounded-full"
+                        aria-label="关闭标记面板"
                       >
                         <X size={14} />
                       </button>
@@ -156,29 +146,30 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
                           src={marker.cropUrl}
                           className="w-12 h-12 rounded-[14px] object-cover shadow-sm border border-white"
                           draggable={false}
+                          alt={markerDisplayLabel}
                         />
                       ) : (
                         <div className="w-12 h-12 rounded-[14px] bg-gray-200 flex items-center justify-center">
                           <ImageIcon size={20} className="text-gray-400" />
                         </div>
                       )}
-                      <div className="flex flex-col">
-                        <span className="text-[15px] font-extrabold text-gray-800 leading-tight">
-                          {marker.analysis || "璇嗗埆涓?.."}
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-[15px] font-extrabold text-gray-800 leading-tight">
+                          {markerDisplayLabel}
                         </span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2.5 px-0.5">
-                      <div className="w-10 h-10 flex items-center justify-center bg-gray-100/80 rounded-[14px] text-gray-400 shrink-0">
+                      <div className="relative w-10 h-10 flex items-center justify-center bg-gray-100/80 rounded-[14px] text-gray-400 shrink-0">
                         <MapPin size={20} className="opacity-50" />
-                        <div className="absolute w-[8px] h-[1.5px] bg-gray-400/40 bottom-2.5 rounded-full"></div>
+                        <div className="absolute w-[8px] h-[1.5px] bg-gray-400/40 bottom-2.5 rounded-full" />
                       </div>
                       <div className="flex-1 relative">
                         <input
                           autoFocus
                           className="w-full h-10 pl-3.5 pr-10 bg-white border border-gray-200/80 rounded-[14px] text-[14px] font-bold text-gray-700 outline-none focus:ring-[5px] focus:ring-blue-500/5 focus:border-blue-500/50 transition-all placeholder:text-gray-300"
-                          placeholder={marker.analysis || "自定义名称..."}
+                          placeholder="给这个标记命名..."
                           value={editingMarkerLabel}
                           onChange={(event) =>
                             setEditingMarkerLabel(event.target.value)
@@ -192,17 +183,19 @@ export const WorkspaceCanvasMarkersLayer: React.FC<
                           }}
                         />
                         <button
+                          type="button"
                           onClick={() =>
                             onSaveMarkerLabel(marker.id, editingMarkerLabel)
                           }
                           className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-blue-500 transition-colors"
+                          aria-label="保存标记名称"
                         >
                           <Check size={20} strokeWidth={2.5} />
                         </button>
                       </div>
                     </div>
                   </div>
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[12px] border-t-white drop-shadow-[0_8px_8px_rgba(0,0,0,0.05)]"></div>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[12px] border-t-white drop-shadow-[0_8px_8px_rgba(0,0,0,0.05)]" />
                 </motion.div>
               )}
             </AnimatePresence>

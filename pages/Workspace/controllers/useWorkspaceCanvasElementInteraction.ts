@@ -19,6 +19,7 @@ type UseWorkspaceCanvasElementInteractionOptions = {
   setIsPickingFromCanvas: (picking: boolean) => void;
   setSelectedElementId: (id: string | null) => void;
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
+  onReferenceElementSelect?: (elementId: string) => void;
   textEditDraftRef: MutableRefObject<Record<string, string>>;
   pendingSelectAllTextIdRef: MutableRefObject<string | null>;
   setEditingTextId: (id: string | null) => void;
@@ -86,6 +87,7 @@ export function useWorkspaceCanvasElementInteraction(
     setIsPickingFromCanvas,
     setSelectedElementId,
     setSelectedElementIds,
+    onReferenceElementSelect,
     textEditDraftRef,
     pendingSelectAllTextIdRef,
     setEditingTextId,
@@ -285,7 +287,7 @@ export function useWorkspaceCanvasElementInteraction(
               ) as WorkspaceInputFile;
             }
             file.markerId = newMarkerId;
-            file.markerName = "Selection";
+            file.markerName = `标记 ${markers.length + 1}`;
             const markerImageWidth =
               (file as any).__naturalMarkerImageWidth || el.width;
             const markerImageHeight =
@@ -421,6 +423,11 @@ export function useWorkspaceCanvasElementInteraction(
       }
 
       const elObj = elementById.get(id);
+      const isReferenceableMedia =
+        elObj?.type === "image" ||
+        elObj?.type === "gen-image" ||
+        elObj?.type === "video" ||
+        elObj?.type === "gen-video";
       if (elObj?.hasFreshGeneratedGlow) {
         setElementsSynced((currentElements) =>
           currentElements.map((element) =>
@@ -452,7 +459,16 @@ export function useWorkspaceCanvasElementInteraction(
         return;
       }
 
-      if (elObj?.isLocked) return;
+      if (isReferenceableMedia) {
+        onReferenceElementSelect?.(id);
+      }
+      if (elObj?.isLocked) {
+        if (isReferenceableMedia) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        return;
+      }
       e.stopPropagation();
       e.preventDefault();
 
@@ -579,6 +595,7 @@ export function useWorkspaceCanvasElementInteraction(
       setPan,
       setSelectedElementId,
       setSelectedElementIds,
+      onReferenceElementSelect,
       setShowAssistant,
       setZoom,
       showAssistant,

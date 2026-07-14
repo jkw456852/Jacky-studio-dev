@@ -12,7 +12,6 @@ import {
   trimConversationMessages,
   trimConversationsForPersist,
 } from "./workspacePersistence.ts";
-import { resolveLegacyConversationMessagesForPersistence } from "./conversationMessagePersistence.ts";
 import {
   DEFAULT_CONVERSATION_TITLE,
   deriveConversationTitle,
@@ -20,21 +19,17 @@ import {
 } from "../conversationMeta.ts";
 
 type UseWorkspaceConversationPersistenceArgs = {
-  legacyMessages?: ChatMessage[];
   workspaceId: string | undefined;
   activeConversationId: string;
   projectTitle: string;
   currentInputBlocks: InputBlock[];
   creationMode: "agent" | "image" | "video";
-  activeQuickSkill?: ChatMessage["skillData"];
   modelMode: "thinking" | "fast";
   webEnabled: boolean;
   isLoadingRecordRef?: MutableRefObject<boolean>;
   suspendAutoSaveUntilRef?: MutableRefObject<number>;
   setConversations: Dispatch<SetStateAction<ConversationSession[]>>;
 };
-
-const EMPTY_LEGACY_MESSAGES: ChatMessage[] = [];
 
 const normalizeInputBlocksForSignature = (blocks: InputBlock[] | undefined) =>
   Array.isArray(blocks)
@@ -110,21 +105,17 @@ const buildConversationPersistenceSignature = (args: {
   );
 
 export const useWorkspaceConversationPersistence = ({
-  legacyMessages: providedLegacyMessages,
   workspaceId,
   activeConversationId,
   projectTitle,
   currentInputBlocks,
   creationMode,
-  activeQuickSkill,
   modelMode,
   webEnabled,
   isLoadingRecordRef,
   suspendAutoSaveUntilRef,
   setConversations,
 }: UseWorkspaceConversationPersistenceArgs) => {
-  const legacyMessages = providedLegacyMessages ?? EMPTY_LEGACY_MESSAGES;
-
   const derivePersistedConversationTitle = (
     nextMessages: ChatMessage[],
     nextProjectTitle: string,
@@ -146,7 +137,6 @@ export const useWorkspaceConversationPersistence = ({
   };
 
   const persistFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastLegacyMessagesRef = useRef(legacyMessages);
   const lastActiveConversationIdRef = useRef(activeConversationId);
 
   useEffect(() => {
@@ -168,22 +158,17 @@ export const useWorkspaceConversationPersistence = ({
       return;
     }
 
-    const legacyMessagesChanged = lastLegacyMessagesRef.current !== legacyMessages;
     const conversationChanged =
       lastActiveConversationIdRef.current !== activeConversationId;
 
     const runPersist = () => {
       persistFlushTimerRef.current = null;
-      lastLegacyMessagesRef.current = legacyMessages;
       lastActiveConversationIdRef.current = activeConversationId;
-
-      const sanitizedActiveQuickSkill =
-        sanitizeQuickSkillForPersistence(activeQuickSkill);
 
       setConversations((previous) => {
         const conversationId = String(activeConversationId || "").trim();
         if (!conversationId) return previous;
-        if (previous.length === 0 && legacyMessages.length === 0) {
+        if (previous.length === 0) {
           return previous;
         }
 
@@ -202,25 +187,21 @@ export const useWorkspaceConversationPersistence = ({
               : Boolean(block.file),
           );
         const hasNonDefaultPreferences =
-          modelMode !== "fast" || webEnabled || Boolean(sanitizedActiveQuickSkill);
+          modelMode !== "fast" || webEnabled;
         const hasDraft = hasDraftContent || hasNonDefaultPreferences;
         const nextDraft = hasDraft
           ? {
               inputBlocks: draftInputBlocks,
               creationMode,
-              quickSkill: sanitizedActiveQuickSkill,
               modelMode,
               webEnabled,
             }
           : undefined;
         const existingConversation =
           existingIndex >= 0 ? updated[existingIndex] : undefined;
-        const nextStoredMessages = resolveLegacyConversationMessagesForPersistence({
-          existingConversation,
-          nextLegacyMessages: legacyMessages,
-          legacyMessagesChanged,
-          conversationChanged,
-        });
+        const nextStoredMessages = Array.isArray(existingConversation?.messages)
+          ? [...existingConversation.messages]
+          : [];
         const shouldRefreshTitle =
           existingConversation?.assistantThread?.messages?.length
             ? !String(existingConversation.title || "").trim()
@@ -287,7 +268,7 @@ export const useWorkspaceConversationPersistence = ({
       });
     };
 
-    if (legacyMessagesChanged || conversationChanged) {
+    if (conversationChanged) {
       if (persistFlushTimerRef.current) {
         clearTimeout(persistFlushTimerRef.current);
         persistFlushTimerRef.current = null;
@@ -305,13 +286,11 @@ export const useWorkspaceConversationPersistence = ({
       // keep pending timer; we want the latest snapshot to flush eventually
     };
   }, [
-    legacyMessages,
     workspaceId,
     activeConversationId,
     projectTitle,
     currentInputBlocks,
     creationMode,
-    activeQuickSkill,
     modelMode,
     webEnabled,
     isLoadingRecordRef,

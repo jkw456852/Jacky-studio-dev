@@ -19,18 +19,17 @@ import {
 import Sidebar from "../components/Sidebar";
 import SystemAnnouncementModal from "../components/SystemAnnouncementModal";
 import {
-  analyzeSmartStyleImport,
-  type SmartImportAnalysis,
-} from "../services/gpt-image-smart-import";
-import { getStudioUserAssetApi } from "../services/runtime-assets/api";
-import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
   subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from "../services/systemAnnouncements";
 import {
+  buildGptImageInspirationImageCandidates,
+  createGptImageInspirationShuffleSeed,
   fetchGptImageInspiration,
+  GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS,
+  shuffleGptImageInspirationCases,
   type GptImageInspirationCase,
   type GptImageInspirationCategory,
   type GptImageInspirationFacet,
@@ -45,12 +44,127 @@ type PreviewState =
   | { type: "template"; item: GptImageInspirationTemplate }
   | null;
 
-type ImportJobState = {
-  status: "idle" | "analyzing" | "ready" | "saving" | "saved" | "error";
-  preview: Exclude<PreviewState, null> | null;
-  analysis: SmartImportAnalysis | null;
-  error: string;
+type ExternalPromptSource = {
+  id: string;
+  title: string;
+  repository: string;
+  repoUrl: string;
+  homepage?: string;
+  cover: string;
+  summary: string;
+  tags: string[];
+  notes: string[];
 };
+
+type GalleryFeedItem =
+  | { type: "case"; item: GptImageInspirationCase }
+  | { type: "source"; item: ExternalPromptSource };
+
+const EXTERNAL_PROMPT_SOURCES: ExternalPromptSource[] = [
+  {
+    id: "unknowlei-nanobanana-website",
+    title: "Nano Banana Website",
+    repository: "unknowlei/nanobanana-website",
+    repoUrl: "https://github.com/unknowlei/nanobanana-website",
+    homepage: "https://nanobanana-website.vercel.app",
+    cover: "https://opengraph.githubassets.com/1/unknowlei/nanobanana-website",
+    summary: "补充 Nano Banana 方向的网站案例、提示词组织方式和灵感入口。",
+    tags: ["Nano Banana", "网站案例", "提示词整理"],
+    notes: [
+      "更偏站点展示和视觉整理，适合补齐页面感和展示感。",
+      "可以作为现有案例之外的第二类灵感来源。",
+    ],
+  },
+  {
+    id: "basketikun-infinite-canvas",
+    title: "Infinite Canvas",
+    repository: "basketikun/infinite-canvas",
+    repoUrl: "https://github.com/basketikun/infinite-canvas",
+    homepage: "https://canvas.best",
+    cover: "https://opengraph.githubassets.com/1/basketikun/infinite-canvas",
+    summary:
+      "面向 AI 创作的开源无限画布工作台，覆盖生图、Agent、画布编排、提示词库与素材管理等能力。",
+    tags: ["Infinite Canvas", "AI Canvas", "Agent", "提示词库", "节点体验"],
+    notes: [
+      "更适合补齐画板、拖拽、缩放和空间组织的体验参考。",
+      "可以作为提示词画廊之外的交互灵感来源。",
+    ],
+  },
+  {
+    id: "zerolu-awesome-gpt-image",
+    title: "Awesome GPT Image",
+    repository: "ZeroLu/awesome-gpt-image",
+    repoUrl: "https://github.com/ZeroLu/awesome-gpt-image",
+    homepage: "https://cyberbara.com/seedance2.0?utm_source=awesome-gpt-image",
+    cover: "https://opengraph.githubassets.com/1/ZeroLu/awesome-gpt-image",
+    summary:
+      "精选 GPT Image 2 prompts 与案例集合，来源于 X 上的高质量创作者，适合扩充题材覆盖面。",
+    tags: ["GPT Image", "GPT Image 2", "Prompt Engineering", "综合资源", "题材扩展"],
+    notes: [
+      "适合增加案例密度和题材多样性。",
+      "可以降低画廊过度依赖单一仓库的感觉。",
+    ],
+  },
+  {
+    id: "imgedify-awesome-gpt4o-image-prompts",
+    title: "Awesome GPT4o Image Prompts",
+    repository: "ImgEdify/Awesome-GPT4o-Image-Prompts",
+    repoUrl: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts",
+    homepage: "https://imgedify.com/explore",
+    cover: "https://opengraph.githubassets.com/1/ImgEdify/Awesome-GPT4o-Image-Prompts",
+    summary:
+      "GPT-4o 图像 prompts 词典型资源，适合补充更系统的图像提示词写法和风格线索。",
+    tags: ["GPT-4o", "Prompt Engineering", "Image Generation", "图像提示词", "风格线索"],
+    notes: [
+      "更适合补齐 GPT-4o 语境下的图像表达方式。",
+      "能为现有画廊增加不同模型体系的参考。",
+    ],
+  },
+  {
+    id: "youmind-openlab-awesome-gpt-image-2",
+    title: "Awesome GPT Image 2",
+    repository: "YouMind-OpenLab/awesome-gpt-image-2",
+    repoUrl: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
+    homepage: "https://youmind.com/gpt-image-2-prompts",
+    cover: "https://opengraph.githubassets.com/1/YouMind-OpenLab/awesome-gpt-image-2",
+    summary:
+      "大型 GPT Image 2 prompt library，带预览图与多语言整理，适合补充更系统的分类和案例索引。",
+    tags: ["GPT Image 2", "Prompt Library", "多语言", "分类索引", "案例线索"],
+    notes: [
+      "更偏系统化索引，适合增强可检索感。",
+      "可以与现有案例库形成并列来源。",
+    ],
+  },
+  {
+    id: "youmind-openlab-awesome-nano-banana-pro-prompts",
+    title: "Awesome Nano Banana Pro Prompts",
+    repository: "YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    repoUrl: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    homepage: "https://youmind.com/nano-banana-pro-prompts",
+    cover: "https://opengraph.githubassets.com/1/YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    summary:
+      "大型 Nano Banana Pro prompt library，带预览图与多语言整理，适合补齐模型维度的差异化来源。",
+    tags: ["Nano Banana Pro", "Prompt Library", "多语言", "模型扩展", "提示词库"],
+    notes: [
+      "适合补齐 Nano Banana Pro 这条专门来源。",
+      "可以让画廊不再只围绕一类上游仓库展开。",
+    ],
+  },
+  {
+    id: "davidwuw0811-boop-awesome-gpt-image2-prompts",
+    title: "Awesome GPT Image2 Prompts",
+    repository: "davidwuw0811-boop/awesome-gpt-image2-prompts",
+    repoUrl: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts",
+    homepage: "",
+    cover: "https://opengraph.githubassets.com/1/davidwuw0811-boop/awesome-gpt-image2-prompts",
+    summary: "GPT Image 2 提示词大全，强调中英文搜索、分类筛选和一键复制，适合补充中文侧关键词资源。",
+    tags: ["GPT Image2", "中文搜索", "分类筛选", "Prompt Collection", "灵感补充"],
+    notes: [
+      "适合作为补充型来源入口，提升画廊层次。",
+      "让用户能在站内看到更多不同来源的入口。",
+    ],
+  },
+];
 
 const UI_COPY = {
   brandTitle: "GPT-Image2 画廊",
@@ -67,6 +181,7 @@ const UI_COPY = {
   metricCases: "个案例",
   metricTemplates: "个分类",
   metricUpdated: "套模板",
+  metricSources: "个来源",
   galleryBadge: "复制、筛选、复用",
   galleryTitle: "爆款案例和 Prompt，一键可取。",
   galleryBody: "",
@@ -76,7 +191,7 @@ const UI_COPY = {
   category: "分类",
   style: "风格",
   scene: "场景",
-  matchingCases: "个匹配案例",
+  matchingCases: "个匹配内容",
   stalePayload: "当前显示的是缓存内容",
   loading: "正在加载案例图库...",
   viewDetails: "查看详情",
@@ -98,8 +213,11 @@ const UI_COPY = {
   pitfalls: "常见坑点",
   relatedCases: "关联案例",
   fullPrompt: "完整 Prompt",
+  sourceNotes: "来源说明",
+  sourceCollection: "补充来源",
+  viewRepository: "查看仓库",
   close: "关闭预览",
-  noResults: "没有找到符合条件的案例，换个关键词试试。",
+  noResults: "没有找到符合条件的内容，换个关键词试试。",
   importHint:
     "这里不会直接照搬案例，而是先提炼成可继续整理和验证的候选风格。",
 };
@@ -217,57 +335,6 @@ const buildCleanTemplatePromptText = (
     .join("\n\n");
 };
 
-const buildImportKey = (preview: Exclude<PreviewState, null>) =>
-  preview.type === "case" ? `case-${preview.item.id}` : `template-${preview.item.id}`;
-
-const buildImportReadinessChecks = (analysis: SmartImportAnalysis | null) => {
-  if (!analysis) return [];
-  const library = analysis.library;
-  const testCases = library.testCases || [];
-  return [
-    {
-      id: "title-summary",
-      label: "标题和用途说明",
-      passed: Boolean(library.title && library.summary),
-    },
-    {
-      id: "interpretation",
-      label: "参考图使用说明",
-      passed: Boolean(library.referenceInterpretation),
-    },
-    {
-      id: "planning-prompt",
-      label: "生成重点和输出重点",
-      passed:
-        (library.planningDirectives || []).length > 0 &&
-        (library.promptDirectives || []).length > 0,
-    },
-    {
-      id: "semantic-layer",
-      label: "风格重点或适用场景",
-      passed:
-        (library.keywords || []).length > 0 || (library.useCases || []).length > 0,
-    },
-    {
-      id: "test-cases",
-      label: "至少 1 条回归样例",
-      passed: testCases.length > 0,
-    },
-    {
-      id: "test-case-quality",
-      label: "回归样例包含标题和测试指令",
-      passed:
-        testCases.length > 0 &&
-        testCases.every((item) => Boolean(item.title?.trim() && item.prompt?.trim())),
-    },
-  ];
-};
-
-const canSaveImportedLibrary = (analysis: SmartImportAnalysis | null) => {
-  const checks = buildImportReadinessChecks(analysis);
-  return checks.length > 0 && checks.every((item) => item.passed);
-};
-
 const FilterChip: React.FC<{
   active: boolean;
   onClick: () => void;
@@ -286,501 +353,70 @@ const FilterChip: React.FC<{
   </button>
 );
 
-const SmartImportDialog: React.FC<{
-  job: ImportJobState;
-  onClose: () => void;
-  onStartAnalyze: () => void;
-  onSave: () => void;
-  onOpenCenter: () => void;
-}> = ({ job, onClose, onStartAnalyze, onSave, onOpenCenter }) => {
-  const [currentStep, setCurrentStep] = React.useState<1 | 2 | 3 | 4>(1);
+const ResilientImage: React.FC<
+  React.ImgHTMLAttributes<HTMLImageElement> & {
+    fallbackClassName?: string;
+    fallbackLabel?: string;
+  }
+> = ({
+  src,
+  alt,
+  className,
+  fallbackClassName,
+  fallbackLabel,
+  onError,
+  loading,
+  referrerPolicy,
+  ...rest
+}) => {
+  const candidates = useMemo(
+    () => buildGptImageInspirationImageCandidates(String(src || "")),
+    [src],
+  );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [exhausted, setExhausted] = useState(false);
 
-  React.useEffect(() => {
-    if (!job.preview) {
-      setCurrentStep(1);
-      return;
-    }
+  useEffect(() => {
+    setCandidateIndex(0);
+    setExhausted(false);
+  }, [src]);
 
-    if (job.status === "idle" && !job.analysis) {
-      setCurrentStep(1);
-      return;
-    }
-
-    if (job.status === "analyzing" || (job.status === "error" && !job.analysis)) {
-      setCurrentStep(2);
-      return;
-    }
-
-    if ((job.status === "saving" || job.status === "saved") && job.analysis) {
-      setCurrentStep(4);
-      return;
-    }
-
-    if (job.analysis && currentStep < 3) {
-      setCurrentStep(3);
-    }
-  }, [currentStep, job.analysis, job.preview, job.status]);
-
-  if (!job.preview) return null;
-
-  const title =
-    job.preview.type === "case"
-      ? job.preview.item.title
-      : textFor(job.preview.item.title, job.preview.item.id);
-  const previewImage = job.preview.type === "case" ? job.preview.item.image : job.preview.item.cover;
-  const previewImageAlt =
-    job.preview.type === "case"
-      ? job.preview.item.imageAlt || job.preview.item.title
-      : textFor(job.preview.item.title, job.preview.item.id);
-  const sourceLabel = job.preview.type === "case" ? "案例导入" : "模板导入";
-  const modeLabel =
-    job.analysis?.mode === "case_transfer"
-      ? "强案例迁移"
-      : job.analysis?.mode === "edit_template"
-        ? "编辑模板"
-        : job.analysis
-          ? "抽象风格"
-          : "待系统判断";
-  const readinessChecks = buildImportReadinessChecks(job.analysis);
-  const canSave = canSaveImportedLibrary(job.analysis);
-  const stepItems = [
-    { id: 1 as const, label: "选图并命名", hint: "确认导入对象" },
-    { id: 2 as const, label: "生成风格草稿", hint: "等待系统提炼" },
-    { id: 3 as const, label: "确认风格定义", hint: "确认草稿是否可信" },
-    { id: 4 as const, label: "测试并加入候选", hint: "检查后再保存" },
-  ];
-  const currentStepMeta = stepItems.find((item) => item.id === currentStep) || stepItems[0];
-  const analysisWarnings = job.analysis?.warnings || [];
+  if (!candidates[candidateIndex] || exhausted) {
+    return (
+      <div
+        className={
+          fallbackClassName ||
+          className ||
+          "flex items-center justify-center bg-[linear-gradient(135deg,rgba(34,211,238,0.10),rgba(15,23,42,0.92))]"
+        }
+      >
+        <div className="flex flex-col items-center gap-2 px-4 text-center text-slate-300">
+          <ImageIcon size={18} />
+          <span className="text-xs leading-5 text-slate-400">
+            {fallbackLabel || alt || "图片加载失败"}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#050812]/84 p-4 backdrop-blur-md">
-      <section className="relative flex max-h-[min(92vh,960px)] w-full max-w-4xl flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(145deg,rgba(11,17,33,0.98),rgba(7,11,22,0.96))] shadow-[0_34px_120px_rgba(0,0,0,0.56)]">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/35 text-slate-200 transition hover:bg-black/50 hover:text-white"
-          aria-label="关闭导入向导"
-        >
-          <X size={18} />
-        </button>
-
-        <div className="shrink-0 border-b border-white/10 px-6 py-5 md:px-7">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fuchsia-200">
-            风格导入
-          </div>
-          <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">{title}</h3>
-          <p className="mt-2 text-sm leading-7 text-slate-400">{currentStepMeta.hint}</p>
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            {stepItems.map((item) => {
-              const isActive = item.id === currentStep;
-              const isDone = item.id < currentStep;
-              return (
-                <div
-                  key={item.id}
-                  className={`rounded-[20px] border px-4 py-3 transition ${
-                    isActive
-                      ? "border-fuchsia-300/35 bg-fuchsia-300/10"
-                      : isDone
-                        ? "border-emerald-300/20 bg-emerald-300/8"
-                        : "border-white/10 bg-white/[0.03]"
-                  }`}
-                >
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Step {item.id}
-                  </div>
-                  <div className={`mt-2 text-sm font-medium ${isActive || isDone ? "text-white" : "text-slate-300"}`}>
-                    {item.label}
-                  </div>
-                  <div className="mt-1 text-xs leading-5 text-slate-500">{item.hint}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-7">
-          {currentStep === 1 ? (
-            <div className="space-y-4 pb-1">
-              <section className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
-                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#09101d]">
-                  <img src={previewImage} alt={previewImageAlt} className="h-full min-h-[280px] w-full object-cover" />
-                </div>
-                <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                  <div>
-                    <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      当前导入对象
-                    </div>
-                    <div className="mt-3 text-xl font-semibold text-white">{title}</div>
-                    <div className="mt-2 text-sm leading-7 text-slate-400">
-                      先确认这组图是否值得沉淀成风格，再开始生成候选草稿。
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[18px] border border-white/10 bg-black/10 p-4">
-                      <div className="text-[12px] font-medium text-slate-500">导入来源</div>
-                      <div className="mt-2 text-sm font-medium text-white">{sourceLabel}</div>
-                    </div>
-                    <div className="rounded-[18px] border border-white/10 bg-black/10 p-4">
-                      <div className="text-[12px] font-medium text-slate-500">风格类型</div>
-                      <div className="mt-2 text-sm font-medium text-white">{modeLabel}</div>
-                    </div>
-                  </div>
-                  <div className="rounded-[18px] border border-cyan-300/15 bg-cyan-300/8 p-4 text-sm leading-7 text-cyan-50/90">
-                    {UI_COPY.importHint}
-                  </div>
-                </div>
-              </section>
-            </div>
-          ) : null}
-
-          {currentStep === 2 ? (
-            <div className="space-y-4 pb-1">
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-sm font-semibold text-white">当前状态</span>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      job.status === "analyzing"
-                        ? "border border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
-                        : job.status === "error"
-                          ? "border border-rose-300/25 bg-rose-300/10 text-rose-100"
-                          : "border border-violet-300/25 bg-violet-300/10 text-violet-100"
-                    }`}
-                  >
-                    {job.status === "analyzing"
-                      ? "正在生成候选风格"
-                      : job.status === "error"
-                        ? "生成失败"
-                        : "草稿待确认"}
-                  </span>
-                </div>
-                <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-                  <div>正在判断这组内容更适合沉淀成哪类风格草稿…</div>
-                  <div>正在提炼应该稳定保留的构图、光线、材质和画面气质…</div>
-                  <div>正在整理后续测试需要保住的风格重点与回归样例…</div>
-                </div>
-                {job.error ? (
-                  <div className="mt-4 rounded-[18px] border border-rose-300/20 bg-rose-300/10 p-4 text-sm leading-7 text-rose-100">
-                    {job.error}
-                  </div>
-                ) : null}
-              </section>
-            </div>
-          ) : null}
-
-          {currentStep === 3 && job.analysis ? (
-            <div className="space-y-4 pb-1">
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="text-sm font-semibold text-white">风格草稿预览</div>
-                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-slate-300">
-                    {job.analysis.library.kind === "case_transfer"
-                      ? "强迁移风格"
-                      : job.analysis.library.kind === "edit_template"
-                        ? "编辑模板"
-                        : "抽象风格"}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-                  <div>
-                    <div className="text-lg font-semibold text-white">{job.analysis.library.title}</div>
-                    <div className="mt-2 text-sm leading-7 text-slate-300">{job.analysis.library.summary}</div>
-                    {job.analysis.library.description ? (
-                      <div className="mt-3 text-sm leading-7 text-slate-400">
-                        {job.analysis.library.description}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="space-y-3 rounded-[18px] border border-white/10 bg-white/[0.03] p-4">
-                    <div>
-                      <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        风格重点
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {(job.analysis.library.keywords || []).map((item, index) => (
-                          <span
-                            key={`${item}-${index}`}
-                            className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs text-slate-300"
-                          >
-                            {item}
-                          </span>
-                        ))}
-                        {(job.analysis.library.keywords || []).length === 0 ? (
-                          <span className="text-xs text-slate-500">暂无风格重点</span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        适用场景
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {(job.analysis.library.useCases || []).map((item, index) => (
-                          <div key={`${item}-${index}`} className="text-sm leading-6 text-slate-300">
-                            {item}
-                          </div>
-                        ))}
-                        {(job.analysis.library.useCases || []).length === 0 ? (
-                          <div className="text-xs text-slate-500">暂无明确适用场景</div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="grid gap-4 xl:grid-cols-2">
-                <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                  <div className="text-sm font-semibold text-white">生成前重点</div>
-                  <div className="mt-3 space-y-2">
-                    {job.analysis.library.planningDirectives.map((line, index) => (
-                      <div key={index} className="text-sm leading-7 text-slate-300">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                  <div className="text-sm font-semibold text-white">输出重点</div>
-                  <div className="mt-3 space-y-2">
-                    {job.analysis.library.promptDirectives.map((line, index) => (
-                      <div key={index} className="text-sm leading-7 text-slate-300">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="text-sm font-semibold text-white">分析摘要</div>
-                <div className="mt-3 space-y-2">
-                  {(job.analysis.thinking || []).map((line, index) => (
-                    <div key={index} className="text-sm leading-7 text-slate-300">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </div>
-          ) : null}
-
-          {currentStep === 4 && job.analysis ? (
-            <div className="space-y-4 pb-1">
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">加入候选前检查</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-400">
-                      先确认标题、风格重点、使用说明和回归样例都已具备，再加入候选区继续整理。
-                    </div>
-                  </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      canSave
-                        ? "border border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-                        : "border border-amber-300/25 bg-amber-300/10 text-amber-100"
-                    }`}
-                  >
-                    {canSave ? "已达到保存标准" : "还未达到保存标准"}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {readinessChecks.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`rounded-[18px] border px-4 py-3 ${
-                        item.passed
-                          ? "border-emerald-300/15 bg-emerald-300/5"
-                          : "border-amber-300/15 bg-amber-300/5"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 text-sm font-medium text-white">
-                        {item.passed ? <Check size={15} /> : <X size={15} />}
-                        {item.label}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">回归样例预览</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-400">
-                      这些样例会带到后续风格库详情页，作为继续测试和整理的基础。
-                    </div>
-                  </div>
-                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-slate-300">
-                    {(job.analysis.library.testCases || []).length} 条回归样例
-                  </span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {(job.analysis.library.testCases || []).length > 0 ? (
-                    job.analysis.library.testCases!.map((item, index) => (
-                      <div
-                        key={item.id || `${index}`}
-                        className="rounded-[18px] border border-white/10 bg-black/10 p-4"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-medium text-white">
-                            {item.title || `回归样例 ${index + 1}`}
-                          </div>
-                          {item.aspectRatio ? (
-                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] text-slate-300">
-                              {item.aspectRatio}
-                            </span>
-                          ) : null}
-                          {item.imageCount ? (
-                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] text-slate-300">
-                              {item.imageCount} 张
-                            </span>
-                          ) : null}
-                        </div>
-                        {item.expectedFocus ? (
-                          <div className="mt-2 text-sm leading-6 text-cyan-100">目标：{item.expectedFocus}</div>
-                        ) : null}
-                        <div className="mt-2 text-sm leading-7 text-slate-400 line-clamp-4">
-                          {item.prompt}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-[18px] border border-dashed border-white/10 bg-black/10 px-4 py-4 text-sm leading-7 text-slate-400">
-                      当前候选风格还没有生成标准回归样例，暂时不能加入候选区。
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {analysisWarnings.length ? (
-                <section className="rounded-[24px] border border-amber-300/20 bg-amber-300/10 p-5">
-                  <div className="text-sm font-semibold text-amber-50">风险提示</div>
-                  <div className="mt-3 space-y-2">
-                    {analysisWarnings.map((line, index) => (
-                      <div key={index} className="text-sm leading-7 text-amber-100">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="shrink-0 border-t border-white/10 px-6 py-4 md:px-7">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm leading-6 text-slate-400">
-              {currentStep === 1
-                ? "先确认导入对象，再开始生成候选风格草稿。"
-                : currentStep === 2
-                  ? job.error
-                    ? "当前生成失败，可重试后继续。"
-                    : "正在整理这套风格的核心定义，请稍等。"
-                  : currentStep === 3
-                    ? "草稿确认通过后，再进入测试检查和加入候选。"
-                    : canSave
-                      ? "当前草稿已经可以先加入候选区，下一步去风格库中心继续整理和测试。"
-                      : "当前草稿还缺少基础进入条件；请先补齐样例或必要说明。"}
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {currentStep === 1 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-                  >
-                    先关闭
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onStartAnalyze}
-                    className="rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16"
-                  >
-                    开始生成风格草稿
-                  </button>
-                </>
-              ) : null}
-
-              {currentStep === 2 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-                  >
-                    先关闭
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onStartAnalyze}
-                    disabled={job.status === "analyzing"}
-                    className="rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {job.status === "analyzing" ? "正在生成中…" : job.error ? "重新生成风格草稿" : "等待生成完成"}
-                  </button>
-                </>
-              ) : null}
-
-              {currentStep === 3 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(1)}
-                    className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-                  >
-                    返回上一步
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(4)}
-                    className="rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16"
-                  >
-                    进入测试检查
-                  </button>
-                </>
-              ) : null}
-
-              {currentStep === 4 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(3)}
-                    className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-                  >
-                    返回草稿确认
-                  </button>
-                  {job.status === "saved" ? (
-                    <button
-                      type="button"
-                      onClick={onOpenCenter}
-                      className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-4 py-2.5 text-sm text-cyan-50 transition hover:bg-cyan-300/16"
-                    >
-                      去风格库中心继续整理
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={onSave}
-                    disabled={!job.analysis || !canSave || job.status === "analyzing" || job.status === "saving" || job.status === "saved"}
-                    className="rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {job.status === "saving"
-                      ? "正在加入候选区…"
-                      : job.status === "saved"
-                        ? "已加入候选区"
-                        : "加入候选区"}
-                  </button>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+    <img
+      {...rest}
+      src={candidates[candidateIndex]}
+      alt={alt}
+      className={className}
+      loading={loading || "lazy"}
+      referrerPolicy={referrerPolicy || "no-referrer"}
+      onError={(event) => {
+        onError?.(event);
+        if (candidateIndex < candidates.length - 1) {
+          setCandidateIndex((current) => current + 1);
+          return;
+        }
+        setExhausted(true);
+      }}
+    />
   );
 };
 
@@ -788,11 +424,10 @@ const PreviewDialog: React.FC<{
   preview: PreviewState;
   payload: GptImageInspirationPayload | null;
   copiedId: string;
-  importedId: string;
   onCopy: (id: string, text: string) => void;
   onImport: (preview: Exclude<PreviewState, null>) => void;
   onClose: () => void;
-}> = ({ preview, payload, copiedId, importedId, onCopy, onImport, onClose }) => {
+}> = ({ preview, payload, copiedId, onCopy, onImport, onClose }) => {
   const casesById = useMemo(
     () => new Map((payload?.cases || []).map((item) => [item.id, item])),
     [payload],
@@ -805,10 +440,6 @@ const PreviewDialog: React.FC<{
     preview.type === "case"
       ? preview.item.imageAlt
       : textFor(preview.item.title, preview.item.id);
-  const importKey =
-    preview.type === "case"
-      ? `case-${preview.item.id}`
-      : `template-${preview.item.id}`;
   const templatePromptText =
     preview.type === "template"
       ? buildCleanTemplatePromptText(preview.item, payload)
@@ -827,7 +458,13 @@ const PreviewDialog: React.FC<{
         </button>
 
         <div className="relative min-h-[320px] overflow-hidden bg-[#09101d]">
-          <img src={imageSrc} alt={imageAlt} className="h-full w-full object-cover" />
+          <ResilientImage
+            src={imageSrc}
+            alt={imageAlt}
+            className="h-full w-full object-cover"
+            fallbackClassName="flex h-full w-full items-center justify-center bg-[#09101d]"
+            fallbackLabel={imageAlt}
+          />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(6,9,20,0.16))]" />
           <div className="absolute left-5 top-5 rounded-full border border-white/12 bg-black/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
             {preview.type === "case" ? `Case ${preview.item.id}` : "Template"}
@@ -880,8 +517,8 @@ const PreviewDialog: React.FC<{
                   onClick={() => onImport(preview)}
                   className="inline-flex items-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16"
                 >
-                  {importedId === importKey ? <Check size={15} /> : <Download size={15} />}
-                  {importedId === importKey ? UI_COPY.importedStyleLibrary : UI_COPY.importStyleLibrary}
+                  <Download size={15} />
+                  {UI_COPY.importStyleLibrary}
                 </button>
                 {preview.item.sourceUrl ? (
                   <a
@@ -1007,24 +644,21 @@ const PreviewDialog: React.FC<{
   );
 };
 
+const GALLERY_BATCH_SIZE = 72;
+
 const GptImageInspiration: React.FC = () => {
   const navigate = useNavigate();
   const [payload, setPayload] = useState<GptImageInspirationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shuffleSeed] = useState(createGptImageInspirationShuffleSeed);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [style, setStyle] = useState("All");
   const [scene, setScene] = useState("All");
+  const [visibleCount, setVisibleCount] = useState(GALLERY_BATCH_SIZE);
   const [preview, setPreview] = useState<PreviewState>(null);
   const [copiedId, setCopiedId] = useState("");
-  const [importedId, setImportedId] = useState("");
-  const [importJob, setImportJob] = useState<ImportJobState>({
-    status: "idle",
-    preview: null,
-    analysis: null,
-    error: "",
-  });
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
 
@@ -1038,23 +672,44 @@ const GptImageInspiration: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      setLoading(true);
+    let lastRefreshAt = 0;
+    const run = async (showLoading: boolean) => {
+      if (showLoading) setLoading(true);
       setError("");
       try {
         const nextPayload = await fetchGptImageInspiration();
         if (cancelled) return;
         setPayload(nextPayload);
+        lastRefreshAt = Date.now();
       } catch (nextError) {
         if (cancelled) return;
         setError(nextError instanceof Error ? nextError.message : String(nextError));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && showLoading) setLoading(false);
       }
     };
-    run();
+
+    const refreshIfStale = () => {
+      if (
+        document.visibilityState === "visible" &&
+        Date.now() - lastRefreshAt >= GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS
+      ) {
+        void run(false);
+      }
+    };
+
+    void run(true);
+    const refreshTimer = window.setInterval(
+      refreshIfStale,
+      GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS,
+    );
+    window.addEventListener("focus", refreshIfStale);
+    document.addEventListener("visibilitychange", refreshIfStale);
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshIfStale);
+      document.removeEventListener("visibilitychange", refreshIfStale);
     };
   }, []);
 
@@ -1063,12 +718,6 @@ const GptImageInspiration: React.FC = () => {
     const timer = window.setTimeout(() => setCopiedId(""), 1800);
     return () => window.clearTimeout(timer);
   }, [copiedId]);
-
-  useEffect(() => {
-    if (!importedId) return undefined;
-    const timer = window.setTimeout(() => setImportedId(""), 2400);
-    return () => window.clearTimeout(timer);
-  }, [importedId]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -1082,19 +731,24 @@ const GptImageInspiration: React.FC = () => {
       window.removeEventListener("gpt-image-preview-case", handler as EventListener);
   }, []);
 
-  const heroCases = useMemo(
-    () => (payload?.cases || []).filter((item) => item.featured).slice(0, 5),
-    [payload],
+  const shuffledCases = useMemo(
+    () => shuffleGptImageInspirationCases(payload?.cases || [], shuffleSeed),
+    [payload, shuffleSeed],
   );
 
+  const heroCases = useMemo(() => {
+    const featured = shuffledCases.filter((item) => item.featured);
+    return (featured.length >= 5 ? featured : shuffledCases).slice(0, 5);
+  }, [shuffledCases]);
+
   const hotStripCases = useMemo(
-    () => (payload?.cases || []).slice(0, 8),
-    [payload],
+    () => shuffledCases.filter((item) => !heroCases.includes(item)).slice(0, 8),
+    [heroCases, shuffledCases],
   );
 
   const filteredCases = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return (payload?.cases || []).filter((item) => {
+    return shuffledCases.filter((item) => {
       const matchCategory = category === "All" || item.category === category;
       const matchStyle = style === "All" || item.styles.includes(style);
       const matchScene = scene === "All" || item.scenes.includes(scene);
@@ -1112,9 +766,13 @@ const GptImageInspiration: React.FC = () => {
       const matchQuery = !normalizedQuery || haystack.includes(normalizedQuery);
       return matchCategory && matchStyle && matchScene && matchQuery;
     });
-  }, [payload, query, category, style, scene]);
+  }, [shuffledCases, query, category, style, scene]);
 
-  const visibleCases = filteredCases.slice(0, 72);
+  useEffect(() => {
+    setVisibleCount(GALLERY_BATCH_SIZE);
+  }, [query, category, style, scene]);
+
+  const visibleCases = filteredCases.slice(0, visibleCount);
 
   const metrics = useMemo(() => {
     if (!payload) return [];
@@ -1131,6 +789,10 @@ const GptImageInspiration: React.FC = () => {
         label: UI_COPY.metricUpdated,
         value: payload.templates.length >= 20 ? "20+" : String(payload.templates.length),
       },
+      {
+        label: UI_COPY.metricSources,
+        value: String(1 + (payload.supplementalSources || []).length),
+      },
     ];
   }, [payload]);
 
@@ -1144,99 +806,12 @@ const GptImageInspiration: React.FC = () => {
   };
 
   const importAsStyleLibrary = (nextPreview: Exclude<PreviewState, null>) => {
-    setImportJob({
-      status: "idle",
-      preview: nextPreview,
-      analysis: null,
-      error: "",
-    });
-  };
-
-  const startStyleLibraryImportAnalysis = async () => {
-    const nextPreview = importJob.preview;
-    if (!nextPreview) {
-      return;
-    }
-
-    setImportJob({
-      status: "analyzing",
-      preview: nextPreview,
-      analysis: null,
-      error: "",
-    });
-
-    try {
-      const analysis = await analyzeSmartStyleImport(nextPreview, payload);
-      setImportJob({
-        status: "ready",
-        preview: nextPreview,
-        analysis,
-        error: "",
-      });
-    } catch (nextError) {
-      setImportJob({
-        status: "error",
-        preview: nextPreview,
-        analysis: null,
-        error: nextError instanceof Error ? nextError.message : String(nextError),
-      });
-    }
-  };
-
-  const saveImportedStyleLibrary = () => {
-    const currentJob = importJob;
-    if (!currentJob.analysis || !currentJob.preview) {
-      return;
-    }
-
-    const failedChecks = buildImportReadinessChecks(currentJob.analysis).filter(
-      (item) => !item.passed,
+    const id = String(nextPreview.item.id || "").trim();
+    if (!id) return;
+    setPreview(null);
+    navigate(
+      `${ROUTES.styleLibraryCenter}?importGallery=${encodeURIComponent(`${nextPreview.type}:${id}`)}`,
     );
-    if (failedChecks.length > 0) {
-      setImportJob((current) => ({
-        ...current,
-        status: "ready",
-        error: `加入候选区前还缺少：${failedChecks.map((item) => item.label).join("、")}。`,
-      }));
-      return;
-    }
-
-    setImportJob((current) => ({
-      ...current,
-      status: "saving",
-      error: "",
-    }));
-
-    try {
-      const saved = getStudioUserAssetApi().saveStyleLibraryCandidate(currentJob.analysis.library, {
-        preferredId: currentJob.analysis.preferredId,
-        sourceMode: "custom",
-        sourcePreviewKey: buildImportKey(currentJob.preview),
-        sourcePreviewType: currentJob.preview.type,
-        status: "ready_for_test",
-      });
-
-      if (!saved) {
-        throw new Error("候选风格已生成，但加入候选区失败。");
-      }
-
-      setImportedId(buildImportKey(currentJob.preview));
-      setImportJob({
-        status: "saved",
-        preview: currentJob.preview,
-        analysis: {
-          ...currentJob.analysis,
-          library: saved,
-        },
-        error: "",
-      });
-    } catch (nextError) {
-      setImportJob((current) => ({
-        ...current,
-        status: "error",
-        error: nextError instanceof Error ? nextError.message : String(nextError),
-      }));
-    }
   };
 
   const openAnnouncements = () => {
@@ -1376,10 +951,12 @@ const GptImageInspiration: React.FC = () => {
                     onClick={() => setPreview({ type: "case", item })}
                     className={`group absolute overflow-hidden rounded-[20px] border border-white/12 bg-[#111a2c] text-left shadow-[0_24px_80px_rgba(0,0,0,0.42)] transition hover:-translate-y-2 hover:border-cyan-300/70 ${cardStyles[index] || ""}`}
                   >
-                    <img
+                    <ResilientImage
                       src={item.image}
                       alt={item.imageAlt}
                       className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                      fallbackClassName="flex h-full w-full items-center justify-center bg-[#111a2c]"
+                      fallbackLabel={item.title}
                     />
                     <span className="absolute bottom-3 left-3 rounded-lg bg-[rgba(4,9,18,0.72)] px-2.5 py-1.5 text-xs font-extrabold text-white">
                       #{item.id}
@@ -1399,10 +976,12 @@ const GptImageInspiration: React.FC = () => {
               onClick={() => setPreview({ type: "case", item })}
               className="group relative aspect-square overflow-hidden rounded-[18px] border border-white/10 bg-white/[0.04] text-left"
             >
-              <img
+              <ResilientImage
                 src={item.image}
                 alt={item.imageAlt}
                 className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.05]"
+                fallbackClassName="flex h-full w-full items-center justify-center bg-[#0b1325]"
+                fallbackLabel={item.title}
               />
               <span className="absolute bottom-2 left-2 rounded-md bg-[rgba(4,9,18,0.74)] px-2 py-1 text-xs font-extrabold text-white">
                 #{item.id}
@@ -1557,10 +1136,12 @@ const GptImageInspiration: React.FC = () => {
                         onClick={() => setPreview({ type: "case", item })}
                         className="group relative block w-full overflow-hidden text-left"
                       >
-                        <img
+                        <ResilientImage
                           src={item.image}
                           alt={item.imageAlt}
                           className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.025]"
+                          fallbackClassName="flex h-[320px] w-full items-center justify-center bg-[#0b1325]"
+                          fallbackLabel={item.title}
                         />
                         <span className="absolute left-3 top-3 rounded-lg bg-[rgba(4,9,18,0.74)] px-2.5 py-1.5 text-xs font-black text-white">
                           Case {item.id}
@@ -1617,14 +1198,8 @@ const GptImageInspiration: React.FC = () => {
                             onClick={() => importAsStyleLibrary({ type: "case", item })}
                             className="inline-flex items-center justify-center gap-2 rounded-full border border-fuchsia-300/25 bg-fuchsia-300/10 px-4 py-2.5 text-sm text-fuchsia-50 transition hover:bg-fuchsia-300/16"
                           >
-                            {importedId === `case-${item.id}` ? (
-                              <Check size={16} />
-                            ) : (
-                              <Download size={16} />
-                            )}
-                            {importedId === `case-${item.id}`
-                              ? UI_COPY.importedStyleLibrary
-                              : UI_COPY.importStyleLibrary}
+                            <Download size={16} />
+                            {UI_COPY.importStyleLibrary}
                           </button>
                           <a
                             href={item.githubUrl}
@@ -1643,7 +1218,18 @@ const GptImageInspiration: React.FC = () => {
               </div>
 
               {filteredCases.length > visibleCases.length ? (
-                <div className="mt-4 text-center text-sm text-slate-500">{UI_COPY.limitNote}</div>
+                <div className="mt-6 flex flex-col items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount((current) => current + GALLERY_BATCH_SIZE)}
+                    className="inline-flex items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-300/10 px-5 py-2.5 text-sm font-medium text-cyan-50 transition hover:bg-cyan-300/18"
+                  >
+                    继续加载更多
+                  </button>
+                  <div className="text-center text-sm text-slate-500">
+                    已显示 {visibleCases.length} / {filteredCases.length}
+                  </div>
+                </div>
               ) : null}
             </>
           )}
@@ -1661,10 +1247,12 @@ const GptImageInspiration: React.FC = () => {
               className="group relative overflow-hidden rounded-[24px] border border-white/10 bg-[#0b1325] text-left shadow-[0_20px_55px_rgba(0,0,0,0.22)]"
             >
               <div className="aspect-[1.45/1] overflow-hidden">
-                <img
+                <ResilientImage
                   src={item.cover}
                   alt={textFor(item.title, item.value)}
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                  fallbackClassName="flex h-full w-full items-center justify-center bg-[#0b1325]"
+                  fallbackLabel={textFor(item.title, item.value)}
                 />
               </div>
               <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(6,9,20,0.92))]" />
@@ -1716,10 +1304,12 @@ const GptImageInspiration: React.FC = () => {
                   onClick={() => setPreview({ type: "template", item })}
                   className="group relative block w-full overflow-hidden text-left"
                 >
-                  <img
+                  <ResilientImage
                     src={item.cover}
                     alt={textFor(item.title, item.id)}
                     className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.025]"
+                    fallbackClassName="flex h-[320px] w-full items-center justify-center bg-[#0b1325]"
+                    fallbackLabel={textFor(item.title, item.id)}
                   />
                   <span className="absolute left-3 top-3 rounded-lg bg-[rgba(4,9,18,0.74)] px-2.5 py-1.5 text-xs font-black text-white">
                     Template {String(index + 1).padStart(2, "0")}
@@ -1783,25 +1373,9 @@ const GptImageInspiration: React.FC = () => {
         preview={preview}
         payload={payload}
         copiedId={copiedId}
-        importedId={importedId}
         onCopy={copyText}
         onImport={importAsStyleLibrary}
         onClose={() => setPreview(null)}
-      />
-
-      <SmartImportDialog
-        job={importJob}
-        onStartAnalyze={startStyleLibraryImportAnalysis}
-        onSave={saveImportedStyleLibrary}
-        onOpenCenter={() => navigate(ROUTES.styleLibraryCenter)}
-        onClose={() =>
-          setImportJob({
-            status: "idle",
-            preview: null,
-            analysis: null,
-            error: "",
-          })
-        }
       />
 
       <SystemAnnouncementModal

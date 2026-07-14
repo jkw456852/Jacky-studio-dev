@@ -1,4 +1,5 @@
 import path from "path";
+import { spawn } from "node:child_process";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { aui } from "@assistant-ui/vite";
@@ -1480,6 +1481,61 @@ function apiCompetitorBrowserAuthPlugin(): Plugin {
   };
 }
 
+const GPT_IMAGE_INSPIRATION_DEV_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+function gptImageInspirationDevSyncPlugin(): Plugin {
+  let syncRunning = false;
+  let lastSyncStartedAt = 0;
+
+  const runSync = () => {
+    if (
+      syncRunning ||
+      Date.now() - lastSyncStartedAt < GPT_IMAGE_INSPIRATION_DEV_SYNC_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    syncRunning = true;
+    lastSyncStartedAt = Date.now();
+    const child = spawn(
+      process.execPath,
+      [path.resolve("scripts/sync-gpt-image-inspiration.mjs")],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: "inherit",
+        windowsHide: true,
+      },
+    );
+    child.once("error", (error) => {
+      syncRunning = false;
+      console.warn(
+        "[gpt-image-inspiration] development sync could not start:",
+        error instanceof Error ? error.message : error,
+      );
+    });
+    child.once("exit", () => {
+      syncRunning = false;
+    });
+  };
+
+  return {
+    name: "vite-plugin-gpt-image-inspiration-dev-sync",
+    apply: "serve",
+    configureServer(server) {
+      const initialSyncTimer = setTimeout(runSync, 1_500);
+      const interval = setInterval(
+        runSync,
+        GPT_IMAGE_INSPIRATION_DEV_SYNC_INTERVAL_MS,
+      );
+      server.httpServer?.once("close", () => {
+        clearTimeout(initialSyncTimer);
+        clearInterval(interval);
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
   Object.assign(process.env, env);
@@ -1527,6 +1583,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       aui(),
       react(),
+      gptImageInspirationDevSyncPlugin(),
       apiAssistantChatPlugin(),
       apiMcpAppsPlugin(),
       apiOpenAIProxyPlugin(),

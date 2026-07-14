@@ -233,6 +233,10 @@ test("assistant sidebar first-party tools render as standalone toolkit UIs", () 
     join(repoRoot, "components/assistant-ui/thread.tsx"),
     "utf8",
   );
+  const attachment = readFileSync(
+    join(repoRoot, "components/assistant-ui/attachment.tsx"),
+    "utf8",
+  );
   const serverToolkit = readFileSync(
     join(repoRoot, "services/assistant-ui/assistant-sidebar-server-toolkit.ts"),
     "utf8",
@@ -438,6 +442,7 @@ test("assistant sidebar first-party rich tool UIs validate result payloads befor
   assert.match(toolUis, /type\s+ToolCallMessagePartComponent/);
   assert.match(toolUis, /\buseToolCallElapsed\b/);
   assert.match(toolUis, /\buseToolArgsStatus\b/);
+  assert.match(toolUis, /\bparseAssistantToolError\b/);
   assert.match(toolUis, /import\s+\{\s*Image\s+as\s+AssistantImage\s*\}\s+from\s+["']@\/components\/assistant-ui\/image["']/);
   assert.match(toolUis, /import\s+\{[\s\S]*\bWeatherWidget\b[\s\S]*\}\s+from\s+["']@\/components\/assistant-ui\/tool-ui\/weather-widget\/runtime["']/);
   assert.match(toolUis, /\bconst\s+searchToolResultItemSchema\s*=\s*z\b/);
@@ -489,6 +494,10 @@ test("assistant sidebar first-party rich tool UIs validate result payloads befor
   assert.match(toolUis, /<AssistantImage\.Preview\b/);
   assert.match(toolUis, /<AssistantImage\.Actions\b/);
   assert.match(imageBlock, /<AssistantImage\.Generating\b/);
+  assert.match(imageBlock, /\btoolError\?\.title\b/);
+  assert.match(imageBlock, /\btoolError\?\.message\b/);
+  assert.match(imageBlock, /\btoolError\?\.raw\b/);
+  assert.match(imageBlock, /<details\b/);
   assert.match(imageBlock, /\bstatus\.type\s*===\s*["']requires-action["']/);
   assert.match(imageBlock, /\baui-generate-image-approval-summary\b/);
   assert.match(imageBlock, /确认生成图片/);
@@ -789,6 +798,13 @@ test("assistant sidebar logs official file part payload sizes without custom att
   assert.match(combined, /\blargestImagePayloadChars\b/);
   assert.match(runtime, /\bgetAssistantSidebarPartPayloadText\b/);
   assert.match(api, /\bgetAssistantChatPartPayloadText\b/);
+  assert.match(runtime, /\buploadAssistantSidebarImageFile\b/);
+  assert.match(runtime, /\bcompressed attachment image host upload failed\b/);
+  assert.match(runtime, /\bprepareAssistantSidebarMessageImagesForRequest\b/);
+  assert.match(runtime, /\bprepareAssistantChatFetchInit\b/);
+  assert.match(runtime, /\brequest_images_prepared\b/);
+  assert.match(runtime, /const\s+preparedInit\s*=\s*await\s+prepareAssistantChatFetchInit\(init\)/);
+  assert.match(runtime, /\bbaseFetch\(input,\s*preparedInit\)/);
   assert.doesNotMatch(runtime, /\bassistantSidebarFileAttachmentAdapter\b/);
   assert.doesNotMatch(api, /readAsDataURL\(/);
 });
@@ -1237,6 +1253,27 @@ test("assistant chat stream errors include provider model and tool context", () 
   assert.match(api, /\bactiveTools\b/);
   assert.match(api, /\bstream_text_error\b[\s\S]*\berror:\s*summarizeAssistantChatErrorForLog\(error\)/);
   assert.match(api, /\bformatAssistantChatStreamErrorText\(\s*error,\s*streamErrorContext\(\),\s*\)/);
+  assert.match(
+    api,
+    /chunk\.type\s*===\s*["']tool-output-error["']\s*\|\|\s*isAssistantChatDebugEnabled\(\)/,
+  );
+});
+
+test("assistant image tools fail visibly without blind AI SDK retries", () => {
+  const imageTools = readFileSync(
+    join(repoRoot, "api/assistant-chat-image-tools.ts"),
+    "utf8",
+  );
+  const toolUis = readFileSync(
+    join(repoRoot, "pages/Workspace/components/assistantSidebarToolUis.tsx"),
+    "utf8",
+  );
+
+  assert.match(imageTools, /\bmaxRetries:\s*0\b/);
+  assert.match(imageTools, /\babortSignal:\s*options\.abortSignal\b/);
+  assert.match(toolUis, /\bpromptReady\b/);
+  assert.match(toolUis, /\bparseAssistantToolError\(status\.error\)/);
+  assert.match(toolUis, /查看完整上游返回/);
 });
 
 test("assistant chat does not force specific tool_choice objects through custom OpenAI-compatible providers", () => {
@@ -1868,6 +1905,14 @@ test("assistant sidebar topic assets reuse official UIMessage parts and composer
     join(repoRoot, "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx"),
     "utf8",
   );
+  const thread = readFileSync(
+    join(repoRoot, "components/assistant-ui/thread.tsx"),
+    "utf8",
+  );
+  const attachment = readFileSync(
+    join(repoRoot, "components/assistant-ui/attachment.tsx"),
+    "utf8",
+  );
   const sidebarTypes = readFileSync(
     join(repoRoot, "pages/Workspace/components/assistantSidebar.types.ts"),
     "utf8",
@@ -1878,6 +1923,14 @@ test("assistant sidebar topic assets reuse official UIMessage parts and composer
   );
   const canvasAssetImport = readFileSync(
     join(repoRoot, "pages/Workspace/controllers/useWorkspaceCanvasAssetImport.ts"),
+    "utf8",
+  );
+  const canvasElementInteraction = readFileSync(
+    join(repoRoot, "pages/Workspace/controllers/useWorkspaceCanvasElementInteraction.ts"),
+    "utf8",
+  );
+  const canvasElementsLayer = readFileSync(
+    join(repoRoot, "pages/Workspace/components/WorkspaceCanvasElementsLayer.tsx"),
     "utf8",
   );
   const workspace = readFileSync(
@@ -1908,6 +1961,53 @@ test("assistant sidebar topic assets reuse official UIMessage parts and composer
   assert.match(runtime, /\bhandleImportConversationAssetToCanvas\b/);
   assert.match(runtime, /\bonImportAssetToCanvas\b/);
   assert.match(runtime, /\btopic_asset_imported_to_canvas\b/);
+  assert.match(runtime, /\btoCanvasElementAttachment\b/);
+  assert.match(runtime, /\btoMarkerReferenceAttachment\b/);
+  assert.match(runtime, /\bselectedCanvasAsset\b/);
+  assert.match(runtime, /\bselectedMarkerAsset\b/);
+  assert.match(runtime, /\bbrowserAgent\.resolveMarkerAsset\(/);
+  assert.match(runtime, /\bbrowserAgent\.resolveElementAsset\(/);
+  assert.match(runtime, /\bresolveAssistantReferenceDirective\b/);
+  assert.match(runtime, /\bresolveCanvasReferenceDirective\b/);
+  assert.match(runtime, /\binsertCanvasReferenceDirectiveIntoText\b/);
+  assert.match(runtime, /\bmapCanvasReferenceVisibleOffsetToSourceOffset\b/);
+  assert.match(runtime, /\bpendingCanvasReferenceAssets\b/);
+  assert.match(runtime, /\binsertPendingCanvasReferenceDirective\b/);
+  assert.match(runtime, /\bhandleCommitPendingCanvasReferences\b/);
+  assert.match(runtime, /\brememberComposerVisibleCursorOffset\b/);
+  assert.match(runtime, /\bcanvasDirectivePreviews\b/);
+  assert.match(runtime, /\bgetCanvasDirectivePreview\b/);
+  assert.match(runtime, /\bconst\s+composer\s*=\s*runtime\.thread\.composer\b/);
+  assert.match(runtime, /\bcomposer\.setText\(/);
+  assert.match(runtime, /\bhasCanvasReferenceAttachment\b/);
+  assert.match(runtime, /\bbrowserAgent\.referenceSelectionNonce\b/);
+  assert.match(runtime, /\bgetAttachmentByIndex\(attachmentIndex\)\.remove\(\)/);
+  assert.match(thread, /\bgetCanvasDirectivePreview\b/);
+  assert.match(thread, /\bisCanvasDirectivePending\b/);
+  assert.match(thread, /\bonComposerSendIntent\b/);
+  assert.match(thread, /\baui-directive-chip-preview\b/);
+  assert.match(thread, /\baui-directive-chip-hover-preview\b/);
+  assert.match(thread, /\bhideArrow\b/);
+  assert.match(thread, /\bobject-contain\b/);
+  assert.match(thread, /directiveType\s*===\s*["']mark["']/);
+  assert.match(attachment, /\(\?:canvas\|mark\)-/);
+  assert.match(sidebarTypes, /\bresolveMarkerAsset\?:\s*\(markerId:\s*string\)/);
+  assert.match(sidebarTypes, /\breferenceSelectionNonce\?:\s*number/);
+  assert.match(sidebarProps, /\belement\.persistedOriginalUrl\b/);
+  assert.match(canvasElementInteraction, /\bonReferenceElementSelect\?\.\(id\)/);
+  assert.match(
+    canvasElementInteraction,
+    /if \(isReferenceableMedia\) \{\s*onReferenceElementSelect\?\.\(id\);\s*\}\s*if \(elObj\?\.isLocked\)/,
+  );
+  assert.match(
+    canvasElementsLayer,
+    /onMouseDown=\{\(event\)\s*=>\s*handleElementMouseDown\(event,\s*element\.id\)\}/,
+  );
+  assert.match(workspace, /\breferenceSelectionNonce:\s*assistantReferenceSelection\.nonce/);
+  assert.match(sidebarProps, /\bresolveMarkerAsset:\s*\(markerId:\s*string\)/);
+  assert.match(workspace, /\bselectedMarkerId:\s*editingMarkerId\b/);
+  assert.match(thread, /\bonComposerInputIntent\b/);
+  assert.match(runtime, /\bselected_canvas_asset_attached\b/);
   assert.doesNotMatch(
     runtime,
     /\bgetGeneratedConversationFilesFromAgentData\b|\bGeneratedFilesMessage\b|\bagentData\b|\bskillData\b|\bChatMessage\b/,
@@ -1918,21 +2018,57 @@ test("assistant sidebar topic assets reuse official UIMessage parts and composer
   );
 });
 
+test("assistant image input helpers stay in neutral image-generation modules", () => {
+  const projectSources = readProjectSources()
+    .filter((file) => file.path !== "services/assistant-ui/assistant-ui-official-integration-guard.test.ts")
+    .map((file) => file.text)
+    .join("\n");
+  const imageReferenceResolver = readFileSync(
+    join(repoRoot, "services/image-reference-resolver.ts"),
+    "utf8",
+  );
+  const openaiImageSpec = readFileSync(
+    join(repoRoot, "services/image-generation/core/openai-image-spec.ts"),
+    "utf8",
+  );
+  const imageDataUrl = readFileSync(
+    join(repoRoot, "services/image-generation/core/image-data-url.ts"),
+    "utf8",
+  );
+
+  assert.match(imageDataUrl, /\bnormalizeImageDataUrlString\b/);
+  assert.match(imageReferenceResolver, /image-generation\/core\/image-data-url/);
+  assert.match(openaiImageSpec, /\.\/image-data-url\.ts/);
+  assert.equal(existsSync(join(repoRoot, "services/agents/data-url-helpers.ts")), false);
+  assert.equal(existsSync(join(repoRoot, "services/agents/data-url-helpers.test.ts")), false);
+  assert.doesNotMatch(projectSources, /data-url-helpers/);
+  assert.doesNotMatch(
+    `${imageReferenceResolver}\n${openaiImageSpec}`,
+    /agents\/data-url-helpers|services\/agents/,
+  );
+});
+
+test("tracked TypeScript services do not keep duplicate compiled JavaScript entrypoints", () => {
+  for (const basename of [
+    "ecommerce-product-analysis-debug",
+    "ecommerce-supplement-debug",
+    "four-views",
+    "image-postprocess",
+    "provider-config",
+    "validators",
+  ]) {
+    assert.equal(existsSync(join(repoRoot, `services/${basename}.ts`)), true);
+    assert.equal(existsSync(join(repoRoot, `services/${basename}.js`)), false);
+  }
+});
+
 test("workspace assistant thread repository keeps official UIMessage storage separate from legacy ChatMessage mirrors", () => {
   const assistantThreadRepository = readFileSync(
     join(repoRoot, "pages/Workspace/controllers/assistantThreadRepository.ts"),
     "utf8",
   );
-  const assistantThreadLegacyProjection = readFileSync(
-    join(repoRoot, "pages/Workspace/controllers/assistantThreadLegacyProjection.ts"),
-    "utf8",
-  );
   const conversationPersistence = readFileSync(
     join(repoRoot, "pages/Workspace/controllers/useWorkspaceConversationPersistence.ts"),
-    "utf8",
-  );
-  const conversationMessagePersistence = readFileSync(
-    join(repoRoot, "pages/Workspace/controllers/conversationMessagePersistence.ts"),
     "utf8",
   );
   const workspace = readFileSync(
@@ -1951,10 +2087,6 @@ test("workspace assistant thread repository keeps official UIMessage storage sep
     join(repoRoot, "pages/Workspace/conversationMeta.ts"),
     "utf8",
   );
-  const legacyConversationStatus = readFileSync(
-    join(repoRoot, "pages/Workspace/legacyConversationStatus.ts"),
-    "utf8",
-  );
   const legacyAssistantText = readFileSync(
     join(repoRoot, "pages/Workspace/legacyAssistantText.ts"),
     "utf8",
@@ -1968,10 +2100,11 @@ test("workspace assistant thread repository keeps official UIMessage storage sep
   assert.match(assistantThreadRepository, /\bsliceConversationAssistantThreadToHead\b/);
   assert.doesNotMatch(assistantThreadRepository, /\bChatMessage\b|\bagentData\b|\bskillData\b/);
   assert.doesNotMatch(assistantThreadRepository, /\bgetConversationVisibleMessages\b/);
-  assert.match(assistantThreadLegacyProjection, /\bgetConversationVisibleMessages\b/);
-  assert.match(assistantThreadLegacyProjection, /\bgetAssistantThreadVisibleLegacyMessages\b/);
-  assert.match(assistantThreadLegacyProjection, /\bChatMessage\b/);
-  assert.doesNotMatch(assistantThreadLegacyProjection, /\bagentData\b|\bskillData\b/);
+  assert.match(assistantThreadRepository, /\bresolveAssistantThreadHeadId\b/);
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/controllers/assistantThreadLegacyProjection.ts")),
+    false,
+  );
 
   assert.doesNotMatch(
     runtime,
@@ -1980,7 +2113,11 @@ test("workspace assistant thread repository keeps official UIMessage storage sep
   assert.match(runtime, /messages:\s*Array\.isArray\(nextConversation\.messages\)/);
   assert.doesNotMatch(runtime, /messages:\s*visibleMessages\b/);
   assert.match(projectLoader, /from\s+["']\.\/assistantThreadRepository\.ts["']/);
-  assert.match(projectLoader, /from\s+["']\.\/assistantThreadLegacyProjection\.ts["']/);
+  assert.doesNotMatch(
+    projectLoader,
+    /assistantThreadLegacyProjection|getConversationVisibleMessages/,
+  );
+  assert.match(projectLoader, /\bresolveAssistantThreadHeadId\(/);
   assert.doesNotMatch(projectLoader, /assistantThreadRepository\.legacy/);
   assert.doesNotMatch(projectLoader, /\.actions\.setMessages\(/);
   assert.match(conversationMeta, /from\s+["']\.\/legacyAssistantText\.ts["']/);
@@ -1988,19 +2125,28 @@ test("workspace assistant thread repository keeps official UIMessage storage sep
     conversationMeta,
     /AgentMessage\.helpers|services\/agents|services\/skills|progress-sanitizer|agentData|skillData|deriveConversationStatusSummary|ConversationStatusSummary/,
   );
-  assert.match(legacyConversationStatus, /\bderiveConversationStatusSummary\b/);
-  assert.match(legacyConversationStatus, /\bagentData\b/);
-  assert.doesNotMatch(
-    legacyConversationStatus,
-    /AgentMessage\.helpers|services\/agents|services\/skills|progress-sanitizer/,
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/legacyConversationStatus.ts")),
+    false,
   );
   assert.match(legacyAssistantText, /\bnormalizeLegacyAssistantMessageText\b/);
   assert.doesNotMatch(legacyAssistantText, /AgentMessage|ChatMessage|agentData|skillData|services\/agents|services\/skills/);
-  assert.match(conversationPersistence, /\blegacyMessages\?:\s*ChatMessage\[\]/);
-  assert.match(conversationPersistence, /\bresolveLegacyConversationMessagesForPersistence\b/);
-  assert.match(conversationMessagePersistence, /\bhasAssistantThreadMessages\b/);
-  assert.match(conversationMessagePersistence, /\bnextLegacyMessages\b/);
-  assert.doesNotMatch(conversationPersistence, /\bresolveConversationMessagesForPersistence\b/);
+  assert.doesNotMatch(
+    conversationPersistence,
+    /\blegacyMessages\b|resolveLegacyConversationMessagesForPersistence|conversationMessagePersistence/,
+  );
+  assert.match(
+    conversationPersistence,
+    /Array\.isArray\(existingConversation\?\.messages\)/,
+  );
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/controllers/conversationMessagePersistence.ts")),
+    false,
+  );
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/controllers/useWorkspaceConversationPersistence.test.ts")),
+    false,
+  );
   assert.doesNotMatch(workspace, /\buseAgentStore\(\(s\)\s*=>\s*s\.messages\)/);
   assert.doesNotMatch(workspace, /\bchatSessionRef\b|\bcreateChatSession\b/);
   assert.doesNotMatch(
@@ -2037,6 +2183,10 @@ test("workspace project loader recovers images from official assistant-ui thread
     join(repoRoot, "pages/Workspace/controllers/useWorkspaceProjectLoader.ts"),
     "utf8",
   );
+  const workspaceSendHelpers = readFileSync(
+    join(repoRoot, "pages/Workspace/controllers/useWorkspaceSend.helpers.ts"),
+    "utf8",
+  );
   const generatedFiles = readFileSync(
     join(repoRoot, "pages/Workspace/components/generatedFiles.ts"),
     "utf8",
@@ -2051,6 +2201,9 @@ test("workspace project loader recovers images from official assistant-ui thread
   assert.match(projectLoader, /\bseen\.has\(normalized\)/);
   assert.doesNotMatch(projectLoader, /\bservices\/agents\/image-result-extractor\b/);
   assert.doesNotMatch(projectLoader, /\bservices\/skills\/image-gen\.skill\b/);
+  assert.match(workspaceSendHelpers, /\bservices\/image-generation\/core\/image-result-extractor\.ts\b/);
+  assert.doesNotMatch(workspaceSendHelpers, /\bservices\/agents\/image-result-extractor\b/);
+  assert.doesNotMatch(workspaceSendHelpers, /\bservices\/skills\/image-gen\.skill\b/);
 });
 
 test("workspace safe-load preserves the complete assistant-ui thread list", () => {
@@ -2386,8 +2539,17 @@ test("assistant sidebar image count is not capped by project UI state", () => {
 
 test("workspace initial prompt bootstrap uses official assistant-ui composer, not legacy send hook", () => {
   const workspace = readFileSync(join(repoRoot, "pages/Workspace.tsx"), "utf8");
+  const home = readFileSync(join(repoRoot, "pages/Home.tsx"), "utf8");
   const projectLoader = readFileSync(
     join(repoRoot, "pages/Workspace/controllers/useWorkspaceProjectLoader.ts"),
+    "utf8",
+  );
+  const conversationPersistence = readFileSync(
+    join(repoRoot, "pages/Workspace/controllers/useWorkspaceConversationPersistence.ts"),
+    "utf8",
+  );
+  const runtimeAssetPreferences = readFileSync(
+    join(repoRoot, "services/runtime-assets/preferences.ts"),
     "utf8",
   );
   const sidebarTypes = readFileSync(
@@ -2417,13 +2579,67 @@ test("workspace initial prompt bootstrap uses official assistant-ui composer, no
   );
   assert.doesNotMatch(projectLoader, /\bhandleSend\b/);
   assert.doesNotMatch(projectLoader, /\bChatSendOptions\b/);
+  assert.doesNotMatch(home, /\binitialSkillData\b/);
+  assert.doesNotMatch(home, /\binitialModelMode\b/);
+  assert.doesNotMatch(home, /\binitialWebEnabled\b/);
+  assert.doesNotMatch(home, /\binitialImageModel\b/);
+  assert.doesNotMatch(home, /\binitialCreationMode\b/);
+  assert.doesNotMatch(home, /\bChatMessage\b/);
+  assert.doesNotMatch(home, /\bgetActiveQuickSkillPreference\b/);
+  assert.doesNotMatch(
+    `${workspace}\n${projectLoader}\n${conversationPersistence}\n${runtimeAssetPreferences}`,
+    /\b(?:get|set)ActiveQuickSkillPreference\b|\bpersistedActiveQuickSkill\b|\bactiveQuickSkill:\s*persistedActiveQuickSkill\b/,
+  );
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/controllers/activeQuickSkillPreference.ts")),
+    false,
+  );
+  assert.equal(
+    existsSync(join(repoRoot, "pages/Workspace/controllers/activeQuickSkillPreference.test.ts")),
+    false,
+  );
+  assert.doesNotMatch(home, /\bHomeModelPreferencePopover\b/);
+  assert.doesNotMatch(home, /\buseWorkspaceModelPreferences\b/);
+  assert.doesNotMatch(projectLoader, /\binitialSkillData\b/);
+  assert.doesNotMatch(projectLoader, /\binitialModelMode\b/);
+  assert.doesNotMatch(projectLoader, /\binitialWebEnabled\b/);
+  assert.doesNotMatch(projectLoader, /\binitialImageModel\b/);
+  assert.doesNotMatch(projectLoader, /\binitialCreationMode\b/);
+  assert.doesNotMatch(projectLoader, /\bcreateInputBlockId\b/);
+  assert.doesNotMatch(projectLoader, /\bsetInputBlocks\(blocks\)/);
+  assert.match(projectLoader, /\bconst\s+initialConversationId\s*=\s*createConversationId\(\)/);
+  assert.match(projectLoader, /\bconst\s+initialConversation:\s*ConversationSession\s*=/);
+  assert.match(projectLoader, /\bassistantThread:\s*\{\s*headId:\s*null,\s*messages:\s*\[\]/);
+  assert.match(projectLoader, /\bsetConversations\(\[initialConversation\]\)/);
+  assert.match(projectLoader, /\bsetActiveConversationId\(initialConversationId\)/);
+  assert.match(projectLoader, /\bconversations:\s*\[initialConversation\]/);
   assert.match(projectLoader, /\bsetAssistantBootstrapRequest\?\.\(\{/);
+  assert.match(
+    workspace,
+    /navigate\(location\.pathname,\s*\{\s*replace:\s*true,\s*state:\s*null/,
+  );
   assert.match(sidebarTypes, /\bexport\s+type\s+AssistantSidebarBootstrapRequest\b/);
   assert.match(sidebarProps, /\bbootstrapRequest:\s*assistantBootstrapRequest\b/);
   assert.match(runtime, /\bprops\.bootstrapRequest\b/);
-  assert.match(runtime, /\bruntime\.thread\.composer\b/);
+  assert.match(runtime, /\bbootstrap_send_start\b/);
+  assert.match(runtime, /\bawait\s+waitForThreadListHydration\(\)/);
+  assert.match(runtime, /\bbootstrapRequestInFlightIdRef\.current\s*===\s*request\.id\b/);
+  assert.match(runtime, /\bbootstrapMountedRef\.current\s*=\s*true\b/);
+  assert.match(runtime, /\bbootstrapMountedRef\.current\s*=\s*false\b/);
+  assert.match(runtime, /\bcurrentRuntime\.thread\.composer\b/);
   assert.match(runtime, /\bcomposer\.addAttachment\(/);
   assert.match(runtime, /\bcomposer\.send\(\{\s*startRun:\s*true\s*\}\)/);
+  assert.match(runtime, /\bbootstrap_send_sent\b/);
+  assert.match(runtime, /\bbootstrap_send_failed\b/);
+  assert.doesNotMatch(runtime, /\bgetLoadThreadsPromise\(\)/);
+  const bootstrapSendIndex = runtime.indexOf(
+    "composer.send({ startRun: true })",
+  );
+  const bootstrapConsumeIndex = runtime.indexOf(
+    "consumedBootstrapRequestIdRef.current = request.id",
+  );
+  assert.ok(bootstrapSendIndex >= 0);
+  assert.ok(bootstrapConsumeIndex > bootstrapSendIndex);
 });
 
 test("assistant Studio skills catalog is a read-only official tool, not the legacy skill runtime", () => {
@@ -2687,4 +2903,36 @@ test("assistant sidebar logs selected web search provider and defaults", () => {
   assert.match(runtime, /\bwebSearchActiveProviderId:\s*parsed\.webSearch\?\.activeProviderId\s*\|\|\s*undefined/);
   assert.match(runtime, /\bwebSearchProviderType:\s*[\s\S]*parsed\.webSearch\?\.provider\?\.providerType[\s\S]*parsed\.webSearch\?\.provider\?\.catalogId/);
   assert.match(runtime, /\bwebSearchMode:\s*parsed\.webSearch\?\.defaults\?\.mode\s*\|\|\s*undefined/);
+});
+
+test("inspiration pages reshuffle per page load and refresh their synced data", () => {
+  const home = readFileSync(join(repoRoot, "pages/Home.tsx"), "utf8");
+  const inspirationPage = readFileSync(
+    join(repoRoot, "pages/GptImageInspiration.tsx"),
+    "utf8",
+  );
+  const inspirationService = readFileSync(
+    join(repoRoot, "services/gpt-image-inspiration.ts"),
+    "utf8",
+  );
+  const viteConfig = readFileSync(join(repoRoot, "vite.config.ts"), "utf8");
+
+  assert.match(home, /\bcreateGptImageInspirationShuffleSeed\b/);
+  assert.match(home, /\bshuffleGptImageInspirationCases\b/);
+  assert.doesNotMatch(home, /\bgetDailyInspirationSeed\b|\bseededRandom\b/);
+  assert.match(inspirationPage, /\bcreateGptImageInspirationShuffleSeed\b/);
+  assert.match(inspirationPage, /\bshuffleGptImageInspirationCases\b/);
+  assert.match(inspirationService, /\?v=\$\{Date\.now\(\)\}/);
+  assert.match(
+    inspirationService,
+    /\bGPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS\b/,
+  );
+  assert.match(viteConfig, /\bgptImageInspirationDevSyncPlugin\b/);
+  assert.match(viteConfig, /scripts\/sync-gpt-image-inspiration\.mjs/);
+  assert.equal(
+    existsSync(
+      join(repoRoot, ".github/workflows/sync-gpt-image-inspiration.yml"),
+    ),
+    true,
+  );
 });

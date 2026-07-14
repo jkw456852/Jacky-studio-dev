@@ -119,6 +119,22 @@ export const countAssistantThreadRoots = (
     (item) => !item.parent_id,
   ).length;
 
+export const resolveAssistantThreadHeadId = (
+  thread: ConversationSession["assistantThread"] | undefined,
+): string | null => {
+  const messages = normalizeAssistantUiStorageEntryRows(thread?.messages);
+  if (!thread || messages.length === 0 || thread.headId === null) {
+    return null;
+  }
+
+  const storedHeadId = String(thread.headId || "").trim();
+  if (storedHeadId && messages.some((message) => message.id === storedHeadId)) {
+    return storedHeadId;
+  }
+
+  return messages.at(-1)?.id || null;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 

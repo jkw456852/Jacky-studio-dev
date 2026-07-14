@@ -1,6 +1,6 @@
 import type { AgentTask } from "../../../types/agent.types.ts";
 import type { CanvasElement, ChatMessage, InputBlock } from "../../../types";
-import { extractImageUrlsFromResult } from "../../../services/agents/image-result-extractor";
+import { extractImageUrlsFromResult } from "../../../services/image-generation/core/image-result-extractor.ts";
 import {
   extractWebPage,
   pickUsableReferenceImages,

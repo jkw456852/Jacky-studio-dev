@@ -20,6 +20,7 @@ import {
 } from "@/components/assistant-ui/tool-ui/weather-widget/runtime";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import type { AssistantSidebarCreateImageArgs } from "../../../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
+import { parseAssistantToolError } from "../../../services/assistant-ui/assistant-tool-error.ts";
 
 type CreateTargetElementToolResult = {
   ok?: boolean;
@@ -55,6 +56,7 @@ type GenerateImageToolResult = {
   resolution?: string;
   count?: number;
   settingsLocked?: boolean;
+  operation?: string;
   images?: GenerateImageToolResultRawImage[];
   metadata?: {
     revisedPrompt?: string;
@@ -483,6 +485,7 @@ const generateImageToolResultSchema = z
     resolution: z.string().optional(),
     count: z.number().optional(),
     settingsLocked: z.boolean().optional(),
+    operation: z.string().optional(),
     images: z.array(generatedImagePartSchema).optional(),
     metadata: z
       .object({
@@ -995,6 +998,7 @@ const getImageToolRunningPhase = (options: {
   requestedCount: number;
   requestedAspectRatio: string;
   referenceCount: number;
+  promptReady: boolean;
 }): {
   title: string;
   description: string;
@@ -1013,7 +1017,7 @@ const getImageToolRunningPhase = (options: {
     isStreamingToolArg(propStatus, "size") ||
     isStreamingToolArg(propStatus, "count");
 
-  if (promptStreaming) {
+  if (promptStreaming && !options.promptReady) {
     return {
       title: "正在准备提示词",
       description:
@@ -1021,7 +1025,7 @@ const getImageToolRunningPhase = (options: {
     };
   }
 
-  if (referenceStreaming) {
+  if (referenceStreaming && !options.promptReady) {
     return {
       title: "正在准备参考图",
       description:
@@ -1029,7 +1033,7 @@ const getImageToolRunningPhase = (options: {
     };
   }
 
-  if (settingsStreaming) {
+  if (settingsStreaming && !options.promptReady) {
     return {
       title: "正在确认图片设置",
       description:
@@ -1950,6 +1954,7 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
   const toolResult = parsedResult.success
     ? (parsedResult.data as GenerateImageToolResult)
     : undefined;
+  const isUpscaleOperation = toolResult?.operation === "upscale";
   const promptStreaming =
     isStreamingToolArg(propStatus, "prompt") ||
     isStreamingToolArg(propStatus, "text");
@@ -1960,6 +1965,7 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
     toolResult?.prompt,
     !promptStreaming ? getToolArgString(args, "text", "prompt") : "",
   );
+  const promptReady = Boolean(getToolArgString(args, "text", "prompt"));
   const revisedPrompt = pickNonEmptyString(toolResult?.metadata?.revisedPrompt);
   const imageParts = getGenerateImageResultImages(toolResult);
   const warnings = getGenerateImageWarningMessages(toolResult?.warnings);
@@ -1979,11 +1985,16 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
         (imageParts.length > 0 ? imageParts.length : 1),
     ),
   );
+  const toolError =
+    status.type === "incomplete" && status.reason === "error"
+      ? parseAssistantToolError(status.error)
+      : null;
   const providerLabel = pickNonEmptyString(
     toolResult?.providerName,
     toolResult?.providerId,
+    toolError?.providerId,
   );
-  const modelLabel = pickNonEmptyString(toolResult?.modelId);
+  const modelLabel = pickNonEmptyString(toolResult?.modelId, toolError?.modelId);
   const sizeLabel = pickNonEmptyString(
     toolResult?.size,
     !sizeStreaming ? getToolArgString(args, "size") : "",
@@ -2016,20 +2027,30 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
         requestedCount,
         requestedAspectRatio: appliedAspectRatio,
         referenceCount,
+        promptReady,
       })
     : null;
   const countLabel =
     imageParts.length > 0
       ? isError
         ? `供应商报错前已返回 ${imageParts.length} 张图片`
-        : `${imageParts.length} 张图片结果`
+        : isUpscaleOperation
+          ? `${imageParts.length} 张高清放大结果`
+          : `${imageParts.length} 张图片结果`
       : isRunning
         ? runningPhase?.title ||
-          `正在生成 ${appliedCount} 张图片`
+          (isUpscaleOperation
+            ? "正在高清放大图片"
+            : `正在生成 ${appliedCount} 张图片`)
         : isError
-          ? "图片生成失败"
-          : "图片生成完成";
+          ? isUpscaleOperation
+            ? "高清放大失败"
+            : "图片生成失败"
+          : isUpscaleOperation
+            ? "高清放大完成"
+            : "图片生成完成";
   const metaItems = [
+    isUpscaleOperation ? { label: "类型", value: "高清放大" } : null,
     providerLabel ? { label: "供应商", value: providerLabel } : null,
     modelLabel ? { label: "模型", value: modelLabel } : null,
     appliedAspectRatio ? { label: "比例", value: appliedAspectRatio } : null,
@@ -2045,6 +2066,7 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
       Boolean(item?.label && item?.value),
   );
   const approvalSummaryItems = [
+    isUpscaleOperation ? { label: "类型", value: "高清放大" } : null,
     requestedCount > 0 ? { label: "张数", value: String(requestedCount) } : null,
     providerLabel ? { label: "供应商", value: providerLabel } : null,
     modelLabel ? { label: "模型", value: modelLabel } : null,
@@ -2067,6 +2089,11 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
           <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
             {countLabel}
           </div>
+          {runningPhase?.description ? (
+            <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              {runningPhase.description}
+            </div>
+          ) : null}
           {metaItems.length > 0 ? (
             <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
               {metaItems.map((item) => `${item.label}: ${item.value}`).join(" · ")}
@@ -2083,14 +2110,6 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
         </div>
       </div>
 
-      {runningPhase ? (
-        <div className="rounded-xl border border-sky-200/80 bg-sky-50/80 px-3 py-2 text-xs text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
-          <div className="font-medium">{runningPhase.title}</div>
-          <div className="mt-1 leading-5 opacity-90">
-            {runningPhase.description}
-          </div>
-        </div>
-      ) : null}
       {status.type === "requires-action" ? (
         <div className="aui-generate-image-approval-summary rounded-2xl border border-sky-200/80 bg-sky-50/80 p-3 text-sm text-sky-950 shadow-sm dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-50">
           <div className="font-semibold">确认生成图片</div>
@@ -2133,9 +2152,40 @@ export const GenerateImageToolUI: ToolCallMessagePartComponent<
           ))}
         </div>
       ) : null}
-      {isError && imageParts.length > 0 ? (
-        <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-          供应商在返回可用图片后又报告失败。下面的图片仍然可以放大、复制或下载。
+      {isError ? (
+        <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-3 py-2.5 text-xs text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+          <div className="font-semibold">
+            {toolError?.title || "图片供应商返回失败"}
+          </div>
+          <div className="mt-1 whitespace-pre-wrap break-words leading-5">
+            {toolError?.message || "上游没有提供可读取的失败原因。"}
+          </div>
+          {toolError ? (
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-rose-800/80 dark:text-rose-100/75">
+              {toolError.providerId ? (
+                <span>供应商: {toolError.providerId}</span>
+              ) : null}
+              {toolError.modelId ? <span>模型: {toolError.modelId}</span> : null}
+              {toolError.requestId ? (
+                <span>请求 ID: {toolError.requestId}</span>
+              ) : null}
+            </div>
+          ) : null}
+          {toolError?.raw ? (
+            <details className="mt-2">
+              <summary className="cursor-pointer select-none font-medium">
+                查看完整上游返回
+              </summary>
+              <div className="mt-1.5 whitespace-pre-wrap break-all rounded-lg bg-white/65 px-2 py-1.5 font-mono text-[10px] leading-4 text-rose-950 dark:bg-rose-950/35 dark:text-rose-50">
+                {toolError.raw}
+              </div>
+            </details>
+          ) : null}
+          {imageParts.length > 0 ? (
+            <div className="mt-2 leading-5">
+              供应商报错前已经返回了可用图片，下面的结果仍然可以放大、复制或下载。
+            </div>
+          ) : null}
         </div>
       ) : null}
 

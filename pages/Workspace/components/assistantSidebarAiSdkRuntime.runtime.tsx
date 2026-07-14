@@ -79,6 +79,8 @@ import { cn } from "@/lib/utils";
 import { getBestModelSelection, type BestModelSelection } from "../../../services/gemini.ts";
 import { getApiKey, getProviderConfigById } from "../../../services/provider-config.ts";
 import { loadSearchSettings } from "../../../services/search-settings.ts";
+import { useImageHostStore } from "../../../stores/imageHost.store.ts";
+import { uploadImage } from "../../../utils/uploader.ts";
 import {
   deleteProjectConversationBackup,
   markProjectConversationDeleted,
@@ -388,11 +390,382 @@ const compressAssistantSidebarImageFile = async (file: File): Promise<{
   };
 };
 
+const compressAssistantSidebarImageDataUrl = async (
+  dataUrl: string,
+  fallbackName: string,
+): Promise<{
+  dataUrl: string;
+  mediaType: string;
+  compressed: boolean;
+  originalChars: number;
+  sentChars: number;
+}> => {
+  const file = dataUrlToAssistantSidebarFile(dataUrl, fallbackName);
+  if (!file) {
+    return {
+      dataUrl,
+      mediaType: /^data:([^;,]+)[;,]/i.exec(dataUrl)?.[1] || "image/png",
+      compressed: false,
+      originalChars: dataUrl.length,
+      sentChars: dataUrl.length,
+    };
+  }
+  return compressAssistantSidebarImageFile(file);
+};
+
+const isAssistantSidebarHttpImageUrl = (value: unknown): boolean =>
+  /^https?:\/\//i.test(String(value || "").trim());
+
+const isAssistantSidebarInlineImageUrl = (value: unknown): boolean =>
+  /^(?:data:image\/|blob:)/i.test(String(value || "").trim());
+
+const assistantSidebarHostedImageCache = new Map<string, Promise<string>>();
+
+const dataUrlToAssistantSidebarFile = (
+  dataUrl: string,
+  fallbackName: string,
+): File | null => {
+  const match = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(dataUrl);
+  if (!match || !match[1].startsWith("image/")) return null;
+
+  try {
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const extension = match[1].includes("jpeg")
+      ? "jpg"
+      : match[1].split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "png";
+    return new File([bytes], fallbackName || `assistant-image.${extension}`, {
+      type: match[1],
+    });
+  } catch {
+    return null;
+  }
+};
+
+const urlToAssistantSidebarImageFile = async (
+  imageUrl: string,
+  fallbackName: string,
+): Promise<File | null> => {
+  const normalized = String(imageUrl || "").trim();
+  if (!normalized) return null;
+
+  if (/^data:image\//i.test(normalized)) {
+    return dataUrlToAssistantSidebarFile(normalized, fallbackName);
+  }
+
+  if (!/^blob:/i.test(normalized)) return null;
+
+  try {
+    const response = await fetch(normalized);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) return null;
+    return new File([blob], fallbackName || "assistant-image.png", {
+      type: blob.type || "image/png",
+    });
+  } catch {
+    return null;
+  }
+};
+
+const uploadAssistantSidebarImageFile = async (
+  file: File,
+): Promise<string | null> => {
+  const hostedUrl = await uploadImage(file);
+  return isAssistantSidebarHttpImageUrl(hostedUrl) ? hostedUrl : null;
+};
+
+const ensureAssistantSidebarHostedImageUrl = async (
+  imageUrl: string,
+  options: {
+    fallbackName: string;
+    logContext?: Record<string, unknown>;
+  },
+): Promise<string> => {
+  const normalized = String(imageUrl || "").trim();
+  if (!normalized || isAssistantSidebarHttpImageUrl(normalized)) {
+    return normalized;
+  }
+  if (!isAssistantSidebarInlineImageUrl(normalized)) {
+    return normalized;
+  }
+
+  const hostProvider = useImageHostStore.getState().selectedProvider;
+
+  const cacheKey = `${hostProvider}\u0000${normalized}`;
+  let uploadPromise = assistantSidebarHostedImageCache.get(cacheKey);
+  if (!uploadPromise) {
+    uploadPromise = (async () => {
+      const file = await urlToAssistantSidebarImageFile(
+        normalized,
+        options.fallbackName,
+      );
+      if (!file) return normalized;
+
+      if (hostProvider !== "none") {
+        try {
+          const hostedUrl = await uploadAssistantSidebarImageFile(file);
+          if (hostedUrl) {
+            logAssistantSidebar("image_reference_hosted", {
+              provider: hostProvider,
+              sourceKind: normalized.startsWith("blob:") ? "blob" : "data-url",
+              compressed: false,
+              ...options.logContext,
+            });
+            return hostedUrl;
+          }
+        } catch (error) {
+          console.warn("[assistant-sidebar] image host upload failed", {
+            provider: hostProvider,
+            error: getClientErrorMessage(error),
+            ...options.logContext,
+          });
+        }
+      }
+
+      const compressed = await compressAssistantSidebarImageFile(file);
+      if (hostProvider !== "none") {
+        const compressedFile = dataUrlToAssistantSidebarFile(
+          compressed.dataUrl,
+          options.fallbackName,
+        );
+        if (compressedFile) {
+          try {
+            const hostedUrl = await uploadAssistantSidebarImageFile(compressedFile);
+            if (hostedUrl) {
+              logAssistantSidebar("image_reference_hosted", {
+                provider: hostProvider,
+                sourceKind: normalized.startsWith("blob:") ? "blob" : "data-url",
+                compressed: true,
+                originalChars: compressed.originalChars,
+                sentChars: compressed.sentChars,
+                ...options.logContext,
+              });
+              return hostedUrl;
+            }
+          } catch (error) {
+            console.warn("[assistant-sidebar] compressed image host upload failed", {
+              provider: hostProvider,
+              error: getClientErrorMessage(error),
+              originalChars: compressed.originalChars,
+              sentChars: compressed.sentChars,
+              ...options.logContext,
+            });
+          }
+        }
+      }
+
+      if (compressed.dataUrl !== normalized) {
+        logAssistantSidebar("image_reference_compressed", {
+          sourceKind: normalized.startsWith("blob:") ? "blob" : "data-url",
+          originalChars: compressed.originalChars,
+          sentChars: compressed.sentChars,
+          compressed: compressed.compressed,
+          ...options.logContext,
+        });
+      }
+      return compressed.dataUrl || normalized;
+    })();
+    assistantSidebarHostedImageCache.set(cacheKey, uploadPromise);
+  }
+
+  try {
+    const hostedUrl = await uploadPromise;
+    return hostedUrl || normalized;
+  } catch (error) {
+    console.warn("[assistant-sidebar] image reference preparation failed", {
+      provider: hostProvider,
+      error: getClientErrorMessage(error),
+      ...options.logContext,
+    });
+  }
+
+  return normalized;
+};
+
+const getAssistantSidebarImagePartUrl = (
+  part: unknown,
+): string => {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return "";
+  const record = part as Record<string, unknown>;
+  return String(
+    record.originalUrl ||
+      record.sourceUrl ||
+      record.fullImageUrl ||
+      record.image ||
+      record.url ||
+      record.data ||
+      "",
+  ).trim();
+};
+
+const prepareAssistantSidebarMessageImagesForRequest = async (
+  messages: UIMessage[],
+): Promise<{
+  messages: UIMessage[];
+  preparedCount: number;
+  hostedOrCompressedCount: number;
+}> => {
+  let preparedCount = 0;
+  let hostedOrCompressedCount = 0;
+  const nextMessages = await Promise.all(
+    messages.map(async (message) => {
+      let changed = false;
+      const nextParts = await Promise.all(
+        message.parts.map(async (part) => {
+          if (!part || typeof part !== "object" || Array.isArray(part)) {
+            return part;
+          }
+          const record = part as Record<string, unknown>;
+          const type = String(record.type || "").trim();
+          if (type !== "image" && type !== "file") return part;
+
+          const sourceUrl = getAssistantSidebarImagePartUrl(record);
+          if (!isAssistantSidebarInlineImageUrl(sourceUrl)) return part;
+
+          const filename = String(record.filename || "").trim() ||
+            `${type}-reference.png`;
+          const preparedUrl = await ensureAssistantSidebarHostedImageUrl(
+            sourceUrl,
+            {
+              fallbackName: filename,
+              logContext: {
+                referenceKind: "message-part",
+                partType: type,
+                messageId: message.id,
+              },
+            },
+          );
+          if (!preparedUrl || preparedUrl === sourceUrl) return part;
+
+          preparedCount += 1;
+          hostedOrCompressedCount += 1;
+          changed = true;
+          if (type === "file") {
+            const nextPart: Record<string, unknown> = {
+              ...record,
+              url: preparedUrl,
+            };
+            if (typeof nextPart.data === "string") {
+              delete nextPart.data;
+            }
+            return nextPart as UIMessage["parts"][number];
+          }
+
+          const nextPart: Record<string, unknown> = {
+            ...record,
+            image: preparedUrl,
+          };
+          if (typeof nextPart.url === "string") {
+            nextPart.url = preparedUrl;
+          }
+          if (typeof nextPart.data === "string") {
+            delete nextPart.data;
+          }
+          return nextPart as UIMessage["parts"][number];
+        }),
+      );
+
+      return !changed
+        ? message
+        : {
+            ...message,
+            parts: nextParts as UIMessage["parts"],
+          };
+    }),
+  );
+
+  return {
+    messages: nextMessages,
+    preparedCount,
+    hostedOrCompressedCount,
+  };
+};
+
 class AssistantSidebarCompressedImageAttachmentAdapter extends SimpleImageAttachmentAdapter {
   public override async send(
     attachment: Parameters<SimpleImageAttachmentAdapter["send"]>[0],
   ): Promise<CompleteAttachment> {
+    const hostProvider = useImageHostStore.getState().selectedProvider;
+    if (hostProvider !== "none") {
+      try {
+        const hostedUrl = await uploadAssistantSidebarImageFile(attachment.file);
+        if (hostedUrl) {
+          logAssistantSidebar("attachment_image_hosted", {
+            name: attachment.name,
+            provider: hostProvider,
+            originalBytes: attachment.file.size,
+            mediaType: attachment.file.type || "image/png",
+          });
+          return {
+            ...attachment,
+            contentType: attachment.file.type || "image/png",
+            status: { type: "complete" },
+            content: [
+              {
+                type: "image",
+                image: hostedUrl,
+                filename: attachment.name,
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        console.warn("[assistant-sidebar] attachment image host upload failed", {
+          name: attachment.name,
+          provider: hostProvider,
+          error: getClientErrorMessage(error),
+        });
+      }
+    }
+
     const compressed = await compressAssistantSidebarImageFile(attachment.file);
+    if (hostProvider !== "none") {
+      const compressedFile = dataUrlToAssistantSidebarFile(
+        compressed.dataUrl,
+        attachment.name,
+      );
+      if (compressedFile) {
+        try {
+          const hostedUrl = await uploadAssistantSidebarImageFile(compressedFile);
+          if (hostedUrl) {
+            logAssistantSidebar("attachment_image_hosted", {
+              name: attachment.name,
+              provider: hostProvider,
+              originalBytes: attachment.file.size,
+              originalChars: compressed.originalChars,
+              sentChars: compressed.sentChars,
+              compressed: true,
+              mediaType: compressed.mediaType,
+            });
+            return {
+              ...attachment,
+              contentType: compressed.mediaType,
+              status: { type: "complete" },
+              content: [
+                {
+                  type: "image",
+                  image: hostedUrl,
+                  filename: attachment.name,
+                },
+              ],
+            };
+          }
+        } catch (error) {
+          console.warn("[assistant-sidebar] compressed attachment image host upload failed", {
+            name: attachment.name,
+            provider: hostProvider,
+            error: getClientErrorMessage(error),
+            originalChars: compressed.originalChars,
+            sentChars: compressed.sentChars,
+          });
+        }
+      }
+    }
+
     logAssistantSidebar("attachment_image_prepared", {
       name: attachment.name,
       originalChars: compressed.originalChars,
@@ -896,10 +1269,24 @@ const isAssistantSidebarDebugEnabled = () =>
   typeof process === "undefined" ||
   process.env.NODE_ENV !== "production";
 
+const HIDDEN_ASSISTANT_REFERENCE_RE = /(^|\n)\[Canvas (?:mark )?reference\]/u;
+
+const stripHiddenAssistantReferenceText = (text: string): string => {
+  const match = HIDDEN_ASSISTANT_REFERENCE_RE.exec(text);
+  if (!match) return text;
+
+  const markerStart = match.index + (match[1] === "\n" ? 1 : 0);
+  return text.slice(0, markerStart).trimEnd();
+};
+
 const getMessageTextPreview = (message: UIMessage | undefined): string => {
   if (!message || !Array.isArray(message.parts)) return "";
   return message.parts
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .flatMap((part) =>
+      part.type === "text"
+        ? [stripHiddenAssistantReferenceText(String(part.text || ""))]
+        : [],
+    )
     .join("")
     .replace(/\s+/g, " ")
     .trim()
@@ -1561,6 +1948,46 @@ const installAssistantSidebarDiagnostics = () => {
   });
 };
 
+const prepareAssistantChatFetchInit = async (
+  init: RequestInit | undefined,
+): Promise<RequestInit | undefined> => {
+  if (typeof init?.body !== "string") return init;
+
+  try {
+    const parsed = JSON.parse(init.body) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return init;
+    }
+    const body = parsed as Record<string, unknown>;
+    const messages = Array.isArray(body.messages)
+      ? (body.messages as UIMessage[])
+      : null;
+    if (!messages || messages.length === 0) return init;
+
+    const prepared = await prepareAssistantSidebarMessageImagesForRequest(messages);
+    if (prepared.preparedCount === 0) return init;
+
+    logAssistantSidebar("assistant-chat request_images_prepared", {
+      messageCount: messages.length,
+      preparedCount: prepared.preparedCount,
+      hostedOrCompressedCount: prepared.hostedOrCompressedCount,
+    });
+
+    return {
+      ...init,
+      body: JSON.stringify({
+        ...body,
+        messages: prepared.messages,
+      }),
+    };
+  } catch (error) {
+    console.warn("[assistant-sidebar] request image preparation failed", {
+      error: getClientErrorMessage(error),
+    });
+    return init;
+  }
+};
+
 const createAssistantChatDebugFetch = ({
   baseFetch = fetch,
   onReasoningDiagnosis,
@@ -1575,9 +2002,10 @@ const createAssistantChatDebugFetch = ({
     | undefined;
 } = {}): typeof fetch =>
   async (input, init) => {
+    const preparedInit = await prepareAssistantChatFetchInit(init);
     const debugEnabled = isAssistantSidebarDebugEnabled();
     if (!debugEnabled && typeof onReasoningDiagnosis !== "function") {
-      return baseFetch(input, init);
+      return baseFetch(input, preparedInit);
     }
 
     const startedAt = performance.now();
@@ -1587,7 +2015,7 @@ const createAssistantChatDebugFetch = ({
         : input instanceof URL
         ? input.toString()
         : input.url;
-    const requestSummary = summarizeAssistantChatRequestBody(init?.body);
+    const requestSummary = summarizeAssistantChatRequestBody(preparedInit?.body);
     const requestSummaryRecord = isObjectRecord(requestSummary)
       ? requestSummary
       : {};
@@ -1603,12 +2031,12 @@ const createAssistantChatDebugFetch = ({
         : undefined;
     logAssistantSidebar("assistant-chat request", {
       url,
-      method: init?.method || "POST",
+      method: preparedInit?.method || "POST",
       request: requestSummary,
     });
 
     try {
-      const response = await baseFetch(input, init);
+      const response = await baseFetch(input, preparedInit);
       const requestId = response.headers.get("x-assistant-request-id");
       logAssistantSidebar("assistant-chat response", {
         url,
@@ -2437,6 +2865,390 @@ const toAssistantAssetAttachment = (
             },
           ],
   };
+};
+
+const toCanvasElementAttachment = (options: {
+  elementId: string;
+  label: string | null;
+  previewUrl: string;
+  originalUrl?: string | null;
+  type?: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+}): CreateAttachment => {
+  const normalizedType = String(options.type || "").toLowerCase();
+  const originalUrl = String(options.originalUrl || "").trim();
+  const isVideo =
+    normalizedType === "video" ||
+    normalizedType === "gen-video" ||
+    /^data:video\//i.test(options.previewUrl) ||
+    /\.(?:mp4|webm|mov|m4v)(?:[?#].*)?$/i.test(options.previewUrl);
+  const contentType = isVideo ? "video/mp4" : "image/png";
+  const extension = isVideo ? "mp4" : "png";
+  const filename = sanitizeAssistantAssetFilename(
+    options.label || `canvas-${options.elementId}`,
+    `canvas-${options.elementId}.${extension}`,
+  );
+  const normalizedFilename = /\.[a-z0-9]{2,8}$/i.test(filename)
+    ? filename
+    : `${filename}.${extension}`;
+
+  return {
+    id: getCanvasReferenceDirectiveId({
+      elementId: options.elementId,
+    }),
+    type: isVideo ? "file" : "image",
+    name: normalizedFilename,
+    contentType,
+    content: isVideo
+      ? [
+          {
+            type: "file",
+            data: options.previewUrl,
+            mimeType: contentType,
+            filename: normalizedFilename,
+            ...(originalUrl ? { originalUrl, sourceUrl: originalUrl } : {}),
+          },
+        ] as CreateAttachment["content"]
+      : [
+          {
+            type: "text",
+            text:
+              `[Canvas reference] ${normalizedFilename}: canvasElementId=${options.elementId}; ` +
+              `use the visible directive label in the user message to refer to this image. ` +
+              `The original image URL is stored on the attached image part metadata.`,
+          },
+          {
+            type: "image",
+            image: originalUrl || options.previewUrl,
+            filename: normalizedFilename,
+            assistantReferenceKind: "canvas",
+            canvasElementId: options.elementId,
+            previewUrl: options.previewUrl,
+            canvasImageWidth: options.imageWidth,
+            canvasImageHeight: options.imageHeight,
+            ...(originalUrl ? { originalUrl, sourceUrl: originalUrl } : {}),
+          },
+        ] as CreateAttachment["content"],
+  };
+};
+
+type SelectedCanvasComposerAsset = {
+  elementId: string;
+  previewUrl: string;
+  originalUrl: string | null;
+  label: string | null;
+  type: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+};
+
+type SelectedMarkerComposerAsset = {
+  markerId: string;
+  elementId: string;
+  previewUrl: string;
+  originalUrl: string | null;
+  cropUrl: string | null;
+  label: string | null;
+  normalizedX: number | null;
+  normalizedY: number | null;
+  x: number | null;
+  y: number | null;
+  width: number | null;
+  height: number | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+};
+
+type AssistantReferenceComposerAsset =
+  | (SelectedCanvasComposerAsset & { kind: "canvas" })
+  | (SelectedMarkerComposerAsset & { kind: "mark" });
+
+type CanvasDirectivePreview = {
+  previewUrl: string;
+  chipPreviewUrl?: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  markerX?: number | null;
+  markerY?: number | null;
+  type: string | null;
+  kind?: "canvas" | "mark";
+};
+
+const escapeAssistantSidebarRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getCanvasReferenceDirectiveId = (
+  asset: { elementId: string },
+): string => `canvas-${asset.elementId.replace(/[}\n\r]/g, "-")}`;
+
+const getMarkerReferenceDirectiveId = (
+  asset: SelectedMarkerComposerAsset,
+): string => `mark-${asset.markerId.replace(/[}\n\r]/g, "-")}`;
+
+const getAssistantReferenceDirectiveId = (
+  asset: AssistantReferenceComposerAsset,
+): string =>
+  asset.kind === "mark"
+    ? getMarkerReferenceDirectiveId(asset)
+    : getCanvasReferenceDirectiveId(asset);
+
+const getCanvasReferenceLabelPrefix = (
+  asset: SelectedCanvasComposerAsset,
+): "image" | "video" => {
+  const normalizedType = String(asset.type || "").toLowerCase();
+  return normalizedType === "video" || normalizedType === "gen-video"
+    ? "video"
+    : "image";
+};
+
+const getAssistantReferenceDirectiveType = (
+  asset: AssistantReferenceComposerAsset,
+): "canvas" | "mark" => asset.kind;
+
+const getAssistantReferenceLabelPrefix = (
+  asset: AssistantReferenceComposerAsset,
+): "image" | "video" | "mark" =>
+  asset.kind === "mark" ? "mark" : getCanvasReferenceLabelPrefix(asset);
+
+const resolveAssistantReferenceDirective = (
+  text: string,
+  asset: AssistantReferenceComposerAsset,
+): { directive: string; directiveId: string; label: string; exists: boolean } => {
+  const directiveId = getAssistantReferenceDirectiveId(asset);
+  const directiveType = getAssistantReferenceDirectiveType(asset);
+  const existingPattern = new RegExp(
+    `:${directiveType}\\[([^\\]\\n]+)\\]\\{name=${escapeAssistantSidebarRegExp(
+      directiveId,
+    )}\\}`,
+    "u",
+  );
+  const existing = existingPattern.exec(text);
+  if (existing?.[1]) {
+    return {
+      directive: existing[0],
+      directiveId,
+      label: existing[1],
+      exists: true,
+    };
+  }
+
+  const prefix = getAssistantReferenceLabelPrefix(asset);
+  const labelPattern = new RegExp(`:${directiveType}\\[${prefix}(\\d{2,})\\]`, "gu");
+  let maxIndex = 0;
+  for (const match of text.matchAll(labelPattern)) {
+    maxIndex = Math.max(maxIndex, Number(match[1] || 0));
+  }
+  const label = `${prefix}${String(maxIndex + 1).padStart(2, "0")}`;
+  return {
+    directive: `:${directiveType}[${label}]{name=${directiveId}}`,
+    directiveId,
+    label,
+    exists: false,
+  };
+};
+
+const resolveCanvasReferenceDirective = (
+  text: string,
+  asset: SelectedCanvasComposerAsset,
+): { directive: string; directiveId: string; label: string; exists: boolean } =>
+  resolveAssistantReferenceDirective(text, { ...asset, kind: "canvas" });
+
+const hasCanvasReferenceAttachment = (
+  attachments: readonly { id?: string }[],
+  directiveId: string,
+): boolean => attachments.some((attachment) => attachment.id === directiveId);
+
+const CANVAS_REFERENCE_DIRECTIVE_RE =
+  /:(?:canvas|mark)\[([^\]\n]{1,1024})\]\{name=([^}\n]{1,1024})\}/gu;
+
+const toMarkerReferenceAttachment = (options: SelectedMarkerComposerAsset & {
+  directiveLabel: string;
+}): CreateAttachment => {
+  const previewUrl = String(options.previewUrl || options.originalUrl || "").trim();
+  const originalUrl = String(options.originalUrl || previewUrl || "").trim();
+  const modelImageUrl = originalUrl || previewUrl;
+  const filename = sanitizeAssistantAssetFilename(
+    options.label || `mark-${options.markerId}`,
+    `mark-${options.markerId}.png`,
+  );
+  const normalizedFilename = /\.[a-z0-9]{2,8}$/i.test(filename)
+    ? filename
+    : `${filename}.png`;
+  const coordinateText =
+    options.normalizedX != null && options.normalizedY != null
+      ? `normalizedX=${options.normalizedX.toFixed(4)}; normalizedY=${options.normalizedY.toFixed(4)}; `
+      : "";
+  const pixelText =
+    options.x != null && options.y != null
+      ? `x=${Math.round(options.x)}; y=${Math.round(options.y)}; `
+      : "";
+  const sizeText =
+    options.width != null && options.height != null
+      ? `region=${Math.round(options.width)}x${Math.round(options.height)}; `
+      : "";
+  const imageSizeText =
+    options.imageWidth != null && options.imageHeight != null
+      ? `imageSize=${Math.round(options.imageWidth)}x${Math.round(options.imageHeight)}; `
+      : "";
+
+  return {
+    id: getMarkerReferenceDirectiveId(options),
+    type: "image",
+    name: normalizedFilename,
+    contentType: "image/png",
+    content: [
+      {
+        type: "text",
+        text:
+          `[Canvas mark reference] ${options.directiveLabel}: markerId=${options.markerId}; ` +
+          `canvasElementId=${options.elementId}; ${coordinateText}${pixelText}${sizeText}${imageSizeText}` +
+          `Treat ${options.directiveLabel} as the exact user-selected anchor on the original image. ` +
+          `The original image URL is stored on the attached image part metadata.`,
+      },
+      {
+        type: "image",
+        image: modelImageUrl,
+        filename: normalizedFilename,
+        assistantReferenceKind: "mark",
+        originalUrl,
+        sourceUrl: originalUrl,
+        previewUrl,
+        cropUrl: options.cropUrl,
+        canvasElementId: options.elementId,
+        markerId: options.markerId,
+        markerLabel: options.directiveLabel,
+        markerNormalizedX: options.normalizedX,
+        markerNormalizedY: options.normalizedY,
+        markerImageWidth: options.imageWidth,
+        markerImageHeight: options.imageHeight,
+      },
+    ] as CreateAttachment["content"],
+  };
+};
+
+const ensureHostedAssistantReferenceAsset = async (
+  asset: AssistantReferenceComposerAsset,
+): Promise<AssistantReferenceComposerAsset> => {
+  if (asset.kind === "canvas") {
+    const modelUrl = String(asset.originalUrl || asset.previewUrl || "").trim();
+    const hostedUrl = await ensureAssistantSidebarHostedImageUrl(modelUrl, {
+      fallbackName: `canvas-${asset.elementId}.png`,
+      logContext: {
+        referenceKind: "canvas",
+        elementId: asset.elementId,
+      },
+    });
+    return {
+      ...asset,
+      originalUrl: hostedUrl || asset.originalUrl,
+    };
+  }
+
+  const modelUrl = String(asset.originalUrl || asset.previewUrl || "").trim();
+  const hostedUrl = await ensureAssistantSidebarHostedImageUrl(modelUrl, {
+    fallbackName: `mark-${asset.markerId}.png`,
+    logContext: {
+      referenceKind: "mark",
+      elementId: asset.elementId,
+      markerId: asset.markerId,
+    },
+  });
+  return {
+    ...asset,
+    originalUrl: hostedUrl || asset.originalUrl,
+  };
+};
+
+const mapCanvasReferenceVisibleOffsetToSourceOffset = (
+  text: string,
+  visibleOffset: number,
+): number => {
+  const safeVisibleOffset = Math.max(0, visibleOffset);
+  let visibleCursor = 0;
+  let sourceCursor = 0;
+
+  for (const match of text.matchAll(CANVAS_REFERENCE_DIRECTIVE_RE)) {
+    const matchIndex = match.index ?? 0;
+    const directiveText = match[0] || "";
+    const label = match[1] || "";
+    const plainTextBeforeDirective = text.slice(sourceCursor, matchIndex);
+    const plainTextEndVisible = visibleCursor + plainTextBeforeDirective.length;
+
+    if (safeVisibleOffset <= plainTextEndVisible) {
+      return sourceCursor + (safeVisibleOffset - visibleCursor);
+    }
+
+    visibleCursor = plainTextEndVisible;
+    const directiveEndVisible = visibleCursor + label.length;
+    if (safeVisibleOffset <= directiveEndVisible) {
+      const midpoint = visibleCursor + label.length / 2;
+      return safeVisibleOffset <= midpoint
+        ? matchIndex
+        : matchIndex + directiveText.length;
+    }
+
+    visibleCursor = directiveEndVisible;
+    sourceCursor = matchIndex + directiveText.length;
+  }
+
+  const trailingText = text.slice(sourceCursor);
+  const trailingEndVisible = visibleCursor + trailingText.length;
+  if (safeVisibleOffset <= trailingEndVisible) {
+    return sourceCursor + (safeVisibleOffset - visibleCursor);
+  }
+
+  return text.length;
+};
+
+const getActiveAssistantComposerTextOffset = (): number | null => {
+  if (typeof window === "undefined") return null;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+    return null;
+  }
+
+  const anchorNode = selection.anchorNode;
+  const anchorElement =
+    anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+  const inputRoot = anchorElement?.closest(".aui-lexical-input");
+  if (!inputRoot) return null;
+
+  try {
+    const range = selection.getRangeAt(0);
+    const beforeRange = range.cloneRange();
+    beforeRange.selectNodeContents(inputRoot);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+    return beforeRange.toString().length;
+  } catch {
+    return null;
+  }
+};
+
+const insertCanvasReferenceDirectiveIntoText = (
+  text: string,
+  directive: string,
+  visibleOffsetOverride?: number | null,
+): string => {
+  const visibleOffset =
+    typeof visibleOffsetOverride === "number"
+      ? visibleOffsetOverride
+      : getActiveAssistantComposerTextOffset();
+  if (typeof visibleOffset !== "number" || visibleOffset < 0) {
+    return text.trim()
+      ? `${text.trimEnd()} ${directive} `
+      : `${directive} `;
+  }
+
+  const offset = mapCanvasReferenceVisibleOffsetToSourceOffset(
+    text,
+    visibleOffset,
+  );
+  const before = text.slice(0, offset);
+  const after = text.slice(offset);
+  const beforeSpacer = before && !/\s$/.test(before) ? " " : "";
+  const afterSpacer = after && !/^\s/.test(after) ? " " : "";
+  return `${before}${beforeSpacer}${directive}${afterSpacer}${after}`;
 };
 
 const getAssistantAssetDownloadName = (
@@ -3601,32 +4413,449 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     },
     [browserAgent.importAssetToCanvas],
   );
+  const selectedCanvasAsset = React.useMemo(() => {
+    const elementId = String(
+      browserAgent.referenceElementId || browserAgent.selectedElementId || "",
+    ).trim();
+    if (!elementId || typeof browserAgent.resolveElementAsset !== "function") {
+      return null;
+    }
+    const asset = browserAgent.resolveElementAsset(elementId);
+    const previewUrl = String(asset?.previewUrl || "").trim();
+    if (!previewUrl) return null;
+    return {
+      elementId,
+      previewUrl,
+      originalUrl: String(asset?.originalUrl || "").trim() || null,
+      label: asset?.label || browserAgent.selectedElementLabel || null,
+      type: asset?.type || browserAgent.selectedElementType || null,
+      imageWidth:
+        Number.isFinite(Number(asset?.imageWidth)) && Number(asset?.imageWidth) > 0
+          ? Number(asset?.imageWidth)
+          : null,
+      imageHeight:
+        Number.isFinite(Number(asset?.imageHeight)) && Number(asset?.imageHeight) > 0
+          ? Number(asset?.imageHeight)
+          : null,
+    };
+  }, [
+    browserAgent.resolveElementAsset,
+    browserAgent.referenceElementId,
+    browserAgent.referenceSelectionNonce,
+    browserAgent.selectedElementId,
+    browserAgent.selectedElementLabel,
+    browserAgent.selectedElementType,
+  ]);
+  const selectedMarkerAsset = React.useMemo(() => {
+    const markerId = String(browserAgent.selectedMarkerId || "").trim();
+    if (!markerId || typeof browserAgent.resolveMarkerAsset !== "function") {
+      return null;
+    }
+    const asset = browserAgent.resolveMarkerAsset(markerId);
+    const previewUrl = String(asset?.previewUrl || asset?.originalUrl || "").trim();
+    if (!asset || !previewUrl) return null;
+    return {
+      markerId: asset.markerId,
+      elementId: asset.elementId,
+      previewUrl,
+      originalUrl: String(asset.originalUrl || "").trim() || previewUrl,
+      cropUrl: asset.cropUrl,
+      label: asset.label,
+      normalizedX: asset.normalizedX,
+      normalizedY: asset.normalizedY,
+      x: asset.x,
+      y: asset.y,
+      width: asset.width,
+      height: asset.height,
+      imageWidth: asset.imageWidth,
+      imageHeight: asset.imageHeight,
+    };
+  }, [
+    browserAgent.resolveMarkerAsset,
+    browserAgent.selectedMarkerId,
+  ]);
+  const selectedReferenceAsset = React.useMemo<AssistantReferenceComposerAsset | null>(() => {
+    if (selectedCanvasAsset && Number(browserAgent.referenceSelectionNonce || 0) > 0) {
+      return { ...selectedCanvasAsset, kind: "canvas" };
+    }
+    if (selectedMarkerAsset) return { ...selectedMarkerAsset, kind: "mark" };
+    if (selectedCanvasAsset) return { ...selectedCanvasAsset, kind: "canvas" };
+    return null;
+  }, [
+    browserAgent.referenceSelectionNonce,
+    selectedCanvasAsset,
+    selectedMarkerAsset,
+  ]);
+  const [canvasDirectivePreviews, setCanvasDirectivePreviews] = React.useState<
+    Record<string, CanvasDirectivePreview>
+  >({});
+  const [pendingCanvasReferenceAssets, setPendingCanvasReferenceAssets] =
+    React.useState<Record<string, AssistantReferenceComposerAsset>>({});
+  const composerVisibleCursorOffsetRef = React.useRef<number | null>(null);
+  const pendingCanvasReferenceAssetsRef = React.useRef(pendingCanvasReferenceAssets);
+  const confirmedCanvasReferenceIdsRef = React.useRef<Set<string>>(new Set());
+  const handledCanvasReferenceSelectionTokenRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    pendingCanvasReferenceAssetsRef.current = pendingCanvasReferenceAssets;
+  }, [pendingCanvasReferenceAssets]);
+  const rememberComposerVisibleCursorOffset = React.useCallback(() => {
+    const visibleOffset = getActiveAssistantComposerTextOffset();
+    if (typeof visibleOffset === "number" && visibleOffset >= 0) {
+      composerVisibleCursorOffsetRef.current = visibleOffset;
+    }
+  }, []);
+  const cacheCanvasDirectivePreview = React.useCallback((
+    directiveId: string,
+    asset: AssistantReferenceComposerAsset,
+  ) => {
+    setCanvasDirectivePreviews((current) => ({
+      ...current,
+      [directiveId]: {
+        previewUrl:
+          asset.kind === "mark"
+            ? asset.originalUrl || asset.previewUrl
+            : asset.previewUrl,
+        chipPreviewUrl:
+          asset.kind === "mark"
+            ? asset.originalUrl || asset.previewUrl || asset.cropUrl
+            : null,
+        imageWidth:
+          asset.kind === "mark"
+            ? asset.imageWidth
+            : asset.imageWidth,
+        imageHeight:
+          asset.kind === "mark"
+            ? asset.imageHeight
+            : asset.imageHeight,
+        markerX:
+          asset.kind === "mark"
+            ? asset.normalizedX
+            : null,
+        markerY:
+          asset.kind === "mark"
+            ? asset.normalizedY
+            : null,
+        type: asset.kind === "canvas" ? asset.type : "mark",
+        kind: asset.kind,
+      },
+    }));
+  }, []);
+  const insertPendingCanvasReferenceDirective = React.useCallback(async (
+    asset: AssistantReferenceComposerAsset,
+  ) => {
+    const composer = runtime.thread.composer;
+    const composerState = composer.getState();
+    const reference = resolveAssistantReferenceDirective(
+      composerState.text,
+      asset,
+    );
+    cacheCanvasDirectivePreview(reference.directiveId, asset);
+    const attachmentIndex = composerState.attachments.findIndex(
+      (attachment) => attachment.id === reference.directiveId,
+    );
+    const hasAttachment = attachmentIndex >= 0;
+    if (reference.exists && hasAttachment) {
+      confirmedCanvasReferenceIdsRef.current.add(reference.directiveId);
+      setPendingCanvasReferenceAssets((current) => {
+        if (!current[reference.directiveId]) return current;
+        const next = { ...current };
+        delete next[reference.directiveId];
+        return next;
+      });
+      return;
+    }
+    if (!reference.exists) {
+      confirmedCanvasReferenceIdsRef.current.delete(reference.directiveId);
+      if (hasAttachment) {
+        await composer.getAttachmentByIndex(attachmentIndex).remove();
+      }
+    }
+    setPendingCanvasReferenceAssets((current) => ({
+      ...current,
+      [reference.directiveId]: asset,
+    }));
+    if (!reference.exists) {
+      composer.setText(
+        insertCanvasReferenceDirectiveIntoText(
+          composerState.text,
+          reference.directive,
+          composerVisibleCursorOffsetRef.current,
+        ),
+      );
+    }
+    logAssistantSidebar("selected_canvas_asset_pending", {
+      elementId: asset.elementId,
+      elementType: asset.kind === "canvas" ? asset.type : "mark",
+      markerId: asset.kind === "mark" ? asset.markerId : undefined,
+      directive: reference.directive,
+      directiveId: reference.directiveId,
+      label: reference.label,
+      textInserted: !reference.exists,
+    });
+  }, [cacheCanvasDirectivePreview, runtime]);
+  React.useEffect(() => {
+    if (!selectedReferenceAsset) return;
+    const selectionToken =
+      selectedReferenceAsset.kind === "canvas"
+        ? `canvas:${selectedReferenceAsset.elementId}:${Number(
+            browserAgent.referenceSelectionNonce || 0,
+          )}`
+        : `mark:${selectedReferenceAsset.markerId}`;
+    if (handledCanvasReferenceSelectionTokenRef.current === selectionToken) {
+      return;
+    }
+    handledCanvasReferenceSelectionTokenRef.current = selectionToken;
+    void insertPendingCanvasReferenceDirective(selectedReferenceAsset);
+  }, [
+    browserAgent.referenceSelectionNonce,
+    insertPendingCanvasReferenceDirective,
+    selectedReferenceAsset,
+  ]);
+  const handleCommitCanvasReferenceAsset = React.useCallback(async (
+    asset: AssistantReferenceComposerAsset,
+  ): Promise<boolean> => {
+    try {
+      const initialComposerState = runtime.thread.composer.getState();
+      const initialReference = resolveAssistantReferenceDirective(
+        initialComposerState.text,
+        asset,
+      );
+      if (!initialReference.exists) {
+        setPendingCanvasReferenceAssets((current) => {
+          if (!current[initialReference.directiveId]) return current;
+          const next = { ...current };
+          delete next[initialReference.directiveId];
+          return next;
+        });
+        return true;
+      }
+      const hostedReferenceAsset =
+        await ensureHostedAssistantReferenceAsset(asset);
+      const composer = runtime.thread.composer;
+      const composerState = composer.getState();
+      const reference = resolveAssistantReferenceDirective(
+        composerState.text,
+        hostedReferenceAsset,
+      );
+      if (!reference.exists) {
+        setPendingCanvasReferenceAssets((current) => {
+          if (!current[reference.directiveId]) return current;
+          const next = { ...current };
+          delete next[reference.directiveId];
+          return next;
+        });
+        return true;
+      }
+      if (!hasCanvasReferenceAttachment(composerState.attachments, reference.directiveId)) {
+        await composer.addAttachment(
+          hostedReferenceAsset.kind === "mark"
+            ? toMarkerReferenceAttachment({
+                ...hostedReferenceAsset,
+                directiveLabel: reference.label,
+              })
+            : toCanvasElementAttachment(hostedReferenceAsset),
+        );
+      }
+      confirmedCanvasReferenceIdsRef.current.add(reference.directiveId);
+      cacheCanvasDirectivePreview(reference.directiveId, hostedReferenceAsset);
+      setPendingCanvasReferenceAssets((current) => {
+        if (!current[reference.directiveId]) return current;
+        const next = { ...current };
+        delete next[reference.directiveId];
+        return next;
+      });
+      logAssistantSidebar("selected_canvas_asset_attached", {
+        elementId: hostedReferenceAsset.elementId,
+        elementType:
+          hostedReferenceAsset.kind === "canvas"
+            ? hostedReferenceAsset.type
+            : "mark",
+        markerId:
+          hostedReferenceAsset.kind === "mark"
+            ? hostedReferenceAsset.markerId
+            : undefined,
+        directive: reference.directive,
+        directiveId: reference.directiveId,
+        label: reference.label,
+        textInserted: !reference.exists,
+        hasPreviewUrl: Boolean(hostedReferenceAsset.previewUrl),
+        hasOriginalUrl: Boolean(hostedReferenceAsset.originalUrl),
+      });
+      return true;
+    } catch (error) {
+      console.warn("[assistant-sidebar] selected canvas asset attach failed", {
+        error: getClientErrorMessage(error),
+      });
+      return false;
+    }
+  }, [cacheCanvasDirectivePreview, runtime]);
+  const handleCommitPendingCanvasReferences = React.useCallback(async () => {
+    const pendingAssets = Object.values(pendingCanvasReferenceAssetsRef.current);
+    if (pendingAssets.length === 0) return true;
+    for (const asset of pendingAssets) {
+      const ok = await handleCommitCanvasReferenceAsset(asset);
+      if (!ok) return false;
+    }
+    return true;
+  }, [handleCommitCanvasReferenceAsset]);
+  const getCanvasDirectivePreview = React.useCallback(
+    (directiveId: string) => {
+      const cachedPreview = canvasDirectivePreviews[directiveId];
+      if (cachedPreview) return cachedPreview;
+
+      const selectedDirectiveId = selectedReferenceAsset
+        ? getAssistantReferenceDirectiveId(selectedReferenceAsset)
+        : "";
+      if (directiveId !== selectedDirectiveId || !selectedReferenceAsset) {
+        return null;
+      }
+      return {
+        previewUrl:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.originalUrl ||
+              selectedReferenceAsset.previewUrl
+            : selectedReferenceAsset.previewUrl,
+        chipPreviewUrl:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.originalUrl ||
+              selectedReferenceAsset.previewUrl ||
+              selectedReferenceAsset.cropUrl
+            : null,
+        imageWidth:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.imageWidth
+            : selectedReferenceAsset.imageWidth,
+        imageHeight:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.imageHeight
+            : selectedReferenceAsset.imageHeight,
+        markerX:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.normalizedX
+            : null,
+        markerY:
+          selectedReferenceAsset.kind === "mark"
+            ? selectedReferenceAsset.normalizedY
+            : null,
+        type:
+          selectedReferenceAsset.kind === "canvas"
+            ? selectedReferenceAsset.type
+            : "mark",
+        kind: selectedReferenceAsset.kind,
+      };
+    },
+    [canvasDirectivePreviews, selectedReferenceAsset],
+  );
   const consumedBootstrapRequestIdRef = React.useRef<number | null>(null);
+  const bootstrapRequestInFlightIdRef = React.useRef<number | null>(null);
+  const bootstrapRuntimeRef = React.useRef(runtime);
+  const bootstrapConsumedCallbackRef = React.useRef(
+    props.onBootstrapRequestConsumed,
+  );
+  const latestBootstrapRequestIdRef = React.useRef<number | null>(
+    props.bootstrapRequest?.id ?? null,
+  );
+  const bootstrapMountedRef = React.useRef(true);
+  bootstrapRuntimeRef.current = runtime;
+  bootstrapConsumedCallbackRef.current = props.onBootstrapRequestConsumed;
+  latestBootstrapRequestIdRef.current = props.bootstrapRequest?.id ?? null;
+
+  React.useEffect(() => {
+    bootstrapMountedRef.current = true;
+    return () => {
+      bootstrapMountedRef.current = false;
+    };
+  }, []);
+
   React.useEffect(() => {
     const request = props.bootstrapRequest;
-    if (!request || consumedBootstrapRequestIdRef.current === request.id) {
+    if (
+      !request ||
+      !isSessionHydrated ||
+      consumedBootstrapRequestIdRef.current === request.id ||
+      bootstrapRequestInFlightIdRef.current === request.id
+    ) {
       return;
     }
 
-    consumedBootstrapRequestIdRef.current = request.id;
-    let cancelled = false;
+    bootstrapRequestInFlightIdRef.current = request.id;
     const sendBootstrapRequest = async () => {
       try {
-        if (!activeConversationIdRef.current) {
-          await runtime.threads.switchToNewThread();
+        logAssistantSidebar("bootstrap_send_start", {
+          requestId: request.id,
+          hasPrompt: Boolean(String(request.prompt || "").trim()),
+          attachmentCount: request.attachments?.length || 0,
+          activeConversationId: activeConversationIdRef.current || null,
+          isHydrated: isSessionHydrated,
+          conversationCount: conversationsRef.current.length,
+        });
+        await waitForThreadListHydration();
+        logAssistantSidebar("bootstrap_project_thread_ready", {
+          requestId: request.id,
+          activeConversationId: activeConversationIdRef.current || null,
+        });
+        if (
+          !bootstrapMountedRef.current ||
+          latestBootstrapRequestIdRef.current !== request.id
+        ) {
+          return;
         }
-        const composer = runtime.thread.composer;
+
+        const currentRuntime = bootstrapRuntimeRef.current;
+        const targetConversationId = activeConversationIdRef.current;
+        if (!targetConversationId) {
+          await currentRuntime.threads.switchToNewThread();
+        }
+        logAssistantSidebar("bootstrap_runtime_thread_ready", {
+          requestId: request.id,
+          activeConversationId: activeConversationIdRef.current || null,
+        });
+        if (
+          !bootstrapMountedRef.current ||
+          latestBootstrapRequestIdRef.current !== request.id
+        ) {
+          return;
+        }
+        const composer = currentRuntime.thread.composer;
+        logAssistantSidebar("bootstrap_composer_reset_start", {
+          requestId: request.id,
+        });
         await composer.reset();
+        logAssistantSidebar("bootstrap_composer_reset_finish", {
+          requestId: request.id,
+        });
         for (const attachment of request.attachments || []) {
-          if (cancelled) return;
+          if (
+            !bootstrapMountedRef.current ||
+            latestBootstrapRequestIdRef.current !== request.id
+          ) {
+            return;
+          }
           await composer.addAttachment(attachment);
         }
-        if (cancelled) return;
+        if (
+          !bootstrapMountedRef.current ||
+          latestBootstrapRequestIdRef.current !== request.id
+        ) {
+          return;
+        }
         composer.setText(String(request.prompt || ""));
         composer.send({ startRun: true });
-        props.onBootstrapRequestConsumed?.(request.id);
+        consumedBootstrapRequestIdRef.current = request.id;
+        bootstrapRequestInFlightIdRef.current = null;
+        logAssistantSidebar("bootstrap_send_sent", {
+          requestId: request.id,
+          activeConversationId: activeConversationIdRef.current || null,
+        });
+        bootstrapConsumedCallbackRef.current?.(request.id);
       } catch (error) {
-        consumedBootstrapRequestIdRef.current = null;
+        if (bootstrapRequestInFlightIdRef.current === request.id) {
+          bootstrapRequestInFlightIdRef.current = null;
+        }
+        logAssistantSidebar("bootstrap_send_failed", {
+          requestId: request.id,
+          error: getClientErrorMessage(error),
+        });
         console.error("[assistant-sidebar] bootstrap send failed", {
           error: getClientErrorMessage(error),
         });
@@ -3634,10 +4863,11 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     };
 
     void sendBootstrapRequest();
-    return () => {
-      cancelled = true;
-    };
-  }, [props, runtime]);
+  }, [
+    isSessionHydrated,
+    props.bootstrapRequest,
+    waitForThreadListHydration,
+  ]);
   const threadListReloadSignature = React.useMemo(
     () => buildConversationThreadListSignature(conversations),
     [conversations],
@@ -3711,9 +4941,27 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     () => ({
       ComposerFooter,
       ComposerInlineControls,
+      getCanvasDirectivePreview,
+      isCanvasDirectivePending: (directiveId: string) =>
+        Boolean(pendingCanvasReferenceAssets[directiveId]),
+      onComposerInputIntent: () => {
+        rememberComposerVisibleCursorOffset();
+        void handleCommitPendingCanvasReferences();
+      },
+      onComposerSendIntent: async () => {
+        return handleCommitPendingCanvasReferences();
+      },
       onSlashCommand: handleComposerSlashCommand,
     }),
-    [ComposerFooter, ComposerInlineControls, handleComposerSlashCommand],
+    [
+      ComposerFooter,
+      ComposerInlineControls,
+      getCanvasDirectivePreview,
+      handleCommitPendingCanvasReferences,
+      handleComposerSlashCommand,
+      pendingCanvasReferenceAssets,
+      rememberComposerVisibleCursorOffset,
+    ],
   );
 
   return (
@@ -3748,7 +4996,11 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
             } [&_[data-slot='sidebar-container']]:!absolute [&_[data-slot='sidebar-container']]:!h-full [&_[data-slot='sidebar-gap']]:!transition-[width,left,right] [&_[data-slot='sidebar-wrapper']]:!min-h-full`}
           >
             <ThreadListSidebar
-              className="z-20 h-full shadow-[18px_0_48px_rgba(15,23,42,0.12)]"
+              className={`z-20 h-full ${
+                isFullscreen
+                  ? "border-r border-slate-200/80 shadow-none"
+                  : "shadow-[18px_0_48px_rgba(15,23,42,0.12)]"
+              }`}
               style={
                 {
                   "--sidebar-width": isFullscreen ? "20rem" : "17rem",
@@ -3756,10 +5008,12 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
               }
             />
             <SidebarInset className="!m-0 min-h-0 overflow-hidden bg-[linear-gradient(180deg,#fafbfd_0%,#f4f6fa_100%)]">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 left-0 z-20 w-8 bg-[linear-gradient(to_right,rgba(15,23,42,0.14)_0%,rgba(15,23,42,0.07)_22%,rgba(15,23,42,0.025)_54%,rgba(15,23,42,0)_100%)] opacity-80"
-              />
+              {!isFullscreen ? (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 left-0 z-20 w-8 bg-[linear-gradient(to_right,rgba(15,23,42,0.14)_0%,rgba(15,23,42,0.07)_22%,rgba(15,23,42,0.025)_54%,rgba(15,23,42,0)_100%)] opacity-80"
+                />
+              ) : null}
               <AssistantSurfaceControls
                 assets={activeConversationAssets}
                 isFullscreen={isFullscreen}

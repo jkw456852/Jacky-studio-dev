@@ -6,11 +6,8 @@ import {
 } from "./api.ts";
 import { createLocalStudioUserAssetApi } from "./local-user-assets.ts";
 import {
-  getActiveQuickSkillPreference,
-  hydrateSkillDataWithPreferences,
   recordCustomSkillSuccessfulRun,
   removeCustomSkillPreference,
-  setActiveQuickSkillPreference,
   upsertCustomSkillPreference,
 } from "./preferences.ts";
 
@@ -126,7 +123,7 @@ test("recordCustomSkillSuccessfulRun writes latest successful prompt and summary
   });
 });
 
-test("custom skill names are sanitized before becoming active skill labels", async () => {
+test("custom skill names are sanitized before becoming stored labels", async () => {
   await withLocalAssetApi(async () => {
     const skillId = `custom-skill-dirty-${Date.now()}`;
 
@@ -139,22 +136,10 @@ test("custom skill names are sanitized before becoming active skill labels", asy
       },
     });
 
-    setActiveQuickSkillPreference({
-      id: skillId,
-      name: "Social Media Skill will clarify first",
-      iconName: "Sparkles",
-      config: {
-        isCustomSkill: true,
-        mode: "unified-sidebar-agent",
-      },
-    });
-
-    const activeSkill = getActiveQuickSkillPreference();
     const config = getStudioUserAssetApi().getSkillPreferences().customSkillConfigs?.[
       skillId
     ] as Record<string, unknown>;
 
-    assert.equal(activeSkill?.name, "Social Media");
     assert.equal(String(config?.name || ""), "Social Media");
   });
 });
@@ -241,33 +226,7 @@ test("recordCustomSkillSuccessfulRun seeds runtime memory for file-backed custom
   });
 });
 
-test("setActiveQuickSkillPreference seeds runtime overlay for file-backed custom skills", async () => {
-  await withLocalAssetApi(async () => {
-    const skillId = `custom-skill-active-file-only-${Date.now()}`;
-
-    setActiveQuickSkillPreference({
-      id: skillId,
-      name: "Carousel Repurpose",
-      iconName: "Sparkles",
-      config: {
-        isCustomSkill: true,
-        mode: "unified-sidebar-agent",
-        markdownAssetId: skillId,
-        summary: "Repurpose long-form content into a carousel.",
-      },
-    });
-
-    const config = getStudioUserAssetApi().getSkillPreferences().customSkillConfigs?.[
-      skillId
-    ] as Record<string, unknown>;
-
-    assert.equal(String(config?.name || ""), "Carousel Repurpose");
-    assert.equal(String(config?.markdownAssetId || ""), skillId);
-    assert.equal(Number(config?.lastUsedAt || 0) > 0, true);
-  });
-});
-
-test("removeCustomSkillPreference clears active custom skill and runtime overlay", async () => {
+test("removeCustomSkillPreference clears custom skill catalog metadata", async () => {
   await withLocalAssetApi(async () => {
     const skillId = `custom-skill-remove-${Date.now()}`;
 
@@ -281,24 +240,12 @@ test("removeCustomSkillPreference clears active custom skill and runtime overlay
       },
     });
 
-    setActiveQuickSkillPreference({
-      id: skillId,
-      name: "Skill To Remove",
-      iconName: "Sparkles",
-      config: {
-        isCustomSkill: true,
-        mode: "unified-sidebar-agent",
-        markdownAssetId: skillId,
-      },
-    });
-
     removeCustomSkillPreference(skillId);
 
     const snapshot = getStudioUserAssetApi().getSkillPreferences();
     assert.equal(snapshot.customSkillConfigs?.[skillId], undefined);
     assert.equal(snapshot.recentSkillIds?.includes(skillId), false);
     assert.equal(snapshot.pinnedSkillIds?.includes(skillId), false);
-    assert.equal(getActiveQuickSkillPreference(), null);
   });
 });
 
@@ -334,51 +281,6 @@ test("recordCustomSkillSuccessfulRun writes runtime memory for built-in frontsta
     assert.equal(
       String(config?.lastSuccessfulSummary || ""),
       "先统一品牌调性和受众，再给 KV 方向与执行顺序。",
-    );
-    assert.equal(Number(config?.successfulRuns || 0), 1);
-  });
-});
-
-test("hydrateSkillDataWithPreferences merges built-in frontstage runtime memory back into skill data", async () => {
-  await withLocalAssetApi(async () => {
-    const skillId = "social-carousel-system";
-
-    await recordCustomSkillSuccessfulRun({
-      skill: {
-        id: "autonomous-main-brain",
-        name: "社媒轮播",
-        iconName: "Layers",
-        config: {
-          allowAutonomousRouting: true,
-          mode: "unified-sidebar-agent",
-          frontstageSkillId: skillId,
-          routeIntent: "social",
-          routeLabel: "Carousel",
-        },
-      },
-      prompt: "做一套新品上市轮播。",
-      summary: "先锁封面 hook 和页序，再拆每页信息结构。",
-      outputText: "先给轮播主线，再给逐页文案与画面建议。",
-    });
-
-    const hydrated = hydrateSkillDataWithPreferences({
-      id: "autonomous-main-brain",
-      name: "社媒轮播",
-      iconName: "Layers",
-      config: {
-        allowAutonomousRouting: true,
-        mode: "unified-sidebar-agent",
-        frontstageSkillId: skillId,
-        routeIntent: "social",
-        routeLabel: "Carousel",
-      },
-    });
-
-    const config = hydrated?.config as Record<string, unknown> | undefined;
-    assert.equal(String(config?.lastSuccessfulPrompt || ""), "做一套新品上市轮播。");
-    assert.equal(
-      String(config?.lastSuccessfulSummary || ""),
-      "先锁封面 hook 和页序，再拆每页信息结构。",
     );
     assert.equal(Number(config?.successfulRuns || 0), 1);
   });

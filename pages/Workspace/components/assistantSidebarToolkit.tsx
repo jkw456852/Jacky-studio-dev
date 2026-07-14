@@ -17,6 +17,7 @@ import {
   assistantSidebarTavilyCrawlParameters,
   assistantSidebarTavilyExtractParameters,
   assistantSidebarTavilyMapParameters,
+  assistantSidebarUpscaleImageParameters,
   assistantSidebarWebSearchParameters,
 } from "../../../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
 
@@ -112,6 +113,14 @@ export default defineToolkit({
       "Generate or edit images with the configured AI SDK image model.",
     display: "standalone",
     parameters: assistantSidebarCreateImageParameters,
+    execute: externalTool(),
+    render: GenerateImageToolUI,
+  },
+  upscaleImage: {
+    description:
+      "Content-preserving AI upscale / super-resolution for an existing image. Do not redesign or regenerate the composition.",
+    display: "standalone",
+    parameters: assistantSidebarUpscaleImageParameters,
     execute: externalTool(),
     render: GenerateImageToolUI,
   },

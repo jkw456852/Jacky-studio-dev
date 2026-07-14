@@ -25,6 +25,40 @@ test("assistant sidebar composer keeps official mention and slash command wiring
   assert.match(thread, /<MessagePrimitive\.Parts\s+components=\{\{\s*Text:\s*DirectiveText/);
 });
 
+test("assistant sidebar keeps canvas and mark reference context hidden from visible chat", () => {
+  const directiveText = readSource("components/assistant-ui/directive-text.tsx");
+  const attachment = readSource("components/assistant-ui/attachment.tsx");
+  const thread = readSource("components/assistant-ui/thread.tsx");
+  const runtime = readSource(
+    "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx",
+  );
+
+  assert.match(directiveText, /\bstripHiddenAssistantReferenceText\b/);
+  assert.ok(directiveText.includes("\\[Canvas (?:mark )?reference\\]"));
+  assert.match(directiveText, /\bconst\s+visibleText\s*=\s*stripHiddenAssistantReferenceText\(text\)/);
+  assert.match(directiveText, /if\s*\(\s*!visibleText\s*\)\s*return\s+null\s*;/);
+  assert.match(attachment, /\bconst\s+isAssistantReferenceAttachment\b/);
+  assert.ok(attachment.includes("/^(?:canvas|mark)-/"));
+  assert.match(
+    attachment,
+    /renderUserMessageAttachment[\s\S]*?isAssistantReferenceAttachment\(attachment\)\s*\?\s*null/,
+  );
+  assert.match(
+    attachment,
+    /renderComposerAttachment[\s\S]*?isAssistantReferenceAttachment\(attachment\)\s*\?\s*null/,
+  );
+  assert.match(thread, /\bconst\s+isAssistantReferenceMessagePart\b/);
+  assert.match(thread, /\bassistantReferenceKind\b/);
+  assert.match(thread, /\bconst\s+UserMessageImagePart:\s*ImageMessagePartComponent\b/);
+  assert.match(thread, /\bconst\s+UserMessageFilePart:\s*FileMessagePartComponent\b/);
+  assert.match(thread, /Image:\s*UserMessageImagePart/);
+  assert.match(thread, /File:\s*UserMessageFilePart/);
+  assert.match(runtime, /assistantReferenceKind:\s*"canvas"/);
+  assert.match(runtime, /assistantReferenceKind:\s*"mark"/);
+  assert.match(runtime, /image:\s*modelImageUrl/);
+  assert.doesNotMatch(runtime, /type:\s*"image"[\s\S]{0,120}image:\s*previewUrl/);
+});
+
 test("assistant sidebar does not wire textarea input history into Lexical composer", () => {
   const thread = readSource("components/assistant-ui/thread.tsx");
 

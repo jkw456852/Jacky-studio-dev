@@ -177,10 +177,6 @@ import {
 import {
   splitEcommerceImageAnalysisTextFieldList,
 } from "../utils/ecommerce-image-analysis.ts";
-import {
-  getActiveQuickSkillPreference,
-  SKILL_PREFERENCES_UPDATED_EVENT,
-} from "../services/runtime-assets/preferences";
 import { buildEcommerceTextLayerPlan } from "../utils/ecommerce-text-layer-plan";
 import type { DesignTaskMode } from "../types/common.ts";
 import type {
@@ -1322,6 +1318,16 @@ const Workspace: React.FC = () => {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null,
   );
+  const [assistantReferenceSelection, setAssistantReferenceSelection] = useState<{
+    elementId: string | null;
+    nonce: number;
+  }>({ elementId: null, nonce: 0 });
+  const handleAssistantReferenceElementSelect = useCallback((elementId: string) => {
+    setAssistantReferenceSelection((current) => ({
+      elementId,
+      nonce: current.nonce + 1,
+    }));
+  }, []);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const textEditDraftRef = useRef<Record<string, string>>({});
   const pendingSelectAllTextIdRef = useRef<string | null>(null);
@@ -1439,9 +1445,6 @@ const Workspace: React.FC = () => {
   const [conversations, setConversations] = useState<ConversationSession[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>("");
   const [isProjectHydrated, setIsProjectHydrated] = useState(!id);
-  const [persistedActiveQuickSkill, setPersistedActiveQuickSkill] = useState<
-    ChatMessage["skillData"] | undefined
-  >(() => getActiveQuickSkillPreference() || undefined);
   const isLoadingRecord = useRef(false);
   const suspendAutoSaveUntilRef = useRef(0);
 
@@ -1468,28 +1471,6 @@ const Workspace: React.FC = () => {
       setIsAssistantFullscreen(false);
     }
   }, [isAssistantFullscreen, showAssistant]);
-
-  useEffect(() => {
-    const syncPersistedActiveQuickSkill = () => {
-      setPersistedActiveQuickSkill(getActiveQuickSkillPreference() || undefined);
-    };
-
-    syncPersistedActiveQuickSkill();
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.addEventListener(
-      SKILL_PREFERENCES_UPDATED_EVENT,
-      syncPersistedActiveQuickSkill as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        SKILL_PREFERENCES_UPDATED_EVENT,
-        syncPersistedActiveQuickSkill as EventListener,
-      );
-    };
-  }, []);
 
   useEffect(() => {
     const syncUnreadCount = () => {
@@ -1525,9 +1506,7 @@ const Workspace: React.FC = () => {
   const activeBlockId = useAgentStore((s) => s.composer.activeBlockId);
   const selectionIndex = useAgentStore((s) => s.composer.selectionIndex);
   const selectionRect = useAgentStore((s) => s.composer.selectionRect);
-  const [selectedChipId, setSelectedChipId] = useState<string | null>(null); // For arrow key chip selection
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [hoveredChipId, setHoveredChipId] = useState<string | null>(null); // For hover preview
 
   // Legacy prompt/attachment draft state is represented by inputBlocks now.
   // The assistant-ui sidebar sends through its official composer runtime.
@@ -2449,7 +2428,6 @@ const Workspace: React.FC = () => {
       // Only blank-canvas click should clear current selection and related popovers.
       setSelectedElementId(null);
       setSelectedElementIds([]);
-      setSelectedChipId(null);
       setEditingTextId(null);
       setShowFontPicker(false);
       setShowModelPicker(false);
@@ -3102,12 +3080,10 @@ const Workspace: React.FC = () => {
     };
   }, [elements, setElements]);
 
-  const { removeInputBlock, handleSaveMarkerLabel } =
+  const { handleSaveMarkerLabel } =
     useWorkspaceMarkerInputActions({
       markersRef,
       updateMarkersAndSaveHistory,
-      setActiveBlockId,
-      setInputBlocks,
       setEditingMarkerId,
     });
 
@@ -4230,7 +4206,6 @@ const Workspace: React.FC = () => {
     setInputBlocks,
     setModelMode,
     setWebEnabled,
-    setImageModelEnabled,
     setCreationMode,
     setAssistantBootstrapRequest,
     setElements,
@@ -4269,7 +4244,6 @@ const Workspace: React.FC = () => {
     projectTitle,
     currentInputBlocks: inputBlocks,
     creationMode,
-    activeQuickSkill: persistedActiveQuickSkill,
     modelMode,
     webEnabled,
     isLoadingRecordRef: isLoadingRecord,
@@ -4855,6 +4829,7 @@ const Workspace: React.FC = () => {
     setIsPickingFromCanvas,
     setSelectedElementId,
     setSelectedElementIds,
+    onReferenceElementSelect: handleAssistantReferenceElementSelect,
     textEditDraftRef,
     pendingSelectAllTextIdRef,
     setEditingTextId,
@@ -5003,14 +4978,6 @@ const Workspace: React.FC = () => {
         textareaRef.current?.focus();
       }
 
-      if ((e.key === "Backspace" || e.key === "Delete") && selectedChipId) {
-        e.preventDefault();
-        e.stopPropagation();
-        removeInputBlock(selectedChipId);
-        setSelectedChipId(null);
-        return;
-      }
-
       if (
         isInTextInput &&
         (e.key === "Backspace" || e.key === "Delete") &&
@@ -5131,7 +5098,6 @@ const Workspace: React.FC = () => {
     historyStep,
     elements,
     markers,
-    selectedChipId,
     editingTextId,
     copyCanvasSelectionToClipboard,
     createReferencedGenImageFromSelection,
@@ -5154,6 +5120,10 @@ const Workspace: React.FC = () => {
       elementById,
       selectedElementId,
       selectedElementIds,
+      referenceElementId: assistantReferenceSelection.elementId,
+      referenceSelectionNonce: assistantReferenceSelection.nonce,
+      markers,
+      selectedMarkerId: editingMarkerId,
       isHistoryExpanded,
       setIsHistoryExpanded,
       handleElementMouseDown: canvasHandleElementMouseDown,
@@ -5193,6 +5163,15 @@ const Workspace: React.FC = () => {
         setAssistantBootstrapRequest((current) =>
           current?.id === requestId ? null : current,
         );
+        if (
+          location.state?.initialPrompt ||
+          location.state?.initialAttachments
+        ) {
+          navigate(location.pathname, {
+            replace: true,
+            state: null,
+          });
+        }
       },
       imageGenerationUi: {
         autoModelSelect: modelPreferences.autoModelSelect,
@@ -5238,8 +5217,6 @@ const Workspace: React.FC = () => {
     deleteSelectedElement,
     markers,
     dragOffsetsRef,
-    hoveredChipId,
-    inputBlocks,
     editingMarkerId,
     setEditingMarkerId,
     editingMarkerLabel,

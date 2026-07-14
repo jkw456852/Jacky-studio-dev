@@ -111,6 +111,27 @@ export const assistantSidebarCreateImageParameters = z.object({
     .describe("Optional number of separate images to generate. For multi-image sets, detail pages, or listing assets, use count instead of asking for one collage/grid image. XC Studio does not impose a project-level maximum; the configured AI SDK provider decides what it can fulfill."),
 });
 
+export const assistantSidebarUpscaleImageParameters = z.object({
+  image: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional source image URL, data URL, or base64 string to upscale. If omitted, XC Studio uses the latest available image reference from the conversation."),
+  images: z
+    .array(z.string().min(1))
+    .optional()
+    .describe("Optional source image candidates. XC Studio uses the first valid image for content-preserving upscale."),
+  resolution: z
+    .enum(["2K", "4K", "8K"])
+    .optional()
+    .describe("Target upscale resolution. 4K means the configured image provider's 4K output mode while preserving the source aspect ratio."),
+  prompt: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional extra enhancement instruction. Do not use this to redesign the image."),
+});
+
 export const assistantSidebarListStudioSkillsParameters = z.object({
   query: z
     .string()
@@ -187,6 +208,10 @@ export type AssistantSidebarCreateTargetElementArgs = z.infer<
 
 export type AssistantSidebarCreateImageArgs = z.infer<
   typeof assistantSidebarCreateImageParameters
+>;
+
+export type AssistantSidebarUpscaleImageArgs = z.infer<
+  typeof assistantSidebarUpscaleImageParameters
 >;
 
 export type AssistantSidebarListStudioSkillsArgs = z.infer<

@@ -5,7 +5,7 @@ import { useImageHostStore } from '../stores/imageHost.store.ts';
 import {
   normalizeImageDataUrlString as normalizeImageDataUrlStringImpl,
   isNormalizedImageDataUrl as isNormalizedImageDataUrlImpl,
-} from './agents/data-url-helpers.ts';
+} from './image-generation/core/image-data-url.ts';
 
 export const normalizeImageDataUrlString = normalizeImageDataUrlStringImpl;
 export const isNormalizedImageDataUrl = isNormalizedImageDataUrlImpl;

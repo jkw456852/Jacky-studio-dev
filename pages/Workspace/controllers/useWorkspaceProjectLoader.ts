@@ -11,9 +11,8 @@ import {
   rememberLoadedProjectConversationsForPersistence,
   saveProject,
 } from "../../../services/storage.ts";
-import { createInputBlockId, useAgentStore } from "../../../stores/agent.store.ts";
+import { useAgentStore } from "../../../stores/agent.store.ts";
 import { getStudioUserAssetApi } from "../../../services/runtime-assets/api.ts";
-import { setActiveQuickSkillPreference } from "../../../services/runtime-assets/preferences.ts";
 import type {
   CanvasElement,
   ChatMessage,
@@ -30,9 +29,9 @@ import {
   type HistoryState,
 } from './workspacePersistence.ts';
 import {
+  resolveAssistantThreadHeadId,
   sliceConversationAssistantThreadToHead,
 } from "./assistantThreadRepository.ts";
-import { getConversationVisibleMessages } from "./assistantThreadLegacyProjection.ts";
 import {
   isConversationArchived,
   sortConversationsForSidebar,
@@ -65,11 +64,6 @@ import {
 type WorkspaceBootstrapLocationState = {
   initialPrompt?: string;
   initialAttachments?: File[];
-  initialModelMode?: "thinking" | "fast";
-  initialWebEnabled?: boolean;
-  initialImageModel?: string;
-  initialCreationMode?: "agent" | "image" | "video";
-  initialSkillData?: ChatMessage["skillData"];
   backgroundUrl?: string;
   backgroundType?: string;
 };
@@ -103,7 +97,6 @@ type UseWorkspaceProjectLoaderArgs = {
   ) => void;
   setModelMode: (mode: "thinking" | "fast") => void;
   setWebEnabled: (enabled: boolean) => void;
-  setImageModelEnabled: (enabled: boolean) => void;
   setCreationMode?: (mode: "agent" | "image" | "video") => void;
   setAssistantBootstrapRequest?: (request: {
     id: number;
@@ -950,24 +943,19 @@ const buildLoadedConversations = (
 
   const sanitizeLoadedAssistantThread = (
     conversation: ConversationSession,
-    visibleMessages: ChatMessage[],
   ) => {
-    // assistantThread is the authoritative assistant-ui source.
-    // Legacy conversation.messages is display-only fallback data.
     const thread = conversation.assistantThread;
 
     if (!safeMode) {
       return thread;
     }
 
-    const fallbackHeadId =
-      String(thread?.headId || "").trim() ||
-      String(visibleMessages.at(-1)?.id || "").trim();
+    const headId = resolveAssistantThreadHeadId(thread);
 
-    return fallbackHeadId
+    return headId
       ? sliceConversationAssistantThreadToHead(
           thread,
-          fallbackHeadId,
+          headId,
         )
       : undefined;
   };
@@ -975,17 +963,14 @@ const buildLoadedConversations = (
   if (!safeMode) {
     return {
       conversations: trimmedConversations.map((conversation) => {
-        const visibleMessages = getConversationVisibleMessages(conversation).map(
+        const legacyMessages = (conversation.messages || []).map(
           clearLoadedMessageGeneratingState,
         );
         return {
           ...conversation,
           draft: sanitizeLoadedConversationDraft(conversation.draft),
-          assistantThread: sanitizeLoadedAssistantThread(
-            conversation,
-            visibleMessages,
-          ),
-          messages: visibleMessages,
+          assistantThread: sanitizeLoadedAssistantThread(conversation),
+          messages: legacyMessages,
         };
       }),
       activeConversationId,
@@ -994,17 +979,14 @@ const buildLoadedConversations = (
 
   const safeConversations = trimmedConversations
     .map((conversation) => {
-      const visibleMessages = getConversationVisibleMessages(conversation)
+      const legacyMessages = (conversation.messages || [])
         .slice(-SAFE_LOAD_ACTIVE_MESSAGE_LIMIT)
         .map(sanitizeLoadedMessage);
       return {
         ...conversation,
         draft: sanitizeLoadedConversationDraft(conversation.draft),
-        assistantThread: sanitizeLoadedAssistantThread(
-          conversation,
-          visibleMessages,
-        ),
-        messages: visibleMessages,
+        assistantThread: sanitizeLoadedAssistantThread(conversation),
+        messages: legacyMessages,
       };
     });
 
@@ -1214,7 +1196,6 @@ export const useWorkspaceProjectLoader = ({
   setInputBlocks,
   setModelMode,
   setWebEnabled,
-  setImageModelEnabled,
   setCreationMode,
   setAssistantBootstrapRequest,
   setElements,
@@ -1330,9 +1311,6 @@ export const useWorkspaceProjectLoader = ({
                     : [{ id: "init", type: "text", text: "" }],
                 );
                 setCreationMode?.(activeConversation.draft?.creationMode || "agent");
-                setActiveQuickSkillPreference(
-                  activeConversation.draft?.quickSkill || null,
-                );
                 setModelMode(preferredChatModelMode);
                 setWebEnabled(preferredChatWebEnabled);
               }
@@ -1340,7 +1318,6 @@ export const useWorkspaceProjectLoader = ({
               setActiveConversationId(createConversationId());
               setInputBlocks([{ id: "init", type: "text", text: "" }]);
               setCreationMode?.("agent");
-              setActiveQuickSkillPreference(null);
             }
             setHistory([
               {
@@ -1358,14 +1335,36 @@ export const useWorkspaceProjectLoader = ({
             console.log("[Workspace] New project, saving initial record");
             setZoom(100);
             setPan({ x: 0, y: 0 });
+            const now = Date.now();
+            const initialConversationId = createConversationId();
+            const initialConversation: ConversationSession = {
+              id: initialConversationId,
+              title: "新对话",
+              messages: [],
+              assistantThread: {
+                headId: null,
+                messages: [],
+              },
+              createdAt: now,
+              updatedAt: now,
+              autoTitle: true,
+              draft: {
+                inputBlocks: [{ id: "init", type: "text", text: "" }],
+                creationMode: "agent",
+              },
+            };
+            setConversations([initialConversation]);
+            setActiveConversationId(initialConversationId);
+            setInputBlocks([{ id: "init", type: "text", text: "" }]);
+            setCreationMode?.("agent");
             await saveProject({
               id,
               title: "未命名项目",
-              updatedAt: formatDate(Date.now()),
+              updatedAt: formatDate(now),
               elements: [],
               markers: [],
               thumbnail: "",
-              conversations: [],
+              conversations: [initialConversation],
             });
           }
         } catch (error) {
@@ -1392,61 +1391,6 @@ export const useWorkspaceProjectLoader = ({
     if (locationState?.initialPrompt || locationState?.initialAttachments) {
       if (!initialPromptProcessedRef.current) {
         initialPromptProcessedRef.current = true;
-        const blocks: Array<{
-          id: string;
-          type: "text" | "file";
-          text?: string;
-          file?: File;
-        }> = [];
-
-        if (locationState.initialAttachments) {
-          locationState.initialAttachments.forEach((file, index) => {
-            blocks.push({
-              id: createInputBlockId("file"),
-              type: "file",
-              file,
-            });
-            blocks.push({
-              id: createInputBlockId("text"),
-              type: "text",
-              text: "",
-            });
-          });
-        }
-
-        if (locationState.initialPrompt) {
-          if (blocks.length > 0 && blocks[blocks.length - 1].type === "text") {
-            blocks[blocks.length - 1].text = locationState.initialPrompt;
-          } else {
-            blocks.push({
-              id: createInputBlockId("text"),
-              type: "text",
-              text: locationState.initialPrompt,
-            });
-          }
-        }
-
-        if (blocks.length === 0) {
-          blocks.push({ id: "init", type: "text", text: "" });
-        }
-
-        setInputBlocks(blocks);
-
-        if (locationState.initialModelMode) {
-          setModelMode(locationState.initialModelMode);
-        }
-        if (locationState.initialWebEnabled) {
-          setWebEnabled(locationState.initialWebEnabled);
-        }
-        if (locationState.initialImageModel) {
-          setImageModelEnabled(true);
-        }
-        if (locationState.initialCreationMode && setCreationMode) {
-          setCreationMode(locationState.initialCreationMode);
-        }
-        if (locationState.initialSkillData) {
-          setActiveQuickSkillPreference(locationState.initialSkillData);
-        }
 
         setAssistantBootstrapRequest?.({
           id: Date.now(),

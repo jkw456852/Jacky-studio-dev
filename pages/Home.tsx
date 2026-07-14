@@ -1,53 +1,43 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Plus,
   Bell,
-  Check,
   ChevronDown,
-  Zap,
-  Globe,
   Box,
   ArrowUp,
-  Lightbulb,
-  Paperclip,
+  Mic,
   Image as ImageIcon,
-  Video,
   X,
   FileText,
   Trash2,
 } from "lucide-react";
-import type { ChatMessage, ImageModel, Project, VideoModel } from "../types";
+import type { Project } from "../types";
 import SystemAnnouncementModal from "../components/SystemAnnouncementModal";
 import {
   deleteProject,
   getProject,
   getProjectSummaries,
 } from "../services/storage";
-import {
-  getActiveQuickSkillPreference,
-  SKILL_PREFERENCES_UPDATED_EVENT,
-} from "../services/runtime-assets/preferences";
-import {
-  getFrontstageSkillLabelKind,
-  normalizeFrontstageSkillPresentation,
-} from "../services/runtime-assets/skill-identity";
 import { deleteTopicMemory } from "../services/topic-memory";
 import { getMemoryKey } from "../services/topicMemory/key";
 import Sidebar from "../components/Sidebar";
+import {
+  buildGptImageInspirationImageCandidates,
+  createGptImageInspirationShuffleSeed,
+  fetchGptImageInspiration,
+  GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS,
+  shuffleGptImageInspirationCases,
+  type GptImageInspirationCase,
+  type GptImageInspirationPayload,
+} from "../services/gpt-image-inspiration";
 import {
   getUnreadAnnouncementCount,
   markAllAnnouncementsAsRead,
   subscribeAnnouncementUnreadUpdates,
   SYSTEM_ANNOUNCEMENTS,
 } from "../services/systemAnnouncements";
-import { useWorkspaceModelPreferences } from "./Workspace/controllers/useWorkspaceModelPreferences";
-import {
-  getMappedModelConfigs,
-  getMappedModelDisplaySummary,
-  getModelDisplayLabel,
-} from "../services/provider-settings";
 import { ROUTES, createNewWorkspacePath, workspacePath } from "../utils/routes";
 
 const toMemoryKey = (workspaceId: string, conversationId: string): string => {
@@ -96,419 +86,56 @@ const Header: React.FC<HeaderProps> = ({
   </header>
 );
 
-type HomeCreationMode = "agent" | "image" | "video";
-
-const CLEAN_HOME_MODE_OPTIONS: Array<{
-  id: HomeCreationMode;
-  label: string;
-  icon: React.ReactNode;
-}> = [
-  { id: "agent", label: "\u667a\u80fd\u5bf9\u8bdd", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
-  { id: "image", label: "\u56fe\u7247", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
-  { id: "video", label: "\u89c6\u9891", icon: <Video size={14} strokeWidth={2.2} /> },
-];
-
 const HOME_ICON_BUTTON_CLASS =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200";
-const HOME_SECONDARY_BUTTON_CLASS =
-  "bg-white text-slate-500 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)] hover:bg-slate-50 hover:text-slate-700";
-const HOME_MODE_PILL_CLASS =
-  "inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[12px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900";
-const HOME_FLOATING_PANEL_CLASS =
-  "overflow-hidden rounded-[20px] border border-slate-200/85 bg-white/97 shadow-[0_18px_44px_-28px_rgba(15,23,42,0.22)] backdrop-blur-md";
+const HOME_GEMINI_GHOST_BUTTON_CLASS =
+  `${HOME_ICON_BUTTON_CLASS} text-[#202124] hover:bg-[#3c4043]/6`;
+const DAILY_INSPIRATION_COUNT = 72;
 
-const HOME_MODE_OPTIONS: Array<{
-  id: HomeCreationMode;
-  label: string;
-  icon: React.ReactNode;
-}> = [
-  { id: "agent", label: "智能对话", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
-  { id: "image", label: "图片", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
-  { id: "video", label: "视频", icon: <Video size={14} strokeWidth={2.2} /> },
-];
-
-const MODE_OPTIONS: Array<{
-  id: HomeCreationMode;
-  label: string;
-  icon: React.ReactNode;
-}> = [
-  { id: "agent", label: "Agent", icon: <Lightbulb size={14} strokeWidth={2.4} /> },
-  { id: "image", label: "图片", icon: <ImageIcon size={14} strokeWidth={2.2} /> },
-  { id: "video", label: "视频", icon: <Video size={14} strokeWidth={2.2} /> },
-];
-
-type HomeModelPreferenceTab = "image" | "video" | "3d";
-
-type HomeToolbarModelOption = {
-  optionKey?: string;
-  id: string;
-  name: string;
-  desc: string;
-  time?: string;
-  badge?: string;
-  providerId?: string | null;
-};
-
-const HOME_MODEL_OPTIONS: Record<HomeModelPreferenceTab, HomeToolbarModelOption[]> = {
-  image: [
-    {
-      id: "Nano Banana Pro",
-      name: "Nano Banana Pro",
-      desc: "高质量细节优先，适合正式出图。",
-      time: "~20s",
-    },
-    {
-      id: "NanoBanana2",
-      name: "Nano Banana 2",
-      desc: "更快一点，适合大量试图。",
-      time: "~15s",
-    },
-    {
-      id: "Seedream5.0",
-      name: "Seedream 5.0",
-      desc: "偏电影感和质感表现。",
-      time: "~15s",
-    },
-    {
-      id: "GPT Image 2",
-      name: "GPT Image 2",
-      desc: "适合 OpenAI 图像链路。",
-      time: "~30s",
-    },
-  ],
-  video: [
-    {
-      id: "veo-3.1-fast-generate-preview",
-      name: "Veo 3.1 Fast",
-      desc: "出片更快，适合快速预览。",
-      time: "~10s",
-      badge: "极速版",
-    },
-    {
-      id: "veo-3.1-generate-preview",
-      name: "Veo 3.1 Pro",
-      desc: "质量优先，适合正式视频生成。",
-      time: "~180s",
-      badge: "专业版",
-    },
-    {
-      id: "sora-2",
-      name: "Sora 2",
-      desc: "适合高表现力视频任务。",
-      time: "~300s",
-    },
-  ],
-  "3d": [
-    {
-      id: "Tripo",
-      name: "Tripo",
-      desc: "默认 3D 生成模型。",
-    },
-  ],
-};
-
-const buildHomeModelOptions = (
-  category: "image" | "video",
-): HomeToolbarModelOption[] => {
-  const mapped = getMappedModelConfigs(category).map((config) => ({
-    optionKey: config.raw || `${config.providerId || "default"}::${config.modelId}`,
-    id: category === "image" ? getModelDisplayLabel(config.modelId) : config.modelId,
-    name: getModelDisplayLabel(config.modelId),
-    providerId: config.providerId || null,
-    desc: config.providerName
-      ? `当前映射到 ${config.providerName}`
-      : "当前已在设置中映射",
-  }));
-
-  return mapped.length > 0 ? mapped : HOME_MODEL_OPTIONS[category];
-};
-
-const HomeModelPreferencePopover: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-  modelPreferenceTab: HomeModelPreferenceTab;
-  setModelPreferenceTab: (tab: HomeModelPreferenceTab) => void;
-  autoModelSelect: boolean;
-  setAutoModelSelect: (value: boolean) => void;
-  preferredImageModel: ImageModel;
-  setPreferredImageModel: (value: ImageModel) => void;
-  preferredImageProviderId: string | null;
-  setPreferredImageProviderId: (value: string | null) => void;
-  preferredVideoModel: VideoModel;
-  setPreferredVideoModel: (value: VideoModel) => void;
-  preferredVideoProviderId: string | null;
-  setPreferredVideoProviderId: (value: string | null) => void;
-  preferred3DModel: string;
-  setPreferred3DModel: (value: string) => void;
-}> = ({
-  isOpen,
-  onClose,
-  anchorRef,
-  modelPreferenceTab,
-  setModelPreferenceTab,
-  autoModelSelect,
-  setAutoModelSelect,
-  preferredImageModel,
-  setPreferredImageModel,
-  preferredImageProviderId,
-  setPreferredImageProviderId,
-  preferredVideoModel,
-  setPreferredVideoModel,
-  preferredVideoProviderId,
-  setPreferredVideoProviderId,
-  preferred3DModel,
-  setPreferred3DModel,
-}) => {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-
-  const mappedImageSummary = getMappedModelDisplaySummary("image");
-  const mappedVideoSummary = getMappedModelDisplaySummary("video");
-  const mappedScriptSummary = getMappedModelDisplaySummary("script");
-
-  const visibleImageOptions = useMemo(() => buildHomeModelOptions("image"), []);
-  const visibleVideoOptions = useMemo(() => buildHomeModelOptions("video"), []);
-  const visible3DOptions = HOME_MODEL_OPTIONS["3d"];
+const HomeInspirationImage: React.FC<{
+  alt: string;
+  className?: string;
+  src: string;
+}> = ({ alt, className, src }) => {
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [exhausted, setExhausted] = useState(false);
+  const candidates = React.useMemo(
+    () => buildGptImageInspirationImageCandidates(src),
+    [src],
+  );
 
   useEffect(() => {
-    if (!isOpen) return;
+    setCandidateIndex(0);
+    setExhausted(false);
+  }, [src]);
 
-    const syncPosition = () => {
-      if (!anchorRef.current) return;
-      setAnchorRect(anchorRef.current.getBoundingClientRect());
-    };
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (panelRef.current?.contains(target)) return;
-      if (anchorRef.current?.contains(target)) return;
-      onClose();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    syncPosition();
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("scroll", syncPosition, true);
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("scroll", syncPosition, true);
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [anchorRef, isOpen, onClose]);
-
-  const currentOptions =
-    modelPreferenceTab === "video"
-      ? visibleVideoOptions
-      : modelPreferenceTab === "image"
-        ? visibleImageOptions
-        : visible3DOptions;
-
-  const currentValue =
-    modelPreferenceTab === "image"
-      ? preferredImageModel
-      : modelPreferenceTab === "video"
-        ? preferredVideoModel
-        : preferred3DModel;
+  if (!candidates[candidateIndex] || exhausted) {
+    return (
+      <div
+        className={`flex min-h-[160px] items-center justify-center bg-[#f3f3f1] px-4 text-center text-xs leading-5 text-slate-400 ${
+          className || ""
+        }`}
+      >
+        {alt || "灵感图片加载失败"}
+      </div>
+    );
+  }
 
   return (
-    <AnimatePresence>
-      {isOpen && anchorRect ? (
-        <motion.div
-          ref={panelRef}
-          initial={{ opacity: 0, y: 12, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.98 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-          className="fixed z-[95] w-[350px] max-w-[calc(100vw-32px)] rounded-[32px] border border-slate-100 bg-white p-6 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)]"
-          style={{
-            top: Math.max(16, anchorRect.top - 24 - 540),
-            left: Math.min(
-              Math.max(16, anchorRect.right - 350),
-              window.innerWidth - 366,
-            ),
-          }}
-        >
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="text-[17px] font-bold tracking-tight text-slate-900">
-              模型偏好
-            </h3>
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                自动选择
-              </span>
-              <button
-                type="button"
-                onClick={() => setAutoModelSelect(!autoModelSelect)}
-                className={`relative h-6 w-11 rounded-full transition-all duration-300 ${
-                  autoModelSelect ? "bg-black" : "bg-slate-200 p-0.5"
-                }`}
-              >
-                <motion.div
-                  animate={{ x: autoModelSelect ? 24 : 2 }}
-                  className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-6 flex rounded-2xl bg-slate-100/70 p-1.5">
-            {(["image", "video", "3d"] as HomeModelPreferenceTab[]).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setModelPreferenceTab(tab)}
-                className={`flex-1 rounded-xl py-2 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 ${
-                  modelPreferenceTab === tab
-                    ? "bg-white text-black shadow-sm"
-                    : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-4 px-1 pb-2">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                设置映射
-              </div>
-              <div className="mt-2 text-[12px] font-semibold leading-6 text-slate-700">
-                图像：{mappedImageSummary}
-              </div>
-              <div className="text-[12px] font-semibold leading-6 text-slate-700">
-                视频：{mappedVideoSummary}
-              </div>
-              <div className="text-[12px] font-semibold leading-6 text-slate-700">
-                文本：{mappedScriptSummary}
-              </div>
-            </div>
-
-            <div className="text-[11px] font-bold uppercase text-slate-600">
-              {modelPreferenceTab === "image"
-                ? "图像"
-                : modelPreferenceTab === "video"
-                  ? "视频"
-                  : "3D"}{" "}
-              生成调度模型
-            </div>
-
-            <input
-              type="text"
-              value={currentValue}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (modelPreferenceTab === "image") {
-                  setPreferredImageModel(value as ImageModel);
-                  setPreferredImageProviderId(null);
-                } else if (modelPreferenceTab === "video") {
-                  setPreferredVideoModel(value as VideoModel);
-                  setPreferredVideoProviderId(null);
-                } else {
-                  setPreferred3DModel(value);
-                }
-                setAutoModelSelect(false);
-              }}
-              className={`w-full rounded-xl border bg-slate-50/60 px-4 py-3 text-[13px] font-bold text-slate-800 outline-none transition-all hover:bg-white focus:bg-white focus:ring-4 focus:ring-black/5 ${
-                !autoModelSelect
-                  ? "border-black"
-                  : "border-slate-200 focus:border-black"
-              }`}
-            />
-
-            <div className="mt-2 flex max-h-[220px] flex-col gap-1.5 overflow-y-auto border-b border-slate-100 pb-4 pr-2 select-none custom-scrollbar">
-              {currentOptions.map((preset) => {
-                const isSelected =
-                  modelPreferenceTab === "image"
-                    ? currentValue === preset.id &&
-                      (autoModelSelect ||
-                        (preset.providerId || null) ===
-                          (preferredImageProviderId || null))
-                    : modelPreferenceTab === "video"
-                      ? currentValue === preset.id &&
-                        (autoModelSelect ||
-                          (preset.providerId || null) ===
-                            (preferredVideoProviderId || null))
-                      : currentValue === preset.id;
-
-                return (
-                  <button
-                    key={preset.optionKey || preset.id}
-                    type="button"
-                    onClick={() => {
-                      if (modelPreferenceTab === "image") {
-                        setPreferredImageModel(preset.id as ImageModel);
-                        setPreferredImageProviderId(preset.providerId || null);
-                      } else if (modelPreferenceTab === "video") {
-                        setPreferredVideoModel(preset.id as VideoModel);
-                        setPreferredVideoProviderId(preset.providerId || null);
-                      } else {
-                        setPreferred3DModel(preset.id);
-                      }
-                      setAutoModelSelect(false);
-                      onClose();
-                    }}
-                    className={`rounded-2xl border p-3 text-left transition-all ${
-                      isSelected
-                        ? "border-slate-200/70 bg-slate-50/80 shadow-sm"
-                        : "border-transparent bg-transparent hover:border-slate-100 hover:bg-slate-50/60"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="mb-0.5 flex items-center gap-2">
-                          <span
-                            className={`text-[14px] font-bold ${
-                              isSelected ? "text-slate-900" : "text-slate-700"
-                            }`}
-                          >
-                            {preset.name}
-                          </span>
-                          {preset.badge ? (
-                            <span className="rounded-md border border-blue-100/50 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-500">
-                              {preset.badge}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="text-xs font-medium text-slate-500">
-                          {preset.desc}
-                        </div>
-                        {preset.time ? (
-                          <div className="mt-1.5 inline-flex rounded-md bg-slate-100/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">
-                            {preset.time}
-                          </div>
-                        ) : null}
-                      </div>
-                      {isSelected ? (
-                        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white shadow-sm">
-                          <Check size={12} className="text-black" strokeWidth={3} />
-                        </div>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="pt-2 text-[11px] font-medium leading-relaxed text-slate-400">
-              这里改的是和侧边栏同一份模型偏好。后面你在工作台里继续出图或出视频，会沿用这套设置。
-            </p>
-          </div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+    <img
+      src={candidates[candidateIndex]}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => {
+        if (candidateIndex < candidates.length - 1) {
+          setCandidateIndex((current) => current + 1);
+          return;
+        }
+        setExhausted(true);
+      }}
+    />
   );
 };
 
@@ -661,53 +288,21 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [prompt, setPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const recentProjectsPreview = recentProjects.slice(0, 20);
+  const [inspirationPayload, setInspirationPayload] =
+    useState<GptImageInspirationPayload | null>(null);
+  const [inspirationError, setInspirationError] = useState("");
+  const [inspirationShuffleSeed] = useState(
+    createGptImageInspirationShuffleSeed,
+  );
 
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentPreviewUrlMapRef = useRef<Map<File, string>>(new Map());
-  const modelPreferenceAnchorRef = useRef<HTMLButtonElement>(null);
-  const modeMenuRef = useRef<HTMLDivElement>(null);
-  const modeMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const [modelMode, setModelMode] = useState<"thinking" | "fast">("fast");
-  const [creationMode, setCreationMode] = useState<HomeCreationMode>("agent");
-  const [activeQuickSkill, setActiveQuickSkill] = useState<ChatMessage["skillData"] | null>(
-    () => normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
-  );
-
-  const [webEnabled, setWebEnabled] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isAnnouncementOpen, setIsAnnouncementOpen] = useState(false);
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
-  const [preferredImageModelLabel, setPreferredImageModelLabel] =
-    useState("Nano Banana Pro");
-  const [showModeMenu, setShowModeMenu] = useState(false);
-
-  const {
-    modelPreferences: {
-      showModelPreference,
-      setShowModelPreference,
-      modelPreferenceTab,
-      setModelPreferenceTab,
-      autoModelSelect,
-      setAutoModelSelect,
-      preferredImageModel,
-      setPreferredImageModel,
-      preferredImageProviderId,
-      setPreferredImageProviderId,
-      preferredVideoModel,
-      setPreferredVideoModel,
-      preferredVideoProviderId,
-      setPreferredVideoProviderId,
-      preferred3DModel,
-      setPreferred3DModel,
-    },
-  } = useWorkspaceModelPreferences({
-    modelMode,
-    clearMessages: () => {},
-    setModelMode,
-  });
 
   const loadRecentProjects = async () => {
     const all = await getProjectSummaries();
@@ -716,6 +311,48 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   useEffect(() => {
     void loadRecentProjects();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let lastRefreshAt = 0;
+
+    const loadDailyInspirations = async () => {
+      try {
+        const payload = await fetchGptImageInspiration();
+        if (cancelled) return;
+        setInspirationPayload(payload);
+        setInspirationError("");
+        lastRefreshAt = Date.now();
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("[Home] failed to load daily inspirations", error);
+        setInspirationError("灵感加载失败");
+      }
+    };
+
+    const refreshIfStale = () => {
+      if (
+        document.visibilityState === "visible" &&
+        Date.now() - lastRefreshAt >= GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS
+      ) {
+        void loadDailyInspirations();
+      }
+    };
+
+    void loadDailyInspirations();
+    const refreshTimer = window.setInterval(
+      refreshIfStale,
+      GPT_IMAGE_INSPIRATION_REFRESH_INTERVAL_MS,
+    );
+    window.addEventListener("focus", refreshIfStale);
+    document.addEventListener("visibilitychange", refreshIfStale);
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshIfStale);
+      document.removeEventListener("visibilitychange", refreshIfStale);
+    };
   }, []);
 
   useEffect(() => {
@@ -744,65 +381,11 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   }, []);
 
   useEffect(() => {
-    setPreferredImageModelLabel(String(preferredImageModel || "Nano Banana Pro"));
-  }, [preferredImageModel]);
-
-  useEffect(() => {
-    if (!showModeMenu) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (modeMenuRef.current?.contains(target)) return;
-      if (modeMenuTriggerRef.current?.contains(target)) return;
-      setShowModeMenu(false);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setShowModeMenu(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [showModeMenu]);
-
-  useEffect(() => {
-    setActiveQuickSkill(
-      normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
-    );
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleSkillPreferencesUpdated = () => {
-      setActiveQuickSkill(
-        normalizeFrontstageSkillPresentation(getActiveQuickSkillPreference()),
-      );
-    };
-    window.addEventListener(
-      SKILL_PREFERENCES_UPDATED_EVENT,
-      handleSkillPreferencesUpdated as EventListener,
-    );
-    return () => {
-      window.removeEventListener(
-        SKILL_PREFERENCES_UPDATED_EVENT,
-        handleSkillPreferencesUpdated as EventListener,
-      );
-    };
-  }, []);
-
-  useEffect(() => {
     const textarea = promptTextareaRef.current;
     if (!textarea) return;
     textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 72), 144)}px`;
-  }, [prompt, activeQuickSkill?.id, creationMode]);
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 44), 144)}px`;
+  }, [prompt]);
 
   const handleDeleteProject = async (
     project: Project,
@@ -834,81 +417,24 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         state: {
           initialPrompt: prompt,
           initialAttachments: attachments,
-          initialModelMode: modelMode,
-          initialWebEnabled: webEnabled,
-          initialImageModel:
-            creationMode === "image" ? preferredImageModelLabel : undefined,
-          initialCreationMode: creationMode,
-          initialSkillData:
-            creationMode === "agent" ? activeQuickSkill || undefined : undefined,
         },
       });
     }
   };
 
-  const activeSkillMeta = useMemo(() => {
-    switch (getFrontstageSkillLabelKind(activeQuickSkill)) {
-      case "workflow":
-        return { label: "Workflow", badgeClass: "bg-blue-50 text-blue-700" };
-      case "my-skill":
-        return { label: "My Skill", badgeClass: "bg-violet-100/90 text-violet-700" };
-      case "skill":
-      default:
-        return { label: "Skill", badgeClass: "bg-emerald-50 text-emerald-700" };
-    }
-  }, [activeQuickSkill]);
+  const handleUseInspirationPrompt = (item: GptImageInspirationCase) => {
+    const nextPrompt = String(item.prompt || item.promptPreview || "").trim();
+    if (!nextPrompt) return;
 
-  const homePlaceholder = useMemo(() => {
-    if (creationMode === "agent") {
-      if (activeQuickSkill?.name) {
-        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
-      }
-      return "告诉助手要检查、修改或继续推进的下一步。";
-    }
-    if (creationMode === "image") {
-      return "描述画面、风格、构图和必须保留的关键细节。";
-    }
-    return "描述场景、镜头运动、节奏和时长要求。";
-  }, [activeQuickSkill?.name, creationMode]);
-
-  const dashboardPlaceholder = useMemo(() => {
-    if (creationMode === "agent") {
-      if (activeQuickSkill?.name) {
-        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
-      }
-      return "告诉助手要检查、修改或继续推进的下一步。";
-    }
-    if (creationMode === "image") {
-      return "描述画面、风格、构图和必须保留的关键细节。";
-    }
-    return "描述场景、镜头运动、节奏和时长要求。";
-  }, [activeQuickSkill?.name, creationMode]);
-
-  const resolvedDashboardPlaceholder = useMemo(() => {
-    if (creationMode === "agent") {
-      if (activeQuickSkill?.name) {
-        return `继续说明这次要做什么，我会按「${activeQuickSkill.name}」的方式继续推进。`;
-      }
-      return "告诉助手要检查、修改或继续推进的下一步。";
-    }
-    if (creationMode === "image") {
-      return "描述画面、风格、构图和必须保留的关键细节。";
-    }
-    return "描述场景、镜头运动、节奏和时长要求。";
-  }, [activeQuickSkill?.name, creationMode]);
-
-  const assistantModeLabel =
-    creationMode === "agent"
-      ? "智能对话"
-      : creationMode === "image"
-        ? "图片任务"
-        : "视频任务";
-
-  const modeOptions = [
-    { id: "agent" as const, label: "智能对话", icon: <Lightbulb size={14} strokeWidth={2} /> },
-    { id: "image" as const, label: "图片任务", icon: <ImageIcon size={14} strokeWidth={2} /> },
-    { id: "video" as const, label: "视频任务", icon: <Video size={14} strokeWidth={2} /> },
-  ];
+    setPrompt(nextPrompt);
+    requestAnimationFrame(() => {
+      promptTextareaRef.current?.focus();
+      promptTextareaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  };
 
   const getAttachmentPreviewUrl = (file: File) => {
     const existing = attachmentPreviewUrlMapRef.current.get(file);
@@ -943,6 +469,15 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const dailyInspirationCases = React.useMemo(
+    () =>
+      shuffleGptImageInspirationCases(
+        inspirationPayload?.cases || [],
+        inspirationShuffleSeed,
+      ).slice(0, DAILY_INSPIRATION_COUNT),
+    [inspirationPayload, inspirationShuffleSeed],
+  );
+
   const handleOpenAnnouncements = () => {
     setIsAnnouncementOpen(true);
     markAllAnnouncementsAsRead();
@@ -956,25 +491,6 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         onOpenAnnouncements={handleOpenAnnouncements}
       />
       <Sidebar />
-      <HomeModelPreferencePopover
-        isOpen={showModelPreference}
-        onClose={() => setShowModelPreference(false)}
-        anchorRef={modelPreferenceAnchorRef}
-        modelPreferenceTab={modelPreferenceTab}
-        setModelPreferenceTab={setModelPreferenceTab}
-        autoModelSelect={autoModelSelect}
-        setAutoModelSelect={setAutoModelSelect}
-        preferredImageModel={preferredImageModel}
-        setPreferredImageModel={setPreferredImageModel}
-        preferredImageProviderId={preferredImageProviderId}
-        setPreferredImageProviderId={setPreferredImageProviderId}
-        preferredVideoModel={preferredVideoModel}
-        setPreferredVideoModel={setPreferredVideoModel}
-        preferredVideoProviderId={preferredVideoProviderId}
-        setPreferredVideoProviderId={setPreferredVideoProviderId}
-        preferred3DModel={preferred3DModel}
-        setPreferred3DModel={setPreferred3DModel}
-      />
       <SystemAnnouncementModal
         isOpen={isAnnouncementOpen}
         announcements={SYSTEM_ANNOUNCEMENTS}
@@ -999,35 +515,32 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         </button>
       )}
 
-      <main className="flex w-full flex-col items-center px-4 pb-32 pt-20 sm:px-8 lg:px-10 lg:pb-10 lg:pt-24 xl:px-12">
-        <div className="h-8"></div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <h1 className="text-4xl font-bold text-center mb-3 flex items-center gap-3">
-            <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white text-xs">
-              JK
-            </div>
-            Jacky-Studio 让设计更简单
-          </h1>
-          <p className="text-gray-500 mb-10 text-center">
-            懂你的设计代理，帮你搞定一切
-          </p>
-        </motion.div>
-
+      <main className="relative flex w-full flex-col items-center px-4 pb-32 pt-20 sm:px-8 lg:px-10 lg:pb-10 lg:pt-24 xl:px-12">
+        <section className="relative flex min-h-[280px] w-full flex-col items-center justify-center pb-12 pt-14 sm:min-h-[330px] sm:pb-16 sm:pt-20">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-[58%] h-[430px] w-[980px] max-w-[95vw] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(187,222,255,0.92)_0%,rgba(211,235,255,0.68)_34%,rgba(239,248,255,0.34)_58%,rgba(255,255,255,0)_78%)] blur-2xl"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="relative z-10 mb-9 text-center"
+          >
+            <h1 className="text-[28px] font-normal tracking-[-0.04em] text-[#202124] sm:text-[38px] md:text-[42px]">
+              让创意设计更简单
+            </h1>
+          </motion.div>
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="w-full max-w-5xl relative mb-16"
+          transition={{ delay: 0.16 }}
+          className="relative z-10 w-full max-w-5xl"
         >
           <div
-            className={`group relative flex flex-col overflow-visible rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(249,250,251,0.97))] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.16)] transition-all duration-200 focus-within:border-slate-300/80 focus-within:shadow-[0_22px_48px_-34px_rgba(15,23,42,0.2)] ${
+            className={`group relative mx-auto flex w-full max-w-[730px] flex-col overflow-visible rounded-[2rem] border border-black/[0.03] bg-white p-3 shadow-[0_2px_6px_rgba(60,64,67,0.08),0_12px_32px_rgba(60,64,67,0.12)] transition-colors focus-within:shadow-[0_2px_8px_rgba(60,64,67,0.1),0_18px_42px_rgba(60,64,67,0.16)] ${
               isDragOver
-                ? "border-blue-400 bg-blue-50/30 ring-2 ring-blue-100"
+                ? "ring-2 ring-[#1f3b9b]/20"
                 : ""
             }`}
             onDragOver={(event) => {
@@ -1050,38 +563,57 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             }}
           >
               {isDragOver ? (
-                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[26px] border-2 border-dashed border-blue-400 bg-blue-50/80">
-                <div className="flex flex-col items-center gap-2">
-                  <ImageIcon size={24} className="text-blue-500" />
-                  <span className="text-sm font-medium text-blue-600">
-                    将图片拖到这里添加到对话
-                  </span>
-                </div>
-              </div>
-            ) : null}
-            <div className="p-4 pt-3">
-              {creationMode === "agent" && activeQuickSkill?.name ? (
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <div
-                    className="inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white/96 px-3 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-                    title={activeQuickSkill.name}
-                  >
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${activeSkillMeta.badgeClass}`}
-                    >
-                      {activeSkillMeta.label}
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[2rem] border border-dashed border-[#1f3b9b]/35 bg-[#f8fafd]/90">
+                  <div className="flex flex-col items-center gap-2">
+                    <ImageIcon size={24} className="text-[#1f3b9b]" />
+                    <span className="text-sm font-medium text-[#1f3b9b]">
+                      拖到这里添加到对话
                     </span>
-                    <span className="max-w-[280px] truncate">{activeQuickSkill.name}</span>
                   </div>
                 </div>
-              ) : null}
+            ) : null}
+            <div className="flex min-w-0 flex-col gap-2">
+              {attachments.length > 0 && (
+                <div className="flex flex-row gap-2.5 overflow-x-auto px-1 pt-1 pb-2.5 no-scrollbar">
+                  {attachments.map((file, i) => (
+                    <div
+                      key={`${file.name}-${i}`}
+                      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-[#dadce0] bg-[#f8fafd] text-[#5f6368]"
+                    >
+                      {file.type.startsWith("image/") ? (
+                        <img
+                          src={getAttachmentPreviewUrl(file)}
+                          alt={file.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center">
+                          <FileText size={17} />
+                          <span className="w-12 truncate text-[9px] font-medium uppercase">
+                            {file.name.split(".").pop()}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(i)}
+                        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"
+                        aria-label="移除附件"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <textarea
                 ref={promptTextareaRef}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                rows={3}
-                placeholder={resolvedDashboardPlaceholder}
-                className="w-full min-h-[72px] max-h-[144px] overflow-y-auto bg-transparent border-none outline-none resize-none text-[15px] leading-[26px] font-medium text-slate-700 placeholder:text-slate-300"
+                rows={1}
+                placeholder="输入你的想法，设计马上呈现"
+                className="relative max-h-40 min-h-10 w-full min-w-0 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[17px] leading-6 text-[#1f1f1f] outline-none placeholder:text-[#575b5f]"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -1090,214 +622,53 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 }}
               />
 
-              {attachments.length > 0 && (
-                <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar px-1">
-                  {attachments.map((file, i) => (
-                    <div
-                      key={i}
-                      className="relative w-14 h-14 bg-gray-50 border border-gray-200 rounded-xl flex-shrink-0 flex items-center justify-center group overflow-hidden"
-                    >
-                      {file.type.startsWith("image/") ? (
-                        <img
-                          src={getAttachmentPreviewUrl(file)}
-                          alt="preview"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="text-gray-400 flex flex-col items-center p-1">
-                          <FileText size={16} />
-                          <span className="text-[7px] uppercase mt-1 truncate w-10 text-center">
-                            {file.name.split(".").pop()}
-                          </span>
-                        </div>
-                      )}
-                      <button
-                        onClick={() => removeAttachment(i)}
-                        className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition backdrop-blur-sm"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="flex min-w-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={HOME_GEMINI_GHOST_BUTTON_CLASS}
+                  title="添加照片和文件"
+                  aria-label="添加照片和文件"
+                >
+                  <Plus size={19} strokeWidth={1.9} />
+                </button>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept=".doc,.docx,.pdf,.md,.txt,.jpg,.jpeg,.png,.webp"
+                />
 
-              {creationMode !== "agent" ? (
-                <div className="mb-4 rounded-[18px] border border-slate-200/90 bg-slate-50/86 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
-                        {creationMode === "image" ? (
-                          <ImageIcon size={16} className="text-slate-500" />
-                        ) : (
-                          <Video size={16} className="text-slate-500" />
-                        )}
-                        <span>{creationMode === "image" ? "图片任务" : "视频任务"}</span>
-                      </div>
-                      <p className="mt-1 text-[12px] leading-5 text-slate-500">
-                        {creationMode === "image"
-                          ? `会以图片任务进入新项目，默认沿用 ${preferredImageModelLabel}。`
-                          : `会以视频任务进入新项目，默认沿用 ${String(preferredVideoModel || "视频模型")}。`}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModelPreferenceTab(creationMode === "image" ? "image" : "video");
-                        setShowModelPreference(true);
-                      }}
-                      className="inline-flex h-8 shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                    >
-                      模型
-                    </button>
-                  </div>
-                </div>
-              ) : null}
+                <div className="min-w-0 flex-1" aria-hidden="true" />
 
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1">
-                  <div className="relative">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`${HOME_ICON_BUTTON_CLASS} ${HOME_SECONDARY_BUTTON_CLASS}`}
-                      title="Upload files (Max 10)"
-                    >
-                      <Paperclip size={15} strokeWidth={1.9} />
-                    </button>
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      ref={fileInputRef}
-                      onChange={handleFileSelect}
-                      accept=".doc,.docx,.pdf,.md,.txt,.jpg,.jpeg,.png,.webp"
-                    />
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  className={`${HOME_ICON_BUTTON_CLASS} text-[#202124] hover:bg-[#3c4043]/6`}
+                  title="语音输入"
+                  aria-label="语音输入"
+                >
+                  <Mic size={18} strokeWidth={2} />
+                </button>
 
-                <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
-                  <div className="relative">
-                    <button
-                      ref={modeMenuTriggerRef}
-                      type="button"
-                      onClick={() => setShowModeMenu((value) => !value)}
-                      className={HOME_MODE_PILL_CLASS}
-                      title={`当前模式：${assistantModeLabel}`}
-                      aria-label={`当前模式：${assistantModeLabel}`}
-                    >
-                      <span>{assistantModeLabel}</span>
-                      <ChevronDown size={14} strokeWidth={2} />
-                    </button>
-                    {showModeMenu ? (
-                      <div
-                        ref={modeMenuRef}
-                        className={`absolute bottom-full right-0 z-[120] mb-3 w-[244px] ${HOME_FLOATING_PANEL_CLASS} p-1.5`}
-                      >
-                        <div className="space-y-1">
-                          {modeOptions.map((mode) => (
-                            <button
-                              key={mode.id}
-                              type="button"
-                              onClick={() => {
-                                setCreationMode(mode.id);
-                                setShowModeMenu(false);
-                              }}
-                              className={`flex w-full items-center gap-2.5 rounded-[14px] px-2.5 py-2 text-left transition ${
-                                creationMode === mode.id
-                                  ? "bg-slate-900 text-white"
-                                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                              }`}
-                            >
-                              <span className="shrink-0">{mode.icon}</span>
-                              <span className="min-w-0 flex-1 text-[12px] font-semibold">
-                                {mode.label}
-                              </span>
-                              {creationMode === mode.id ? (
-                                <Check size={14} strokeWidth={2.2} className="shrink-0" />
-                              ) : null}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="mt-1 border-t border-slate-200/70 px-1 pt-1.5">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModelMode((value) =>
-                                value === "thinking" ? "fast" : "thinking",
-                              )
-                            }
-                            className={`mb-1 flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
-                              modelMode === "thinking"
-                                ? "bg-amber-50 text-amber-700 shadow-[inset_0_0_0_1px_rgba(253,230,138,0.95)]"
-                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            }`}
-                          >
-                            <span className="flex items-center gap-2">
-                              {modelMode === "thinking" ? (
-                                <Lightbulb size={13} strokeWidth={1.9} />
-                              ) : (
-                                <Zap size={13} strokeWidth={1.9} />
-                              )}
-                              <span>思考模式</span>
-                            </span>
-                            <span className="text-[10px] font-semibold">
-                              {modelMode === "thinking" ? "深思" : "快速"}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWebEnabled((value) => !value)}
-                            className={`flex w-full items-center justify-between rounded-[14px] px-2.5 py-2 text-left text-[11.5px] font-medium transition ${
-                              webEnabled
-                                ? "bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_rgba(191,219,254,0.95)]"
-                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            }`}
-                          >
-                            <span className="flex items-center gap-2">
-                              <Globe size={13} strokeWidth={1.9} />
-                              <span>联网检索</span>
-                            </span>
-                            <span className="text-[10px] font-semibold">
-                              {webEnabled ? "开" : "关"}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <button
-                    ref={modelPreferenceAnchorRef}
-                    onClick={() => setShowModelPreference(!showModelPreference)}
-                    className={`${HOME_ICON_BUTTON_CLASS} ${
-                      showModelPreference
-                        ? "bg-slate-900 text-white"
-                        : HOME_SECONDARY_BUTTON_CLASS
-                    }`}
-                    title="模型偏好"
-                  >
-                    <Box size={16} strokeWidth={1.9} />
-                  </button>
-
-                  <button
-                    onClick={handleSearch}
-                    disabled={!prompt.trim() && attachments.length === 0}
-                    className={`${HOME_ICON_BUTTON_CLASS} ${
-                      prompt.trim() || attachments.length > 0
-                        ? "bg-slate-900 text-white hover:bg-slate-800"
-                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    }`}
-                  >
-                    <ArrowUp size={16} strokeWidth={2.4} />
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3 px-1 text-[12px] text-slate-400">
-                发送后会新建项目，并在项目侧边栏里继续这次对话。
+                <button
+                  onClick={handleSearch}
+                  disabled={!prompt.trim() && attachments.length === 0}
+                  className={`${HOME_ICON_BUTTON_CLASS} ${
+                    prompt.trim() || attachments.length > 0
+                      ? "bg-[#1f3b9b] text-white hover:bg-[#274aad]"
+                      : "bg-[#eef0f2] text-[#5f6368]/45 cursor-not-allowed"
+                  }`}
+                  aria-label="发送消息"
+                >
+                  <ArrowUp size={16} strokeWidth={2.4} />
+                </button>
               </div>
             </div>
           </div>
         </motion.div>
+        </section>
 
         <div className="w-[calc(100vw-2rem)] max-w-none overflow-x-clip lg:w-[calc(100vw-12rem)]">
           <div className="mb-6 flex items-center justify-between">
@@ -1320,6 +691,55 @@ const Home: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               ))}
           </div>
         </div>
+
+        <section className="mt-16 w-[calc(100vw-2rem)] max-w-none overflow-x-clip lg:w-[calc(100vw-12rem)]">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-lg font-medium">每日灵感</h2>
+          </div>
+
+          {dailyInspirationCases.length > 0 ? (
+            <div className="columns-2 gap-4 sm:columns-3 lg:columns-4 2xl:columns-6">
+              {dailyInspirationCases.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleUseInspirationPrompt(item)}
+                  className="group mb-4 inline-block w-full overflow-hidden rounded-[18px] bg-white text-left shadow-[0_18px_46px_-36px_rgba(15,23,42,0.2)] ring-1 ring-slate-200/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_58px_-40px_rgba(15,23,42,0.28)]"
+                >
+                  <div className="overflow-hidden bg-[#f3f3f1]">
+                    <HomeInspirationImage
+                      src={item.image}
+                      alt={item.imageAlt || item.title}
+                      className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.025]"
+                    />
+                  </div>
+                  <div className="px-3 py-3">
+                    <div className="line-clamp-2 text-[13px] font-semibold leading-5 text-slate-900">
+                      {item.title}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-400">
+                      {item.promptPreview || item.sourceLabel}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-dashed border-slate-200 bg-white/70 px-4 py-8 text-center text-sm text-slate-400">
+              {inspirationError || "正在加载每日灵感..."}
+            </div>
+          )}
+
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={() => navigate(ROUTES.gptImageInspiration)}
+              className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.22)] transition hover:border-slate-300 hover:text-slate-950"
+            >
+              前往灵感库发现更多灵感
+            </button>
+          </div>
+        </section>
       </main>
     </div>
   );

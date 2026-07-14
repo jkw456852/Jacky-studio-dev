@@ -1,6 +1,6 @@
 import React from "react";
 
-import type { ImageModel } from "../../../types";
+import type { ImageModel, Marker } from "../../../types";
 import type {
   AssistantSidebarConversation,
   AssistantSidebarProps,
@@ -35,6 +35,10 @@ type UseWorkspaceSidebarPropsArgs = {
   selectedElementIds: React.ComponentProps<
     typeof WorkspaceLeftPanel
   >["selectedElementIds"];
+  referenceElementId?: string | null;
+  referenceSelectionNonce?: number;
+  markers: Marker[];
+  selectedMarkerId?: string | null;
   isHistoryExpanded: React.ComponentProps<
     typeof WorkspaceLeftPanel
   >["isHistoryExpanded"];
@@ -110,6 +114,10 @@ export const useWorkspaceSidebarProps = ({
   elementById,
   selectedElementId,
   selectedElementIds,
+  referenceElementId,
+  referenceSelectionNonce,
+  markers,
+  selectedMarkerId,
   isHistoryExpanded,
   setIsHistoryExpanded,
   handleElementMouseDown,
@@ -313,6 +321,9 @@ export const useWorkspaceSidebarProps = ({
       imageGenerationUi,
       browserAgent: {
         selectedElementId,
+        referenceElementId: referenceElementId || null,
+        referenceSelectionNonce: referenceSelectionNonce || 0,
+        selectedMarkerId: selectedMarkerId || null,
         selectedElementCount: Array.isArray(selectedElementIds)
           ? selectedElementIds.length
           : selectedElementId
@@ -344,7 +355,7 @@ export const useWorkspaceSidebarProps = ({
             return `${selectedElement.treeNodeKind} - ${shortLabel}`;
           }
           return selectedElement.treeNodeKind
-            ? `${selectedElement.treeNodeKind} è·?${shortLabel}`
+            ? `${selectedElement.treeNodeKind} ç’º?${shortLabel}`
             : shortLabel;
         })(),
         resolveElementAsset: (elementId: string) => {
@@ -352,11 +363,23 @@ export const useWorkspaceSidebarProps = ({
           if (!element) {
             return {
               previewUrl: null,
+              originalUrl: null,
               label: null,
             };
           }
           const previewUrl = String(
-            element.originalUrl || element.proxyUrl || element.url || "",
+            element.proxyUrl ||
+              element.url ||
+              element.originalUrl ||
+              element.persistedOriginalUrl ||
+              "",
+          ).trim();
+          const originalUrl = String(
+            element.originalUrl ||
+              element.persistedOriginalUrl ||
+              element.url ||
+              element.proxyUrl ||
+              "",
           ).trim();
           const labelSource = String(
             element.genPrompt || element.text || element.type || "",
@@ -365,7 +388,61 @@ export const useWorkspaceSidebarProps = ({
             .trim();
           return {
             previewUrl: previewUrl || null,
+            originalUrl: originalUrl || previewUrl || null,
             label: labelSource ? labelSource.slice(0, 48) : element.type,
+            type: element.type,
+            imageWidth:
+              Number.isFinite(Number(element.width)) && Number(element.width) > 0
+                ? Number(element.width)
+                : null,
+            imageHeight:
+              Number.isFinite(Number(element.height)) && Number(element.height) > 0
+                ? Number(element.height)
+                : null,
+          };
+        },
+        resolveMarkerAsset: (markerId: string) => {
+          const marker = markers.find((item) => item.id === markerId) || null;
+          if (!marker) return null;
+
+          const element = elementById.get(marker.elementId) || null;
+          const previewUrl = String(
+            marker.cropUrl || element?.proxyUrl || element?.url || "",
+          ).trim();
+          const originalUrl = String(
+            element?.originalUrl ||
+              element?.persistedOriginalUrl ||
+              element?.url ||
+              element?.proxyUrl ||
+              "",
+          ).trim();
+          const label = String(marker.label || "").trim();
+          const elementWidth = Number(element?.width || 0);
+          const elementHeight = Number(element?.height || 0);
+          const normalizedX = Number.isFinite(marker.x) ? marker.x / 100 : null;
+          const normalizedY = Number.isFinite(marker.y) ? marker.y / 100 : null;
+
+          return {
+            markerId: marker.id,
+            elementId: marker.elementId,
+            label: label || null,
+            previewUrl: previewUrl || originalUrl || null,
+            originalUrl: originalUrl || previewUrl || null,
+            cropUrl: marker.cropUrl || null,
+            normalizedX,
+            normalizedY,
+            x:
+              normalizedX != null && elementWidth > 0
+                ? normalizedX * elementWidth
+                : null,
+            y:
+              normalizedY != null && elementHeight > 0
+                ? normalizedY * elementHeight
+                : null,
+            width: Number.isFinite(marker.width) ? Number(marker.width) : null,
+            height: Number.isFinite(marker.height) ? Number(marker.height) : null,
+            imageWidth: elementWidth > 0 ? elementWidth : null,
+            imageHeight: elementHeight > 0 ? elementHeight : null,
           };
         },
         createTargetElement: ({ prompt, referenceImages }) =>
@@ -401,6 +478,7 @@ export const useWorkspaceSidebarProps = ({
       importUrlAssetToCanvas,
       isAssistantFullscreen,
       assistantBootstrapRequest,
+      markers,
       modelMode,
       modelPreferences,
       nodeInteractionMode,
@@ -410,6 +488,9 @@ export const useWorkspaceSidebarProps = ({
       rootElements,
       selectedElementId,
       selectedElementIds,
+      referenceElementId,
+      referenceSelectionNonce,
+      selectedMarkerId,
       setActiveConversationId,
       setConversations,
       setIsAssistantFullscreen,

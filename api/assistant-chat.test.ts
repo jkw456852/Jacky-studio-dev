@@ -16,6 +16,8 @@ import {
   extractAssistantChatLatestUserDirectiveMentions,
   getAssistantChatImageMemoryItems,
   getDefaultImageReferenceUrls,
+  getLatestUserImageReferenceContexts,
+  getLatestUserImageMarkContexts,
   getRecentImageReferenceUrls,
   getLatestUserImageFilePartUrls,
   getRecentGeneratedImageReferenceUrls,
@@ -1171,6 +1173,84 @@ test("assistant chat accepts official assistant-ui image attachment parts as ima
   assert.equal(items[0].referenceAvailable, true);
 });
 
+test("assistant chat prefers original canvas and mark image URLs over lightweight previews", () => {
+  const previewUrl = "data:image/jpeg;base64,cHJldmlldy1pbWFnZQ==";
+  const originalUrl = "https://cdn.example.test/original-product.png";
+  const sourceUrl = "https://cdn.example.test/source-product.png";
+
+  const canvasMessages = [
+    {
+      id: "user-canvas-reference",
+      role: "user",
+      parts: [
+        { type: "text", text: "Use :canvas[image01]{name=canvas-abc} as reference." },
+        {
+          type: "image",
+          image: previewUrl,
+          originalUrl,
+          canvasImageWidth: 1000,
+          canvasImageHeight: 1500,
+          filename: "image01-preview.jpg",
+        },
+      ],
+    },
+  ] as any;
+
+  assert.deepEqual(getLatestUserImageFilePartUrls(canvasMessages), [
+    originalUrl,
+  ]);
+  assert.deepEqual(getDefaultImageReferenceUrls(canvasMessages), [originalUrl]);
+  assert.deepEqual(getLatestUserImageReferenceContexts(canvasMessages), [
+    {
+      imageUrl: originalUrl,
+      imageWidth: 1000,
+      imageHeight: 1500,
+    },
+  ]);
+
+  const markMessages = [
+    {
+      id: "user-mark-reference",
+      role: "user",
+      parts: [
+        { type: "text", text: "Put a butterfly at :mark[mark01]{name=mark-abc}." },
+        {
+          type: "image",
+          image: previewUrl,
+          sourceUrl,
+          markerId: "marker-abc",
+          markerNormalizedX: 0.42,
+          markerNormalizedY: 0.67,
+          markerImageWidth: 1200,
+          markerImageHeight: 1800,
+          filename: "mark01-preview.png",
+        },
+      ],
+    },
+  ] as any;
+
+  assert.deepEqual(getLatestUserImageFilePartUrls(markMessages), [sourceUrl]);
+  assert.deepEqual(getDefaultImageReferenceUrls(markMessages), [sourceUrl]);
+  assert.deepEqual(getLatestUserImageMarkContexts(markMessages), [
+    {
+      label: "mark01",
+      imageUrl: sourceUrl,
+      markerId: "marker-abc",
+      normalizedX: 0.42,
+      normalizedY: 0.67,
+      imageWidth: 1200,
+      imageHeight: 1800,
+    },
+  ]);
+  assert.deepEqual(getLatestUserImageReferenceContexts(markMessages), [
+    {
+      imageUrl: sourceUrl,
+      imageWidth: 1200,
+      imageHeight: 1800,
+    },
+  ]);
+});
+
 test("assistant chat infers uploaded image references from filename when official file MIME is empty", () => {
   const uploadedImageUrl = "https://cdn.example.com/uploaded-reference";
 
@@ -1559,7 +1639,81 @@ test("assistant chat preserves latest user image data urls within the model budg
   ]);
 });
 
-test("assistant chat strips latest oversized image data urls from model messages", () => {
+test("assistant chat prefers original image URLs over data URL previews for model messages", () => {
+  const previewDataUrl = `data:image/png;base64,${"a".repeat(18)}`;
+  const originalUrl = "https://cdn.example.test/original-reference.png";
+  const result = stripOversizedImageFilePartsForModelMessages(
+    [
+      {
+        id: "user-canvas-preview",
+        role: "user",
+        parts: [
+          { type: "text", text: "Use this canvas image." },
+          {
+            type: "file",
+            mediaType: "image/png",
+            url: previewDataUrl,
+            originalUrl,
+            filename: "reference-preview.png",
+          },
+        ],
+      },
+    ] as any,
+    { maxDataUrlChars: 40 },
+  );
+
+  assert.equal(result.modelImageUrlReplacementCount, 1);
+  assert.equal(result.strippedCount, 0);
+  assert.deepEqual(result.messages[0].parts, [
+    { type: "text", text: "Use this canvas image." },
+    {
+      type: "file",
+      mediaType: "image/png",
+      url: originalUrl,
+      originalUrl,
+      filename: "reference-preview.png",
+    },
+  ]);
+});
+
+test("assistant chat prefers source URLs over official image part previews for model messages", () => {
+  const previewDataUrl = `data:image/jpeg;base64,${"b".repeat(18)}`;
+  const sourceUrl = "https://cdn.example.test/source-reference.jpg";
+  const result = stripOversizedImageFilePartsForModelMessages(
+    [
+      {
+        id: "user-mark-preview",
+        role: "user",
+        parts: [
+          { type: "text", text: "Edit this mark." },
+          {
+            type: "image",
+            image: previewDataUrl,
+            sourceUrl,
+            mediaType: "image/jpeg",
+            filename: "mark-preview.jpg",
+          },
+        ],
+      },
+    ] as any,
+    { maxDataUrlChars: 40 },
+  );
+
+  assert.equal(result.modelImageUrlReplacementCount, 1);
+  assert.equal(result.strippedCount, 0);
+  assert.deepEqual(result.messages[0].parts, [
+    { type: "text", text: "Edit this mark." },
+    {
+      type: "image",
+      image: sourceUrl,
+      sourceUrl,
+      mediaType: "image/jpeg",
+      filename: "mark-preview.jpg",
+    },
+  ]);
+});
+
+test("assistant chat counts but preserves latest oversized image data urls for model messages", () => {
   const largeDataUrl = `data:image/png;base64,${"a".repeat(80)}`;
   const result = stripOversizedImageFilePartsForModelMessages(
     [
@@ -1585,16 +1739,16 @@ test("assistant chat strips latest oversized image data urls from model messages
   assert.deepEqual(result.messages[0].parts, [
     { type: "text", text: "Use this as a reference." },
     {
-      type: "text",
-      text:
-        "[Attached image \"reference.png\" omitted from the language-model prompt " +
-        "to avoid oversized base64 context. The image remains available " +
-        "to the image-generation tool as a reference.]",
+      type: "file",
+      mediaType: "image/png",
+      url: largeDataUrl,
+      filename: "reference.png",
     },
   ]);
+  assert.doesNotMatch(JSON.stringify(result.messages), /omitted from the language-model prompt/);
 });
 
-test("assistant chat strips historical oversized image data urls from model messages", () => {
+test("assistant chat counts but preserves historical oversized image data urls for model messages", () => {
   const oldLargeDataUrl = `data:image/png;base64,${"a".repeat(80)}`;
   const latestLargeDataUrl = `data:image/png;base64,${"b".repeat(80)}`;
   const result = stripOversizedImageFilePartsForModelMessages(
@@ -1642,23 +1796,22 @@ test("assistant chat strips historical oversized image data urls from model mess
   assert.deepEqual(result.messages[0].parts, [
     { type: "text", text: "Old reference." },
     {
-      type: "text",
-      text:
-        "[Attached image \"old-reference.png\" omitted from the language-model prompt " +
-        "to avoid oversized base64 context. The image remains available " +
-        "to the image-generation tool as a reference.]",
+      type: "file",
+      mediaType: "image/png",
+      url: oldLargeDataUrl,
+      filename: "old-reference.png",
     },
   ]);
   assert.deepEqual(result.messages[2].parts, [
     { type: "text", text: "Please inspect this latest image." },
     {
-      type: "text",
-      text:
-        "[Attached image \"latest-reference.png\" omitted from the language-model prompt " +
-        "to avoid oversized base64 context. The image remains available " +
-        "to the image-generation tool as a reference.]",
+      type: "file",
+      mediaType: "image/png",
+      url: latestLargeDataUrl,
+      filename: "latest-reference.png",
     },
   ]);
+  assert.doesNotMatch(JSON.stringify(result.messages), /omitted from the language-model prompt/);
 });
 
 test("assistant chat preserves latest user official image parts for vision model messages", () => {

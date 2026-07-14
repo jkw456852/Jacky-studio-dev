@@ -5,7 +5,7 @@ import {
   normalizeWorkspaceImageSize,
   parseImageSizeString,
 } from '../../openai-image-presets.ts'
-import { normalizeImageDataUrlString } from '../../agents/data-url-helpers.ts'
+import { normalizeImageDataUrlString } from './image-data-url.ts'
 
 export const isOpenAICompatibleImageModel = (model: string): boolean => {
   const normalized = String(model || '').trim().toLowerCase()

@@ -78,12 +78,35 @@ export type AssistantSidebarBrowserAgentProps = {
   selectedElementLabel: string | null;
   selectedElementType?: string | null;
   selectedTreeNodeKind?: string | null;
+  referenceElementId?: string | null;
+  referenceSelectionNonce?: number;
+  selectedMarkerId?: string | null;
   selectedElementCount?: number;
   canvasElementCount?: number;
   rootElementCount?: number;
   resolveElementAsset?: (elementId: string) => {
     previewUrl: string | null;
+    originalUrl?: string | null;
     label: string | null;
+    type?: string | null;
+    imageWidth?: number | null;
+    imageHeight?: number | null;
+  } | null;
+  resolveMarkerAsset?: (markerId: string) => {
+    markerId: string;
+    elementId: string;
+    label: string | null;
+    previewUrl: string | null;
+    originalUrl: string | null;
+    cropUrl: string | null;
+    normalizedX: number | null;
+    normalizedY: number | null;
+    x: number | null;
+    y: number | null;
+    width: number | null;
+    height: number | null;
+    imageWidth: number | null;
+    imageHeight: number | null;
   } | null;
   createTargetElement?: (input: {
     prompt?: string;

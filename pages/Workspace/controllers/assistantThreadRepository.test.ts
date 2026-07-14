@@ -4,26 +4,14 @@ import assert from "node:assert/strict";
 import {
   applyAssistantThreadSubmittedFeedback,
   getAssistantThreadVisibleUiMessages,
+  resolveAssistantThreadHeadId,
   sliceConversationAssistantThreadToHead,
 } from "./assistantThreadRepository.ts";
-import { getConversationVisibleMessages } from "./assistantThreadLegacyProjection.ts";
-import type { ChatMessage, ConversationSession } from "../../../types/index.ts";
+import type { ConversationSession } from "../../../types/index.ts";
 import {
   ASSISTANT_UI_MESSAGE_FORMAT,
   toAssistantUiStorageEntry,
 } from "../../../services/assistant-ui/ui-message-normalization.ts";
-
-const createMessage = (
-  id: string,
-  role: ChatMessage["role"],
-  text: string,
-  timestamp = 1,
-): ChatMessage => ({
-  id,
-  role,
-  text,
-  timestamp,
-});
 
 const createConversation = (
   overrides: Partial<ConversationSession> = {},
@@ -55,16 +43,6 @@ const createThreadEntry = (
   return entry;
 };
 
-test("getConversationVisibleMessages falls back to stored messages without assistant thread", () => {
-  const messages = [
-    createMessage("user-1", "user", "hello"),
-    createMessage("assistant-1", "model", "hi"),
-  ];
-  const conversation = createConversation({ messages });
-
-  assert.deepEqual(getConversationVisibleMessages(conversation), messages);
-});
-
 test("getAssistantThreadVisibleUiMessages derives the active assistant-ui path", () => {
   const conversation = createConversation({
     assistantThread: {
@@ -94,87 +72,15 @@ test("getAssistantThreadVisibleUiMessages derives the active assistant-ui path",
   );
 });
 
-test("getConversationVisibleMessages prefers assistantThread over stale legacy messages", () => {
-  const conversation = createConversation({
-    messages: [
-      createMessage("user-legacy", "user", "legacy question"),
-      createMessage("assistant-legacy", "model", "legacy answer"),
-    ],
-    assistantThread: {
-      headId: "assistant-2",
-      messages: [
-        createThreadEntry("user-1", "user", null, "hello"),
-        createThreadEntry("assistant-1", "assistant", "user-1", "first"),
-        createThreadEntry("assistant-2", "assistant", "user-1", "second"),
-      ],
-    },
-  });
-
-  assert.deepEqual(getConversationVisibleMessages(conversation), [
-    createMessage("user-1", "user", "hello", 1),
-    createMessage("assistant-2", "model", "second", 2),
-  ]);
-});
-
-test("getConversationVisibleMessages falls back when assistantThread cannot resolve a visible path", () => {
-  const user1 = createMessage("user-1", "user", "hello");
-  const assistant1 = createMessage("assistant-1", "model", "first");
-  const conversation = createConversation({
-    messages: [user1, assistant1],
-    assistantThread: {
-      headId: "missing-head",
-      messages: [
-        createThreadEntry("user-1", "user", null, "hello"),
-        createThreadEntry("assistant-2", "assistant", "user-1", "second"),
-      ],
-    },
-  });
-
-  assert.deepEqual(getConversationVisibleMessages(conversation), [
-    user1,
-    assistant1,
-  ]);
-});
-
-test("getConversationVisibleMessages falls back to legacy messages when the stored assistant thread is branch-corrupted", () => {
-  const legacyMessages = [
-    createMessage("user-1", "user", "hello", 1),
-    createMessage("assistant-1", "model", "hi", 2),
-    createMessage("user-2", "user", "weather", 3),
-    createMessage("assistant-2", "model", "sunny", 4),
-  ];
-  const conversation = createConversation({
-    messages: legacyMessages,
-    assistantThread: {
-      headId: "user-3",
-      messages: [
-        createThreadEntry("user-1", "user", null, "hello"),
-        createThreadEntry("user-2", "user", null, "weather"),
-        createThreadEntry("user-3", "user", null, "design"),
-      ],
-    },
-  });
-
-  assert.deepEqual(getConversationVisibleMessages(conversation), legacyMessages);
-});
-
-test("getConversationVisibleMessages falls back to legacy when the thread lost the user ancestor but kept the same tail", () => {
-  const legacyMessages = [
-    createMessage("user-1", "user", "hello", 1),
-    createMessage("assistant-1", "model", "hi", 2),
+test("resolveAssistantThreadHeadId uses the stored head or latest official row", () => {
+  const messages = [
+    createThreadEntry("user-1", "user", null, "hello"),
+    createThreadEntry("assistant-1", "assistant", "user-1", "first"),
   ];
 
-  const conversation = createConversation({
-    messages: legacyMessages,
-    assistantThread: {
-      headId: "assistant-1",
-      messages: [
-        createThreadEntry("assistant-1", "assistant", null, "hi"),
-      ],
-    },
-  });
-
-  assert.deepEqual(getConversationVisibleMessages(conversation), legacyMessages);
+  assert.equal(resolveAssistantThreadHeadId({ headId: "user-1", messages }), "user-1");
+  assert.equal(resolveAssistantThreadHeadId({ messages }), "assistant-1");
+  assert.equal(resolveAssistantThreadHeadId({ headId: null, messages }), null);
 });
 
 test("sliceConversationAssistantThreadToHead keeps only the selected ancestor path", () => {

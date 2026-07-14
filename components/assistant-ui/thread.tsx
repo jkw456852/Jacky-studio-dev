@@ -67,6 +67,8 @@ import {
   type DataMessagePartComponent,
   type GenerativeUIComponentRegistry,
   type GenerativeUIRenderProps,
+  type FileMessagePartComponent,
+  type ImageMessagePartComponent,
   type ToolCallMessagePartComponent,
   type Unstable_AudioMessagePartComponent,
   groupPartByType,
@@ -86,6 +88,7 @@ import {
   ImageIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
+  VideoIcon,
   Volume2Icon,
   MicIcon,
   MoreHorizontalIcon,
@@ -101,8 +104,10 @@ import {
   createContext,
   useContext,
   useEffect,
+  type CSSProperties,
   type ComponentType,
   type FC,
+  type MouseEvent,
   type PropsWithChildren,
 } from "react";
 
@@ -112,6 +117,23 @@ export type ThreadComponents = {
   AssistantMessage?: ComponentType<{ showReasoning?: boolean }> | undefined;
   ComposerInlineControls?: ComponentType | undefined;
   ComposerFooter?: ComponentType | undefined;
+  getCanvasDirectivePreview?:
+    | ((
+        directiveId: string,
+      ) => {
+        previewUrl: string;
+        chipPreviewUrl?: string | null;
+        imageWidth?: number | null;
+        imageHeight?: number | null;
+        markerX?: number | null;
+        markerY?: number | null;
+        type?: string | null;
+        kind?: "canvas" | "mark";
+      } | null)
+    | undefined;
+  isCanvasDirectivePending?: ((directiveId: string) => boolean) | undefined;
+  onComposerInputIntent?: (() => void) | undefined;
+  onComposerSendIntent?: (() => Promise<boolean> | boolean) | undefined;
   onSlashCommand?: ((commandId: string) => void) | undefined;
   UserMessage?: ComponentType | undefined;
   Welcome?: ComponentType | undefined;
@@ -194,6 +216,7 @@ const actionButtonClass =
 
 const MODEL_CONTEXT_TOOL_LABELS: Record<string, string> = {
   createImage: "图片生成工具",
+  upscaleImage: "\u9ad8\u6e05\u653e\u5927\u5de5\u5177",
   createTargetElement: "画布目标工具",
   getWeather: "天气卡片工具",
   google_search: "Google 搜索工具",
@@ -365,7 +388,7 @@ const AssistantTypingIndicator: FC = () => {
         );
       if (runningTool) {
         const toolName = String(runningTool.toolName || "").trim();
-        if (toolName === "createImage") {
+        if (toolName === "createImage" || toolName === "upscaleImage") {
           return "image-tool";
         }
         if (
@@ -507,17 +530,174 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-function DirectiveChip(props: DirectiveChipProps) {
-  const { directiveId, directiveType, label } = props;
-  const showToolIndicator = directiveType !== "command";
+const clampMarkCoordinate = (value: unknown, fallback: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0, Math.min(1, numeric));
+};
+
+const getMarkHoverPreviewStyle = (
+  imageWidth: number | null | undefined,
+  imageHeight: number | null | undefined,
+): CSSProperties => {
+  const naturalWidth = Number(imageWidth);
+  const naturalHeight = Number(imageHeight);
+  if (
+    !Number.isFinite(naturalWidth) ||
+    !Number.isFinite(naturalHeight) ||
+    naturalWidth <= 0 ||
+    naturalHeight <= 0
+  ) {
+    return { height: 176, width: 224 };
+  }
+
+  const maxWidth = 224;
+  const maxHeight = 176;
+  const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight);
+  return {
+    height: Math.max(72, Math.round(naturalHeight * scale)),
+    width: Math.max(72, Math.round(naturalWidth * scale)),
+  };
+};
+
+const MarkFocusPreview: FC<{
+  className?: string;
+  imageClassName?: string;
+  fallbackPreviewUrl?: string | null;
+  imageHeight?: number | null;
+  imageWidth?: number | null;
+  markerX?: number | null;
+  markerY?: number | null;
+  previewUrl: string;
+  showPin?: boolean;
+  size?: "chip" | "hover";
+  style?: CSSProperties;
+}> = ({
+  className,
+  fallbackPreviewUrl,
+  imageHeight,
+  imageWidth,
+  imageClassName,
+  markerX,
+  markerY,
+  previewUrl,
+  showPin = false,
+  size = "chip",
+  style,
+}) => {
+  const x = clampMarkCoordinate(markerX, 0.5);
+  const y = clampMarkCoordinate(markerY, 0.5);
+  const xPct = x * 100;
+  const yPct = y * 100;
+  const animationName =
+    size === "hover"
+      ? "aui-mark-focus-hover"
+      : "aui-mark-focus-chip";
+  const canFocusMark = markerX != null && markerY != null;
+  const imageUrl = canFocusMark ? previewUrl : fallbackPreviewUrl || previewUrl;
 
   return (
     <span
-      className="aui-directive-chip"
+      className={cn("relative flex items-center justify-center overflow-hidden", className)}
+      style={style}
+    >
+      <span
+        className="relative block size-full shrink-0 overflow-visible"
+        style={{
+          animation: canFocusMark
+            ? `${animationName} 3.2s cubic-bezier(0.25,0.1,0.25,1) infinite`
+            : undefined,
+          transformOrigin: `${xPct}% ${yPct}%`,
+        }}
+      >
+        <img
+          src={imageUrl}
+          alt=""
+          className={cn("absolute inset-0 size-full object-contain", imageClassName)}
+        />
+        {showPin && canFocusMark ? (
+          <span
+            className="pointer-events-none absolute"
+            style={{
+              left: `${xPct}%`,
+              top: `${yPct}%`,
+              transform: "translate(-50%, -100%)",
+            }}
+          >
+            <span
+              className="relative flex flex-col items-center"
+              style={{
+                animation: `${animationName}-pin 3.2s cubic-bezier(0.25,0.1,0.25,1) infinite`,
+                transformOrigin: "bottom center",
+              }}
+            >
+              <span className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#3B82F6] shadow-lg" />
+              <span className="-mt-px h-0 w-0 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-[#3B82F6]" />
+            </span>
+          </span>
+        ) : null}
+      </span>
+      <span className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-blue-500/65" />
+    </span>
+  );
+};
+
+function DirectiveChip(props: DirectiveChipProps) {
+  const { directiveId, directiveType, label } = props;
+  const { getCanvasDirectivePreview, isCanvasDirectivePending } =
+    useContext(ThreadComponentsContext);
+  const showToolIndicator = directiveType !== "command";
+  const canvasPreview =
+    directiveType === "canvas" || directiveType === "mark"
+      ? getCanvasDirectivePreview?.(directiveId)
+      : null;
+  const isPending =
+    (directiveType === "canvas" || directiveType === "mark") &&
+    Boolean(isCanvasDirectivePending?.(directiveId));
+  const canvasPreviewType = String(canvasPreview?.type || "").toLowerCase();
+  const canvasPreviewIsVideo =
+    canvasPreviewType === "video" ||
+    canvasPreviewType === "gen-video" ||
+    /^data:video\//i.test(canvasPreview?.previewUrl || "") ||
+    /\.(?:mp4|webm|mov|m4v)(?:[?#].*)?$/i.test(canvasPreview?.previewUrl || "");
+  const canvasDirectiveImagePreviewUrl =
+    canvasPreview?.kind === "mark"
+      ? canvasPreview.previewUrl || canvasPreview.chipPreviewUrl || ""
+      : canvasPreview?.previewUrl || "";
+
+  const chip = (
+    <span
+      className={cn(
+        "aui-directive-chip",
+        isPending && "opacity-55 saturate-75 transition-opacity",
+      )}
       data-directive-id={directiveId}
       data-directive-type={directiveType}
+      data-directive-pending={isPending ? "true" : undefined}
     >
-      {showToolIndicator ? (
+      {canvasPreview ? (
+        <span className="aui-directive-chip-preview">
+          {canvasPreviewIsVideo ? (
+            <VideoIcon className="size-3" />
+          ) : canvasPreview.kind === "mark" ? (
+            <MarkFocusPreview
+              previewUrl={canvasDirectiveImagePreviewUrl}
+              fallbackPreviewUrl={canvasPreview.chipPreviewUrl}
+              imageWidth={canvasPreview.imageWidth}
+              imageHeight={canvasPreview.imageHeight}
+              markerX={canvasPreview.markerX}
+              markerY={canvasPreview.markerY}
+              className="size-full rounded-[inherit]"
+            />
+          ) : (
+            <img
+              src={canvasDirectiveImagePreviewUrl}
+              alt=""
+              className="size-full rounded-[inherit] object-cover"
+            />
+          )}
+        </span>
+      ) : showToolIndicator ? (
         <span className="aui-directive-chip-icon">
           <WandSparklesIcon className="size-3" />
         </span>
@@ -525,12 +705,63 @@ function DirectiveChip(props: DirectiveChipProps) {
       <span className="aui-directive-chip-label">{label}</span>
     </span>
   );
+
+  if (!canvasPreview) return chip;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        sideOffset={6}
+        hideArrow
+        className="aui-directive-chip-hover-preview z-[90] rounded-xl border-0 bg-transparent p-0 text-transparent shadow-lg shadow-slate-950/16"
+      >
+        <div className="overflow-hidden rounded-xl bg-white/70 p-0 shadow-sm ring-1 ring-black/10 backdrop-blur dark:bg-[#171717]/70 dark:ring-white/12">
+          {canvasPreviewIsVideo ? (
+            <div className="flex h-32 w-40 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300">
+              <VideoIcon className="size-8" />
+            </div>
+          ) : (
+            canvasPreview.kind === "mark" ? (
+              <MarkFocusPreview
+                previewUrl={canvasDirectiveImagePreviewUrl}
+                fallbackPreviewUrl={canvasPreview.chipPreviewUrl}
+                imageWidth={canvasPreview.imageWidth}
+                imageHeight={canvasPreview.imageHeight}
+                markerX={canvasPreview.markerX}
+                markerY={canvasPreview.markerY}
+                showPin
+                size="hover"
+                style={getMarkHoverPreviewStyle(
+                  canvasPreview.imageWidth,
+                  canvasPreview.imageHeight,
+                )}
+                className="rounded-xl bg-transparent"
+              />
+            ) : (
+              <img
+                src={canvasDirectiveImagePreviewUrl}
+                alt=""
+                className="block max-h-44 max-w-52 rounded-xl object-contain"
+              />
+            )
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const Composer: FC = () => {
-  const { ComposerFooter, ComposerInlineControls, onSlashCommand } = useContext(
-    ThreadComponentsContext,
-  );
+  const {
+    ComposerFooter,
+    ComposerInlineControls,
+    onComposerInputIntent,
+    onComposerSendIntent,
+    onSlashCommand,
+  } = useContext(ThreadComponentsContext);
   const aui = useAui();
   const mention = unstable_useMentionAdapter({
     categories: ASSISTANT_MENTION_CATEGORIES,
@@ -678,9 +909,12 @@ const Composer: FC = () => {
             <LexicalComposerInput
               directiveChip={DirectiveChip}
               autoFocus
+              onPointerUpCapture={() => {
+                window.requestAnimationFrame(() => onComposerInputIntent?.());
+              }}
               aria-label="消息输入框，使用 @ 引用上下文，使用 / 调用命令"
               placeholder="输入消息，@ 引用上下文，/ 调用命令"
-              className="relative max-h-40 min-h-10 w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[17px] leading-6 text-[#1f1f1f] outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-baseline [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-[#d8e7ff] [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:text-[#1f3b9b] [&_.aui-directive-chip-icon]:self-center [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:inset-x-0 [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2 [&_.aui-lexical-placeholder]:py-1.5 [&_.aui-lexical-placeholder]:text-[#575b5f] dark:text-[#e3e3e3] dark:[&_.aui-directive-chip]:bg-[#233a73] dark:[&_.aui-directive-chip]:text-[#d7e3ff] dark:[&_.aui-lexical-placeholder]:text-[#9aa0a6]"
+              className="relative max-h-40 min-h-10 w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[17px] leading-6 text-[#1f1f1f] outline-none [&_.aui-directive-chip]:inline-flex [&_.aui-directive-chip]:items-center [&_.aui-directive-chip]:gap-1 [&_.aui-directive-chip]:rounded-md [&_.aui-directive-chip]:bg-[#d8e7ff] [&_.aui-directive-chip]:px-1.5 [&_.aui-directive-chip]:py-0.5 [&_.aui-directive-chip]:text-[13px] [&_.aui-directive-chip]:font-medium [&_.aui-directive-chip]:leading-none [&_.aui-directive-chip]:text-[#1f3b9b] [&_.aui-directive-chip-icon]:self-center [&_.aui-directive-chip-preview]:flex [&_.aui-directive-chip-preview]:size-4 [&_.aui-directive-chip-preview]:shrink-0 [&_.aui-directive-chip-preview]:items-center [&_.aui-directive-chip-preview]:justify-center [&_.aui-directive-chip-preview]:overflow-hidden [&_.aui-directive-chip-preview]:rounded [&_.aui-directive-chip-preview]:bg-transparent [&_.aui-directive-chip-preview]:ring-1 [&_.aui-directive-chip-preview]:ring-[#1f3b9b]/15 [&_.aui-lexical-input]:min-h-lh [&_.aui-lexical-input]:outline-none [&_.aui-lexical-placeholder]:pointer-events-none [&_.aui-lexical-placeholder]:absolute [&_.aui-lexical-placeholder]:inset-x-0 [&_.aui-lexical-placeholder]:top-0 [&_.aui-lexical-placeholder]:truncate [&_.aui-lexical-placeholder]:px-2 [&_.aui-lexical-placeholder]:py-1.5 [&_.aui-lexical-placeholder]:text-[#575b5f] dark:text-[#e3e3e3] dark:[&_.aui-directive-chip]:bg-[#233a73] dark:[&_.aui-directive-chip]:text-[#d7e3ff] dark:[&_.aui-directive-chip-preview]:ring-white/20 dark:[&_.aui-lexical-placeholder]:text-[#9aa0a6]"
             />
             <div className="flex min-w-0 items-center gap-1">
               <ComposerAddAttachment />
@@ -688,7 +922,7 @@ const Composer: FC = () => {
                 {ComposerInlineControls ? <ComposerInlineControls /> : null}
               </div>
               <ComposerVoiceButton />
-              <ComposerSendButton />
+              <ComposerSendButton onComposerSendIntent={onComposerSendIntent} />
             </div>
             {ComposerFooter ? <ComposerFooter /> : null}
           </div>
@@ -761,9 +995,23 @@ const ComposerVoiceButton: FC = () => {
   );
 };
 
-const ComposerSendButton: FC = () => {
+const ComposerSendButton: FC<{
+  onComposerSendIntent?: (() => Promise<boolean> | boolean) | undefined;
+}> = ({ onComposerSendIntent }) => {
+  const aui = useAui();
   const sendClass =
     "flex size-9 shrink-0 items-center justify-center rounded-full bg-[#1f3b9b] text-white transition-colors hover:bg-[#274aad]";
+  const handleClick = useCallback(
+    async (event: MouseEvent<HTMLButtonElement>) => {
+      if (!onComposerSendIntent) return;
+      event.preventDefault();
+      const canContinue = await onComposerSendIntent();
+      if (canContinue) {
+        aui.thread().composer().send();
+      }
+    },
+    [aui, onComposerSendIntent],
+  );
 
   return (
     <>
@@ -771,6 +1019,7 @@ const ComposerSendButton: FC = () => {
         <ComposerPrimitive.Send
           aria-label="Send message"
           className={`${sendClass} disabled:bg-[#e8eaed] disabled:text-[#1f1f1f]/40 dark:disabled:bg-[#2b2c2e] dark:disabled:text-white/30`}
+          onClick={handleClick}
         >
           <ArrowUpIcon className="size-5" />
         </ComposerPrimitive.Send>
@@ -1081,6 +1330,24 @@ const MessageModelMetadata: FC<{
   );
 };
 
+const isAssistantReferenceMessagePart = (part: unknown): boolean => {
+  if (!part || typeof part !== "object") return false;
+  const record = part as Record<string, unknown>;
+  const referenceKind = String(record.assistantReferenceKind || "").trim();
+  if (referenceKind === "canvas" || referenceKind === "mark") return true;
+
+  return (
+    typeof record.markerId === "string" &&
+    (record.markerNormalizedX != null || record.markerNormalizedY != null)
+  );
+};
+
+const UserMessageImagePart: ImageMessagePartComponent = (part) =>
+  isAssistantReferenceMessagePart(part) ? null : <AssistantImage {...part} />;
+
+const UserMessageFilePart: FileMessagePartComponent = (part) =>
+  isAssistantReferenceMessagePart(part) ? null : <AssistantFile {...part} />;
+
 const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -1092,7 +1359,12 @@ const UserMessage: FC = () => {
       <div className="aui-user-message-content-wrapper relative flex w-full justify-end">
         <div className="aui-user-message-content peer block max-w-[85%] rounded-3xl bg-[#f2f0f0] px-5 py-3 text-left text-[#1f1f1f] whitespace-pre-wrap break-words empty:hidden dark:bg-[#333537] dark:text-[#e3e3e3]">
           <MessagePrimitive.Parts
-            components={{ Text: DirectiveText, Quote: QuoteBlock }}
+            components={{
+              Text: DirectiveText,
+              Quote: QuoteBlock,
+              Image: UserMessageImagePart,
+              File: UserMessageFilePart,
+            }}
           />
         </div>
         <div className="absolute top-1/2 start-0 -translate-x-full -translate-y-1/2 pe-2 opacity-0 transition-opacity peer-empty:hidden group-focus-within/message:opacity-100 group-hover/message:opacity-100 rtl:translate-x-full">

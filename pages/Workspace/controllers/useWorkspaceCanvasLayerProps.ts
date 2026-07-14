@@ -2,7 +2,6 @@ import React from "react";
 import type {
   CanvasElement,
   ImageTextEditBlock,
-  InputBlock,
   WorkspaceNodeInteractionMode,
 } from "../../../types";
 import { WorkspaceCanvasElementsLayer } from "../components/WorkspaceCanvasElementsLayer";
@@ -71,8 +70,6 @@ type UseWorkspaceCanvasLayerPropsArgs = {
   deleteSelectedElement: WorkspaceCanvasElementsLayerProps["deleteSelectedElement"];
   markers: WorkspaceCanvasMarkersLayerProps["markers"];
   dragOffsetsRef: WorkspaceCanvasMarkersLayerProps["dragOffsetsRef"];
-  hoveredChipId: string | null;
-  inputBlocks: InputBlock[];
   editingMarkerId: string | null;
   setEditingMarkerId: React.Dispatch<React.SetStateAction<string | null>>;
   editingMarkerLabel: string;
@@ -261,8 +258,6 @@ export const useWorkspaceCanvasLayerProps = ({
   deleteSelectedElement,
   markers,
   dragOffsetsRef,
-  hoveredChipId,
-  inputBlocks,
   editingMarkerId,
   setEditingMarkerId,
   editingMarkerLabel,
@@ -466,8 +461,6 @@ export const useWorkspaceCanvasLayerProps = ({
       isDraggingElement,
       dragOffsetsRef,
       zoom,
-      hoveredChipId,
-      inputBlocks,
       editingMarkerId,
       setEditingMarkerId,
       editingMarkerLabel,

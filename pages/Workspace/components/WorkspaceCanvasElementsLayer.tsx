@@ -227,9 +227,7 @@ const WorkspaceCanvasElementItem = memo(
         activeTool={activeTool}
         editingTextId={editingTextId}
         isDraggingElement={isDraggingElement && isSelected}
-        onMouseDown={(event) =>
-          !isLocked && handleElementMouseDown(event, element.id)
-        }
+        onMouseDown={(event) => handleElementMouseDown(event, element.id)}
         onTouchStart={(event) =>
           !isLocked && handleElementTouchStart(event, element.id)
         }

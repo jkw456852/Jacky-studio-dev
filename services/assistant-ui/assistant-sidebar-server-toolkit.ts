@@ -135,6 +135,12 @@ export const createAssistantSidebarServerToolkit = (
       toModelOutput: toAssistantImageModelOutput,
     },
   );
+  const upscaleImageTool = toBackendToolkitEntry(
+    options.imageTools?.upscaleImage as AssistantAiSdkToolLike | undefined,
+    {
+      toModelOutput: toAssistantImageModelOutput,
+    },
+  );
   const getWeatherTool = toBackendToolkitEntry(
     options.weatherTools?.getWeather as AssistantAiSdkToolLike | undefined,
   );
@@ -161,6 +167,7 @@ export const createAssistantSidebarServerToolkit = (
     ...(tavilyCrawlTool ? { tavilyCrawl: tavilyCrawlTool } : {}),
     ...(tavilyMapTool ? { tavilyMap: tavilyMapTool } : {}),
     ...(createImageTool ? { createImage: createImageTool } : {}),
+    ...(upscaleImageTool ? { upscaleImage: upscaleImageTool } : {}),
     ...(getWeatherTool ? { getWeather: getWeatherTool } : {}),
     ...(listStudioSkillsTool ? { listStudioSkills: listStudioSkillsTool } : {}),
     ...(planStudioWorkflowTool

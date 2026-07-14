@@ -6,7 +6,7 @@ import type { ChatMessage } from '../../types/common.ts';
 import {
   isNormalizedImageDataUrl,
   normalizeImageDataUrlString,
-} from './data-url-helpers.ts';
+} from '../image-generation/core/image-data-url.ts';
 import { isUnifiedSidebarAgentSkill } from '../runtime-assets/skill-identity.ts';
 import { summarizeReferenceSet } from '../topic-memory.ts';
 import { getMemoryKey } from '../topicMemory/key.ts';
