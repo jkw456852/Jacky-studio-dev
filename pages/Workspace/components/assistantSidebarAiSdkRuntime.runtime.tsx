@@ -40,6 +40,7 @@ import {
   useThreadTokenUsage,
   type ResumableClientStorage,
 } from "@assistant-ui/react-ai-sdk";
+import { DevToolsModal } from "@assistant-ui/react-devtools";
 import { createAssistantStream } from "assistant-stream";
 import {
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -5026,6 +5027,7 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
 
   return (
     <AssistantRuntimeProvider runtime={runtime} aui={aui}>
+      {import.meta.env.DEV ? <DevToolsModal /> : null}
       <AssistantSidebarInstructions />
       <AssistantSidebarWorkspaceContext
         browserAgent={browserAgent}

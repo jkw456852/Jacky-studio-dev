@@ -288,30 +288,6 @@ function ToolFallbackDiagnosticSection({
   );
 }
 
-function ToolFallbackNestedMessages({
-  messages,
-  className,
-  ...props
-}: React.ComponentProps<"div"> & {
-  messages?: ToolCallMessagePart["messages"];
-}) {
-  if (!messages || messages.length === 0) return null;
-
-  return (
-    <div
-      data-slot="tool-fallback-nested-messages"
-      className={cn(
-        "aui-tool-fallback-nested-messages text-muted-foreground text-xs",
-        className,
-      )}
-      {...props}
-    >
-      {messages.length} nested sub-agent message
-      {messages.length === 1 ? "" : "s"}
-    </div>
-  );
-}
-
 function ToolFallbackError({
   status,
   className,
@@ -581,7 +557,6 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   artifact,
   mcp,
   modelContent,
-  messages,
   addResult,
   resume,
   interrupt,
@@ -591,7 +566,6 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   const isCancelled =
     status?.type === "incomplete" && status.reason === "cancelled";
   const isRequiresAction = status?.type === "requires-action";
-
   const [open, setOpen] = useState(isRequiresAction);
   const [prevRequiresAction, setPrevRequiresAction] =
     useState(isRequiresAction);
@@ -622,7 +596,6 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
         <ToolFallbackDiagnosticSection label="Artifact" value={artifact} />
         <ToolFallbackDiagnosticSection label="Model content" value={modelContent} />
         <ToolFallbackDiagnosticSection label="MCP" value={mcp} />
-        <ToolFallbackNestedMessages messages={messages} />
       </ToolFallbackContent>
     </ToolFallbackRoot>
   );
@@ -634,7 +607,6 @@ const ToolFallback = memo(ToolFallbackImpl) as unknown as ToolCallMessagePartCom
   Content: typeof ToolFallbackContent;
   DiagnosticSection: typeof ToolFallbackDiagnosticSection;
   Error: typeof ToolFallbackError;
-  NestedMessages: typeof ToolFallbackNestedMessages;
   Result: typeof ToolFallbackResult;
   Root: typeof ToolFallbackRoot;
   Trigger: typeof ToolFallbackTrigger;
@@ -648,7 +620,6 @@ ToolFallback.Args = ToolFallbackArgs;
 ToolFallback.DiagnosticSection = ToolFallbackDiagnosticSection;
 ToolFallback.Result = ToolFallbackResult;
 ToolFallback.Error = ToolFallbackError;
-ToolFallback.NestedMessages = ToolFallbackNestedMessages;
 ToolFallback.Approval = ToolFallbackApproval;
 
 export {
@@ -658,7 +629,6 @@ export {
   ToolFallbackContent,
   ToolFallbackDiagnosticSection,
   ToolFallbackError,
-  ToolFallbackNestedMessages,
   ToolFallbackResult,
   ToolFallbackRoot,
   ToolFallbackTrigger,

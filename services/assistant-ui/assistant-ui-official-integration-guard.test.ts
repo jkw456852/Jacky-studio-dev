@@ -208,14 +208,20 @@ test("assistant sidebar declares provider-native tools with official providerToo
   }
 });
 
-test("assistant sidebar keeps developer-only devtools out of the workspace UI", () => {
+test("assistant sidebar mounts the official developer-only devtools", () => {
   const runtime = readFileSync(
     join(repoRoot, "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx"),
     "utf8",
   );
 
-  assert.doesNotMatch(runtime, /@assistant-ui\/react-devtools/);
-  assert.doesNotMatch(runtime, /<DevToolsModal\s*\/>/);
+  assert.match(
+    runtime,
+    /import\s+\{\s*DevToolsModal\s*\}\s+from\s+["']@assistant-ui\/react-devtools["']/,
+  );
+  assert.match(
+    runtime,
+    /<AssistantRuntimeProvider\s+runtime=\{runtime\}\s+aui=\{aui\}>[\s\S]*?\{import\.meta\.env\.DEV\s*\?\s*<DevToolsModal\s*\/>\s*:\s*null\}/,
+  );
   assert.doesNotMatch(runtime, /\bAgentMessage\b|\bagentData\b|\bskillData\b|\bChatMessage\b/);
 });
 
@@ -515,13 +521,11 @@ test("assistant generic tool fallback surfaces official assistant-ui tool-call d
   );
 
   assert.match(toolFallback, /\bToolFallbackDiagnosticSection\b/);
-  assert.match(toolFallback, /\bToolFallbackNestedMessages\b/);
   for (const field of [
     "toolCallId",
     "artifact",
     "modelContent",
     "mcp",
-    "messages",
   ] as const) {
     assert.match(toolFallback, new RegExp(`\\b${field}\\b`));
   }
@@ -529,7 +533,10 @@ test("assistant generic tool fallback surfaces official assistant-ui tool-call d
     assert.match(toolFallback, new RegExp(`label=["']${label}["']`));
   }
   assert.match(toolFallback, /data-slot=["']tool-fallback-diagnostic-section["']/);
-  assert.match(toolFallback, /data-slot=["']tool-fallback-nested-messages["']/);
+  assert.doesNotMatch(
+    toolFallback,
+    /ToolFallbackNestedMessages|MessagePartPrimitive\.Messages|nested sub-agent message/,
+  );
   assert.doesNotMatch(
     toolFallback,
     /\bagentData\b|\bskillData\b|\bChatMessage\b|\bsanitizeAgentProgressMessage\b/,
