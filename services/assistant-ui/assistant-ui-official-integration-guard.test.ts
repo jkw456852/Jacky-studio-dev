@@ -208,23 +208,14 @@ test("assistant sidebar declares provider-native tools with official providerToo
   }
 });
 
-test("assistant sidebar uses official assistant-ui devtools for runtime inspection", () => {
+test("assistant sidebar keeps developer-only devtools out of the workspace UI", () => {
   const runtime = readFileSync(
     join(repoRoot, "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx"),
     "utf8",
   );
-  const devtoolsReadme = readFileSync(
-    join(repoRoot, "node_modules/@assistant-ui/react-devtools/README.md"),
-    "utf8",
-  );
 
-  assert.match(devtoolsReadme, /Drop `DevToolsModal` inside your `AssistantRuntimeProvider`/);
-  assert.match(devtoolsReadme, /no-op in production builds/);
-  assert.match(runtime, /import\s+\{\s*DevToolsModal\s*\}\s+from\s+["']@assistant-ui\/react-devtools["']/);
-  assert.match(
-    runtime,
-    /<AssistantRuntimeProvider\s+runtime=\{runtime\}\s+aui=\{aui\}>[\s\S]*?<DevToolsModal\s*\/>/,
-  );
+  assert.doesNotMatch(runtime, /@assistant-ui\/react-devtools/);
+  assert.doesNotMatch(runtime, /<DevToolsModal\s*\/>/);
   assert.doesNotMatch(runtime, /\bAgentMessage\b|\bagentData\b|\bskillData\b|\bChatMessage\b/);
 });
 
@@ -1426,10 +1417,11 @@ test("assistant sidebar streams transient status with official AI SDK data parts
   assert.match(runtime, /\bonData:\s*\(data\)\s*=>/);
   assert.match(runtime, /\bonData:\s*\(data\)\s*=>\s*\{[\s\S]*toAssistantSidebarStreamStatus\(data\)/);
   assert.match(runtime, /\bAssistantStreamStatusFooter\b/);
+  assert.match(runtime, /\bAssistantComposerFooter\b/);
   assert.match(runtime, /\bComposerFooter\b/);
   assert.match(
     runtime,
-    /const\s+ComposerFooter\s*=\s*React\.useCallback\(\s*\(\)\s*=>\s*<AssistantStreamStatusFooter\s+status=\{streamStatus\}\s*\/>/,
+    /const\s+ComposerFooter\s*=\s*React\.useCallback\([\s\S]*<AssistantComposerFooter[\s\S]*modelContextWindow=\{modelContextWindow\}[\s\S]*status=\{streamStatus\}/,
   );
   assert.match(
     runtime,
@@ -1674,7 +1666,7 @@ test("assistant audio parts expose the official unstable audio renderer slot", (
   assert.doesNotMatch(thread, /\bAudioPlayer\b/);
 });
 
-test("assistant sidebar uses official metadata usage and streaming timing UI", () => {
+test("assistant sidebar uses official context display and streaming timing UI", () => {
   const api = readFileSync(
     join(repoRoot, "api/assistant-chat.ts"),
     "utf8",
@@ -1683,8 +1675,15 @@ test("assistant sidebar uses official metadata usage and streaming timing UI", (
     join(repoRoot, "components/assistant-ui/thread.tsx"),
     "utf8",
   );
-  const tokenUsage = readFileSync(
-    join(repoRoot, "components/assistant-ui/token-usage.tsx"),
+  const contextDisplay = readFileSync(
+    join(repoRoot, "components/assistant-ui/context-display.tsx"),
+    "utf8",
+  );
+  const runtime = readFileSync(
+    join(
+      repoRoot,
+      "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx",
+    ),
     "utf8",
   );
   const messageTiming = readFileSync(
@@ -1704,8 +1703,12 @@ test("assistant sidebar uses official metadata usage and streaming timing UI", (
   assert.match(api, /\bcreateAssistantChatMessageMetadata\(part,\s*\{/);
   assert.match(api, /\busage:\s*part\.totalUsage\b/);
   assert.match(thread, /<MessageTiming\b/);
-  assert.match(thread, /<TokenUsage\b/);
-  assert.match(tokenUsage, /\bgetThreadMessageTokenUsage\(state\.message\)/);
+  assert.doesNotMatch(thread, /\bTokenUsage\b/);
+  assert.match(contextDisplay, /\buseThreadTokenUsage\(\)/);
+  assert.match(contextDisplay, /data-slot="context-display-trigger"/);
+  assert.match(contextDisplay, /data-slot="context-display-popover"/);
+  assert.match(runtime, /<ContextDisplay\.Ring\b/);
+  assert.match(runtime, /\bresolveAssistantModelContextWindow\(/);
   assert.match(messageTiming, /\buseMessageTiming\(\)/);
   assert.match(useAiSdkRuntime, /\bconst\s+messageTiming\s*=\s*useStreamingTiming\(/);
   assert.match(useAiSdkRuntime, /\bmessageTiming,\s*$/m);

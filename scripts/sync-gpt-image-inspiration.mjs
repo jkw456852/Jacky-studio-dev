@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { filterSafeNanobananaSections } from "./gpt-image-inspiration-content-safety.mjs";
+
 const PRIMARY_SOURCE = {
   id: "freestylefly-awesome-gpt-image-2",
   title: "awesome-gpt-image-2",
@@ -684,7 +686,7 @@ const parseDavidPromptJson = (items, sourceConfig, nextIdRef) => {
 };
 
 const parseNanobananaJson = (payload, sourceConfig, nextIdRef) => {
-  const sections = Array.isArray(payload?.sections) ? payload.sections : [];
+  const sections = filterSafeNanobananaSections(payload?.sections);
   const cases = [];
   for (const section of sections) {
     const prompts = Array.isArray(section?.prompts) ? section.prompts : [];

@@ -51,6 +51,7 @@ import {
   type WorkspaceSendReferenceWebPage,
   type WorkspaceSendResearchMode,
 } from "./useWorkspaceSend.helpers";
+import { resolveLiveWorkspaceGenerationTargetIds } from "./workspaceGenerationResume";
 
 const formatGenerationError = (error: unknown) => {
   if (!error) return "Unknown error";
@@ -1558,6 +1559,16 @@ export function useWorkspaceElementImageGeneration(
             referenceImages.length !== manualReferenceImages.length);
         const visualOrchestratorModel = getVisualOrchestratorModelConfig();
 
+        const resumedTrace = resumeRequestId
+          ? readWorkspaceGenerationTraceByRequestId(resumeRequestId)
+          : null;
+        if (isTreePromptNode) {
+          targetElementIds = resolveLiveWorkspaceGenerationTargetIds(
+            resumedTrace?.targetElementIds,
+            elementsRef.current.map((element) => element.id),
+          );
+        }
+
         upsertWorkspaceGenerationTrace({
           requestId: traceRequestId,
           requestElementId: elementId,
@@ -1625,13 +1636,7 @@ export function useWorkspaceElementImageGeneration(
         }
 
         if (isTreePromptNode) {
-          const resumedTrace = resumeRequestId ? readWorkspaceGenerationTraceByRequestId(resumeRequestId) : null;
-          const resumedTargetIds = (resumedTrace?.targetElementIds || []).filter((targetId) =>
-            elementsRef.current.some((element) => element.id === targetId),
-          );
-          if (resumedTargetIds.length > 0) {
-            targetElementIds = resumedTargetIds;
-          } else {
+          if (targetElementIds.length === 0) {
             targetElementIds = createGeneratingTreeImageChildren(
               elementId,
               requestedImageCount,

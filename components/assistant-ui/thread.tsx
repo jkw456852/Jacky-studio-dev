@@ -18,7 +18,6 @@ import { File as AssistantFile } from "@/components/assistant-ui/file";
 import { Image as AssistantImage } from "@/components/assistant-ui/image";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { MessageTiming } from "@/components/assistant-ui/message-timing";
-import { TokenUsage } from "@/components/assistant-ui/token-usage";
 import {
   LexicalComposerInput,
   type DirectiveChipProps,
@@ -1183,7 +1182,6 @@ const AssistantActionBar: FC = () => {
       </ActionBarPrimitive.Reload>
       <MessageModelMetadata className="mx-0.5 rounded-full px-2 py-1 text-[11px]" />
       <MessageTiming className="mx-0.5 rounded-full px-2 py-1 text-[11px]" />
-      <TokenUsage className="mx-0.5 rounded-full px-2 py-1 text-[11px]" />
       <AuiIf condition={(state) => state.message.speech == null}>
         <ActionBarPrimitive.Speak asChild>
           <TooltipIconButton tooltip="Read aloud" className={actionButtonClass}>

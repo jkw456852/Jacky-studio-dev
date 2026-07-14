@@ -1,24 +1,54 @@
 "use client";
 
 import "@assistant-ui/react-markdown/styles/dot.css";
+import "katex/dist/katex.min.css";
 
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { type FC, memo, useState } from "react";
+import { type FC, lazy, memo, Suspense, useState } from "react";
 import {
   MarkdownTextPrimitive,
+  escapeCurrencyDollars,
+  normalizeMathDelimiters,
   type CodeHeaderProps,
+  type SyntaxHighlighterProps,
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
 
+const LazySyntaxHighlighter = lazy(async () => {
+  const { SyntaxHighlighter } = await import(
+    "@/components/assistant-ui/shiki-highlighter"
+  );
+  return { default: SyntaxHighlighter };
+});
+
+const DeferredSyntaxHighlighter: FC<SyntaxHighlighterProps> = (props) => (
+  <Suspense
+    fallback={
+      <pre className="border-border/50 bg-muted/30 overflow-x-auto rounded-t-none rounded-b-xl border border-t-0 p-3.5 text-[13px] leading-relaxed">
+        <code>{props.code.trim()}</code>
+      </pre>
+    }
+  >
+    <LazySyntaxHighlighter {...props} />
+  </Suspense>
+);
+
+const preprocessMarkdown = (text: string) =>
+  escapeCurrencyDollars(normalizeMathDelimiters(text));
+
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      preprocess={preprocessMarkdown}
       className="aui-md"
       components={defaultComponents}
       defer
@@ -256,4 +286,5 @@ const defaultComponents = memoizeMarkdownComponents({
     );
   },
   CodeHeader,
+  SyntaxHighlighter: DeferredSyntaxHighlighter,
 });

@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { Bell, ChevronDown, GitBranch, LayoutTemplate, MessageSquare } from "lucide-react";
+import { Bell, ChevronDown, GitBranch, LayoutTemplate, PanelRightOpen } from "lucide-react";
 import type { WorkspaceNodeInteractionMode } from "../../../types";
 
 type WorkspaceHeaderBarProps = {
@@ -137,14 +137,13 @@ export const WorkspaceHeaderBar: React.FC<WorkspaceHeaderBarProps> = ({
         </button>
         {!showAssistant && (
           <button
+            type="button"
             onClick={onShowAssistant}
-            className="h-8 px-3.5 bg-gray-100/90 backdrop-blur-sm rounded-full flex items-center gap-1.5 text-gray-700 hover:text-gray-900 hover:bg-gray-200/90 transition text-xs font-medium border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200/80 bg-white/92 text-gray-600 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm transition hover:border-gray-300 hover:bg-white hover:text-gray-900"
+            title="显示助手侧边栏"
+            aria-label="显示助手侧边栏"
           >
-            <MessageSquare
-              size={13}
-              className="text-gray-500 fill-gray-500"
-            />
-            对话
+            <PanelRightOpen size={16} />
           </button>
         )}
       </div>

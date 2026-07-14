@@ -67,6 +67,48 @@ test("assistant sidebar does not wire textarea input history into Lexical compos
   assert.doesNotMatch(thread, /\bunstable_useComposerInputHistory\b/);
 });
 
+test("workspace assistant can collapse and reopen with restrained panel controls", () => {
+  const layout = readSource("components/assistant-ui/assistant-sidebar.tsx");
+  const runtime = readSource(
+    "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx",
+  );
+  const header = readSource("pages/Workspace/components/WorkspaceHeaderBar.tsx");
+
+  assert.match(layout, /className="w-px[^"]*after:w-3/);
+  assert.doesNotMatch(layout, /<ResizableHandle\s+withHandle/);
+  assert.match(runtime, /\bPanelRightCloseIcon\b/);
+  assert.match(runtime, /aria-label="隐藏助手侧边栏"/);
+  assert.match(runtime, /setShowAssistant\(false\)/);
+  assert.match(header, /\bPanelRightOpen\b/);
+  assert.match(header, /aria-label="显示助手侧边栏"/);
+});
+
+test("assistant sidebar markdown uses official math and Shiki integrations", () => {
+  const markdown = readSource("components/assistant-ui/markdown-text.tsx");
+  const highlighter = readSource(
+    "components/assistant-ui/shiki-highlighter.tsx",
+  );
+
+  assert.match(markdown, /import\s+["']katex\/dist\/katex\.min\.css["']/);
+  assert.match(markdown, /\bMarkdownTextPrimitive\b/);
+  assert.match(markdown, /\bremarkPlugins=\{\[remarkGfm,\s*remarkMath\]\}/);
+  assert.match(markdown, /\brehypePlugins=\{\[rehypeKatex\]\}/);
+  assert.match(markdown, /\bnormalizeMathDelimiters\(text\)/);
+  assert.match(
+    markdown,
+    /\bescapeCurrencyDollars\(normalizeMathDelimiters\(text\)\)/,
+  );
+  assert.match(markdown, /\bpreprocess=\{preprocessMarkdown\}/);
+  assert.match(markdown, /\blazy\(async\s*\(\)\s*=>/);
+  assert.match(markdown, /import\(\s*["']@\/components\/assistant-ui\/shiki-highlighter["']\s*\)/);
+  assert.match(markdown, /<Suspense\b/);
+  assert.match(markdown, /\bSyntaxHighlighter:\s*DeferredSyntaxHighlighter\b/);
+  assert.match(highlighter, /from\s+["']react-shiki\/web["']/);
+  assert.match(highlighter, /\buseShikiHighlighter\b/);
+  assert.match(highlighter, /state\.part\.status\.type\s*===\s*["']running["']/);
+  assert.doesNotMatch(markdown, /react-streamdown|streamdown|@streamdown/);
+});
+
 test("assistant sidebar follow-up suggestions stay runtime-driven and do not render empty chrome", () => {
   const followups = readSource("components/assistant-ui/follow-up-suggestions.tsx");
   const thread = readSource("components/assistant-ui/thread.tsx");

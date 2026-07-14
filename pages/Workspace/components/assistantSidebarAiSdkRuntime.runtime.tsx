@@ -37,9 +37,9 @@ import {
 import {
   AssistantChatTransport,
   useChatRuntime,
+  useThreadTokenUsage,
   type ResumableClientStorage,
 } from "@assistant-ui/react-ai-sdk";
-import { DevToolsModal } from "@assistant-ui/react-devtools";
 import { createAssistantStream } from "assistant-stream";
 import {
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -54,6 +54,7 @@ import {
   ImageIcon,
   Maximize2Icon,
   Minimize2Icon,
+  PanelRightCloseIcon,
   PaperclipIcon,
   PlusIcon,
   VideoIcon,
@@ -65,6 +66,7 @@ import {
   type ModelSelectorEffortOption,
   type ModelOption,
 } from "@/components/assistant-ui/model-selector";
+import { ContextDisplay } from "@/components/assistant-ui/context-display";
 import { DotMatrix } from "@/components/assistant-ui/dot-matrix";
 import { Thread as AssistantThread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
@@ -92,6 +94,7 @@ import {
 import {
   normalizeAssistantUiStorageEntryRows,
 } from "../../../services/assistant-ui/ui-message-normalization.ts";
+import { resolveAssistantModelContextWindow } from "../../../services/assistant-ui/model-context-window.ts";
 import type {
   AssistantSidebarCreateTargetElementArgs,
 } from "../../../services/assistant-ui/assistant-sidebar-tool-schemas.ts";
@@ -3432,12 +3435,14 @@ const AssistantSurfaceControls: React.FC<{
   assets: ConversationThreadAsset[];
   isFullscreen: boolean;
   onAttachAsset: (asset: ConversationThreadAsset) => Promise<void>;
+  onHideAssistant: () => void;
   onImportAssetToCanvas?: (asset: ConversationThreadAsset) => Promise<void>;
   onToggleFullscreen: () => void;
 }> = ({
   assets,
   isFullscreen,
   onAttachAsset,
+  onHideAssistant,
   onImportAssetToCanvas,
   onToggleFullscreen,
 }) => {
@@ -3480,6 +3485,19 @@ const AssistantSurfaceControls: React.FC<{
           ) : (
             <Maximize2Icon className="size-4" />
           )}
+        </TooltipIconButton>
+      </div>
+      <div className="pointer-events-auto">
+        <TooltipIconButton
+          tooltip="隐藏助手侧边栏"
+          side="bottom"
+          type="button"
+          variant="outline"
+          onClick={onHideAssistant}
+          className="bg-background/90 text-foreground hover:bg-background size-8 rounded-full border border-slate-200/80 shadow-sm backdrop-blur"
+          aria-label="隐藏助手侧边栏"
+        >
+          <PanelRightCloseIcon className="size-4" />
         </TooltipIconButton>
       </div>
     </div>
@@ -3938,6 +3956,32 @@ const AssistantStreamStatusFooter: React.FC<{
   );
 };
 
+const AssistantComposerFooter: React.FC<{
+  modelContextWindow?: number | undefined;
+  status: AssistantSidebarStreamStatus | null;
+}> = ({ modelContextWindow, status }) => {
+  const usage = useThreadTokenUsage();
+  const showContextUsage = Boolean(modelContextWindow && usage?.totalTokens);
+
+  if (!status && !showContextUsage) return null;
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <AssistantStreamStatusFooter status={status} />
+      </div>
+      {showContextUsage ? (
+        <ContextDisplay.Ring
+          modelContextWindow={modelContextWindow!}
+          usage={usage}
+          side="top"
+          className="shrink-0 rounded-full hover:bg-[#444746]/8 dark:hover:bg-[#c4c7c5]/10"
+        />
+      ) : null}
+    </div>
+  );
+};
+
 const useAssistantChatRuntime = (
   runtimeConfig: AssistantSidebarProps["messageActions"]["runtimeConfig"],
   activeConversationArchived: boolean,
@@ -4228,6 +4272,7 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
   } = session;
   const {
     isFullscreen = false,
+    setShowAssistant,
     setIsFullscreen = () => {},
     onToggleFullscreen,
   } = panelUi;
@@ -4895,12 +4940,22 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     }
     setIsFullscreen(!isFullscreen);
   }, [isFullscreen, onToggleFullscreen, setIsFullscreen]);
+  const handleHideAssistant = React.useCallback(() => {
+    setShowAssistant(false);
+  }, [setShowAssistant]);
   const handleComposerSlashCommand = React.useCallback((commandId: string) => {
     if (commandId === "image" || commandId === "edit-image") {
       setImageModeEnabled(true);
       setImageModePanelOpen(true);
     }
   }, []);
+  const modelContextWindow = React.useMemo(
+    () =>
+      resolveAssistantModelContextWindow(
+        parseAssistantModelValue(props.selectedModelValue).modelId,
+      ),
+    [props.selectedModelValue],
+  );
   const ComposerInlineControls = React.useCallback(
     () => (
       <div className="flex w-full min-w-0 max-w-full flex-1 items-center justify-between gap-1 overflow-hidden">
@@ -4934,8 +4989,13 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     ],
   );
   const ComposerFooter = React.useCallback(
-    () => <AssistantStreamStatusFooter status={streamStatus} />,
-    [streamStatus],
+    () => (
+      <AssistantComposerFooter
+        modelContextWindow={modelContextWindow}
+        status={streamStatus}
+      />
+    ),
+    [modelContextWindow, streamStatus],
   );
   const threadComponents = React.useMemo(
     () => ({
@@ -4966,7 +5026,6 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
 
   return (
     <AssistantRuntimeProvider runtime={runtime} aui={aui}>
-      <DevToolsModal />
       <AssistantSidebarInstructions />
       <AssistantSidebarWorkspaceContext
         browserAgent={browserAgent}
@@ -4992,7 +5051,7 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
             className={`flex h-full min-h-0 overflow-hidden bg-[linear-gradient(180deg,#f9fafc_0%,#f3f5f8_100%)] [&_a]:!no-underline ${
               isFullscreen
                 ? "w-full max-w-none border-l-0 shadow-none"
-                : "relative h-full w-full min-w-0 border-l border-slate-200/90 shadow-none"
+                : "relative h-full w-full min-w-0 shadow-none"
             } [&_[data-slot='sidebar-container']]:!absolute [&_[data-slot='sidebar-container']]:!h-full [&_[data-slot='sidebar-gap']]:!transition-[width,left,right] [&_[data-slot='sidebar-wrapper']]:!min-h-full`}
           >
             <ThreadListSidebar
@@ -5008,16 +5067,11 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
               }
             />
             <SidebarInset className="!m-0 min-h-0 overflow-hidden bg-[linear-gradient(180deg,#fafbfd_0%,#f4f6fa_100%)]">
-              {!isFullscreen ? (
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 left-0 z-20 w-8 bg-[linear-gradient(to_right,rgba(15,23,42,0.14)_0%,rgba(15,23,42,0.07)_22%,rgba(15,23,42,0.025)_54%,rgba(15,23,42,0)_100%)] opacity-80"
-                />
-              ) : null}
               <AssistantSurfaceControls
                 assets={activeConversationAssets}
                 isFullscreen={isFullscreen}
                 onAttachAsset={handleAttachConversationAsset}
+                onHideAssistant={handleHideAssistant}
                 onImportAssetToCanvas={handleImportConversationAssetToCanvas}
                 onToggleFullscreen={handleToggleFullscreen}
               />

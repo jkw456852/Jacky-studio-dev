@@ -27,14 +27,13 @@ export const AssistantSidebar: FC<AssistantSidebarProps> = ({
         {children}
       </ResizablePanel>
       <ResizableHandle
-        withHandle
-        className="border-x border-slate-300/90 bg-[linear-gradient(180deg,#e2e8f0_0%,#cbd5e1_100%)] transition-colors hover:border-slate-400/90 hover:bg-[linear-gradient(180deg,#cbd5e1_0%,#94a3b8_100%)]"
+        className="w-px bg-slate-200 shadow-none after:w-3 hover:bg-slate-300 focus-visible:bg-slate-300"
       />
       <ResizablePanel
         defaultSize="40%"
         minSize="20%"
         maxSize="48%"
-        className="border-l border-slate-200/80 bg-white/95"
+        className="bg-white/95"
       >
         {sidebar ?? (
           <Suspense fallback={null}>
