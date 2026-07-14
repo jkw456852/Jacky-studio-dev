@@ -1,13 +1,12 @@
 import path from "path";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { aui } from "@assistant-ui/vite";
 import type { Plugin } from "vite";
 import accountSyncHandler from "./api/account-sync.ts";
 import accountSecretsHandler from "./api/account-secrets.ts";
-import assistantChatHandler from "./api/assistant-chat.ts";
-import assistantChatResumeHandler from "./api/assistant-chat/resume/[streamId].ts";
 import mcpAppsHandler from "./api/mcp-apps.ts";
 import openAIProxyHandler from "./api/openai-proxy.ts";
 import searchHandler from "./api/search.ts";
@@ -70,6 +69,13 @@ function apiOpenAIProxyPlugin(): Plugin {
 // 等同于 Vercel Serverless Function，解决 ImgBB 等外部图片 CORS 问题
 // ─────────────────────────────────────────────────────────────────────────────
 function apiAssistantChatPlugin(): Plugin {
+  const assistantChatHandlerUrl = pathToFileURL(
+    path.resolve(process.cwd(), "api/assistant-chat.ts"),
+  ).href;
+  const assistantChatResumeHandlerUrl = pathToFileURL(
+    path.resolve(process.cwd(), "api/assistant-chat/resume/[streamId].ts"),
+  ).href;
+
   return {
     name: "vite-plugin-api-assistant-chat",
     configureServer(server) {
@@ -85,6 +91,9 @@ function apiAssistantChatPlugin(): Plugin {
             ...(req.query || {}),
             ...(streamId ? { streamId } : {}),
           };
+          const { default: assistantChatResumeHandler } = await import(
+            assistantChatResumeHandlerUrl
+          );
           await assistantChatResumeHandler(req as any, adaptedRes);
         } catch (error: any) {
           if (!adaptedRes.writableEnded) {
@@ -108,6 +117,9 @@ function apiAssistantChatPlugin(): Plugin {
 
         const adaptedRes = createAdaptedApiResponse(res);
         try {
+          const { default: assistantChatHandler } = await import(
+            assistantChatHandlerUrl
+          );
           await assistantChatHandler(req as any, adaptedRes);
         } catch (error: any) {
           if (!adaptedRes.writableEnded) {
@@ -1536,10 +1548,33 @@ function gptImageInspirationDevSyncPlugin(): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, ".", "");
   Object.assign(process.env, env);
   const geminiKey = env.VITE_GEMINI_API_KEY || "";
+  const devServerPlugins = command === "serve"
+    ? [
+        gptImageInspirationDevSyncPlugin(),
+        apiAssistantChatPlugin(),
+        apiMcpAppsPlugin(),
+        apiOpenAIProxyPlugin(),
+        apiFetchImagePlugin(),
+        apiSearchPlugin(),
+        apiRehostImagePlugin(),
+        apiAccountSyncPlugin(),
+        apiAccountSecretsPlugin(),
+        apiExtractPlugin(),
+        apiExtractCompetitorDeckPlugin(),
+        apiCompetitorBrowserAuthPlugin(),
+        apiCompetitorAnalysisDebugPlugin(),
+        apiCompetitorVisionSmokeDebugPlugin(),
+        apiEcommerceProductAnalysisDebugPlugin(),
+        apiEcommerceSupplementDebugPlugin(),
+        apiEcommerceWorkflowDebugPlugin(),
+        apiCompetitorPageImportPlugin(),
+        apiCustomSkillFilesPlugin(),
+      ]
+    : [];
   return {
     base: "/", // 确保基础路径正确
     server: {
@@ -1583,25 +1618,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       aui(),
       react(),
-      gptImageInspirationDevSyncPlugin(),
-      apiAssistantChatPlugin(),
-      apiMcpAppsPlugin(),
-      apiOpenAIProxyPlugin(),
-      apiFetchImagePlugin(),
-      apiSearchPlugin(),
-      apiRehostImagePlugin(),
-      apiAccountSyncPlugin(),
-      apiAccountSecretsPlugin(),
-      apiExtractPlugin(),
-      apiExtractCompetitorDeckPlugin(),
-      apiCompetitorBrowserAuthPlugin(),
-      apiCompetitorAnalysisDebugPlugin(),
-      apiCompetitorVisionSmokeDebugPlugin(),
-      apiEcommerceProductAnalysisDebugPlugin(),
-      apiEcommerceSupplementDebugPlugin(),
-      apiEcommerceWorkflowDebugPlugin(),
-      apiCompetitorPageImportPlugin(),
-      apiCustomSkillFilesPlugin(),
+      ...devServerPlugins,
     ],
     build: {
       outDir: "dist",
