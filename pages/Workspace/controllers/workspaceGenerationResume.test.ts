@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveLiveWorkspaceGenerationTargetIds } from "./workspaceGenerationResume.ts";
+import {
+  resolveLiveWorkspaceGenerationTargetIds,
+  resolveWorkspaceGenerationResumeAction,
+} from "./workspaceGenerationResume.ts";
 
 test("reuses live generation cards when resuming after a refresh", () => {
   assert.deepEqual(
@@ -20,5 +23,21 @@ test("drops deleted and duplicate generation card ids during resume", () => {
       ["prompt-node", "generated-card-1"],
     ),
     ["generated-card-1"],
+  );
+});
+
+test("interrupts a restored synchronous request instead of replaying it", () => {
+  assert.equal(
+    resolveWorkspaceGenerationResumeAction({ pollingTask: null }),
+    "interrupt",
+  );
+});
+
+test("continues polling only when the provider returned a resumable task id", () => {
+  assert.equal(
+    resolveWorkspaceGenerationResumeAction({
+      pollingTask: { taskId: "image-task-123" },
+    }),
+    "poll",
   );
 });

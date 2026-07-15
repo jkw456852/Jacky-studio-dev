@@ -11,3 +11,11 @@ export const resolveLiveWorkspaceGenerationTargetIds = (
     ),
   );
 };
+
+export type WorkspaceGenerationResumeAction = "poll" | "interrupt";
+
+export const resolveWorkspaceGenerationResumeAction = (trace: {
+  pollingTask?: { taskId?: string | null } | null;
+}): WorkspaceGenerationResumeAction => {
+  return String(trace.pollingTask?.taskId || "").trim() ? "poll" : "interrupt";
+};

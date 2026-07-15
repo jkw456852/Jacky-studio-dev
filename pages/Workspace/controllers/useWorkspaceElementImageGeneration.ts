@@ -32,7 +32,6 @@ import {
   stopWorkspaceGenerationPollingTask,
   listActiveWorkspaceGenerationPollingTasks,
   listResumableWorkspaceGenerationTraces,
-  readWorkspaceGenerationTraceByRequestId,
   wasWorkspaceGenerationTraceRestored,
   consumeRestoredWorkspaceGenerationTrace,
   type WorkspaceGenerationTraceDiagnostic,
@@ -51,7 +50,7 @@ import {
   type WorkspaceSendReferenceWebPage,
   type WorkspaceSendResearchMode,
 } from "./useWorkspaceSend.helpers";
-import { resolveLiveWorkspaceGenerationTargetIds } from "./workspaceGenerationResume";
+import { resolveWorkspaceGenerationResumeAction } from "./workspaceGenerationResume";
 
 const formatGenerationError = (error: unknown) => {
   if (!error) return "Unknown error";
@@ -1279,6 +1278,8 @@ export function useWorkspaceElementImageGeneration(
 
   useEffect(() => {
     let cancelled = false;
+    const interruptedByRefreshMessage =
+      "页面刷新导致本次同步生图连接中断。供应商未返回可恢复的任务 ID，为避免重复扣费，系统未自动重发；请确认上游账单后再手动重试。";
     const traces = listResumableWorkspaceGenerationTraces();
     traces.forEach((trace) => {
       if (activePollingRequestIdsRef.current.has(trace.requestId)) {
@@ -1297,27 +1298,32 @@ export function useWorkspaceElementImageGeneration(
         return;
       }
 
-      if (!pollingTask?.taskId) {
+      if (resolveWorkspaceGenerationResumeAction(trace) === "interrupt") {
         if (!wasWorkspaceGenerationTraceRestored(trace.requestId)) {
           return;
         }
-        const sourceElement = elementsRef.current.find((element) => element.id === trace.sourceElementId || element.id === trace.requestElementId);
-        if (!sourceElement || resolveWorkspaceTreeNodeKind(sourceElement, nodeInteractionMode) !== "prompt") {
-          return;
-        }
         consumeRestoredWorkspaceGenerationTrace(trace.requestId);
-        activePollingRequestIdsRef.current.add(trace.requestId);
-        liveTargets.forEach((targetId) => setElementGeneratingState(targetId, true));
-        setElementsGenerationStatus(liveTargets, {
-          phase: "generating",
-          title: "正在恢复树状节点生图",
-          lines: ["刷新后已重新接管本次任务"],
+        setElementsGenerationStatus(liveTargets, null);
+        liveTargets.forEach((targetId) =>
+          setElementGeneratingState(targetId, false, interruptedByRefreshMessage),
+        );
+        patchWorkspaceGenerationTrace(trace.requestId, {
+          updatedAt: Date.now(),
+          status: "failed",
+          lastError: interruptedByRefreshMessage,
+          resultSnapshot: {
+            status: "failed",
+            taskId: null,
+            resultKind: null,
+            error: interruptedByRefreshMessage,
+          },
         });
-        patchWorkspaceGenerationTrace(trace.requestId, { updatedAt: Date.now(), status: "generating" });
-        void handleGenerateImage(sourceElement.id, { resumeRequestId: trace.requestId })
-          .finally(() => {
-            activePollingRequestIdsRef.current.delete(trace.requestId);
-          });
+        console.warn("[workspace.imggen] request.resume-blocked", {
+          requestId: trace.requestId,
+          sourceElementId: trace.sourceElementId,
+          targetElementIds: liveTargets,
+          reason: "missing-resumable-task-id",
+        });
         return;
       }
 
@@ -1401,7 +1407,7 @@ export function useWorkspaceElementImageGeneration(
   }, [setElementGeneratingState, setElementsGenerationStatus]);
 
   const handleGenerateImage = useCallback(
-    async (elementId: string, resumeOptions?: { resumeRequestId?: string | null }) => {
+    async (elementId: string) => {
       const requestElement = elementsRef.current.find(
         (element) => element.id === elementId,
       );
@@ -1418,12 +1424,10 @@ export function useWorkspaceElementImageGeneration(
       }
       activeRequestsRef.current.add(requestKey);
       const requestStartedAt = Date.now();
-      const traceRequestId = String(resumeOptions?.resumeRequestId || "").trim() || `${elementId}:${requestStartedAt}:${Math.random()
+      const traceRequestId = `${elementId}:${requestStartedAt}:${Math.random()
         .toString(36)
         .slice(2, 8)}`;
-      if (!resumeOptions?.resumeRequestId) {
-        announceWorkspaceGenerationRequest(elementId, traceRequestId);
-      }
+      announceWorkspaceGenerationRequest(elementId, traceRequestId);
       console.info("[workspace.imggen] request.queued", {
         requestId: traceRequestId,
         elementId,
@@ -1434,7 +1438,6 @@ export function useWorkspaceElementImageGeneration(
       let taskPlannerRunCount = 0;
       let shouldTrackSourceElementState = false;
       let targetElementIds: string[] = [];
-      const resumeRequestId = String(resumeOptions?.resumeRequestId || "").trim();
       let sourceRequestLockKey: string | null = null;
       let planningInflightKey: string | null = null;
       let ownsPlanningExecution = false;
@@ -1558,16 +1561,6 @@ export function useWorkspaceElementImageGeneration(
             referenceImages[0] !== manualReferenceImages[0] ||
             referenceImages.length !== manualReferenceImages.length);
         const visualOrchestratorModel = getVisualOrchestratorModelConfig();
-
-        const resumedTrace = resumeRequestId
-          ? readWorkspaceGenerationTraceByRequestId(resumeRequestId)
-          : null;
-        if (isTreePromptNode) {
-          targetElementIds = resolveLiveWorkspaceGenerationTargetIds(
-            resumedTrace?.targetElementIds,
-            elementsRef.current.map((element) => element.id),
-          );
-        }
 
         upsertWorkspaceGenerationTrace({
           requestId: traceRequestId,
