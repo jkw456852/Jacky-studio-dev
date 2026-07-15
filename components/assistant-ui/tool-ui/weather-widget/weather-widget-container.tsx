@@ -35,24 +35,24 @@ type WeatherCloudCssProperties = CSSProperties &
 const WEATHER_CLOUD_MOTION_CSS = `
   .weather-widget-cloud-motion {
     contain: strict;
-    mix-blend-mode: screen;
-    opacity: var(--weather-cloud-opacity, 0.34);
+    opacity: var(--weather-cloud-opacity, 0.82);
   }
 
   .weather-widget-cloud-motion__sheet {
     position: absolute;
     inset: 0;
-    filter: blur(16px);
     transform: translate3d(0, 0, 0);
     overflow: hidden;
   }
 
   .weather-widget-cloud-motion__sheet--far {
     opacity: var(--weather-cloud-far-opacity, 0.28);
+    filter: blur(5px);
   }
 
   .weather-widget-cloud-motion__sheet--near {
     opacity: var(--weather-cloud-near-opacity, 0.22);
+    filter: blur(2.5px);
   }
 
   .weather-widget-cloud-motion__track {
@@ -67,6 +67,7 @@ const WEATHER_CLOUD_MOTION_CSS = `
     animation-delay: var(--weather-cloud-delay, 0s);
     animation-timing-function: linear;
     animation-iteration-count: infinite;
+    animation-play-state: var(--weather-cloud-play-state, running);
   }
 
   .weather-widget-cloud-motion__group {
@@ -89,24 +90,37 @@ const WEATHER_CLOUD_MOTION_CSS = `
     width: var(--weather-cloud-width, 62%);
     height: var(--weather-cloud-height, 32%);
     top: var(--weather-cloud-top, 20%);
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
+    background-color: var(--weather-cloud-body);
     border-radius: 999px;
+    box-shadow:
+      inset 0 16px 24px -14px var(--weather-cloud-highlight),
+      inset 0 -16px 24px -14px var(--weather-cloud-shadow),
+      0 8px 18px -12px var(--weather-cloud-shadow);
     transform: translate3d(0, 0, 0);
   }
 
-  .weather-widget-cloud-motion__cloud--far {
-    background-image:
-      radial-gradient(ellipse 34% 48% at 18% 54%, rgba(255,255,255,0.58), rgba(255,255,255,0.00) 72%),
-      radial-gradient(ellipse 42% 60% at 48% 42%, rgba(255,255,255,0.46), rgba(255,255,255,0.00) 76%),
-      radial-gradient(ellipse 32% 46% at 78% 58%, rgba(255,255,255,0.50), rgba(255,255,255,0.00) 74%);
+  .weather-widget-cloud-motion__cloud::before,
+  .weather-widget-cloud-motion__cloud::after {
+    position: absolute;
+    bottom: 30%;
+    content: "";
+    background-color: var(--weather-cloud-body);
+    border-radius: 50%;
+    box-shadow:
+      inset 0 14px 20px -14px var(--weather-cloud-highlight),
+      inset 0 -12px 18px -14px var(--weather-cloud-shadow);
   }
 
-  .weather-widget-cloud-motion__cloud--near {
-    background-image:
-      radial-gradient(ellipse 30% 50% at 16% 56%, rgba(255,255,255,0.66), rgba(255,255,255,0.00) 72%),
-      radial-gradient(ellipse 44% 66% at 50% 50%, rgba(255,255,255,0.50), rgba(255,255,255,0.00) 76%),
-      radial-gradient(ellipse 30% 48% at 82% 60%, rgba(255,255,255,0.54), rgba(255,255,255,0.00) 72%);
+  .weather-widget-cloud-motion__cloud::before {
+    left: 14%;
+    width: 42%;
+    height: 152%;
+  }
+
+  .weather-widget-cloud-motion__cloud::after {
+    right: 13%;
+    width: 34%;
+    height: 116%;
   }
 
   @keyframes weatherCloudTrack {
@@ -152,6 +166,7 @@ const stabilizeCloudMotionPresets = (
 stabilizeCloudMotionPresets(TUNED_WEATHER_EFFECTS_CHECKPOINT_OVERRIDES);
 
 const CLOUD_MOTION_CONDITIONS = new Set<string>([
+  "clear",
   "partly-cloudy",
   "cloudy",
   "overcast",
@@ -184,27 +199,27 @@ const CLOUD_DRIFT_STYLES = {
     "--weather-cloud-duration": "76s",
   },
   farUpper: {
-    "--weather-cloud-height": "34%",
-    "--weather-cloud-top": "16%",
-    "--weather-cloud-width": "68%",
+    "--weather-cloud-height": "15%",
+    "--weather-cloud-top": "15%",
+    "--weather-cloud-width": "42%",
     "--weather-cloud-x": "4%",
   },
   farLower: {
-    "--weather-cloud-height": "28%",
-    "--weather-cloud-top": "42%",
-    "--weather-cloud-width": "58%",
+    "--weather-cloud-height": "12%",
+    "--weather-cloud-top": "39%",
+    "--weather-cloud-width": "34%",
     "--weather-cloud-x": "56%",
   },
   nearLower: {
-    "--weather-cloud-height": "30%",
-    "--weather-cloud-top": "54%",
-    "--weather-cloud-width": "64%",
+    "--weather-cloud-height": "17%",
+    "--weather-cloud-top": "55%",
+    "--weather-cloud-width": "46%",
     "--weather-cloud-x": "12%",
   },
   nearMiddle: {
-    "--weather-cloud-height": "26%",
-    "--weather-cloud-top": "30%",
-    "--weather-cloud-width": "54%",
+    "--weather-cloud-height": "14%",
+    "--weather-cloud-top": "31%",
+    "--weather-cloud-width": "39%",
     "--weather-cloud-x": "62%",
   },
 } satisfies Record<string, WeatherCloudCssProperties>;
@@ -286,14 +301,34 @@ export function WeatherWidget({
   );
   const weatherTheme = getWeatherTheme(brightness, undefined);
   const isWeatherDark = weatherTheme === "dark";
+  const isClearWeather = current.conditionCode === "clear";
+  const cloudLayerEnabled =
+    effects?.enabled !== false &&
+    CLOUD_MOTION_CONDITIONS.has(current.conditionCode);
   const showCloudMotionOverlay =
-    effectsEnabled && CLOUD_MOTION_CONDITIONS.has(current.conditionCode);
+    cloudLayerEnabled;
   const renderEffectCompositor =
     effectsEnabled && !CSS_ONLY_CLOUD_CONDITIONS.has(current.conditionCode);
   const cloudMotionStyle = {
-    "--weather-cloud-opacity": isWeatherDark ? "0.42" : "0.62",
-    "--weather-cloud-far-opacity": isWeatherDark ? "0.34" : "0.58",
-    "--weather-cloud-near-opacity": isWeatherDark ? "0.28" : "0.44",
+    "--weather-cloud-opacity": isClearWeather
+      ? isWeatherDark
+        ? "0.44"
+        : "0.56"
+      : isWeatherDark
+        ? "0.82"
+        : "0.96",
+    "--weather-cloud-far-opacity": isClearWeather ? "0.46" : "0.78",
+    "--weather-cloud-near-opacity": isClearWeather ? "0.36" : "0.74",
+    "--weather-cloud-highlight": isWeatherDark
+      ? "rgba(226, 232, 240, 0.58)"
+      : "rgba(255, 255, 255, 0.96)",
+    "--weather-cloud-body": isWeatherDark
+      ? "rgba(180, 194, 214, 0.6)"
+      : "rgba(248, 252, 255, 0.9)",
+    "--weather-cloud-shadow": isWeatherDark
+      ? "rgba(30, 41, 59, 0.68)"
+      : "rgba(101, 137, 163, 0.52)",
+    "--weather-cloud-play-state": reducedMotion ? "paused" : "running",
   } as CSSProperties;
   const backgroundClass = isWeatherDark
     ? "bg-gradient-to-b from-zinc-950 via-zinc-900/70 to-zinc-950"
@@ -328,7 +363,7 @@ export function WeatherWidget({
         {showCloudMotionOverlay ? (
           <div
             aria-hidden="true"
-            className="weather-widget-cloud-motion pointer-events-none absolute inset-0 overflow-hidden"
+            className="weather-widget-cloud-motion pointer-events-none absolute inset-0 z-[1] overflow-hidden"
             style={cloudMotionStyle}
           >
             <div className="weather-widget-cloud-motion__sheet weather-widget-cloud-motion__sheet--far">

@@ -5,6 +5,7 @@ import {
   type ImageHostProvider,
   type StudioAccountSecretsSnapshot,
 } from './account-secrets-shared.ts';
+import { readSnapshotResponse } from './account-secrets-response.ts';
 import {
   safeLocalStorageRemoveItem,
   safeLocalStorageSetItem,
@@ -193,29 +194,6 @@ const createAuthorizedFetch = (accessToken: string): typeof fetch => {
   };
 
   return fetchWithAuth;
-};
-
-const readSnapshotResponse = async (
-  response: Response,
-  actionLabel: string,
-): Promise<StudioAccountSecretsSnapshot> => {
-  const payload = await response.json().catch(() => null) as {
-    snapshot?: StudioAccountSecretsSnapshot;
-    error?: string;
-  } | null;
-
-  if (!response.ok) {
-    const error = new Error(
-      payload?.error || `${actionLabel} failed: ${response.status} ${response.statusText}`,
-    ) as Error & { conflictSnapshot?: StudioAccountSecretsSnapshot };
-    if (response.status === 409 && payload?.snapshot) {
-      error.name = 'AccountSecretsConflictError';
-      error.conflictSnapshot = normalizeAccountSecretsSnapshot(payload.snapshot);
-    }
-    throw error;
-  }
-
-  return normalizeAccountSecretsSnapshot(payload?.snapshot);
 };
 
 export const pushAccountSecretsToAccount = async ({

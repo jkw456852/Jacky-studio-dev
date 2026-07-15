@@ -14,6 +14,7 @@ import { useAuthSession } from '../../hooks/useAuthSession';
 import { syncAccountSecretsWithAccount } from '../../services/account-secrets';
 import { syncLocalStudioUserAssetsToAccount } from '../../services/runtime-assets/account-sync';
 import { getStudioUserAssetApi } from '../../services/runtime-assets/api';
+import { refreshCurrentSession } from '../../services/supabase/auth';
 import {
   getProjects,
   scanProjectLocalAssetRisk,
@@ -65,6 +66,45 @@ const describeSensitiveConfigSyncMode = (
   }
 
   return '当前没有需要同步的敏感配置变更';
+};
+
+type AccountSyncRequestError = Error & {
+  code?: string;
+  requestId?: string;
+};
+
+const describeAccountSyncError = (
+  value: unknown,
+  fallback: string,
+): string => {
+  if (!(value instanceof Error)) {
+    return fallback;
+  }
+
+  const error = value as AccountSyncRequestError;
+  const diagnostics = [
+    error.code ? `错误码 ${error.code}` : '',
+    error.requestId ? `请求 ID ${error.requestId}` : '',
+  ].filter(Boolean);
+
+  return diagnostics.length > 0
+    ? `${error.message}（${diagnostics.join('，')}）`
+    : error.message;
+};
+
+const getFreshAccountSyncAccessToken = async (): Promise<string> => {
+  const { data, error } = await refreshCurrentSession();
+
+  if (error) {
+    throw new Error(`登录会话刷新失败：${error.message}`);
+  }
+
+  const accessToken = String(data.session?.access_token || '').trim();
+  if (!accessToken) {
+    throw new Error('当前登录会话已失效，请重新登录后再同步账号资产。');
+  }
+
+  return accessToken;
 };
 
 const buildSignOutConfirmationMessage = (args: {
@@ -208,9 +248,7 @@ const UserDetailPage: React.FC = () => {
   };
 
   const handleSyncAssets = async () => {
-    const accessToken = String(session?.access_token || '').trim();
-
-    if (!accessToken) {
+    if (!session?.access_token) {
       setError('当前会话缺少 access token，无法同步账号资产。');
       return;
     }
@@ -222,6 +260,7 @@ const UserDetailPage: React.FC = () => {
     let assetResult: Awaited<ReturnType<typeof syncLocalStudioUserAssetsToAccount>> | null = null;
 
     try {
+      const accessToken = await getFreshAccountSyncAccessToken();
       assetResult = await syncLocalStudioUserAssetsToAccount({
         accessToken,
       });
@@ -239,14 +278,14 @@ const UserDetailPage: React.FC = () => {
           `普通账号资产已同步：已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项。`,
         );
       }
-      setError(syncError instanceof Error ? syncError.message : '账号资产同步失败，请稍后重试');
+      setError(describeAccountSyncError(syncError, '账号资产同步失败，请稍后重试'));
     } finally {
       setSyncing(false);
     }
   };
 
   const handleSignOut = async () => {
-    const accessToken = String(session?.access_token || '').trim();
+    const sessionAccessToken = String(session?.access_token || '').trim();
     setLoading(true);
     setError('');
     setSyncMessage('');
@@ -255,10 +294,11 @@ const UserDetailPage: React.FC = () => {
     let autoSyncMessage = '';
 
     try {
-      if (accessToken) {
+      if (sessionAccessToken) {
         setSyncing(true);
         let assetResult: Awaited<ReturnType<typeof syncLocalStudioUserAssetsToAccount>> | null = null;
         try {
+          const accessToken = await getFreshAccountSyncAccessToken();
           assetResult = await syncLocalStudioUserAssetsToAccount({
             accessToken,
           });
@@ -270,13 +310,15 @@ const UserDetailPage: React.FC = () => {
           console.error('Failed to auto sync account assets before sign out', syncError);
           if (assetResult) {
             autoSyncMessage = `退出前已同步普通账号资产：已按合并策略同步到账号，本地删除会同步清理账号端对应记录；远端审计记录 ${assetResult.remoteAuditCount} 条，同步决策 ${assetResult.decisions.length} 项。`;
-            autoSyncError = syncError instanceof Error
-              ? `敏感配置同步失败：${syncError.message}`
-              : '敏感配置同步失败，请稍后重试';
+            autoSyncError = `敏感配置同步失败：${describeAccountSyncError(
+              syncError,
+              '请稍后重试',
+            )}`;
           } else {
-            autoSyncError = syncError instanceof Error
-              ? syncError.message
-              : '退出前自动同步账号资产失败，请稍后重试';
+            autoSyncError = describeAccountSyncError(
+              syncError,
+              '退出前自动同步账号资产失败，请稍后重试',
+            );
           }
         } finally {
           setSyncing(false);
@@ -287,14 +329,14 @@ const UserDetailPage: React.FC = () => {
       const riskyProjects = projects
         .map((project) => scanProjectLocalAssetRisk(project))
         .filter((item): item is ProjectLocalRiskItem => Boolean(item));
-      const needsConfirmation = projects.length > 0 || riskyProjects.length > 0 || !!autoSyncError || !accessToken;
+      const needsConfirmation = projects.length > 0 || riskyProjects.length > 0 || !!autoSyncError || !sessionAccessToken;
 
       if (needsConfirmation) {
         const confirmed = window.confirm(buildSignOutConfirmationMessage({
           localProjectCount: projects.length,
           riskyProjects,
           autoSyncError,
-          hasAccessToken: Boolean(accessToken),
+          hasAccessToken: Boolean(sessionAccessToken),
         }));
 
         if (!confirmed) {

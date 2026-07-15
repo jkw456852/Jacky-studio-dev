@@ -13,6 +13,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:ai-sdk": "devtools",
     "sync:studio-assets": "node scripts/sync-studio-assets.mjs",
     "sync:gpt-image-inspiration": "node scripts/sync-gpt-image-inspiration.mjs",
     "encoding:inspect": "node scripts/encoding-guard.mjs inspect",
@@ -54,11 +55,11 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.22",
     "radix-ui": "^1.6.0",
-    "react-shiki": "^0.11.0",
-    "rehype-katex": "^7.0.1",
     "react-resizable-panels": "^4.11.2",
     "react-router-dom": "^7.13.0",
+    "react-shiki": "^0.11.0",
     "redis": "^5.12.1",
+    "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^3.4.0",
@@ -68,6 +69,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@ai-sdk/devtools": "0.0.24",
     "@assistant-ui/vite": "^0.0.6",
     "@tailwindcss/postcss": "^4.1.18",
     "@tailwindcss/vite": "^4.1.18",

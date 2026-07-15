@@ -432,6 +432,9 @@ test("assistant-ui modelName can carry AI SDK registry provider prefix", () => {
   });
 
   assert.equal(provider.id, "plato");
+  assert.equal(provider.name, "Plato");
+  assert.equal(provider.baseUrl, "https://api.example.test");
+  assert.equal(provider.apiKey, "test-key");
   assert.equal(
     resolveModelId(
       {
@@ -445,12 +448,10 @@ test("assistant-ui modelName can carry AI SDK registry provider prefix", () => {
   );
 });
 
-test("assistant-ui modelName provider prefix wins over legacy providerId", () => {
+test("assistant-ui modelName provider prefix determines the registry provider", () => {
   const provider = resolveProviderConfig({
     config: {
       modelName: "plato:gpt-5.4",
-      providerId: "legacy_provider",
-      providerName: "Legacy Provider",
     },
   });
 
@@ -460,7 +461,6 @@ test("assistant-ui modelName provider prefix wins over legacy providerId", () =>
       {
         config: {
           modelName: "plato:gpt-5.4",
-          modelId: "legacy-model",
         },
       },
       provider,
@@ -469,13 +469,12 @@ test("assistant-ui modelName provider prefix wins over legacy providerId", () =>
   );
 });
 
-test("assistant-ui official modelName config wins over legacy modelId", () => {
+test("assistant-ui registry modelName resolves to the unprefixed model id", () => {
   assert.equal(
     resolveModelId(
       {
         config: {
-          modelId: "gpt-5.4-legacy",
-          modelName: "gpt-5.4-official",
+          modelName: "plato:gpt-5.4-official",
         },
       },
       customProvider,
@@ -484,19 +483,17 @@ test("assistant-ui official modelName config wins over legacy modelId", () => {
   );
 });
 
-test("providerConfig carries project provider details outside assistant-ui config", () => {
+test("project provider config carries the selected provider connection settings", () => {
   const provider = resolveProviderConfig({
     config: {
-      modelName: "gpt-5.4",
-      apiKey: "official-config-key",
-      baseUrl: "https://official-config.example.test/v1",
+      modelName: "custom_provider:gpt-5.4",
     },
     providerConfig: {
       provider: {
         id: "custom_provider",
         name: "Custom Provider",
-        baseUrl: "https://provider-config.example.test",
-        apiKey: "provider-config-key",
+        apiKey: "project-provider-key",
+        baseUrl: "https://project-provider.example.test/v1",
       },
     },
   });
@@ -504,26 +501,8 @@ test("providerConfig carries project provider details outside assistant-ui confi
   assert.deepEqual(provider, {
     id: "custom_provider",
     name: "Custom Provider",
-    baseUrl: "https://provider-config.example.test",
-    apiKey: "provider-config-key",
-  });
-});
-
-test("legacy provider fields in config remain migration fallback", () => {
-  const provider = resolveProviderConfig({
-    config: {
-      providerId: "legacy_provider",
-      providerName: "Legacy Provider",
-      baseUrl: "https://legacy-provider.example.test",
-      apiKey: "legacy-key",
-    },
-  });
-
-  assert.deepEqual(provider, {
-    id: "legacy_provider",
-    name: "Legacy Provider",
-    baseUrl: "https://legacy-provider.example.test",
-    apiKey: "legacy-key",
+    baseUrl: "https://project-provider.example.test/v1",
+    apiKey: "project-provider-key",
   });
 });
 

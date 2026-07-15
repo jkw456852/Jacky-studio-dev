@@ -1322,12 +1322,6 @@ const Workspace: React.FC = () => {
     elementId: string | null;
     nonce: number;
   }>({ elementId: null, nonce: 0 });
-  const handleAssistantReferenceElementSelect = useCallback((elementId: string) => {
-    setAssistantReferenceSelection((current) => ({
-      elementId,
-      nonce: current.nonce + 1,
-    }));
-  }, []);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const textEditDraftRef = useRef<Record<string, string>>({});
   const pendingSelectAllTextIdRef = useRef<string | null>(null);
@@ -1398,6 +1392,33 @@ const Workspace: React.FC = () => {
   const [hoveredMarkerId, setHoveredMarkerId] = useState<number | null>(null);
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editingMarkerLabel, setEditingMarkerLabel] = useState("");
+  const handleAssistantReferenceElementSelect = useCallback((elementId: string) => {
+    setEditingMarkerId(null);
+    setAssistantReferenceSelection((current) => ({
+      elementId,
+      nonce: current.nonce + 1,
+    }));
+  }, []);
+  const handleAssistantMarkerPlaced = useCallback((markerId: string) => {
+    setEditingMarkerLabel("");
+    setEditingMarkerId(markerId);
+  }, []);
+  const handleAssistantReferenceSelectionClear = useCallback(() => {
+    setEditingMarkerId(null);
+    setAssistantReferenceSelection((current) => ({
+      elementId: null,
+      nonce: current.nonce + 1,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!editingMarkerId) return;
+    setAssistantReferenceSelection((current) =>
+      current.elementId === null
+        ? current
+        : { ...current, elementId: null },
+    );
+  }, [editingMarkerId]);
 
   const [leftPanelMode, setLeftPanelMode] = useState<"layers" | "files" | null>(
     null,
@@ -2428,6 +2449,7 @@ const Workspace: React.FC = () => {
       // Only blank-canvas click should clear current selection and related popovers.
       setSelectedElementId(null);
       setSelectedElementIds([]);
+      handleAssistantReferenceSelectionClear();
       setEditingTextId(null);
       setShowFontPicker(false);
       setShowModelPicker(false);
@@ -2441,7 +2463,7 @@ const Workspace: React.FC = () => {
     window.addEventListener("mousedown", handleGlobalMouseDown, true);
     return () =>
       window.removeEventListener("mousedown", handleGlobalMouseDown, true);
-  }, [activeTool]);
+  }, [activeTool, handleAssistantReferenceSelectionClear]);
 
   // Model preference data
   const IMAGE_MODEL_META: Record<
@@ -4830,6 +4852,7 @@ const Workspace: React.FC = () => {
     setSelectedElementId,
     setSelectedElementIds,
     onReferenceElementSelect: handleAssistantReferenceElementSelect,
+    onMarkerPlaced: handleAssistantMarkerPlaced,
     textEditDraftRef,
     pendingSelectAllTextIdRef,
     setEditingTextId,

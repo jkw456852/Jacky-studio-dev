@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
 import type {
   StudioUserAssetAuditEntry,
   StudioUserAssetState,
@@ -18,6 +19,119 @@ type AccountSyncRow = {
 };
 
 const TABLE_NAME = 'studio_user_assets';
+
+type AccountSyncApiError = Error & {
+  status: number;
+  code: string;
+  details?: Record<string, unknown>;
+};
+
+const createAccountSyncApiError = (
+  status: number,
+  code: string,
+  message: string,
+  details?: Record<string, unknown>,
+): AccountSyncApiError => {
+  const error = new Error(message) as AccountSyncApiError;
+  error.name = 'AccountSyncApiError';
+  error.status = status;
+  error.code = code;
+  error.details = details;
+  return error;
+};
+
+const readAccountSyncErrorRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+
+const readAccountSyncErrorMessage = (value: unknown): string => {
+  if (typeof value === 'string') return value.trim();
+  const record = readAccountSyncErrorRecord(value);
+  return typeof record.message === 'string' ? record.message.trim() : '';
+};
+
+const isInvalidSupabaseServerKeyError = (value: unknown): boolean => {
+  const record = readAccountSyncErrorRecord(value);
+  const code = String(record.code || '').trim().toLowerCase();
+  const message = readAccountSyncErrorMessage(value).toLowerCase();
+  return (
+    code === 'invalid_api_key'
+    || message.includes('invalid api key')
+    || message.includes('no api key found')
+  );
+};
+
+const isMissingAccountSyncTableError = (value: unknown): boolean => {
+  const record = readAccountSyncErrorRecord(value);
+  const code = String(record.code || '').trim().toUpperCase();
+  const message = readAccountSyncErrorMessage(value).toLowerCase();
+  return (
+    code === '42P01'
+    || code === 'PGRST205'
+    || (
+      message.includes(TABLE_NAME)
+      && (
+        message.includes('does not exist')
+        || message.includes('schema cache')
+        || message.includes('could not find')
+      )
+    )
+  );
+};
+
+export const classifyAccountSyncServerError = (
+  value: unknown,
+): AccountSyncApiError => {
+  if (
+    value
+    && typeof value === 'object'
+    && typeof (value as Partial<AccountSyncApiError>).status === 'number'
+    && typeof (value as Partial<AccountSyncApiError>).code === 'string'
+  ) {
+    return value as AccountSyncApiError;
+  }
+
+  if (isInvalidSupabaseServerKeyError(value)) {
+    return createAccountSyncApiError(
+      503,
+      'account_sync_service_key_invalid',
+      'Supabase 服务端密钥无效或不属于当前项目，请更新 Vercel 的 SUPABASE_SERVICE_ROLE_KEY。',
+    );
+  }
+
+  if (isMissingAccountSyncTableError(value)) {
+    return createAccountSyncApiError(
+      503,
+      'account_sync_table_missing',
+      '账户资产存储尚未初始化，请先执行 Supabase migration。',
+      {
+        table: TABLE_NAME,
+        migration: 'supabase/migrations/202607150000_create_studio_user_assets.sql',
+      },
+    );
+  }
+
+  const record = readAccountSyncErrorRecord(value);
+  const providerCode = String(record.code || '').trim();
+  if (providerCode) {
+    return createAccountSyncApiError(
+      502,
+      'account_sync_database_failed',
+      'Supabase 账户资产存储请求失败。',
+      {
+        providerCode,
+        providerMessage: readAccountSyncErrorMessage(value),
+      },
+    );
+  }
+
+  return createAccountSyncApiError(
+    500,
+    'account_sync_failed',
+    readAccountSyncErrorMessage(value) || '账户资产同步失败。',
+  );
+};
 
 const createEmptyState = (): StudioUserAssetState => ({
   version: 5,
@@ -183,10 +297,17 @@ const getServerSupabase = () => {
     process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
   ).trim();
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const missingEnv = [
+    ...(!supabaseUrl ? ['SUPABASE_URL (or VITE_SUPABASE_URL)'] : []),
+    ...(!serviceRoleKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+  ];
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      'Missing server Supabase env. Please set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY.',
+  if (missingEnv.length > 0) {
+    throw createAccountSyncApiError(
+      503,
+      'account_sync_server_env_missing',
+      `Vercel 缺少账户同步所需的服务端环境变量：${missingEnv.join(', ')}。`,
+      { missingEnv },
     );
   }
 
@@ -206,7 +327,7 @@ const readRemoteEnvelope = async (supabase: any, userId: string) => {
     .maybeSingle();
 
   if (error) {
-    throw error;
+    throw classifyAccountSyncServerError(error);
   }
 
   const row = (data || null) as AccountSyncRow | null;
@@ -242,7 +363,7 @@ const writeRemoteEnvelope = async (
     .single();
 
   if (error) {
-    throw error;
+    throw classifyAccountSyncServerError(error);
   }
 
   const row = (data || null) as AccountSyncRow | null;
@@ -256,15 +377,26 @@ const writeRemoteEnvelope = async (
 };
 
 export default async function handler(req: any, res: any) {
+  const requestId = randomUUID().slice(0, 8);
+  res.setHeader?.('x-account-sync-request-id', requestId);
+
   if (req.method !== 'GET' && req.method !== 'PUT') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({
+      error: 'Method not allowed',
+      code: 'method_not_allowed',
+      requestId,
+    });
   }
 
   try {
     const token = readBearerToken(req);
 
     if (!token) {
-      return res.status(401).json({ error: 'Missing bearer token' });
+      return res.status(401).json({
+        error: 'Missing bearer token',
+        code: 'missing_bearer_token',
+        requestId,
+      });
     }
 
     const supabase = getServerSupabase();
@@ -273,8 +405,16 @@ export default async function handler(req: any, res: any) {
       error: authError,
     } = await supabase.auth.getUser(token);
 
+    if (authError && isInvalidSupabaseServerKeyError(authError)) {
+      throw classifyAccountSyncServerError(authError);
+    }
+
     if (authError || !user) {
-      return res.status(401).json({ error: authError?.message || 'Invalid auth token' });
+      return res.status(401).json({
+        error: authError?.message || 'Invalid auth token',
+        code: 'invalid_auth_token',
+        requestId,
+      });
     }
 
     if (req.method === 'GET') {
@@ -297,7 +437,19 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json(envelope);
   } catch (error: any) {
-    console.error('[account-sync] request failed', error);
-    return res.status(500).json({ error: error?.message || 'account_sync_failed' });
+    const apiError = classifyAccountSyncServerError(error);
+    console.error('[account-sync] request failed', {
+      requestId,
+      code: apiError.code,
+      message: apiError.message,
+      details: apiError.details,
+      cause: error,
+    });
+    return res.status(apiError.status).json({
+      error: apiError.message,
+      code: apiError.code,
+      requestId,
+      ...(apiError.details ? { details: apiError.details } : {}),
+    });
   }
 }

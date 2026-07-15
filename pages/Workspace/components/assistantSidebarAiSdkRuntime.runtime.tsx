@@ -6,7 +6,6 @@ import {
   CompositeAttachmentAdapter,
   McpAppRenderer,
   McpAppsRemoteHost,
-  ModelContextRegistry,
   RuntimeAdapterProvider,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
@@ -26,7 +25,6 @@ import {
   type CreateAttachment,
   type GenericThreadHistoryAdapter,
   type FeedbackAdapter,
-  type ModelContext,
   type MessageFormatAdapter,
   type MessageFormatItem,
   type RemoteThreadListAdapter,
@@ -819,11 +817,6 @@ const buildAssistantChatProviderConfig = (
   };
 };
 
-type AssistantSidebarModelContextConfig = {
-  apiKey: string;
-  baseUrl?: string | undefined;
-};
-
 type AssistantSidebarModelOption = ModelOption & {
   providerLabel: string;
 };
@@ -831,21 +824,6 @@ type AssistantSidebarModelOption = ModelOption & {
 type AssistantSidebarModelGroup = {
   label: string;
   models: AssistantSidebarModelOption[];
-};
-
-const buildModelContextRegistry = (options: {
-  provider: ReturnType<typeof buildAssistantChatProviderConfig>;
-}) => {
-  const registry = new ModelContextRegistry();
-  registry.addProvider({
-    getModelContext: () => ({
-      config: {
-        apiKey: options.provider.apiKey,
-        baseUrl: options.provider.baseUrl || undefined,
-      } satisfies AssistantSidebarModelContextConfig & NonNullable<ModelContext["config"]>,
-    }),
-  });
-  return registry;
 };
 
 const toAssistantModelValue = (
@@ -1592,9 +1570,7 @@ const summarizeAssistantChatRequestBody = (body: unknown) => {
       toolChoice?: unknown;
       activeTools?: string[];
       config?: {
-        modelId?: string;
         modelName?: string;
-        model?: string;
         reasoningEffort?: string;
       };
       providerConfig?: {
@@ -1603,7 +1579,6 @@ const summarizeAssistantChatRequestBody = (body: unknown) => {
           name?: string | null;
           baseUrl?: string | null;
         } | null;
-        providerId?: string | null;
       };
       webSearch?: {
         enabled?: boolean;
@@ -1640,6 +1615,9 @@ const summarizeAssistantChatRequestBody = (body: unknown) => {
     const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     const fileSummary = summarizeUiMessageFileParts(messages);
     const lastMessage = messages.at(-1);
+    const modelSelection = parseAssistantModelValue(
+      parsed.config?.modelName || "",
+    );
     return {
       bodyType: "json",
       messageCount: messages.length,
@@ -1657,16 +1635,13 @@ const summarizeAssistantChatRequestBody = (body: unknown) => {
       toolChoice: parsed.toolChoice,
       providerId:
         parsed.providerConfig?.provider?.id ||
-        parsed.providerConfig?.providerId ||
+        modelSelection.providerId ||
         undefined,
       providerName: parsed.providerConfig?.provider?.name || undefined,
       providerBaseUrl: summarizeProviderBaseUrl(
         parsed.providerConfig?.provider?.baseUrl || undefined,
       ),
-      modelId:
-        parsed.config?.modelId ||
-        parsed.config?.modelName ||
-        parsed.config?.model,
+      modelId: modelSelection.modelId || undefined,
       reasoningEffort:
         typeof parsed.config?.reasoningEffort === "string" &&
         parsed.config.reasoningEffort.trim()
@@ -3066,6 +3041,20 @@ const hasCanvasReferenceAttachment = (
 const CANVAS_REFERENCE_DIRECTIVE_RE =
   /:(?:canvas|mark)\[([^\]\n]{1,1024})\]\{name=([^}\n]{1,1024})\}/gu;
 
+const removeAssistantReferenceDirectiveFromText = (
+  text: string,
+  directiveId: string,
+): string =>
+  text.replace(
+    new RegExp(
+      `:(?:canvas|mark)\\[[^\\]\\n]{1,1024}\\]\\{name=${escapeAssistantSidebarRegExp(
+        directiveId,
+      )}\\}`,
+      "gu",
+    ),
+    "",
+  );
+
 const toMarkerReferenceAttachment = (options: SelectedMarkerComposerAsset & {
   directiveLabel: string;
 }): CreateAttachment => {
@@ -4141,9 +4130,9 @@ const useAssistantChatRuntime = (
           providerConfig: {
             provider,
           },
-            webSearch: webSearchConfig,
-            imageGeneration: imageGenerationConfig,
-          },
+          webSearch: webSearchConfig,
+          imageGeneration: imageGenerationConfig,
+        },
         prepareSendMessagesRequest: (options) => {
           const messages = Array.isArray(options.messages) ? options.messages : [];
           const lastMessage = messages.at(-1);
@@ -4460,8 +4449,15 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
     [browserAgent.importAssetToCanvas],
   );
   const selectedCanvasAsset = React.useMemo(() => {
+    const explicitReferenceElementId = String(
+      browserAgent.referenceElementId || "",
+    ).trim();
     const elementId = String(
-      browserAgent.referenceElementId || browserAgent.selectedElementId || "",
+      explicitReferenceElementId ||
+        (Number(browserAgent.referenceSelectionNonce || 0) <= 0
+          ? browserAgent.selectedElementId
+          : "") ||
+        "",
     ).trim();
     if (!elementId || typeof browserAgent.resolveElementAsset !== "function") {
       return null;
@@ -4544,6 +4540,59 @@ const AssistantSidebarAiSdkRuntimeInner: React.FC<AssistantSidebarAiSdkRuntimeIn
   React.useEffect(() => {
     pendingCanvasReferenceAssetsRef.current = pendingCanvasReferenceAssets;
   }, [pendingCanvasReferenceAssets]);
+  const clearPendingAssistantReferences = React.useCallback(async () => {
+    const pendingDirectiveIds = Object.keys(
+      pendingCanvasReferenceAssetsRef.current,
+    ).filter(
+      (directiveId) =>
+        !confirmedCanvasReferenceIdsRef.current.has(directiveId),
+    );
+    if (pendingDirectiveIds.length === 0) return;
+
+    const composer = runtime.thread.composer;
+    const composerState = composer.getState();
+    const nextText = pendingDirectiveIds.reduce(
+      removeAssistantReferenceDirectiveFromText,
+      composerState.text,
+    );
+    if (nextText !== composerState.text) {
+      composer.setText(nextText);
+    }
+
+    for (const directiveId of pendingDirectiveIds) {
+      const attachmentIndex = composer
+        .getState()
+        .attachments.findIndex((attachment) => attachment.id === directiveId);
+      if (attachmentIndex >= 0) {
+        await composer.getAttachmentByIndex(attachmentIndex).remove();
+      }
+    }
+
+    setPendingCanvasReferenceAssets((current) => {
+      const next = { ...current };
+      pendingDirectiveIds.forEach((directiveId) => delete next[directiveId]);
+      return next;
+    });
+    setCanvasDirectivePreviews((current) => {
+      const next = { ...current };
+      pendingDirectiveIds.forEach((directiveId) => delete next[directiveId]);
+      return next;
+    });
+    logAssistantSidebar("pending_canvas_references_cleared", {
+      directiveIds: pendingDirectiveIds,
+      reason: "canvas_selection_cleared",
+    });
+  }, [runtime]);
+  React.useEffect(() => {
+    if (Number(browserAgent.referenceSelectionNonce || 0) <= 0) return;
+    if (browserAgent.referenceElementId || browserAgent.selectedMarkerId) return;
+    void clearPendingAssistantReferences();
+  }, [
+    browserAgent.referenceElementId,
+    browserAgent.referenceSelectionNonce,
+    browserAgent.selectedMarkerId,
+    clearPendingAssistantReferences,
+  ]);
   const rememberComposerVisibleCursorOffset = React.useCallback(() => {
     const visibleOffset = getActiveAssistantComposerTextOffset();
     if (typeof visibleOffset === "number" && visibleOffset >= 0) {
@@ -5151,14 +5200,6 @@ export const AssistantSidebarAiSdkRuntime: React.FC<AssistantSidebarProps> = mem
       return defaultEffort;
     });
   }, [modelMode, modelOptions, selectedModelValue]);
-  const selectedModelSelection = React.useMemo(
-    () => parseAssistantModelValue(selectedModelValue || defaultSelection),
-    [defaultSelection, selectedModelValue],
-  );
-  const assistantChatProvider = React.useMemo(
-    () => buildAssistantChatProviderConfig(selectedModelSelection.providerId),
-    [selectedModelSelection.providerId, settingsRevision],
-  );
   const effectiveReasoningEffort = React.useMemo(
     () =>
       resolveModelEffort(
@@ -5173,27 +5214,17 @@ export const AssistantSidebarAiSdkRuntime: React.FC<AssistantSidebarProps> = mem
       ),
     [modelMode, modelOptions, selectedModelValue, selectedReasoningEffort],
   );
-  const modelContextRegistry = React.useMemo(
-    () =>
-      buildModelContextRegistry({
-        provider: assistantChatProvider,
-      }),
-    [assistantChatProvider],
-  );
-
   return (
-    <RuntimeAdapterProvider adapters={{ modelContext: modelContextRegistry }}>
-      <AssistantSidebarAiSdkRuntimeInner
-        {...props}
-        modelGroups={modelGroups}
-        modelOptions={modelOptions}
-        onSelectedModelValueChange={setSelectedModelValue}
-        onSelectedReasoningEffortChange={setSelectedReasoningEffort}
-        reasoningEffort={effectiveReasoningEffort}
-        selectedModelValue={selectedModelValue}
-        selectedReasoningEffort={selectedReasoningEffort}
-      />
-    </RuntimeAdapterProvider>
+    <AssistantSidebarAiSdkRuntimeInner
+      {...props}
+      modelGroups={modelGroups}
+      modelOptions={modelOptions}
+      onSelectedModelValueChange={setSelectedModelValue}
+      onSelectedReasoningEffortChange={setSelectedReasoningEffort}
+      reasoningEffort={effectiveReasoningEffort}
+      selectedModelValue={selectedModelValue}
+      selectedReasoningEffort={selectedReasoningEffort}
+    />
   );
 });
 

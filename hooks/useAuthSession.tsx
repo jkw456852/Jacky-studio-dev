@@ -10,7 +10,11 @@ import type { Session, User } from '@supabase/supabase-js';
 import { clearLocalAccountSecretsStorage } from '../services/account-secrets';
 import { clearLocalStudioUserAssetStorage } from '../services/runtime-assets/local-user-assets';
 import { clearWorkspaceLocalProjectData } from '../services/storage';
-import { getCurrentSession, signOut } from '../services/supabase/auth';
+import {
+  getCurrentSession,
+  refreshCurrentSession,
+  signOut,
+} from '../services/supabase/auth';
 import { supabase } from '../services/supabase/client';
 import { useProjectStore } from '../stores/project.store';
 
@@ -42,17 +46,17 @@ export const AuthSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const refreshSession = useCallback(async () => {
-    const { data, error } = await getCurrentSession();
+    const { data, error } = await refreshCurrentSession();
 
     if (error) {
-      console.info('[supabase-auth] bootstrap-error', error.message);
+      console.info('[supabase-auth] refresh-error', error.message);
       setStatus('anonymous');
       setSession(null);
       setUser(null);
       return;
     }
 
-    console.info('[supabase-auth] bootstrap-session', data.session?.user?.email || 'anonymous');
+    console.info('[supabase-auth] refresh-session', data.session?.user?.email || 'anonymous');
     applySession(data.session);
   }, [applySession]);
 

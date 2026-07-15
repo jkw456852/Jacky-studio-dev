@@ -129,18 +129,12 @@ test("assistant sidebar static system prompt uses official model context instruc
   const runtime = readSource(
     "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx",
   );
-  const registryStart = runtime.indexOf("const buildModelContextRegistry");
-  const registryEnd = runtime.indexOf("const toAssistantModelValue", registryStart);
-  const registryBlock = runtime.slice(registryStart, registryEnd);
 
   assert.match(runtime, /\buseAssistantInstructions\b/);
   assert.match(runtime, /\bASSISTANT_SIDEBAR_MODEL_INSTRUCTIONS\b/);
   assert.match(runtime, /\buseAssistantInstructions\(\s*ASSISTANT_SIDEBAR_MODEL_INSTRUCTIONS\s*\)/);
   assert.match(runtime, /<AssistantRuntimeProvider\s+runtime=\{runtime\}\s+aui=\{aui\}>[\s\S]*<AssistantSidebarInstructions\s*\/>/);
-  assert.match(registryBlock, /\bnew\s+ModelContextRegistry\s*\(\s*\)/);
-  assert.match(registryBlock, /\bconfig:\s*\{/);
-  assert.doesNotMatch(registryBlock, /\baddInstruction\s*\(/);
-  assert.doesNotMatch(registryBlock, /\bsystem:\s*ASSISTANT_SIDEBAR/);
+  assert.doesNotMatch(runtime, /\bbuildModelContextRegistry\b|\bModelContextRegistry\b/);
 });
 
 test("assistant sidebar dynamic workspace context uses official assistant context hook", () => {

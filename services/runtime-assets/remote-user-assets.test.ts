@@ -339,6 +339,38 @@ test("remote asset helpers can push snapshot and restore by audit entry", async 
   assert.equal(restored.auditEntries.length >= 2, true);
 });
 
+test("remote asset helpers preserve structured account sync errors", async () => {
+  await assert.rejects(
+    fetchRemoteStudioUserAssetEnvelope({
+      endpoint: "https://example.com/user-assets",
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "Supabase 服务端密钥无效。",
+            },
+            code: "account_sync_service_key_invalid",
+            requestId: "sync-1234",
+          }),
+          { status: 503 },
+        )) as typeof fetch,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, "Supabase 服务端密钥无效。");
+      assert.equal(
+        (error as Error & { code?: string }).code,
+        "account_sync_service_key_invalid",
+      );
+      assert.equal(
+        (error as Error & { requestId?: string }).requestId,
+        "sync-1234",
+      );
+      return true;
+    },
+  );
+});
+
 test("async remote sync orchestration merges local and remote snapshots", async () => {
   const remote = createFetchMock();
   await pushRemoteStudioUserAssetSnapshot({

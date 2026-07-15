@@ -56,6 +56,10 @@ export const getCurrentSession = async () => {
   return supabase.auth.getSession();
 };
 
+export const refreshCurrentSession = async () => {
+  return supabase.auth.refreshSession();
+};
+
 export const getCurrentUser = async () => {
   return supabase.auth.getUser();
 };

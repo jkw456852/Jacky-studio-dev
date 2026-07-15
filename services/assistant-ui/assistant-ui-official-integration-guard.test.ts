@@ -225,6 +225,25 @@ test("assistant sidebar mounts the official developer-only devtools", () => {
   assert.doesNotMatch(runtime, /\bAgentMessage\b|\bagentData\b|\bskillData\b|\bChatMessage\b/);
 });
 
+test("assistant chat uses official AI SDK DevTools only in local development", () => {
+  const api = readFileSync(join(repoRoot, "api/assistant-chat.ts"), "utf8");
+  const devTools = readFileSync(
+    join(repoRoot, "services/assistant-ui/assistant-ai-sdk-devtools.ts"),
+    "utf8",
+  );
+  const packageJson = readFileSync(join(repoRoot, "package.json"), "utf8");
+  const gitignore = readFileSync(join(repoRoot, ".gitignore"), "utf8");
+
+  assert.match(packageJson, /"@ai-sdk\/devtools":\s*"0\.0\.24"/);
+  assert.match(devTools, /import\s*\{[\s\S]*\bwrapLanguageModel\b[\s\S]*\}\s*from\s*["']ai["']/);
+  assert.match(devTools, /import\(["']@ai-sdk\/devtools["']\)/);
+  assert.match(devTools, /middleware:\s*devToolsMiddleware\(\)/);
+  assert.match(devTools, /NODE_ENV\s*!==\s*["']production["']/);
+  assert.match(devTools, /VERCEL_ENV\s*!==\s*["']production["']/);
+  assert.match(api, /await\s+wrapAssistantLanguageModelWithDevTools\(baseModel\)/);
+  assert.match(gitignore, /^\.devtools\/$/m);
+});
+
 test("assistant sidebar first-party tools render as standalone toolkit UIs", () => {
   const thread = readFileSync(
     join(repoRoot, "components/assistant-ui/thread.tsx"),
@@ -1287,9 +1306,16 @@ test("assistant chat does not force specific tool_choice objects through custom 
   assert.match(api, /return\s+["']auto["']\s+as\s+const/);
 });
 
-test("assistant chat provider selection follows official modelName before legacy fields", () => {
+test("assistant chat separates official model config from project provider connection config", () => {
   const provider = readFileSync(
     join(repoRoot, "services/assistant-ui/assistant-chat-provider.ts"),
+    "utf8",
+  );
+  const runtime = readFileSync(
+    join(
+      repoRoot,
+      "pages/Workspace/components/assistantSidebarAiSdkRuntime.runtime.tsx",
+    ),
     "utf8",
   );
   const apiTest = readFileSync(
@@ -1302,14 +1328,15 @@ test("assistant chat provider selection follows official modelName before legacy
 
   assert.match(provider, /\bparseRegistryModelName\(/);
   assert.match(provider, /\bString\(body\.config\?\.modelName\s*\|\|\s*["']["']\)/);
-  assert.match(providerIdBlock, /\bbody\.providerConfig\?\.providerId\b/);
   assert.match(providerIdBlock, /\bmodelNameSelection\.providerId\b/);
-  assert.match(providerIdBlock, /\bbody\.config\?\.providerId\b/);
-  assert.ok(
-    providerIdBlock.indexOf("modelNameSelection.providerId") <
-      providerIdBlock.indexOf("body.config?.providerId"),
-  );
-  assert.match(apiTest, /modelName provider prefix wins over legacy providerId/);
+  assert.match(provider, /\bbody\.providerConfig\?\.provider\b/);
+  assert.match(provider, /\bprovider\.baseUrl\b/);
+  assert.match(provider, /\bprovider\.apiKey\b/);
+  assert.doesNotMatch(provider, /\bbody\.config\?\.(?:baseUrl|apiKey)\b/);
+  assert.doesNotMatch(provider, /\bbody\.config\?\.(?:provider|providerId|providerName|modelId|model)\b/);
+  assert.match(runtime, /\bproviderConfig:\s*\{\s*provider,?\s*\}/);
+  assert.doesNotMatch(runtime, /\bbuildModelContextRegistry\b|\bModelContextRegistry\b/);
+  assert.match(apiTest, /project provider config carries the selected provider connection settings/);
 });
 
 test("assistant chat gates OpenAI native image_generation to safe provider-tool usage", () => {
@@ -2008,17 +2035,39 @@ test("assistant sidebar topic assets reuse official UIMessage parts and composer
   assert.match(sidebarTypes, /\breferenceSelectionNonce\?:\s*number/);
   assert.match(sidebarProps, /\belement\.persistedOriginalUrl\b/);
   assert.match(canvasElementInteraction, /\bonReferenceElementSelect\?\.\(id\)/);
-  assert.match(
-    canvasElementInteraction,
-    /if \(isReferenceableMedia\) \{\s*onReferenceElementSelect\?\.\(id\);\s*\}\s*if \(elObj\?\.isLocked\)/,
+  assert.match(canvasElementInteraction, /\bonMarkerPlaced\?:\s*\(markerId:\s*string\)/);
+  assert.match(canvasElementInteraction, /\bonMarkerPlaced\?\.\(newMarkerId\)/);
+  assert.ok(
+    canvasElementInteraction.indexOf('activeTool === "mark"') <
+      canvasElementInteraction.indexOf("onReferenceElementSelect?.(id)"),
+    "mark placement must run before ordinary canvas reference selection",
   );
   assert.match(
     canvasElementsLayer,
     /onMouseDown=\{\(event\)\s*=>\s*handleElementMouseDown\(event,\s*element\.id\)\}/,
   );
   assert.match(workspace, /\breferenceSelectionNonce:\s*assistantReferenceSelection\.nonce/);
+  assert.match(workspace, /\bonMarkerPlaced:\s*handleAssistantMarkerPlaced\b/);
+  assert.match(workspace, /\bsetEditingMarkerId\(markerId\)/);
+  assert.match(workspace, /\bcurrent\.elementId\s*===\s*null[\s\S]*elementId:\s*null/);
+  assert.match(workspace, /\bhandleAssistantReferenceSelectionClear\b/);
+  assert.match(
+    workspace,
+    /setSelectedElementIds\(\[\]\);\s*handleAssistantReferenceSelectionClear\(\)/,
+  );
   assert.match(sidebarProps, /\bresolveMarkerAsset:\s*\(markerId:\s*string\)/);
   assert.match(workspace, /\bselectedMarkerId:\s*editingMarkerId\b/);
+  assert.match(
+    runtime,
+    /Number\(browserAgent\.referenceSelectionNonce\s*\|\|\s*0\)\s*<=\s*0[\s\S]*browserAgent\.selectedElementId/,
+  );
+  assert.match(runtime, /\bremoveAssistantReferenceDirectiveFromText\b/);
+  assert.match(runtime, /\bclearPendingAssistantReferences\b/);
+  assert.match(
+    runtime,
+    /!confirmedCanvasReferenceIdsRef\.current\.has\(directiveId\)/,
+  );
+  assert.match(runtime, /\bpending_canvas_references_cleared\b/);
   assert.match(thread, /\bonComposerInputIntent\b/);
   assert.match(runtime, /\bselected_canvas_asset_attached\b/);
   assert.doesNotMatch(

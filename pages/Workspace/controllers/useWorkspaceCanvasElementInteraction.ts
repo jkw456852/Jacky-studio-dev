@@ -20,6 +20,7 @@ type UseWorkspaceCanvasElementInteractionOptions = {
   setSelectedElementId: (id: string | null) => void;
   setSelectedElementIds: React.Dispatch<React.SetStateAction<string[]>>;
   onReferenceElementSelect?: (elementId: string) => void;
+  onMarkerPlaced?: (markerId: string) => void;
   textEditDraftRef: MutableRefObject<Record<string, string>>;
   pendingSelectAllTextIdRef: MutableRefObject<string | null>;
   setEditingTextId: (id: string | null) => void;
@@ -88,6 +89,7 @@ export function useWorkspaceCanvasElementInteraction(
     setSelectedElementId,
     setSelectedElementIds,
     onReferenceElementSelect,
+    onMarkerPlaced,
     textEditDraftRef,
     pendingSelectAllTextIdRef,
     setEditingTextId,
@@ -338,6 +340,7 @@ export function useWorkspaceCanvasElementInteraction(
         { id: newMarkerId, x, y, elementId, cropUrl },
       ];
       updateMarkersAndSaveHistory(newMarkers);
+      onMarkerPlaced?.(newMarkerId);
 
       if (el && containerRef.current) {
         const containerRect = containerRef.current.getBoundingClientRect();
@@ -376,6 +379,7 @@ export function useWorkspaceCanvasElementInteraction(
       insertInputFile,
       markers.length,
       markersRef,
+      onMarkerPlaced,
       pan,
       setInputBlocks,
       setMarkersSynced,
@@ -459,9 +463,6 @@ export function useWorkspaceCanvasElementInteraction(
         return;
       }
 
-      if (isReferenceableMedia) {
-        onReferenceElementSelect?.(id);
-      }
       if (elObj?.isLocked) {
         if (isReferenceableMedia) {
           e.stopPropagation();
@@ -484,6 +485,10 @@ export function useWorkspaceCanvasElementInteraction(
           e.clientY,
         );
         return;
+      }
+
+      if (isReferenceableMedia) {
+        onReferenceElementSelect?.(id);
       }
 
       if (id !== selectedElementId) setEditingTextId(null);

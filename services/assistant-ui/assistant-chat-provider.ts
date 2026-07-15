@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { ModelContext } from "@assistant-ui/react";
 import { createProviderRegistry, type ToolSet } from "ai";
 
 export type AssistantChatProviderConfig = {
@@ -11,27 +12,12 @@ export type AssistantChatProviderConfig = {
 };
 
 export type AssistantChatProviderRequest = {
-  config?: {
-    modelName?: string;
-    reasoningEffort?: string;
-    model?: string;
-    modelId?: string;
-    /**
-     * Deprecated migration fields. New assistant-ui ModelContext config should
-     * only use official LanguageModelConfig keys.
-     */
-    provider?: AssistantChatProviderConfig;
-    providerId?: string | null;
-    providerName?: string | null;
-    baseUrl?: string | null;
-    apiKey?: string | null;
-  };
+  config?: Pick<
+    NonNullable<ModelContext["config"]>,
+    "modelName" | "reasoningEffort"
+  >;
   providerConfig?: {
-    provider?: AssistantChatProviderConfig;
-    providerId?: string | null;
-    providerName?: string | null;
-    baseUrl?: string | null;
-    apiKey?: string | null;
+    provider: AssistantChatProviderConfig;
   };
 };
 
@@ -168,15 +154,13 @@ const parseRegistryModelName = (
 export const resolveProviderConfig = (
   body: AssistantChatProviderRequest,
 ): Required<AssistantChatProviderConfig> => {
-  const provider = body.providerConfig?.provider || body.config?.provider || {};
+  const provider = body.providerConfig?.provider || {};
   const modelNameSelection = parseRegistryModelName(
     String(body.config?.modelName || ""),
   );
   const providerId =
     provider.id ||
-    body.providerConfig?.providerId ||
     modelNameSelection.providerId ||
-    body.config?.providerId ||
     readEnv("ASSISTANT_CHAT_PROVIDER_ID") ||
     "openai";
   const googleLike =
@@ -185,16 +169,12 @@ export const resolveProviderConfig = (
   const id = String(providerId).trim();
   const name = String(
     provider.name ||
-      body.providerConfig?.providerName ||
-      body.config?.providerName ||
       readEnv("ASSISTANT_CHAT_PROVIDER_NAME") ||
       id ||
       "openai",
   ).trim();
   const baseUrl = String(
     provider.baseUrl ||
-      body.providerConfig?.baseUrl ||
-      body.config?.baseUrl ||
       readEnv("ASSISTANT_CHAT_BASE_URL") ||
       (googleLike
         ? readEnv("GOOGLE_GENERATIVE_AI_BASE_URL") || readEnv("GEMINI_BASE_URL")
@@ -203,8 +183,6 @@ export const resolveProviderConfig = (
   ).trim();
   const apiKey = String(
     provider.apiKey ||
-      body.providerConfig?.apiKey ||
-      body.config?.apiKey ||
       readEnv("ASSISTANT_CHAT_API_KEY") ||
       (googleLike
         ? readEnv("GOOGLE_GENERATIVE_AI_API_KEY") || readEnv("GEMINI_API_KEY")
@@ -231,8 +209,6 @@ export const resolveModelId = (
   return (
     String(
       modelNameSelection.modelId ||
-        body.config?.modelId ||
-        body.config?.model ||
         readEnv("ASSISTANT_CHAT_MODEL") ||
         readEnv("OPENAI_MODEL") ||
         fallbackModel,

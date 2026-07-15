@@ -199,6 +199,83 @@ const ensureFetch = (fetchImpl?: typeof fetch): typeof fetch => {
   return resolved;
 };
 
+export type RemoteStudioUserAssetRequestError = Error & {
+  status?: number;
+  code?: string;
+  details?: unknown;
+  requestId?: string;
+};
+
+const readRemoteErrorText = (value: unknown, depth = 0): string => {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (!value || typeof value !== "object" || depth > 3) return "";
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["message", "error", "details", "hint", "code"]) {
+    const text = readRemoteErrorText(record[key], depth + 1);
+    if (text) return text;
+  }
+  return "";
+};
+
+const readRemoteEnvelopeResponse = async (
+  response: Response,
+  method: "GET" | "PUT",
+  fallbackEnvelope?: RemoteEnvelope,
+): Promise<RemoteEnvelope> => {
+  const responseText = await response.text().catch(() => "");
+  let payload: Record<string, unknown> | null = null;
+  if (responseText) {
+    try {
+      const parsed = JSON.parse(responseText) as unknown;
+      payload = parsed && typeof parsed === "object"
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const fallback = `Remote StudioUserAssetApi ${method} failed: ${response.status} ${response.statusText}`;
+    const rawFallback = responseText && !/^\s*</.test(responseText)
+      ? responseText.slice(0, 1000)
+      : fallback;
+    const error = new Error(
+      readRemoteErrorText(payload?.message)
+      || readRemoteErrorText(payload?.error)
+      || readRemoteErrorText(payload?.details)
+      || rawFallback,
+    ) as RemoteStudioUserAssetRequestError;
+    error.name = "RemoteStudioUserAssetRequestError";
+    error.status = response.status;
+    error.code = String(payload?.code || "").trim() || undefined;
+    error.details = payload?.details;
+    error.requestId =
+      String(payload?.requestId || "").trim()
+      || String(response.headers.get("x-account-sync-request-id") || "").trim()
+      || undefined;
+    throw error;
+  }
+
+  return {
+    snapshot:
+      payload?.snapshot && typeof payload.snapshot === "object"
+        ? clone(payload.snapshot as StudioUserAssetState)
+        : fallbackEnvelope
+          ? clone(fallbackEnvelope.snapshot)
+          : createEmptyState(),
+    auditEntries: Array.isArray(payload?.auditEntries)
+      ? clone(payload.auditEntries as StudioUserAssetAuditEntry[])
+      : fallbackEnvelope
+        ? clone(fallbackEnvelope.auditEntries)
+        : [],
+  };
+};
+
 const readEnvelope = async (
   endpoint: string,
   fetchImpl: typeof fetch,
@@ -209,18 +286,7 @@ const readEnvelope = async (
       Accept: "application/json",
     },
   });
-  if (!response.ok) {
-    throw new Error(
-      `Remote StudioUserAssetApi GET failed: ${response.status} ${response.statusText}`,
-    );
-  }
-  const payload = (await response.json()) as Partial<RemoteEnvelope> | null;
-  return {
-    snapshot: payload?.snapshot ? clone(payload.snapshot) : createEmptyState(),
-    auditEntries: Array.isArray(payload?.auditEntries)
-      ? clone(payload!.auditEntries!)
-      : [],
-  };
+  return readRemoteEnvelopeResponse(response, "GET");
 };
 
 const writeEnvelope = async (
@@ -236,18 +302,7 @@ const writeEnvelope = async (
     },
     body: JSON.stringify(envelope),
   });
-  if (!response.ok) {
-    throw new Error(
-      `Remote StudioUserAssetApi PUT failed: ${response.status} ${response.statusText}`,
-    );
-  }
-  const payload = (await response.json()) as Partial<RemoteEnvelope> | null;
-  return {
-    snapshot: payload?.snapshot ? clone(payload.snapshot) : clone(envelope.snapshot),
-    auditEntries: Array.isArray(payload?.auditEntries)
-      ? clone(payload!.auditEntries!)
-      : clone(envelope.auditEntries),
-  };
+  return readRemoteEnvelopeResponse(response, "PUT", envelope);
 };
 
 const updateRemoteEnvelope = async (

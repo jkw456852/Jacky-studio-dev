@@ -26,6 +26,7 @@ import { z } from "zod";
 import {
   createAssistantAiSdkToolkit,
 } from "../services/assistant-ui/assistant-ai-sdk-toolkit-server.ts";
+import { wrapAssistantLanguageModelWithDevTools } from "../services/assistant-ui/assistant-ai-sdk-devtools.ts";
 import {
   createAssistantChatResumableResponse,
   createAssistantChatResumableStreamId,
@@ -325,11 +326,7 @@ const summarizeRequestBodyShape = (value: unknown) => {
         modelName:
           typeof config?.modelName === "string"
             ? config.modelName
-            : typeof config?.modelId === "string"
-              ? config.modelId
-              : typeof config?.model === "string"
-                ? config.model
-                : undefined,
+            : undefined,
         reasoningEffort:
           typeof config?.reasoningEffort === "string" &&
           config.reasoningEffort.trim()
@@ -364,11 +361,7 @@ const summarizeRequestBodyShape = (value: unknown) => {
       modelName:
         typeof config?.modelName === "string"
           ? config.modelName
-          : typeof config?.modelId === "string"
-            ? config.modelId
-            : typeof config?.model === "string"
-              ? config.model
-              : undefined,
+          : undefined,
       reasoningEffort:
         typeof config?.reasoningEffort === "string" &&
         config.reasoningEffort.trim()
@@ -3023,16 +3016,22 @@ export default async function handler(req: any, res: any) {
       webSearchTools: webSearchTools.tools,
     });
     const hasFunctionTools = Object.keys(toolkitTools).length > 0;
-    const { model, providerTools } = createLanguageModelBundle(provider, modelId, {
+    const { model: baseModel, providerTools } = createLanguageModelBundle(provider, modelId, {
       hasFunctionTools,
       enableNativeWebSearch: nativeWebSearchEnabled,
       nativeOpenAIImageGeneration: nativeOpenAIImageGeneration.tool,
     });
+    stage = "wrap_language_model_devtools";
+    const {
+      model,
+      enabled: aiSdkDevToolsEnabled,
+    } = await wrapAssistantLanguageModelWithDevTools(baseModel);
     logAssistantChat(requestId, "language_model_ready", {
       providerId: provider.id,
       modelProvider: (model as any).provider,
       modelId: (model as any).modelId || modelId,
       specificationVersion: (model as any).specificationVersion,
+      aiSdkDevToolsEnabled,
       providerToolCount: Object.keys(providerTools).length,
       nativeWebSearchEnabled,
       elapsedMs: Date.now() - startedAt,
