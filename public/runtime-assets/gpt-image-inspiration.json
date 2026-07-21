@@ -46411,5 +46411,7 @@
       "mode": "reference-only",
       "note": "Provides integration ideas and UI references, but not a prompt corpus suitable for direct gallery-card ingestion."
     }
-  ]
+  ],
+  "stale": true,
+  "staleReason": "Failed to fetch GitHub content davidwuw0811-boop/awesome-gpt-image2-prompts/prompts.json: 403"
 }
