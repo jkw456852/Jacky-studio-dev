@@ -46410,5 +46410,5 @@
     }
   ],
   "stale": true,
-  "staleReason": "Marker not found: let p=["
+  "staleReason": "Failed to fetch GitHub content davidwuw0811-boop/awesome-gpt-image2-prompts/prompts.json: 403"
 }
